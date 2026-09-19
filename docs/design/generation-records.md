@@ -115,9 +115,9 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 |`failure_code`、`failure_message`|任意|取得失敗の理由|`failed`時のみ1回設定|
 |`applied_job_id`|任意|承認後に投入したJob ID|適用時のみ1回設定|
 |`created_at`|必須|取得時刻|不可|
-|`decided_at`|任意|承認または却下の時刻|判断時のみ1回設定|
+|`decided_at`|任意|承認または却下の時刻|判断時に設定。期限切れの承認を判断し直したときは更新する|
 
-状態遷移は`proposed → approved → applied`、`proposed → rejected`とし、取得に失敗した提案は`failed`のまま残す。`request_context`と`output`は作成後に更新しない。提案の取得だけでは生成Job、Artifact、Manifestを作らない。
+状態遷移は`proposed → approved → applied`、`proposed → rejected`とし、取得に失敗した提案は`failed`のまま残す。承認の有効期限が切れた場合だけ例外とし、`approved`から判断をやり直せる (`approved → approved`、`approved → rejected`)。期限切れの承認では適用できず、判断もやり直せないと提案が行き止まりになるためである。やり直した判断はApprovalLogへ追記し、過去の記録は書き換えない。`request_context`と`output`は作成後に更新しない。提案の取得だけでは生成Job、Artifact、Manifestを作らない。
 
 `request_context`にはCanon本文を入れず、Canon参照は`path`、`anchor`、`note`に限る。APIキー、認証情報、環境変数、ローカル絶対パスも入れない。
 
@@ -137,6 +137,8 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 - 記録した操作のdigestが、実行直前に組み立てた操作のdigestと一致すること。
 - 承認の有効期限を過ぎていないこと。
 - 提案が`approved`であり、同じ提案から2件目の実行を作らないこと。
+
+承認が期限切れになった提案は、同じ提案への判断をもう一度受け付ける。期限内の判断のやり直しと、`rejected`、`applied`、`failed`からの判断は受け付けない。
 
 ## 参照整合性
 

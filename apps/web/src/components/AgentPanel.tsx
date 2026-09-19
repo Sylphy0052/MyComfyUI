@@ -90,6 +90,8 @@ export function AgentPanel({
   const [proposals, setProposals] = useState<AgentProposal[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [logs, setLogs] = useState<ApprovalLog[]>([]);
+  // サーバが期限切れと判断した提案。画面の時計がずれていても承認し直せるようにする。
+  const [expiredProposalId, setExpiredProposalId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // 非同期処理の後で、操作した提案がまだ選ばれているかを見るために持つ。
   const selectedIdRef = useRef<string | null>(null);
@@ -170,7 +172,9 @@ export function AgentPanel({
   }, [selectedId]);
 
   // 描画のたびに見直す。選択中に期限が切れた承認でも、次の描画で適用を止める。
-  const approvalExpired = isApprovalExpired(selected, logs);
+  const approvalExpired =
+    isApprovalExpired(selected, logs) ||
+    (selected !== null && expiredProposalId === selected.id);
   const selectedKind = KINDS.find((entry) => entry.value === kind);
   const needsRecipe = kind === "image_prompt";
   const disabled =
@@ -214,6 +218,7 @@ export function AgentPanel({
     setNotice(null);
     try {
       await api.decideAgentProposal(target, decision);
+      setExpiredProposalId(null);
       const logList = await api.listApprovalLogs({ subjectId: target });
       await reloadProposals();
       // 操作中に別の提案へ切り替えられていたら、その提案の履歴を上書きしない。
@@ -247,6 +252,11 @@ export function AgentPanel({
       await reloadProposals();
     } catch (cause) {
       setError(describe(cause));
+      if (cause instanceof ApiError && cause.code === "APPROVAL_EXPIRED") {
+        // 画面の時計が遅れていると期限切れを判定できず、同じ失敗を繰り返す。
+        // サーバの判断を受けて、承認し直せる状態へ切り替える。
+        setExpiredProposalId(target);
+      }
     } finally {
       setBusy(false);
     }

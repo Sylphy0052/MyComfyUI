@@ -1514,6 +1514,7 @@ async def decide_agent_proposal(
     """
     proposal = await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
     current_state = proposal.state
+    seen_decided_at = proposal.decided_at
     decidable_states = await _decidable_states(session, proposal)
     if current_state not in decidable_states:
         raise ApiError(
@@ -1554,13 +1555,18 @@ async def decide_agent_proposal(
             else None
         ),
     )
-    # 承認と却下がほぼ同時に届いても、両方をApprovalLogへ残さない。状態を条件に含めて
-    # 更新し、更新できた要求だけが判断を記録する。
+    # 承認と却下がほぼ同時に届いても、両方をApprovalLogへ残さない。状態と直前の判断時刻
+    # を条件に含めて更新し、更新できた要求だけが判断を記録する。
+    #
+    # 期限切れの承認をやり直す経路では状態が`approved`のまま変わらない。状態だけを条件に
+    # すると、先に届いた再承認で期限が延びた後でも同じ条件が成り立ち、二重に記録できて
+    # しまう。読み取った時点の判断時刻も条件に含めて、その時点からの更新に限る。
     next_state = "approved" if payload.decision == "approved" else "rejected"
     claimed = await session.execute(
         update(AgentProposal)
         .where(AgentProposal.id == proposal.id)
         .where(AgentProposal.state.in_(decidable_states))
+        .where(AgentProposal.decided_at.is_not_distinct_from(seen_decided_at))
         .values(state=next_state, decided_at=decided_at)
     )
     if claimed.rowcount != 1:
@@ -1743,8 +1749,10 @@ async def list_approval_logs(
     承認対象、許可した操作、判断、時刻をここで確認できる。ApprovalLogは追記専用の
     ため、この経路でも書き換えない。
     """
+    # 判断時刻が同じ記録の順序を`_latest_approval`と揃える。画面が最新と見る記録と、
+    # 適用時に突き合わせる記録を食い違わせない。
     query = select(ApprovalLog).order_by(
-        ApprovalLog.decided_at.desc(), ApprovalLog.id.asc()
+        ApprovalLog.decided_at.desc(), ApprovalLog.id.desc()
     )
     if subject_type is not None:
         query = query.where(ApprovalLog.subject_type == subject_type)
