@@ -18,10 +18,12 @@ from mycomfyui_api.models import GenerationJob
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 0.5
+MAX_BACKOFF_SECONDS = 30.0
 
 FAILURE_CODE_INTERRUPTED = "INTERRUPTED"
 FAILURE_CODE_EXECUTOR_UNAVAILABLE = "EXECUTOR_UNAVAILABLE"
 FAILURE_CODE_EXECUTOR_ERROR = "EXECUTOR_ERROR"
+FAILURE_CODE_CLAIM_LOST = "CLAIM_LOST"
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,7 @@ class JobQueueWorker:
         self._poll_interval = poll_interval
         self._cancel_events: dict[str, asyncio.Event] = {}
         self._task: asyncio.Task[None] | None = None
+        self._consecutive_errors = 0
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._run_forever())
@@ -125,11 +128,20 @@ class JobQueueWorker:
         while True:
             try:
                 processed = await self._process_next()
+                self._consecutive_errors = 0
             except Exception:
                 logger.exception("キュー処理ループで予期しない例外が発生しました。")
                 processed = False
+                self._consecutive_errors += 1
             if not processed:
-                await asyncio.sleep(self._poll_interval)
+                await asyncio.sleep(self._next_delay())
+
+    def _next_delay(self) -> float:
+        """連続失敗時は指数バックオフし、ログ洪水と過剰ポーリングを避ける。"""
+        if self._consecutive_errors == 0:
+            return self._poll_interval
+        backoff = self._poll_interval * (2**self._consecutive_errors)
+        return min(backoff, MAX_BACKOFF_SECONDS)
 
     async def _process_next(self) -> bool:
         job_id = await self._claim_next()
@@ -138,21 +150,42 @@ class JobQueueWorker:
         cancel_event = asyncio.Event()
         self._cancel_events[job_id] = cancel_event
         try:
+            outcome = await self._run_executor(job_id, cancel_event)
+        finally:
+            self._cancel_events.pop(job_id, None)
+        try:
+            await self._finalize(job_id, outcome, cancel_event)
+        except Exception:
+            # ここで失敗するとJobはrunningのまま残るが、ワーカー自体は継続する。
+            # 次回プロセス再起動時はrecover_interrupted_jobsが救済する。
+            logger.exception("Job %sの状態確定に失敗しました。", job_id)
+        return True
+
+    async def _run_executor(
+        self, job_id: str, cancel_event: asyncio.Event
+    ) -> ExecutionOutcome:
+        try:
             job = await self._load(job_id)
-            outcome = await self._executor.run(job, cancel_event)
+        except Exception:
+            logger.exception("Job %sの再取得に失敗しました。", job_id)
+            return ExecutionOutcome(
+                succeeded=False,
+                failure_code=FAILURE_CODE_CLAIM_LOST,
+                failure_stage="backend_start",
+                failure_message="確保直後にJobを再取得できませんでした。",
+                retryable=True,
+            )
+        try:
+            return await self._executor.run(job, cancel_event)
         except Exception:
             logger.exception("Job %sの実行中に例外が発生しました。", job_id)
-            outcome = ExecutionOutcome(
+            return ExecutionOutcome(
                 succeeded=False,
                 failure_code=FAILURE_CODE_EXECUTOR_ERROR,
                 failure_stage="execution",
                 failure_message="実行中に予期しないエラーが発生しました。",
                 retryable=False,
             )
-        finally:
-            self._cancel_events.pop(job_id, None)
-        await self._finalize(job_id, outcome, cancel_event)
-        return True
 
     async def _claim_next(self) -> str | None:
         """1件だけqueuedからrunningへ遷移させる。

@@ -192,6 +192,8 @@ async def cancel_generation_job(
     """
     job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
     if job.state == "cancelling":
+        # ワーカーが直後にfinalizeした可能性があるため、返却前に最新状態を取り直す。
+        await session.refresh(job)
         return job
     now = schemas.now_iso()
     if job.state == "queued":
