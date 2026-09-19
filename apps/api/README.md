@@ -21,6 +21,11 @@ cp .env.example .env
 |`MYCOMFYUI_DATA_ROOT`|OS 標準の利用者データ領域|生成履歴とデータベースの保存先|
 |`MYCOMFYUI_COMFYUI_BASE_URL`|`http://127.0.0.1:8188`|ComfyUI のエンドポイント|
 |`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`|`600`|1 Job の実行上限(秒)|
+|`MYCOMFYUI_AIMEDIA_BASE_URL`|未設定|ai-media 参照 API の接続先。未設定の間は同梱 fixture を返す|
+
+`.env.example` には `MYCOMFYUI_COMFYUI_BASE_URL`、`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、
+`MYCOMFYUI_AIMEDIA_BASE_URL` を追記する必要がある。実行環境の保護によりこのファイルを
+更新できていない。
 
 SQLite は `<data_root>/db/mycomfyui.sqlite3` へ作成する。接続時に WAL、外部キー、busy timeout を有効にする。
 設定値に API キーなどの秘密情報を置かない。データベース、ログ、API 応答にも保存しない。
@@ -51,13 +56,65 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |操作|Endpoint|
 |---|---|
 |Recipe の作成・取得|`POST /api/v1/recipes` / `GET /api/v1/recipes/{recipe_id}`|
+|Recipe の一覧|`GET /api/v1/recipes`(`kind`、`engine`、`latest` で絞り込む)|
 |Job と Manifest の作成|`POST /api/v1/generation-jobs`|
 |Job の取得・一覧|`GET /api/v1/generation-jobs/{job_id}` / `GET /api/v1/generation-jobs`|
 |Job の Artifact 一覧|`GET /api/v1/generation-jobs/{job_id}/artifacts`|
 |Job の取消要求|`POST /api/v1/generation-jobs/{job_id}/cancel`|
 |Manifest の取得|`GET /api/v1/generation-manifests/{manifest_id}`|
 |Artifact の作成・取得|`POST /api/v1/artifacts` / `GET /api/v1/artifacts/{artifact_id}`|
+|Artifact の実ファイル配信|`GET /api/v1/artifacts/{artifact_id}/content`|
+|Artifact の採否記録|`PATCH /api/v1/artifacts/{artifact_id}/decision`|
 |ApprovalLog の作成・取得|`POST /api/v1/approval-logs` / `GET /api/v1/approval-logs/{approval_log_id}`|
+|ai-media 参照(読取専用)|`GET /api/v1/projects` 以下|
+
+### ai-media 参照
+
+`contracts/ai-media/v1/openapi.yaml` の契約に従い、Project、Scene、Shot を読取り専用で中継する。
+応答本文は上流の形のまま返し、MyComfyUI 側で作り替えない。更新系は提供しない。
+
+|操作|Endpoint|
+|---|---|
+|Project 一覧・取得|`GET /api/v1/projects` / `GET /api/v1/projects/{project_id}`|
+|Scene 一覧・取得|`GET /api/v1/projects/{project_id}/scenes` / `.../scenes/{scene_id}`|
+|Shot 一覧・取得|`GET /api/v1/projects/{project_id}/scenes/{scene_id}/shots` / `.../shots/{shot_id}`|
+
+上流実装(novel-writer#17)が未完のため、`MYCOMFYUI_AIMEDIA_BASE_URL` が未設定のときは
+同梱 fixture を返す。fixture は代表 Scene `hirohito-arc02-ep005-sc01` と 3 件の Shot を含む。
+上流が動いたら接続先を設定するだけで実データへ切り替わる。UI と API の契約は変えない。
+
+上流が応答しない場合は `REFERENCE_UNAVAILABLE`(503)、対象が無い場合は
+`REFERENCE_NOT_FOUND`(404)を共通 Envelope で返す。
+
+### 既定 Recipe
+
+起動時に、同梱 Workflow テンプレート `anima_txt2img` に対応する Recipe を登録する。
+すでに同じテンプレート版の Recipe があれば作らない。テンプレートの内容が変わった場合は
+既存 Recipe を書き換えず、`supersedes_recipe_id` で後継 Recipe を追加する。
+
+`input_schema` には画面へ出す変数だけを置き、モデルファイル名と出力名は `defaults` に固定する。
+これにより、UI からモデルファイルや ComfyUI のノードを指定できない。
+
+### Artifact の配信と採否
+
+`GET /api/v1/artifacts/{artifact_id}/content` は `data_root` 配下で解決した実ファイルを
+`media_type` で返す。保存先の絶対パスは応答に含めない。実ファイルが無い場合は
+`ARTIFACT_FILE_MISSING`(404)を返す。
+
+`PATCH /api/v1/artifacts/{artifact_id}/decision` は `accepted` / `rejected` / `undecided` を
+受け取る。`undecided` へ戻すと `decision_at` も消す。採否を記録できるのは `image`、`video`、
+`audio` だけとし、Workflow スナップショットやログには記録しない。
+
+### OpenAPI スナップショット
+
+REST 契約の正本は FastAPI が生成する OpenAPI とする。変更したら次を実行し、
+`contracts/openapi/openapi.json` の差分を commit する。
+
+```bash
+npm run contracts
+```
+
+`npm run contracts` は OpenAPI の書き出しと Web UI の TypeScript 型生成をまとめて実行する。
 
 ### Job と Manifest の作成
 
@@ -110,7 +167,9 @@ succeeded/failed`、取消時は `queued → cancelled` または `running → c
 プロセス再起動時、`running` / `cancelling` のまま残っている Job は起動時に `failed`
 (`INTERRUPTED`、再試行可能)へ倒す。中断 Job を誤って成功扱いしない。
 
-`GET /api/v1/generation-jobs` はキュー状態確認用の一覧を返す。クエリパラメータ `state` で絞り込める。
+`GET /api/v1/generation-jobs` はキュー状態確認用の一覧を返す。クエリパラメータ `state`、
+`scene_id`、`shot_id` で絞り込み、`limit`(既定 100、最大 200)と `offset` で件数を区切る。
+`scene_id` と `shot_id` は `scene_ref` / `shot_ref` の `id` と突き合わせる。
 
 `POST /api/v1/generation-jobs/{job_id}/cancel` で取消を要求する。`queued` は即座に `cancelled`、
 `running` は `cancelling` へ遷移しワーカーへ取消を伝える。終端状態(`succeeded`/`failed`/`cancelled`)への

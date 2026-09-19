@@ -1,0 +1,25 @@
+{
+  "name": "mycomfyui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MyComfyUI workspace root. JavaScript の依存はここで管理する。",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @mycomfyui/web",
+    "build": "npm run build --workspace @mycomfyui/web",
+    "preview": "npm run preview --workspace @mycomfyui/web",
+    "typecheck": "npm run typecheck --workspace @mycomfyui/web",
+    "api:dev": "uv run --project apps/api uvicorn mycomfyui_api.main:app --reload",
+    "api:openapi": "uv run --project apps/api python apps/api/scripts/export_openapi.py",
+    "api:types": "openapi-typescript contracts/openapi/openapi.json --output apps/web/src/api/schema.d.ts",
+    "contracts": "npm run api:openapi && npm run api:types"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  }
+}
