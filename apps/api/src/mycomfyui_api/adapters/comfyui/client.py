@@ -326,12 +326,17 @@ class ComfyUIClient:
             dequeued = await self._client.post("/queue", json={"delete": [prompt_id]})
         except httpx.HTTPError:
             logger.warning(
-                "順番待ちからの削除を送れませんでした。prompt_id=%s", prompt_id
+                "順番待ちからの削除を送れませんでした。中断は成功しています。"
+                "同じpromptが待機列に残っていないかComfyUIの/queueで確認してください。"
+                "prompt_id=%s",
+                prompt_id,
             )
         else:
             if dequeued.status_code >= httpx.codes.BAD_REQUEST:
                 logger.warning(
-                    "順番待ちからの削除が拒否されました(HTTP %s)。prompt_id=%s",
+                    "順番待ちからの削除が拒否されました(HTTP %s)。中断は成功しています。"
+                    "同じpromptが待機列に残っていないかComfyUIの/queueで確認してください。"
+                    "prompt_id=%s",
                     dequeued.status_code,
                     prompt_id,
                 )

@@ -26,6 +26,15 @@ MAX_SEED = 2**64 - 1
 #: seedの自動採番を指示する値。
 AUTO_SEED = -1
 
+#: 出力ファイル名の接頭辞に使える文字。拒否したい文字を列挙するのではなく、使える
+#: 文字だけを許す。NUL文字や全角の区切り文字のような、想定していない表現を残さない。
+FILE_PREFIX_ALLOWED_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+)
+
+#: 出力ファイル名の接頭辞の長さ上限。
+FILE_PREFIX_MAX_LENGTH = 64
+
 
 class WorkflowError(ValueError):
     """テンプレートの構造、または注入する値が期待と合わない。"""
@@ -226,14 +235,19 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
         return value
     if value_type == "file_prefix":
         # SaveImageのfilename_prefixはComfyUI側でサブフォルダとして解釈される。
-        # 出力先をComfyUIのoutput配下から動かせないよう、区切り文字を拒否する。
+        # 出力先をComfyUIのoutput配下から動かせないよう、使える文字を限る。
         if not isinstance(value, str):
             raise WorkflowError(f"{name}は文字列で指定します。")
-        if not value.strip():
-            raise WorkflowError(f"{name}を空にできません。")
-        if "/" in value or "\\" in value or ".." in value:
+        if (
+            not value
+            or len(value) > FILE_PREFIX_MAX_LENGTH
+            or set(value) - FILE_PREFIX_ALLOWED_CHARS
+            or ".." in value
+        ):
             raise WorkflowError(
-                f"{name}にパス区切りと親ディレクトリ参照を含められません。"
+                f"{name}は英数字、ドット、アンダースコア、ハイフンだけで"
+                f"{FILE_PREFIX_MAX_LENGTH}文字以内で指定します。"
+                "親ディレクトリ参照は使えません。"
             )
         return value
     if value_type == "seed":

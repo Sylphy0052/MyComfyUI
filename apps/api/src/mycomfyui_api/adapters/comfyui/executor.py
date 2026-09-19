@@ -368,6 +368,14 @@ class ComfyUIExecutor:
                 continue
             options = await client.available_options(slot.node_class, slot.option_field)
             if not options:
+                # 選択肢が空になるのは、モデルが1つも置かれていない場合と、ComfyUIの
+                # 応答形式が想定と違う場合の両方がある。切り分けのため何を見たかを残す。
+                logger.warning(
+                    "%sの%sから選択肢を取得できませんでした。ComfyUIのモデル配置か"
+                    "object_infoの応答形式を確認してください。",
+                    slot.node_class,
+                    slot.option_field,
+                )
                 raise _PreflightError(
                     FAILURE_CODE_MODEL_NOT_FOUND,
                     f"ComfyUIから{slot.node_class}の選択肢を取得できず、"
@@ -386,7 +394,13 @@ class ComfyUIExecutor:
     async def _create_image_artifacts(
         self, job_id: str, stored: list[storage.StoredFile]
     ) -> None:
-        async with self._session_factory() as session:
+        """保存済みファイルをArtifactとして記録する。
+
+        commitまで終われば記録は確定している。sessionを閉じるときの失敗をそのまま
+        伝えると、呼び出し元が記録済みのファイルを消してしまうため、ここで止める。
+        """
+        session = self._session_factory()
+        try:
             created_at = schemas.now_iso()
             for item in stored:
                 session.add(
@@ -406,6 +420,15 @@ class ComfyUIExecutor:
                     )
                 )
             await session.commit()
+        finally:
+            try:
+                await session.close()
+            except Exception:
+                logger.warning(
+                    "Artifact記録後のsessionを閉じられませんでした。job_id=%s",
+                    job_id,
+                    exc_info=True,
+                )
 
 
 def _template_name(recipe: Recipe) -> str:

@@ -159,6 +159,16 @@ def _validate_against_input_schema(
             "このRecipeで指定できない変数です。",
             {"rejected": sorted(rejected), "allowed": sorted(schema)},
         )
+    malformed = sorted(
+        name for name, spec in schema.items() if not isinstance(spec, dict | str)
+    )
+    if malformed:
+        # 必須指定は`{"required": true}`で書く。`true`のような書き間違いを黙って
+        # 読み飛ばすと、必須チェックが効かないまま動いてしまう。
+        raise _validation_error(
+            "Recipeのinput_schemaの項目は、型名の文字列かobjectで書きます。",
+            {"malformed": malformed},
+        )
     missing = [
         name
         for name, spec in schema.items()
@@ -206,12 +216,16 @@ async def create_generation_job(
 
     job_id = schemas.new_id()
     stored = _store_workflow_snapshot(job_id, prepared.workflow)
-    job, workflow_artifact, manifest = _build_job_records(
-        job_id, payload, recipe, prepared, stored
-    )
-    await _persist_job_records(
-        session, job, workflow_artifact, manifest, stored.relative_path
-    )
+    # 書き出した後はどこで失敗してもスナップショットを残さない。レコードの組み立てと
+    # 永続化をまとめて囲み、後始末の無い隙間を作らない。
+    try:
+        job, workflow_artifact, manifest = _build_job_records(
+            job_id, payload, recipe, prepared, stored
+        )
+        await _persist_job_records(session, job, workflow_artifact, manifest)
+    except Exception:
+        storage.discard_artifacts([stored.relative_path])
+        raise
     return job
 
 
@@ -305,12 +319,11 @@ async def _persist_job_records(
     job: GenerationJob,
     workflow_artifact: Artifact,
     manifest: GenerationManifest,
-    snapshot_path: str,
 ) -> None:
     """Job、Workflow Artifact、Manifestの順にflushして確定する。
 
     遅延検証はJobとManifestの相互参照だけに必要で、Artifactの参照はこの順序で即時に
-    満たされる。確定できなければ、先に書いたスナップショットも残さない。
+    満たされる。スナップショットの後始末は呼び出し元が担う。
     """
     try:
         session.add(job)
@@ -322,11 +335,9 @@ async def _persist_job_records(
         await session.commit()
     except IntegrityError as error:
         await session.rollback()
-        storage.discard_artifacts([snapshot_path])
         raise _integrity_error(error) from error
     except Exception:
         await session.rollback()
-        storage.discard_artifacts([snapshot_path])
         raise
 
 
