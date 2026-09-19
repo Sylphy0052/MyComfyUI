@@ -8,9 +8,9 @@
 
 - IDはUUIDv7文字列とし、作成後に変更しない。
 - 時刻はUTCのRFC 3339文字列で記録する。
-- 外部ファイル参照は保存先ルートからの相対パスに限定し、絶対パスと親ディレクトリ参照を保存しない。
+- `relative_path`として保存するローカルファイル参照は、常に`data_root`からの相対パスに限定する。絶対パスと親ディレクトリ参照を保存しない。
 - SHA-256は小文字16進数64文字で保存する。ファイル内容が変われば別のArtifactとして記録する。
-- Canon、Scene、Shot、入力素材の外部参照は`source_locator`、不変`revision`、repository相対`path`、`sha256`の組で固定する。Canon本文をSQLite、Manifest、Artifact領域へ複製しない。
+- Canon、Scene、Shot、入力素材の外部参照は`source_locator`、不変`revision`、repository相対`path`、`sha256`の組で固定する。Canon参照はこれに`anchor`を加え、`canon_id`でも識別する。Canon本文をSQLite、Manifest、Artifact領域へ複製しない。
 - `created_at`と作成時の値は更新しない。訂正、再実行、採否変更は後述の許可された可変項目または新規レコードで表す。
 
 ## 最小データSchema
@@ -38,16 +38,17 @@
 |項目|必須|内容|更新可否|
 |---|---|---|---|
 |`id`|必須|Artifact ID|不可|
-|`job_id`|必須|作成元Job ID|不可|
+|`job_id`|必須|作成元Job ID。`queued`、`running`を含む削除されていないJobを指せる|不可|
 |`kind`|必須|`image`、`video`、`audio`、`workflow`、`log`など|不可|
-|`relative_path`|必須|Artifact store内の相対パス|不可|
+|`relative_path`|必須|`data_root`基準の相対パス（例: `artifacts/<job-id>/output.png`）|不可|
 |`sha256`、`byte_size`、`media_type`|必須|内容識別と表示用メタデータ|不可|
+|`availability`|必須|`complete`または`incomplete`。利用可能な完全成果物か診断用の部分成果物か|不可|
 |`parent_artifact_id`|任意|派生元Artifact ID|不可|
 |`created_at`|必須|保存完了時刻|不可|
 |`decision`|必須|`undecided`、`accepted`、`rejected`|判断時のみ更新可|
 |`decision_at`|任意|`accepted`または`rejected`にした時刻|判断時のみ1回設定|
 
-`job_id`は成功したJobを指す。`parent_artifact_id`は同一Project内の既存Artifactを指し、循環参照は禁止する。`undecided`では`decision_at`をNULLとし、採否を設定するときは両項目を同一更新で確定する。保存済みファイルを置換しない。再出力は別Artifactとして記録する。
+`job_id`は生成前に作成済みのJobを指すため、Workflow Artifactは`queued`になる前に、出力Artifactは`running`中に保存できる。`succeeded`のJobに属するArtifactはすべて`complete`とし、`failed`または`cancelled`のJobに残す診断用の部分Artifactは`incomplete`とする。`incomplete`は通常の生成結果として表示・採否判定しない。`parent_artifact_id`は同一Project内の既存Artifactを指し、循環参照は禁止する。`undecided`では`decision_at`をNULLとし、採否を設定するときは両項目を同一更新で確定する。保存済みファイルを置換しない。再出力は別Artifactとして記録する。
 
 ### GenerationManifest
 
@@ -58,11 +59,11 @@
 |`engine`、`engine_version`|必須|実行Backendとバージョン|不可|
 |`model`|必須|モデル識別子、版、SHA-256|不可|
 |`seed`、`resolved_prompt`、`parameters`|必須|解決済みseed、最終prompt、実行パラメータ|不可|
-|`input_refs`|必須|入力素材、Scene、Shot、Canonの不変参照|不可|
+|`input_refs`|必須|入力素材、Scene、Shot、Canonの不変参照または入力cache参照|不可|
 |`workflow_artifact_id`|必須|実行時Workflow JSONのArtifact ID|不可|
 |`created_at`|必須|スナップショット確定時刻|不可|
 
-ManifestはJobごとに1件とする。`parameters`はJSON object、`input_refs`は不変参照の配列として保存する。Workflow JSONはArtifact storeへ書き出し、そのSHA-256とArtifact IDで参照する。ManifestとArtifactの内容は変更しない。
+ManifestはJobごとに1件とする。`parameters`はJSON objectとする。`input_refs`は、Canonなどの`source_locator`、`revision`、`path`、`sha256`を持つ不変参照、またはGit管理外の利用者素材用の`kind: "cached_input"`、`relative_path: "inputs/<sha256>/..."`、`sha256`、`media_type`、`byte_size`を持つ入力cache参照の配列として保存する。入力cache参照の`relative_path`も`data_root`基準とする。Workflow JSONはArtifact storeへ書き出し、そのSHA-256とArtifact IDで参照する。ManifestとArtifactの内容は変更しない。
 
 ### Recipe
 
@@ -96,6 +97,7 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 
 - `GenerationJob.manifest_id`と`GenerationManifest.job_id`は1対1で一致する。
 - `Artifact.job_id`、`GenerationManifest.workflow_artifact_id`、各親IDは削除連鎖を行わない外部キーとする。
+- `succeeded`のJobには`complete`なWorkflow Artifactと少なくとも1件の`complete`な主出力Artifactを関連付ける。`failed`または`cancelled`のJobに関連付ける部分出力は`incomplete`に限定する。
 - JobとArtifactの親子関係はProjectをまたがない。
 - 外部参照の`revision`と`sha256`の検証に失敗した場合、記録済み値を更新せず、検証失敗としてJobを失敗させるか再実行不能として扱う。
 
@@ -105,6 +107,7 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 stateDiagram-v2
     [*] --> queued: JobとManifestを確定
     queued --> running: GPUキューが開始
+    queued --> failed: 事前検証または起動に失敗
     queued --> cancelled: 実行前の取消を確定
     running --> succeeded: 全Artifactを保存・検証
     running --> failed: Backendまたは検証が失敗
@@ -119,7 +122,7 @@ stateDiagram-v2
 
 |状態|意味|遷移条件|
 |---|---|---|
-|`queued`|Manifest確定済みでGPU待ち|作成時の初期状態。取消を確定すれば`cancelled`、実行を開始すれば`running`。|
+|`queued`|Manifest確定済みでGPU待ち|作成時の初期状態。取消を確定すれば`cancelled`、事前検証またはBackend起動に失敗すれば`failed`、実行を開始すれば`running`。|
 |`running`|Backendが実行中|Backend開始を確認してから設定する。出力を保存・検証できれば`succeeded`、失敗なら`failed`、取消要求を受理すれば`cancelling`。|
 |`cancelling`|停止要求をBackendへ送信済み|停止確認後に`cancelled`。停止前に完全な出力が保存された場合だけ`succeeded`。停止処理の失敗は`failed`。|
 |`succeeded`|出力とManifestの整合性を確認済み|終端状態。少なくとも1件の主出力ArtifactとWorkflow Artifactが必要。|
@@ -157,7 +160,7 @@ Regenerate with Current Canonは元Jobの派生Jobを作り、Scene、Shot、Can
 
 ## Canon更新警告
 
-Artifact一覧と再実行画面は、Manifestの各Canon参照と現在の参照APIから解決した参照を比較する。`revision`、`path`、`sha256`のいずれかが異なる場合、Canon更新ありと表示する。警告は記録済みManifestやArtifactを変更せず、Exact Replayの入力を現在値へ切り替えない。
+Artifact一覧と再実行画面は、Manifestの各Canon参照と現在の参照APIから解決した参照を比較する。`source_locator`、`revision`、`path`、`sha256`、`anchor`を含む完全な不変参照、またはこの組から参照契約どおり算出した`canon_id`が異なる場合、Canon更新ありと表示する。警告は記録済みManifestやArtifactを変更せず、Exact Replayの入力を現在値へ切り替えない。
 
 ## 保存先と保持方針
 
@@ -190,6 +193,6 @@ Gitで管理するのはソース、Schema、設計文書、Workflow template、
 ### 保持と削除
 
 - `succeeded`のJob、Manifest、Artifact、ApprovalLogは利用者が明示削除するまで保持する。削除機能は後続Issueで設計し、初期版ではDBの親レコードだけを削除する操作を提供しない。
-- `failed`と`cancelled`のJobも診断とlineageのため保持する。部分Artifactは`incomplete`として記録できるが、成功Artifactとして扱わない。
+- `failed`と`cancelled`のJobも診断とlineageのため保持する。部分Artifactは`availability: incomplete`として記録できるが、通常の生成結果および成功Artifactとして扱わない。
 - `tmp/<job-id>/`だけは終端状態の確定後に削除できる。削除失敗はJob結果を上書きせず、診断ログへ記録する。
 - Artifactの完全削除は、DBレコード、実ファイル、派生関係、再実行可能性に影響するため、対象一覧と影響を確認する明示操作に限定する。
