@@ -1,0 +1,405 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ApiError, api } from "../api/client";
+import type {
+  AgentDecision,
+  AgentProposal,
+  AgentProposalKind,
+  AgentProvider,
+  ApprovalLog,
+  GenerationJob,
+  Recipe,
+} from "../api/client";
+
+/**
+ * 提案の種別。`image_prompt` だけが承認後に生成 Job の投入へつながる。
+ * 他の種別は表示だけで、ai-media への書き込みと Recipe 登録は行わない。
+ */
+const KINDS: { value: AgentProposalKind; label: string; needsShot: boolean }[] = [
+  { value: "image_prompt", label: "画像prompt案 (承認で投入可)", needsShot: true },
+  { value: "shot_breakdown", label: "Shot構成案 (表示のみ)", needsShot: false },
+  {
+    value: "reference_candidates",
+    label: "参照画像候補 (表示のみ)",
+    needsShot: false,
+  },
+  { value: "recipe_draft", label: "Recipe案 (表示のみ)", needsShot: true },
+];
+
+const STATE_LABELS: Record<string, string> = {
+  proposed: "提案",
+  approved: "承認済み",
+  rejected: "却下",
+  applied: "適用済み",
+  failed: "取得失敗",
+};
+
+type Props = {
+  projectId: string | null;
+  sceneId: string | null;
+  shotId: string | null;
+  recipes: Recipe[];
+  onAppliedJob: (job: GenerationJob) => void;
+};
+
+function describe(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.requestId
+      ? `${error.message} (${error.code} / request_id=${error.requestId})`
+      : `${error.message} (${error.code})`;
+  }
+  return String(error);
+}
+
+/**
+ * エージェント提案と承認境界の画面。
+ *
+ * 提案の取得は副作用を持たないため、そのまま実行できる。生成 Job の投入は承認と適用を
+ * 分けて操作させ、承認しただけでは何も実行しない。対象と投入内容は適用の前に表示する。
+ */
+export function AgentPanel({
+  projectId,
+  sceneId,
+  shotId,
+  recipes,
+  onAppliedJob,
+}: Props) {
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [kind, setKind] = useState<AgentProposalKind>("image_prompt");
+  const [recipeId, setRecipeId] = useState<string>("");
+  const [instruction, setInstruction] = useState("");
+  const [proposals, setProposals] = useState<AgentProposal[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [logs, setLogs] = useState<ApprovalLog[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const list = await api.listAgentProviders();
+        if (active) setProviders(list);
+      } catch (cause) {
+        // Provider 一覧が取れなくても、履歴の確認と他機能は続けられる。
+        if (active) setError(describe(cause));
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (recipeId === "" && recipes.length > 0) setRecipeId(recipes[0].id);
+  }, [recipes, recipeId]);
+
+  const refreshProposals = useCallback(async () => {
+    if (!sceneId) {
+      setProposals([]);
+      return;
+    }
+    const list = await api.listAgentProposals({ sceneId, limit: 50 });
+    setProposals(list);
+  }, [sceneId]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        if (!sceneId) {
+          if (active) setProposals([]);
+          return;
+        }
+        const list = await api.listAgentProposals({ sceneId, limit: 50 });
+        if (active) setProposals(list);
+      } catch (cause) {
+        if (active) setError(describe(cause));
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [sceneId]);
+
+  const selected = useMemo(
+    () => proposals.find((proposal) => proposal.id === selectedId) ?? null,
+    [proposals, selectedId],
+  );
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!selectedId) {
+        if (active) setLogs([]);
+        return;
+      }
+      try {
+        const list = await api.listApprovalLogs({ subjectId: selectedId });
+        if (active) setLogs(list);
+      } catch (cause) {
+        if (active) setError(describe(cause));
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [selectedId]);
+
+  const selectedKind = KINDS.find((entry) => entry.value === kind);
+  const needsRecipe = kind === "image_prompt";
+  const disabled =
+    busy ||
+    !projectId ||
+    !sceneId ||
+    (selectedKind?.needsShot === true && !shotId) ||
+    (needsRecipe && !recipeId);
+
+  const request = async () => {
+    if (!projectId || !sceneId) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const proposal = await api.createAgentProposal({
+        kind,
+        project_id: projectId,
+        scene_id: sceneId,
+        shot_id: selectedKind?.needsShot ? shotId : null,
+        recipe_id: needsRecipe || kind === "recipe_draft" ? recipeId : null,
+        instruction,
+      });
+      setSelectedId(proposal.id);
+      setNotice("提案を取得した。生成Jobは投入していない。");
+      await refreshProposals();
+    } catch (cause) {
+      setError(describe(cause));
+      // 取得に失敗した提案も履歴へ残る。一覧を取り直して失敗記録を見せる。
+      await refreshProposals().catch(() => undefined);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const decide = async (decision: AgentDecision) => {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.decideAgentProposal(selected.id, decision);
+      setNotice(
+        decision === "approved"
+          ? "承認を記録した。適用するまで生成Jobは投入されない。"
+          : "却下を記録した。",
+      );
+      await refreshProposals();
+      setLogs(await api.listApprovalLogs({ subjectId: selected.id }));
+    } catch (cause) {
+      setError(describe(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const apply = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const job = await api.applyAgentProposal(selected.id);
+      setNotice(`承認済みの提案を適用した。job_id=${job.id}`);
+      onAppliedJob(job);
+      await refreshProposals();
+    } catch (cause) {
+      setError(describe(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const operation = selected?.planned_operation ?? null;
+  const recipeOfProposal = recipes.find(
+    (recipe) => recipe.id === selected?.recipe_id,
+  );
+
+  return (
+    <section className="panel">
+      <h2>エージェント</h2>
+      <p className="muted">
+        提案の取得は生成やファイルに触らない。副作用のある操作は対象と内容を確認し、
+        承認したうえで適用する。
+      </p>
+
+      <ul className="muted">
+        {providers.map((provider) => (
+          <li key={provider.id}>
+            {provider.label} ({provider.id}):{" "}
+            {provider.available ? "利用可能" : "利用不可"}
+          </li>
+        ))}
+      </ul>
+
+      <label>
+        提案の種別
+        <select
+          value={kind}
+          onChange={(event) =>
+            setKind(event.target.value as AgentProposalKind)
+          }
+        >
+          {KINDS.map((entry) => (
+            <option key={entry.value} value={entry.value}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label>
+        Recipe
+        <select
+          value={recipeId}
+          onChange={(event) => setRecipeId(event.target.value)}
+        >
+          {recipes.map((recipe) => (
+            <option key={recipe.id} value={recipe.id}>
+              {recipe.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label>
+        指示
+        <textarea
+          value={instruction}
+          rows={3}
+          onChange={(event) => setInstruction(event.target.value)}
+          placeholder="例: 暗室の赤色光を主光源にする。"
+        />
+      </label>
+
+      <button type="button" disabled={disabled} onClick={request}>
+        提案を取得
+      </button>
+
+      {error && <p className="error">{error}</p>}
+      {notice && <p className="muted">{notice}</p>}
+
+      <h3>提案履歴</h3>
+      {proposals.length === 0 && <p className="muted">提案はまだない。</p>}
+      <ul>
+        {proposals.map((proposal) => (
+          <li key={proposal.id}>
+            <button
+              type="button"
+              onClick={() => setSelectedId(proposal.id)}
+              aria-pressed={proposal.id === selectedId}
+            >
+              {STATE_LABELS[proposal.state] ?? proposal.state} / {proposal.kind}{" "}
+              / {proposal.provider_id} / {proposal.created_at}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {selected && (
+        <div>
+          <h3>提案の内容</h3>
+          <p className="muted">
+            {selected.kind} / {STATE_LABELS[selected.state] ?? selected.state}
+            {selected.model ? ` / model=${selected.model}` : ""}
+          </p>
+          {selected.failure_code && (
+            <p className="error">
+              {selected.failure_code}: {selected.failure_message}
+            </p>
+          )}
+          {selected.output && (
+            <pre>{JSON.stringify(selected.output, null, 2)}</pre>
+          )}
+
+          <h3>入力コンテキスト</h3>
+          <p className="muted">
+            Providerへ渡した内容。APIキーと認証情報は含めない。
+          </p>
+          <pre>{JSON.stringify(selected.request_context, null, 2)}</pre>
+
+          {operation ? (
+            <div>
+              <h3>承認が必要な操作</h3>
+              <ul>
+                <li>操作: {operation.type}</li>
+                <li>扱い: {operation.effect}</li>
+                <li>
+                  対象: project={String(operation.target.project_id)} / scene=
+                  {String(operation.target.scene_id)} / shot=
+                  {String(operation.target.shot_id)}
+                </li>
+                <li>
+                  Recipe:{" "}
+                  {recipeOfProposal?.name ?? String(operation.target.recipe_id)}
+                </li>
+                <li>digest: {operation.digest}</li>
+              </ul>
+              <h4>投入する入力</h4>
+              <pre>{JSON.stringify(operation.payload, null, 2)}</pre>
+              {recipeOfProposal && (
+                <>
+                  <h4>Recipeの既定値</h4>
+                  <pre>{JSON.stringify(recipeOfProposal.defaults, null, 2)}</pre>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="muted">
+              この提案は副作用のある操作を伴わない。承認と適用の対象にならない。
+            </p>
+          )}
+
+          <div>
+            <button
+              type="button"
+              disabled={busy || selected.state !== "proposed" || !operation}
+              onClick={() => decide("approved")}
+            >
+              承認する
+            </button>
+            <button
+              type="button"
+              disabled={busy || selected.state !== "proposed"}
+              onClick={() => decide("rejected")}
+            >
+              却下する
+            </button>
+            <button
+              type="button"
+              disabled={busy || selected.state !== "approved"}
+              onClick={apply}
+            >
+              適用して生成Jobを投入
+            </button>
+          </div>
+          {selected.applied_job_id && (
+            <p className="muted">投入済みJob: {selected.applied_job_id}</p>
+          )}
+
+          <h3>承認履歴</h3>
+          {logs.length === 0 && <p className="muted">判断の記録はまだない。</p>}
+          <ul>
+            {logs.map((log) => (
+              <li key={log.id}>
+                {log.decided_at} / {log.decision} / {log.actor_type}:
+                {log.actor_id} / {String(log.requested_operation.type)}
+                {log.expires_at ? ` / 期限=${log.expires_at}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}

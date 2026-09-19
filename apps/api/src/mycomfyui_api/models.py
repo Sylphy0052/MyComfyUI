@@ -177,3 +177,50 @@ class ApprovalLog(Base):
     actor_id: Mapped[str] = mapped_column(Text, nullable=False)
     decided_at: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AgentProposal(Base):
+    """Agent提案の履歴。提案内容と入力コンテキストは作成後に書き換えない。
+
+    提案の取得自体は副作用を持たない。承認と適用は`state`だけを進め、`output`と
+    `request_context`を更新しない。
+    """
+
+    __tablename__ = "agent_proposal"
+    __table_args__ = (
+        CheckConstraint(
+            "kind in ('shot_breakdown','image_prompt','reference_candidates','recipe_draft')",
+            name="ck_agent_proposal_kind",
+        ),
+        CheckConstraint(
+            "state in ('proposed','approved','rejected','applied','failed')",
+            name="ck_agent_proposal_state",
+        ),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    provider_id: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    state: Mapped[str] = mapped_column(Text, nullable=False)
+    project_id: Mapped[str] = mapped_column(Text, nullable=False)
+    scene_id: Mapped[str] = mapped_column(Text, nullable=False)
+    shot_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 承認後に投入するJobのRecipe。副作用のある操作を伴う提案でだけ設定する。
+    recipe_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("recipe.id"), nullable=True
+    )
+    instruction: Mapped[str] = mapped_column(Text, nullable=False)
+    # Providerへ渡した入力。許可した表示用フィールドだけで組み立てる。
+    request_context: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # 提案本体。取得に失敗した提案はNULLのまま残す。
+    output: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 実行の実測値。費用、所要時間、往復回数だけを残す。
+    usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    applied_job_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=True
+    )
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    decided_at: Mapped[str | None] = mapped_column(Text, nullable=True)

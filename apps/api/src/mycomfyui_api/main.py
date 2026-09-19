@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from mycomfyui_api.adapters.agent import create_agent_provider
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
 from mycomfyui_api.adapters.comfyui.executor import ComfyUIExecutor
 from mycomfyui_api.bootstrap import ensure_default_recipes
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
     worker.start()
     app.state.queue_worker = worker
     app.state.reference_source = None
+    app.state.agent_provider = None
     # ワーカーを起動した後は、以降どこで失敗しても後始末まで進める。参照Adapterの
     # 生成はfixtureの読み込みで失敗しうるため、tryの外へ出さない。
     try:
@@ -55,11 +57,16 @@ async def lifespan(app: FastAPI):
         app.state.reference_source = create_reference_source(
             settings.aimedia_base_url, settings.aimedia_fixture_path
         )
+        # 提案Providerは接続を張らない。CLIが無い環境でも起動を止めず、提案を
+        # 要求したときに初めて失敗する。
+        app.state.agent_provider = create_agent_provider(settings)
         yield
     finally:
         await worker.stop()
         if app.state.reference_source is not None:
             await app.state.reference_source.aclose()
+        if app.state.agent_provider is not None:
+            await app.state.agent_provider.aclose()
         await dispose_engine()
 
 

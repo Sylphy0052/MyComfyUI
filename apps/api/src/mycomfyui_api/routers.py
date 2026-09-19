@@ -7,11 +7,14 @@ from typing import Annotated, Any, TypeVar
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from mycomfyui_api import provenance, schemas, storage
+from mycomfyui_api import approvals, provenance, schemas, storage
+from mycomfyui_api.adapters.agent import base as agent_base
+from mycomfyui_api.adapters.agent import proposals
+from mycomfyui_api.adapters.agent.base import AgentProvider
 from mycomfyui_api.adapters.aimedia.client import (
     AiMediaNotFound,
     AiMediaUnavailable,
@@ -22,6 +25,7 @@ from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
 from mycomfyui_api.db import get_session
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
+    AgentProposal,
     ApprovalLog,
     Artifact,
     Base,
@@ -31,6 +35,7 @@ from mycomfyui_api.models import (
 )
 from mycomfyui_api.queue import JobQueueWorker
 from mycomfyui_api.references import get_reference_source
+from mycomfyui_api.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -726,6 +731,16 @@ async def update_artifact_decision(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_approval_log(payload: schemas.ApprovalLogCreate, session: SessionDep):
+    """任意の承認記録を追記する。
+
+    Agent提案の承認はこの経路では作れない。操作内容のdigestを外から持ち込めると、
+    提案の内容と対応しない承認を作って適用できてしまうため、専用Endpointだけに限る。
+    """
+    if payload.subject_type == approvals.SUBJECT_TYPE_AGENT_PROPOSAL:
+        raise _validation_error(
+            "Agent提案の承認は提案の判断Endpointから記録してください。",
+            {"subject_type": payload.subject_type},
+        )
     approval_log = ApprovalLog(
         id=schemas.new_id(),
         decided_at=schemas.now_iso(),
@@ -1168,3 +1183,473 @@ async def get_job_lineage(job_id: str, session: SessionDep):
         artifacts=[schemas.ArtifactRead.model_validate(item) for item in artifacts],
         truncated=ancestors_truncated or descendants_truncated,
     )
+
+
+def get_agent_provider(request: Request) -> AgentProvider:
+    return request.app.state.agent_provider
+
+
+AgentProviderDep = Annotated[AgentProvider, Depends(get_agent_provider)]
+
+#: 提案の入力へ載せる既存Artifactの取得上限。
+AGENT_CONTEXT_ARTIFACT_LIMIT = 20
+
+
+@router.get("/agent-providers", response_model=list[schemas.AgentProviderRead])
+async def list_agent_providers(provider: AgentProviderDep):
+    """設定済みProviderを返す。接続先と認証情報は返さない。"""
+    return [
+        schemas.AgentProviderRead(
+            id=provider.id, label=provider.label, available=await provider.available()
+        )
+    ]
+
+
+async def _fetch_envelopes(
+    source: ReferenceSource, project_id: str, scene_id: str, shot_id: str | None
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """提案の入力に使うScene/Shotを参照APIから取得する。
+
+    提案はJobを作らないため不変参照までは固定しない。取得できないときは提案も作らない。
+    現在の内容を読めないまま提案すると、どの内容に対する提案か後から説明できない。
+    """
+    try:
+        scene_envelope = await source.get_scene(project_id, scene_id)
+        shot_envelope = (
+            await source.get_shot(project_id, scene_id, shot_id)
+            if shot_id is not None
+            else None
+        )
+    except AiMediaNotFound as error:
+        raise ApiError(
+            "REFERENCE_NOT_FOUND",
+            str(error),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={
+                "project_id": project_id,
+                "scene_id": scene_id,
+                "shot_id": shot_id,
+            },
+        ) from error
+    except AiMediaUnavailable as error:
+        logger.warning("ai-media参照APIを利用できません。", exc_info=error)
+        raise ApiError(
+            "REFERENCE_UNAVAILABLE",
+            "ai-media参照APIを利用できませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+    return scene_envelope, shot_envelope
+
+
+async def _agent_context(
+    session: AsyncSession,
+    payload: schemas.AgentProposalCreate,
+    recipe: Recipe | None,
+    scene_envelope: dict[str, Any],
+    shot_envelope: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Providerへ渡す入力コンテキストを許可リストで組み立てる。
+
+    渡す項目は`proposals`側で列挙する。ここでは対象の取得だけを行い、参照APIの応答を
+    そのまま流さない。秘密情報、環境変数、ローカル絶対パスは含めない。
+    """
+    context: dict[str, Any] = {
+        "scene": proposals.scene_context(scene_envelope.get("data")),
+    }
+    if shot_envelope is not None:
+        context["shot"] = proposals.shot_context(shot_envelope.get("data"))
+    if recipe is not None:
+        context["recipe"] = proposals.recipe_context(recipe)
+    if payload.kind == "reference_candidates":
+        jobs = select(GenerationJob.id).where(
+            GenerationJob.scene_ref["id"].as_string() == payload.scene_id
+        )
+        query = (
+            select(Artifact)
+            .where(Artifact.job_id.in_(jobs))
+            .where(Artifact.kind == "image")
+            .where(Artifact.availability == "complete")
+            .order_by(Artifact.created_at.desc(), Artifact.id.asc())
+            .limit(AGENT_CONTEXT_ARTIFACT_LIMIT)
+        )
+        result = await session.execute(query)
+        context["artifacts"] = proposals.artifact_context(list(result.scalars().all()))
+    return context
+
+
+def _planned_operation(proposal: AgentProposal) -> dict[str, Any] | None:
+    """提案から、承認後に実行する操作を組み立てる。
+
+    提案の内容から毎回組み立て直す。承認時に記録したdigestと突き合わせるため、提案が
+    差し替わればdigestも変わり、古い承認では実行できない。
+
+    副作用のある操作へつながるのは`image_prompt`だけとする。Shot構成案、参照候補、
+    Recipe案は表示だけで、ai-mediaへの書き込みとRecipe登録は本Issueの範囲外とする。
+    """
+    if proposal.kind != "image_prompt":
+        return None
+    output = proposal.output
+    if not isinstance(output, dict) or proposal.recipe_id is None:
+        return None
+    if proposal.shot_id is None:
+        return None
+    return {
+        "type": approvals.OPERATION_GENERATION_JOB_CREATE,
+        "target": {
+            "project_id": proposal.project_id,
+            "scene_id": proposal.scene_id,
+            "shot_id": proposal.shot_id,
+            "recipe_id": proposal.recipe_id,
+        },
+        "payload": {
+            "kind": "image",
+            "inputs": {
+                "positive_prompt": output.get("positive_prompt"),
+                "negative_prompt": output.get("negative_prompt", ""),
+            },
+        },
+    }
+
+
+def _proposal_read(proposal: AgentProposal) -> schemas.AgentProposalRead:
+    """提案の応答。適用予定の操作とそのdigestを一緒に返す。
+
+    画面は対象と内容をこの値で表示し、同じdigestの承認だけが実行へ進む。
+    """
+    read = schemas.AgentProposalRead.model_validate(proposal)
+    operation = _planned_operation(proposal)
+    if operation is None:
+        return read
+    return read.model_copy(
+        update={
+            "planned_operation": schemas.PlannedOperation(
+                type=operation["type"],
+                effect=approvals.effect_of(operation["type"]),
+                target=operation["target"],
+                payload=operation["payload"],
+                digest=approvals.operation_digest(operation),
+            )
+        }
+    )
+
+
+def _validate_agent_recipe(recipe: Recipe, kind: str) -> None:
+    """承認後にJobを作れるRecipeかを、提案を取る前に確かめる。"""
+    if kind != "image_prompt":
+        return
+    if recipe.kind != "image" or recipe.engine != ENGINE_COMFYUI:
+        raise _validation_error(
+            "image_promptの提案には画像生成のRecipeを指定してください。",
+            {"recipe_kind": recipe.kind, "engine": recipe.engine},
+        )
+
+
+def _agent_error(error: agent_base.AgentError) -> ApiError:
+    """提案Adapterの失敗を、画面が種別で判定できるEnvelopeへ変換する。"""
+    if isinstance(error, agent_base.AgentInvalidResponse):
+        return ApiError(
+            "AGENT_INVALID_RESPONSE",
+            "提案Providerの応答を提案として扱えませんでした。",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
+    return ApiError(
+        "AGENT_UNAVAILABLE",
+        f"提案Providerを利用できませんでした: {error}",
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
+
+
+async def _record_proposal_failure(
+    session: AsyncSession, proposal: AgentProposal, error: agent_base.AgentError
+) -> None:
+    """失敗した提案も履歴へ残す。記録に失敗しても提案の失敗を返す。
+
+    Providerの不調で履歴管理まで止めないため、ここでの失敗は呼び出し元へ伝えない。
+    """
+    proposal.state = "failed"
+    proposal.failure_code = (
+        "AGENT_INVALID_RESPONSE"
+        if isinstance(error, agent_base.AgentInvalidResponse)
+        else "AGENT_UNAVAILABLE"
+    )
+    proposal.failure_message = str(error)[:500]
+    # rollback後はORM objectの属性を参照できないため、ログへ出すIDを先に取り出す。
+    proposal_id = proposal.id
+    session.add(proposal)
+    try:
+        await session.commit()
+    except SQLAlchemyError:
+        await session.rollback()
+        logger.warning("失敗した提案を記録できません。proposal_id=%s", proposal_id)
+
+
+@router.post(
+    "/agent-proposals",
+    response_model=schemas.AgentProposalRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_agent_proposal(
+    payload: schemas.AgentProposalCreate,
+    session: SessionDep,
+    source: ReferenceSourceDep,
+    provider: AgentProviderDep,
+):
+    """提案を取得して履歴へ残す。生成Jobは作らない。
+
+    提案の取得は副作用を持たない操作として承認を求めない。ここで作るのは提案の記録
+    だけで、Job、Artifact、Manifestには触れない。
+
+    Providerが失敗した場合も提案を`failed`として残し、他の機能は止めない。
+    """
+    recipe: Recipe | None = None
+    if payload.recipe_id is not None:
+        recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
+        _validate_agent_recipe(recipe, payload.kind)
+    scene_envelope, shot_envelope = await _fetch_envelopes(
+        source, payload.project_id, payload.scene_id, payload.shot_id
+    )
+    context = await _agent_context(
+        session, payload, recipe, scene_envelope, shot_envelope
+    )
+    proposal = AgentProposal(
+        id=schemas.new_id(),
+        provider_id=provider.id,
+        kind=payload.kind,
+        state="proposed",
+        project_id=payload.project_id,
+        scene_id=payload.scene_id,
+        shot_id=payload.shot_id,
+        recipe_id=payload.recipe_id,
+        instruction=payload.instruction,
+        request_context=context,
+        output=None,
+        usage=None,
+        model=None,
+        failure_code=None,
+        failure_message=None,
+        applied_job_id=None,
+        created_at=schemas.now_iso(),
+        decided_at=None,
+    )
+    request = agent_base.ProposalRequest(
+        kind=payload.kind, instruction=payload.instruction, context=context
+    )
+    try:
+        result = await provider.propose(request)
+    except agent_base.AgentError as error:
+        await _record_proposal_failure(session, proposal, error)
+        raise _agent_error(error) from error
+    proposal.output = result.output
+    proposal.usage = result.usage or None
+    proposal.model = result.model
+    session.add(proposal)
+    await _commit(session)
+    return _proposal_read(proposal)
+
+
+@router.get("/agent-proposals", response_model=list[schemas.AgentProposalRead])
+async def list_agent_proposals(
+    session: SessionDep,
+    scene_id: str | None = None,
+    shot_id: str | None = None,
+    state: schemas.AgentProposalState | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    """提案履歴の一覧。既定は作成の新しい順に返す。"""
+    query = select(AgentProposal).order_by(
+        AgentProposal.created_at.desc(), AgentProposal.id.asc()
+    )
+    if scene_id is not None:
+        query = query.where(AgentProposal.scene_id == scene_id)
+    if shot_id is not None:
+        query = query.where(AgentProposal.shot_id == shot_id)
+    if state is not None:
+        query = query.where(AgentProposal.state == state)
+    result = await session.execute(query.limit(limit).offset(offset))
+    return [_proposal_read(proposal) for proposal in result.scalars().all()]
+
+
+@router.get("/agent-proposals/{proposal_id}", response_model=schemas.AgentProposalRead)
+async def get_agent_proposal(proposal_id: str, session: SessionDep):
+    proposal = await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
+    return _proposal_read(proposal)
+
+
+def _operation_not_allowed(error: approvals.OperationNotAllowed) -> ApiError:
+    return ApiError(
+        "OPERATION_NOT_ALLOWED",
+        str(error),
+        status_code=status.HTTP_403_FORBIDDEN,
+    )
+
+
+@router.post(
+    "/agent-proposals/{proposal_id}/decision",
+    response_model=schemas.AgentProposalRead,
+)
+async def decide_agent_proposal(
+    proposal_id: str, payload: schemas.AgentProposalDecision, session: SessionDep
+):
+    """提案への承認・却下をApprovalLogへ追記する。
+
+    承認しただけでは何も実行しない。実行は適用の要求で明示的に行う。承認時点の操作
+    内容のdigestを記録し、提案や対象が変わった後の承認を使い回せないようにする。
+    """
+    proposal = await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
+    if proposal.state != "proposed":
+        raise ApiError(
+            "PROPOSAL_NOT_DECIDABLE",
+            "この提案はすでに判断済みか、判断できない状態です。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"state": proposal.state},
+        )
+    operation = _planned_operation(proposal)
+    if payload.decision == "approved":
+        if operation is None:
+            raise _validation_error(
+                "この提案は副作用のある操作を伴わないため、承認の対象になりません。",
+                {"kind": proposal.kind},
+            )
+        try:
+            approvals.require_executable(operation["type"])
+        except approvals.OperationNotAllowed as error:
+            raise _operation_not_allowed(error) from error
+    decided_at = schemas.now_iso()
+    settings = get_settings()
+    approval_log = ApprovalLog(
+        id=schemas.new_id(),
+        subject_type=approvals.SUBJECT_TYPE_AGENT_PROPOSAL,
+        subject_id=proposal.id,
+        requested_operation=(
+            approvals.requested_operation(operation)
+            if operation is not None
+            else {"type": approvals.OPERATION_AGENT_PROPOSE, "kind": proposal.kind}
+        ),
+        decision=payload.decision,
+        actor_type="user",
+        actor_id=payload.actor_id,
+        decided_at=decided_at,
+        expires_at=(
+            approvals.expires_at(decided_at, settings.agent_approval_ttl_seconds)
+            if payload.decision == "approved"
+            else None
+        ),
+    )
+    session.add(approval_log)
+    proposal.state = "approved" if payload.decision == "approved" else "rejected"
+    proposal.decided_at = decided_at
+    await _commit(session)
+    return _proposal_read(proposal)
+
+
+async def _latest_approval(
+    session: AsyncSession, proposal_id: str
+) -> ApprovalLog | None:
+    """提案に対する直近の承認記録を取る。ApprovalLogは追記専用のため更新しない。"""
+    result = await session.execute(
+        select(ApprovalLog)
+        .where(ApprovalLog.subject_type == approvals.SUBJECT_TYPE_AGENT_PROPOSAL)
+        .where(ApprovalLog.subject_id == proposal_id)
+        .order_by(ApprovalLog.decided_at.desc(), ApprovalLog.id.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+@router.post(
+    "/agent-proposals/{proposal_id}/apply",
+    response_model=schemas.GenerationJobRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def apply_agent_proposal(
+    proposal_id: str, session: SessionDep, source: ReferenceSourceDep
+):
+    """承認済みの提案を実行する。ここでだけ生成Jobを作る。
+
+    実行直前に操作内容のdigestを組み立て直し、承認記録と突き合わせる。対象や内容が
+    変わっていれば実行しない。適用は1回だけとし、`approved`からの条件付き更新で
+    二重投入を防ぐ。
+    """
+    proposal = await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
+    operation = _planned_operation(proposal)
+    if operation is None:
+        raise _validation_error(
+            "この提案には実行できる操作がありません。", {"kind": proposal.kind}
+        )
+    try:
+        approvals.require_executable(operation["type"])
+    except approvals.OperationNotAllowed as error:
+        raise _operation_not_allowed(error) from error
+    record = await _latest_approval(session, proposal.id)
+    try:
+        approvals.verify(
+            record, operation, now=schemas.now_iso(), subject_id=proposal.id
+        )
+    except approvals.ApprovalInvalid as error:
+        raise ApiError(
+            error.code, str(error), status_code=status.HTTP_409_CONFLICT
+        ) from error
+    # 適用済みの提案から2件目のJobを作らない。状態を条件に含めて更新し、更新できた
+    # 場合だけ実行へ進む。
+    #
+    # 応答へ出す値はrollbackの前に取り出す。rollback後のORM objectは属性が失効し、
+    # 読み直しに非同期の問い合わせが必要になるため、その場では参照できない。
+    current_state = proposal.state
+    claimed = await session.execute(
+        update(AgentProposal)
+        .where(AgentProposal.id == proposal.id)
+        .where(AgentProposal.state == "approved")
+        .values(state="applied")
+    )
+    if claimed.rowcount != 1:
+        await session.rollback()
+        raise ApiError(
+            "PROPOSAL_NOT_APPROVED",
+            "承認済みの提案ではありません。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"state": current_state},
+        )
+    target = operation["target"]
+    job_payload = schemas.GenerationJobCreate(
+        kind="image",
+        project_id=target["project_id"],
+        scene_id=target["scene_id"],
+        shot_id=target["shot_id"],
+        recipe_id=target["recipe_id"],
+        inputs=operation["payload"]["inputs"],
+    )
+    job = await create_generation_job(
+        payload=job_payload, session=session, source=source
+    )
+    await session.execute(
+        update(AgentProposal)
+        .where(AgentProposal.id == proposal.id)
+        .values(applied_job_id=job.id)
+    )
+    await _commit(session)
+    return job
+
+
+@router.get("/approval-logs", response_model=list[schemas.ApprovalLogRead])
+async def list_approval_logs(
+    session: SessionDep,
+    subject_type: str | None = None,
+    subject_id: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    """承認履歴の一覧。既定は判断の新しい順に返す。
+
+    承認対象、許可した操作、判断、時刻をここで確認できる。ApprovalLogは追記専用の
+    ため、この経路でも書き換えない。
+    """
+    query = select(ApprovalLog).order_by(
+        ApprovalLog.decided_at.desc(), ApprovalLog.id.asc()
+    )
+    if subject_type is not None:
+        query = query.where(ApprovalLog.subject_type == subject_type)
+    if subject_id is not None:
+        query = query.where(ApprovalLog.subject_id == subject_id)
+    result = await session.execute(query.limit(limit).offset(offset))
+    return result.scalars().all()

@@ -2,9 +2,18 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from mycomfyui_api import provenance
+from mycomfyui_api.adapters.agent.base import AgentProposalKind
+from mycomfyui_api.adapters.agent.proposals import MAX_INSTRUCTION_LENGTH
 from mycomfyui_api.storage import ARTIFACTS_DIR_NAME
 
 GenerationKind = Literal["image", "video", "voice", "music", "compose"]
@@ -309,3 +318,83 @@ class JobLineageRead(ApiModel):
     descendants: list[GenerationJobRead]
     artifacts: list[ArtifactRead]
     truncated: bool
+
+
+AgentProposalState = Literal["proposed", "approved", "rejected", "applied", "failed"]
+#: 画面から記録できる判断。`expired`は期限切れの検出結果であり、画面からは送らない。
+AgentDecision = Literal["approved", "rejected"]
+OperationEffect = Literal["no_side_effect", "requires_approval", "forbidden"]
+
+
+class AgentProviderRead(ApiModel):
+    """利用可能なProvider。接続先と認証情報は返さない。"""
+
+    id: str
+    label: str
+    available: bool
+
+
+class AgentProposalCreate(ApiModel):
+    """提案の取得要求。Jobは作らない。
+
+    入力コンテキストはApplication APIが参照APIから解決して組み立てる。呼び出し元から
+    Providerへ渡す本文を指定させない。
+    """
+
+    kind: AgentProposalKind
+    project_id: AiMediaId
+    scene_id: AiMediaId
+    shot_id: AiMediaId | None = None
+    #: `image_prompt`では承認後のJob投入先を決めるため必須とする。
+    recipe_id: ResourceId | None = None
+    instruction: str = Field(default="", max_length=MAX_INSTRUCTION_LENGTH)
+
+    @model_validator(mode="after")
+    def _require_targets(self) -> "AgentProposalCreate":
+        if self.kind == "image_prompt" and (self.shot_id is None or not self.recipe_id):
+            raise ValueError("image_promptの提案にはshot_idとrecipe_idが必要です。")
+        return self
+
+
+class PlannedOperation(ApiModel):
+    """提案を承認したときに実行する操作。
+
+    `digest`は操作内容から算出する。承認したあとに対象や内容が変わると値が変わり、
+    古い承認では実行できない。
+    """
+
+    type: str
+    effect: OperationEffect
+    target: dict[str, Any]
+    payload: dict[str, Any]
+    digest: str
+
+
+class AgentProposalRead(ApiModel):
+    id: str
+    provider_id: str
+    kind: str
+    state: str
+    project_id: str
+    scene_id: str
+    shot_id: str | None
+    recipe_id: str | None
+    instruction: str
+    request_context: dict[str, Any]
+    output: dict[str, Any] | None
+    usage: dict[str, Any] | None
+    model: str | None
+    failure_code: str | None
+    failure_message: str | None
+    applied_job_id: str | None
+    created_at: str
+    decided_at: str | None
+    #: 副作用のある操作を伴わない提案ではNoneになる。
+    planned_operation: PlannedOperation | None = None
+
+
+class AgentProposalDecision(ApiModel):
+    """提案への判断。承認しても、適用は別の要求で明示的に行う。"""
+
+    decision: AgentDecision
+    actor_id: str = Field(default="local-user", min_length=1, max_length=200)

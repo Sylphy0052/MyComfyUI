@@ -1,9 +1,13 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from platformdirs import user_data_path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: 提案Providerの識別子。`claude_code`はCLIをsubprocessで呼び、`stub`は同梱fixtureを返す。
+AgentProviderId = Literal["claude_code", "stub"]
 
 
 class Settings(BaseSettings):
@@ -24,6 +28,18 @@ class Settings(BaseSettings):
     #: 参照fixtureの差し替え先。上流が未実装の間、Canonが更新された状態を再現して
     #: 更新警告と再実行の判定を確かめるために使う。未設定なら同梱fixtureを読む。
     aimedia_fixture_path: Path | None = None
+    #: 提案取得に使うProvider。APIキーを設定へ持たず、CLIの既存認証を使う。
+    agent_provider: AgentProviderId = "claude_code"
+    #: Claude Code CLIの実行ファイル。PATH上の名前でも絶対パスでもよい。
+    agent_cli_path: str = "claude"
+    agent_model: str = "sonnet"
+    agent_timeout_seconds: float = Field(default=120.0, gt=0)
+    #: 1回の提案取得で許す上限額。CLIへ渡し、超過はCLI側で打ち切らせる。
+    agent_max_budget_usd: float = Field(default=0.5, gt=0)
+    #: 承認の有効期限。超過した承認では副作用のある操作を実行しない。
+    agent_approval_ttl_seconds: int = Field(default=1800, gt=0)
+    #: stub Providerを常に失敗させる。Provider障害が他機能を止めないことの確認に使う。
+    agent_stub_failure: bool = False
 
     @property
     def database_path(self) -> Path:
@@ -36,6 +52,15 @@ class Settings(BaseSettings):
     @property
     def artifacts_root(self) -> Path:
         return self.data_root / "artifacts"
+
+    @property
+    def agent_workspace_root(self) -> Path:
+        """提案Providerを起動する作業ディレクトリの親。
+
+        リポジトリを読ませないため、提案ごとに空のディレクトリを作ってcwdにする。
+        `tmp/`配下のため、終端後に消しても他の記録へ影響しない。
+        """
+        return self.data_root / "tmp" / "agent"
 
 
 @lru_cache

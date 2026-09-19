@@ -19,6 +19,15 @@ export type CanonStatus = components["schemas"]["CanonStatusRead"];
 export type ReferenceChangeEntry =
   components["schemas"]["ReferenceChangeEntry"];
 export type JobLineage = components["schemas"]["JobLineageRead"];
+export type AgentProvider = components["schemas"]["AgentProviderRead"];
+export type AgentProposal = components["schemas"]["AgentProposalRead"];
+export type AgentProposalKind =
+  components["schemas"]["AgentProposalCreate"]["kind"];
+export type AgentProposalState = NonNullable<AgentProposal["state"]>;
+export type PlannedOperation = components["schemas"]["PlannedOperation"];
+export type ApprovalLog = components["schemas"]["ApprovalLogRead"];
+export type AgentDecision =
+  components["schemas"]["AgentProposalDecision"]["decision"];
 
 const BASE = "/api/v1";
 
@@ -205,4 +214,53 @@ export const api = {
 
   artifactContentUrl: (artifactId: string) =>
     `${BASE}/artifacts/${encodeURIComponent(artifactId)}/content`,
+
+  listAgentProviders: () => request<AgentProvider[]>("/agent-providers"),
+
+  // 提案の取得は生成 Job を投入しない。投入は承認後の適用だけが行う。
+  createAgentProposal: (payload: {
+    kind: AgentProposalKind;
+    project_id: string;
+    scene_id: string;
+    shot_id?: string | null;
+    recipe_id?: string | null;
+    instruction: string;
+  }) =>
+    request<AgentProposal>("/agent-proposals", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listAgentProposals: (params: { sceneId?: string; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params.sceneId) query.set("scene_id", params.sceneId);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<AgentProposal[]>(`/agent-proposals${suffix}`);
+  },
+
+  getAgentProposal: (proposalId: string) =>
+    request<AgentProposal>(`/agent-proposals/${encodeURIComponent(proposalId)}`),
+
+  // 承認・却下の記録。承認しただけでは何も実行しない。
+  decideAgentProposal: (proposalId: string, decision: AgentDecision) =>
+    request<AgentProposal>(
+      `/agent-proposals/${encodeURIComponent(proposalId)}/decision`,
+      { method: "POST", body: JSON.stringify({ decision }) },
+    ),
+
+  // 承認済みの提案を実行する。対象や内容が変わっていれば API 側で拒否される。
+  applyAgentProposal: (proposalId: string) =>
+    request<GenerationJob>(
+      `/agent-proposals/${encodeURIComponent(proposalId)}/apply`,
+      { method: "POST" },
+    ),
+
+  listApprovalLogs: (params: { subjectId?: string; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params.subjectId) query.set("subject_id", params.subjectId);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<ApprovalLog[]>(`/approval-logs${suffix}`);
+  },
 };
