@@ -2,7 +2,7 @@ import logging
 from typing import Annotated, TypeVar
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -161,11 +161,6 @@ async def create_generation_job(
     return job
 
 
-@router.get("/generation-jobs/{job_id}", response_model=schemas.GenerationJobRead)
-async def get_generation_job(job_id: str, session: SessionDep):
-    return await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
-
-
 @router.get("/generation-jobs", response_model=list[schemas.GenerationJobRead])
 async def list_generation_jobs(
     session: SessionDep, state: schemas.JobState | None = None
@@ -178,23 +173,39 @@ async def list_generation_jobs(
     return result.scalars().all()
 
 
+@router.get("/generation-jobs/{job_id}", response_model=schemas.GenerationJobRead)
+async def get_generation_job(job_id: str, session: SessionDep):
+    return await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+
+
 @router.post(
     "/generation-jobs/{job_id}/cancel", response_model=schemas.GenerationJobRead
 )
 async def cancel_generation_job(
     job_id: str, session: SessionDep, worker: QueueWorkerDep
 ):
-    """queuedは即cancelled、runningはcancellingへ遷移しExecutorへ取消を伝える。"""
+    """queuedは即cancelled、runningはcancellingへ遷移しExecutorへ取消を伝える。
+
+    条件付きUPDATEでワーカーの`_claim_next`/`_finalize`との競合を検知する。
+    更新0件は他プロセスが先に状態を変えたことを意味し、409で再取得を促す。
+    cancellingへの二重要求はidempotentに現在の状態を返す。
+    """
     job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    if job.state == "cancelling":
+        return job
     now = schemas.now_iso()
     if job.state == "queued":
-        job.state = "cancelled"
-        job.cancel_requested_at = now
-        job.finished_at = now
+        result = await session.execute(
+            update(GenerationJob)
+            .where(GenerationJob.id == job_id, GenerationJob.state == "queued")
+            .values(state="cancelled", cancel_requested_at=now, finished_at=now)
+        )
     elif job.state == "running":
-        job.state = "cancelling"
-        job.cancel_requested_at = now
-        worker.request_cancel(job_id)
+        result = await session.execute(
+            update(GenerationJob)
+            .where(GenerationJob.id == job_id, GenerationJob.state == "running")
+            .values(state="cancelling", cancel_requested_at=now)
+        )
     else:
         raise ApiError(
             "JOB_NOT_CANCELLABLE",
@@ -202,7 +213,18 @@ async def cancel_generation_job(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             details={"state": job.state},
         )
-    await _commit(session)
+    if result.rowcount == 0:
+        await session.rollback()
+        raise ApiError(
+            "JOB_STATE_CONFLICT",
+            "他の処理がJobの状態を変更しました。最新状態を再取得してください。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"job_id": job_id},
+        )
+    await session.commit()
+    await session.refresh(job)
+    if job.state == "cancelling":
+        worker.request_cancel(job_id)
     return job
 
 

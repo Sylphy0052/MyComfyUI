@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mycomfyui_api import schemas
@@ -21,13 +21,20 @@ POLL_INTERVAL_SECONDS = 0.5
 
 FAILURE_CODE_INTERRUPTED = "INTERRUPTED"
 FAILURE_CODE_EXECUTOR_UNAVAILABLE = "EXECUTOR_UNAVAILABLE"
+FAILURE_CODE_EXECUTOR_ERROR = "EXECUTOR_ERROR"
 
 
 @dataclass(frozen=True)
 class ExecutionOutcome:
-    """Executorの実行結果。失敗時だけ理由系項目を持つ。"""
+    """Executorの実行結果。
+
+    `stop_confirmed`は取消要求に応じてBackendが停止したことを示す。`succeeded`が
+    `False`でも`stop_confirmed`が`False`なら「停止処理そのものの失敗」であり、
+    取消による`cancelled`ではなく理由付きの`failed`として記録する。
+    """
 
     succeeded: bool
+    stop_confirmed: bool = False
     failure_code: str | None = None
     failure_stage: str | None = None
     failure_message: str | None = None
@@ -116,7 +123,11 @@ class JobQueueWorker:
 
     async def _run_forever(self) -> None:
         while True:
-            processed = await self._process_next()
+            try:
+                processed = await self._process_next()
+            except Exception:
+                logger.exception("キュー処理ループで予期しない例外が発生しました。")
+                processed = False
             if not processed:
                 await asyncio.sleep(self._poll_interval)
 
@@ -129,32 +140,52 @@ class JobQueueWorker:
         try:
             job = await self._load(job_id)
             outcome = await self._executor.run(job, cancel_event)
+        except Exception:
+            logger.exception("Job %sの実行中に例外が発生しました。", job_id)
+            outcome = ExecutionOutcome(
+                succeeded=False,
+                failure_code=FAILURE_CODE_EXECUTOR_ERROR,
+                failure_stage="execution",
+                failure_message="実行中に予期しないエラーが発生しました。",
+                retryable=False,
+            )
         finally:
             self._cancel_events.pop(job_id, None)
         await self._finalize(job_id, outcome, cancel_event)
         return True
 
     async def _claim_next(self) -> str | None:
-        """1件だけqueuedからrunningへ遷移させる。同時に2件目を掴まない。"""
+        """1件だけqueuedからrunningへ遷移させる。
+
+        candidateの選定と条件付きUPDATEを分け、UPDATEの影響行数で確保できたか
+        判定する。cancel APIが同じJobを先に`cancelled`へ更新した場合はrowcountが
+        0になり、このJobは掴まずに次のポーリングへ委ねる。
+        """
         async with self._session_factory() as session:
             result = await session.execute(
-                select(GenerationJob)
+                select(GenerationJob.id)
                 .where(GenerationJob.state == "queued")
                 .order_by(GenerationJob.queue_sequence.asc())
                 .limit(1)
             )
-            job = result.scalars().first()
-            if job is None:
+            job_id = result.scalars().first()
+            if job_id is None:
                 return None
-            job.state = "running"
-            job.started_at = schemas.now_iso()
+            update_result = await session.execute(
+                update(GenerationJob)
+                .where(GenerationJob.id == job_id, GenerationJob.state == "queued")
+                .values(state="running", started_at=schemas.now_iso())
+            )
             await session.commit()
-            return job.id
+            if update_result.rowcount == 0:
+                return None
+            return job_id
 
     async def _load(self, job_id: str) -> GenerationJob:
         async with self._session_factory() as session:
             job = await session.get(GenerationJob, job_id)
-            assert job is not None
+            if job is None:
+                raise RuntimeError(f"claimed job {job_id} not found")
             return job
 
     async def _finalize(
@@ -164,10 +195,10 @@ class JobQueueWorker:
             job = await session.get(GenerationJob, job_id)
             if job is None:
                 return
-            if cancel_event.is_set() and not outcome.succeeded:
-                job.state = "cancelled"
-            elif outcome.succeeded:
+            if outcome.succeeded:
                 job.state = "succeeded"
+            elif cancel_event.is_set() and outcome.stop_confirmed:
+                job.state = "cancelled"
             else:
                 job.state = "failed"
                 job.failure_code = outcome.failure_code

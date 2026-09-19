@@ -96,9 +96,12 @@ Job の初期状態は `queued` とする。
 Application API プロセス内のバックグラウンドワーカーが `queue_sequence` 昇順で `queued` の Job を
 1 件ずつ直列実行する。GPU 高負荷ジョブが同時に 2 件実行されることはない。
 
-状態遷移は `queued → running → succeeded/failed`、取消時は `queued → cancelled` または
-`running → cancelling → cancelled` とする。Backend 実行本体(ComfyUI Adapter)は後続 Issue の対象で、
-本 Issue では未接続として即 `failed`(`EXECUTOR_UNAVAILABLE`)を返すプレースホルダーで実行する。
+状態遷移は `docs/design/generation-records.md` の定義に従う。`queued → running →
+succeeded/failed`、取消時は `queued → cancelled` または `running → cancelling →
+(cancelled/succeeded/failed)` とする。`cancelling` は Backend が停止を確認できれば
+`cancelled`、停止前に出力が完了すれば `succeeded`、停止処理自体が失敗すれば理由付きで
+`failed` になる。Backend 実行本体(ComfyUI Adapter)は後続 Issue の対象で、本 Issue では
+未接続として即 `failed`(`EXECUTOR_UNAVAILABLE`)を返すプレースホルダーで実行する。
 
 プロセス再起動時、`running` / `cancelling` のまま残っている Job は起動時に `failed`
 (`INTERRUPTED`、再試行可能)へ倒す。中断 Job を誤って成功扱いしない。
@@ -141,6 +144,7 @@ Recipe の変更は新しい Recipe として作成し、必要なら `supersede
 |`RESOURCE_NOT_FOUND`|404|指定した ID のリソースが存在しない|
 |`VALIDATION_ERROR`|422|入力値が schema に合わない、または参照先が存在しない|
 |`JOB_NOT_CANCELLABLE`|422|終端状態(`succeeded`/`failed`/`cancelled`)の Job へ取消を要求した|
+|`JOB_STATE_CONFLICT`|409|取消要求とワーカーの実行開始・完了が競合し、状態が既に変わっていた|
 |`STORAGE_ERROR`|503|データベースへアクセスできない (lock、migration 未適用など)|
 |`INTERNAL_ERROR`|500|上記以外の未処理の例外|
 
