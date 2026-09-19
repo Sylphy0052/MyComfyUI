@@ -200,23 +200,53 @@ class FixtureReferenceSource:
     ) -> None:
         self._path = path
         self._fixed = _validated(document) if document is not None else None
+        self._cached: tuple[tuple[int, int], dict[str, Any]] | None = None
         if self._fixed is None:
             # 読み込めない設定は起動時に失敗させる。参照のたびに503を返す状態で
-            # 立ち上がると、原因が設定にあることが分かりにくい。
-            _load_fixture(path)
+            # 立ち上がると、原因が設定にあることが分かりにくい。ここで読んだ内容は
+            # そのままキャッシュとして使う。
+            self._read()
+
+    def _stamp(self) -> tuple[int, int]:
+        """差し替えfixtureの世代を表す値。更新時刻とサイズで変化を見る。"""
+        try:
+            info = self._path.stat() if self._path is not None else None
+        except OSError as error:
+            raise AiMediaUnavailable(
+                f"参照fixtureを読み込めません: {self._path}"
+            ) from error
+        if info is None:  # pragma: no cover - 同梱fixtureはこの経路を通らない
+            raise AiMediaUnavailable("参照fixtureのパスが設定されていません。")
+        return (info.st_mtime_ns, info.st_size)
+
+    def _read(self) -> dict[str, Any]:
+        """差し替えfixtureを、内容が変わったときだけ読み直す。
+
+        このsourceはアプリの起動時に1つだけ作り、以後使い回す。読み込んだ内容を
+        持ち続けると、検証中にfixtureを書き換えてもプロセスを再起動するまで反映され
+        ない。かといって参照のたびに読むと、1回の要求でScene、Shot、Canonを続けて
+        引く経路でファイルを何度も読み直すうえ、途中で書き換わると同じ要求の中で別
+        世代のデータを見てしまう。更新時刻とサイズが変わったときだけ読み直す。
+
+        1回の要求を処理している最中に書き換えた場合は、その要求の途中から新しい内容を
+        読む。検証のために手元で差し替える機能であり、要求単位で世代を固定するほどの
+        実益がないため許容する。
+        """
+        if self._path is None:
+            return _load_fixture(None)
+        stamp = self._stamp()
+        cached = self._cached
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+        document = _load_fixture(self._path)
+        self._cached = (stamp, document)
+        return document
 
     @property
     def _document(self) -> dict[str, Any]:
-        """参照のたびにfixtureを読む。
-
-        このsourceはアプリの起動時に1つだけ作り、以後使い回す。読み込んだ内容を
-        保持すると、検証中に差し替えfixtureを書き換えてもプロセスを再起動するまで
-        反映されない。同梱fixtureは`_read_bundled_fixture`がキャッシュするため、
-        読み直しの実費が出るのは差し替え時だけである。
-        """
         if self._fixed is not None:
             return self._fixed
-        return _load_fixture(self._path)
+        return self._read()
 
     async def list_projects(self) -> dict[str, Any]:
         return copy.deepcopy({"items": self._document["projects"]})
