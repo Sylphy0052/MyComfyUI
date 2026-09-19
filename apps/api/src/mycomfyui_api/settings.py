@@ -8,7 +8,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Runtime settings that never include Backend credentials."""
 
-    model_config = SettingsConfigDict(env_prefix="MYCOMFYUI_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="MYCOMFYUI_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     data_root: Path = user_data_path("MyComfyUI", appauthor=False)
 

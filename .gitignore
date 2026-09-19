@@ -1,3 +1,13 @@
 .worktree/
 docs/issue/
 docs/mr/
+
+# 利用者ごとの設定。追跡対象外とし、example をコピーして使う。
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
