@@ -19,9 +19,12 @@ cp .env.example .env
 |変数|既定値|意味|
 |---|---|---|
 |`MYCOMFYUI_DATA_ROOT`|OS 標準の利用者データ領域|生成履歴とデータベースの保存先|
+|`MYCOMFYUI_COMFYUI_BASE_URL`|`http://127.0.0.1:8188`|ComfyUI のエンドポイント|
+|`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`|`600`|1 Job の実行上限(秒)|
 
 SQLite は `<data_root>/db/mycomfyui.sqlite3` へ作成する。接続時に WAL、外部キー、busy timeout を有効にする。
 設定値に API キーなどの秘密情報を置かない。データベース、ログ、API 応答にも保存しない。
+ComfyUI 呼び出しのログへ残すのは操作名、結果、`prompt_id` だけとする。
 
 ## データベースの初期化
 
@@ -50,6 +53,7 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |Recipe の作成・取得|`POST /api/v1/recipes` / `GET /api/v1/recipes/{recipe_id}`|
 |Job と Manifest の作成|`POST /api/v1/generation-jobs`|
 |Job の取得・一覧|`GET /api/v1/generation-jobs/{job_id}` / `GET /api/v1/generation-jobs`|
+|Job の Artifact 一覧|`GET /api/v1/generation-jobs/{job_id}/artifacts`|
 |Job の取消要求|`POST /api/v1/generation-jobs/{job_id}/cancel`|
 |Manifest の取得|`GET /api/v1/generation-manifests/{manifest_id}`|
 |Artifact の作成・取得|`POST /api/v1/artifacts` / `GET /api/v1/artifacts/{artifact_id}`|
@@ -57,9 +61,7 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 
 ### Job と Manifest の作成
 
-`GenerationJob.manifest_id` と `GenerationManifest.job_id` は相互に参照するため、両者を分けて作成できない。
-`POST /api/v1/generation-jobs` は Job、実行時 Workflow JSON の Artifact、Manifest の ID を先行採番し、
-同一トランザクションで Job、Workflow Artifact、Manifest の順に書き込む。相互参照はコミット時まで遅延検証する。
+呼び出し元は Manifest の中身も ComfyUI の Workflow も組み立てない。Recipe と `inputs` だけを渡す。
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/generation-jobs \
@@ -70,26 +72,29 @@ curl -X POST http://127.0.0.1:8000/api/v1/generation-jobs \
     "shot_ref": {"path": "scenes/01-a.md"},
     "recipe_id": "<recipe-id>",
     "queue_sequence": 1,
-    "manifest": {
-      "engine": "comfyui",
-      "engine_version": "0.3.0",
-      "model": {"name": "sdxl", "sha256": "<64桁のhex>"},
-      "seed": 42,
-      "resolved_prompt": "a cat",
-      "parameters": {"steps": 20},
-      "input_refs": [],
-      "workflow_artifact": {
-        "relative_path": "artifacts/<job-id>/workflow.json",
-        "sha256": "<64桁のhex>",
-        "byte_size": 128,
-        "media_type": "application/json"
-      }
-    }
+    "inputs": {"positive_prompt": "masterpiece, 1girl, library", "seed": 12345},
+    "input_refs": []
   }'
 ```
 
+API は次の順で処理する。
+
+1. Recipe を取得し、`engine` と `kind` が要求と一致するか確かめる。
+2. Recipe の `defaults` と要求の `inputs` をマージし、許可された変数だけかを検証する。
+   Recipe の `input_schema` が空でなければ、そのキーが受け取れる変数の全体になる。
+   値が `{"required": true}` を持つ項目は、`defaults` か `inputs` のどちらかで埋まっている必要がある。
+   `input_schema` が空のときは Workflow テンプレート側の定義だけで判定する。
+3. `workflow_template_ref` が同梱テンプレートを指すか確かめる。`sha256` があれば内容まで照合する。
+4. テンプレートへ変数を注入し、実行用 Workflow JSON を組み立てる。`seed` は `-1` または未指定なら採番する。
+5. `artifacts/<job-id>/workflow.json` へ書き出し、SHA-256 とバイト数を算出する。
+6. Job、Workflow Artifact、Manifest の ID を先行採番し、同一トランザクションでこの順に書き込む。
+
+`GenerationJob.manifest_id` と `GenerationManifest.job_id` は相互に参照するため、両者を分けて作成できない。
+相互参照はコミット時まで遅延検証する。Job の作成に失敗した場合、書き出し済みの Workflow JSON は削除する。
+
 応答の `manifest_id` で `GET /api/v1/generation-manifests/{manifest_id}` を呼ぶと Manifest を取得できる。
-Job の初期状態は `queued` とする。
+Job の初期状態は `queued` とする。`engine_version` だけは実行 Backend の実測値のため、
+Adapter が実行を開始した直後に 1 回だけ設定する。それまでは `null` になる。
 
 ### GPU 直列ジョブキュー
 
@@ -100,8 +105,7 @@ Application API プロセス内のバックグラウンドワーカーが `queue
 succeeded/failed`、取消時は `queued → cancelled` または `running → cancelling →
 (cancelled/succeeded/failed)` とする。`cancelling` は Backend が停止を確認できれば
 `cancelled`、停止前に出力が完了すれば `succeeded`、停止処理自体が失敗すれば理由付きで
-`failed` になる。Backend 実行本体(ComfyUI Adapter)は後続 Issue の対象で、本 Issue では
-未接続として即 `failed`(`EXECUTOR_UNAVAILABLE`)を返すプレースホルダーで実行する。
+`failed` になる。Backend 実行本体は ComfyUI Adapter が担う。
 
 プロセス再起動時、`running` / `cancelling` のまま残っている Job は起動時に `failed`
 (`INTERRUPTED`、再試行可能)へ倒す。中断 Job を誤って成功扱いしない。
@@ -114,6 +118,64 @@ succeeded/failed`、取消時は `queued → cancelled` または `running → c
 
 失敗した Job には `failure_code`、`failure_stage`(`backend_start` / `execution` /
 `response_disconnect` / `timeout`)、`failure_message`、`retryable` を記録する。
+
+### ComfyUI Adapter
+
+Job の実行は ComfyUI Adapter が担う。上位層は ComfyUI のノード ID も class_type も持たない。
+Workflow テンプレートはパッケージ同梱のものだけを実行でき、行うのは許可された変数の差し替えに限る。
+利用者由来の JSON をそのまま実行する経路は持たない。
+
+実行時の手順は次のとおり。
+
+1. `/system_stats` で疎通と `engine_version` を確認し、Manifest へ 1 回だけ記録する。
+2. `/object_info/{UNETLoader|CLIPLoader|VAELoader}` で、Manifest が指すモデルの在庫を確認する。
+3. 保存済みの `artifacts/<job-id>/workflow.json` を読み、記録済みの SHA-256 と突き合わせてから `/prompt` へ投入する。
+4. `/ws` で完了を監視する。WebSocket を使えない場合は `/history/{prompt_id}` のポーリングへ切り替える。
+5. `/history/{prompt_id}` から出力画像の参照を取得し、`/view` でダウンロードする。
+6. `artifacts/<job-id>/` へ保存し、SHA-256 とバイト数を付けて Artifact を作成する。
+
+取消要求を受けたら `/interrupt` に `prompt_id` を付けて送り、`/queue` の `delete` で順番待ちからも外す。
+停止後に出力が揃っていれば `succeeded`、無ければ `cancelled` とする。停止要求自体の失敗は `failed` とする。
+停止後の状態を ComfyUI へ問い合わせられなかった場合は、停止できたのか通信できないだけなのかを
+区別できないため `cancelled` へ丸めず、`BACKEND_DISCONNECTED` として記録する。
+`/queue` の削除だけが失敗した場合は、中断自体は成功しているため停止処理の失敗として扱わない。
+
+失敗理由は次のとおり対応付ける。
+
+|事象|`failure_stage`|`failure_code`|`retryable`|
+|---|---|---|---|
+|ComfyUI へ接続できない|`backend_start`|`BACKEND_UNAVAILABLE`|true|
+|モデルファイルが見つからない|`backend_start`|`MODEL_NOT_FOUND`|false|
+|モデルの在庫を確認できない|`backend_start`|`MODEL_NOT_FOUND`|true|
+|Manifest、Recipe、スナップショットを解決できない|`backend_start`|`INPUT_UNRESOLVED`|false|
+|ComfyUI が Workflow を拒否した|`backend_start`|`WORKFLOW_REJECTED`|false|
+|実行中にノードが失敗した|`execution`|`EXECUTION_FAILED`|false|
+|出力画像を取得できない|`execution`|`OUTPUT_NOT_FOUND`|false|
+|生成物を保存・記録できない|`execution`|`ARTIFACT_WRITE_FAILED`|false|
+|監視接続が切れ、履歴も取得できない|`response_disconnect`|`BACKEND_DISCONNECTED`|true|
+|制限時間内に完了しない|`timeout`|`EXECUTION_TIMEOUT`|true|
+|停止要求が失敗した|`execution`|`INTERRUPT_FAILED`|false|
+
+### 保存先
+
+|内容|`data_root` からの相対先|
+|---|---|
+|実行時 Workflow JSON|`artifacts/<job-id>/workflow.json`|
+|生成画像|`artifacts/<job-id>/<ComfyUI の出力ファイル名>`|
+
+ファイル名は Backend 由来のため、区切り文字と親ディレクトリ参照を取り除いてから使う。
+同名ファイルがある場合は連番を付けて別ファイルにする。保存済みの Artifact は置換しない。
+
+保存はできたが DB へ記録できなかったファイルは削除する。記録の無いファイルは再実行で
+連番違いが増えるだけで診断にも使えないため、ファイルと DB 記録がずれた状態を残さない。
+ただし書き込み後 commit 前にプロセスが強制終了した場合は、孤立した Workflow JSON が残る。
+起動時に回収する仕組みは持たない。
+
+`filename_prefix` は ComfyUI 側でサブフォルダとして解釈されるため、英数字、ドット、アンダースコア、
+ハイフンだけの 64 文字以内に限り、`..` を拒否する。拒否したい文字を列挙するのではなく使える文字を許す。
+NUL 文字や全角の区切り文字のような、想定していない表現を残さないため。
+モデルファイルの在庫は `/object_info` で確認し、選択肢を取得できなかった場合も失敗させる。
+在庫を確認できないまま任意の文字列をモデルローダーへ渡さない。
 
 ### 更新しない項目
 
@@ -155,6 +217,6 @@ Recipe の変更は新しい Recipe として作成し、必要なら `supersede
 
 ## 対象外
 
-ComfyUI へのジョブ投入(Backend 実行本体との接続)、再実行、Web UI、WebSocket、認証、削除 API、
-Artifact 実ファイルと Workflow JSON の保存処理は本 API の対象外とする。
-複数 GPU への分散、優先度付きスケジューリング、クラウドキューも対象外とする。
+動画・音声・音楽生成、img2img、LoRA、hires fix、ControlNet、IPAdapter、
+再実行(Exact Replay / Regenerate with Current Canon)、Web UI、進捗の UI への中継、認証、削除 API は
+本 API の対象外とする。複数 GPU への分散、優先度付きスケジューリング、クラウドキューも対象外とする。

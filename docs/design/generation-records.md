@@ -56,14 +56,15 @@
 |---|---|---|---|
 |`id`|必須|Manifest ID|不可|
 |`job_id`|必須|対象Job ID|不可|
-|`engine`、`engine_version`|必須|実行Backendとバージョン|不可|
+|`engine`|必須|実行Backend|不可|
+|`engine_version`|任意|実行Backendのバージョン|実行開始時に1回だけ設定|
 |`model`|必須|モデル識別子、版、SHA-256|不可|
 |`seed`、`resolved_prompt`、`parameters`|必須|解決済みseed、最終prompt、実行パラメータ|不可|
 |`input_refs`|必須|入力素材、Scene、Shot、Canonの不変参照または入力cache参照|不可|
 |`workflow_artifact_id`|必須|実行時Workflow JSONのArtifact ID|不可|
 |`created_at`|必須|スナップショット確定時刻|不可|
 
-ManifestはJobごとに1件とする。`parameters`はJSON objectとする。`input_refs`は、Canonなどの`source_locator`、`revision`、`path`、`sha256`を持つ不変参照、またはGit管理外の利用者素材用の`kind: "cached_input"`、`relative_path: "inputs/<sha256>/..."`、`sha256`、`media_type`、`byte_size`を持つ入力cache参照の配列として保存する。入力cache参照の`relative_path`も`data_root`基準とする。Workflow JSONはArtifact storeへ書き出し、そのSHA-256とArtifact IDで参照する。ManifestとArtifactの内容は変更しない。
+ManifestはJobごとに1件とする。`engine_version`だけは実行Backendの実測値であり、Job作成時点では確定できない。Job作成時にBackendへ接続しなければキューへ積めなくなるため、Adapterが実行を開始した直後に1回だけ設定し、以後は上書きしない。値が入る前にJobが失敗した場合はNULLのまま残す。`parameters`はJSON objectとする。`input_refs`は、Canonなどの`source_locator`、`revision`、`path`、`sha256`を持つ不変参照、またはGit管理外の利用者素材用の`kind: "cached_input"`、`relative_path: "inputs/<sha256>/..."`、`sha256`、`media_type`、`byte_size`を持つ入力cache参照の配列として保存する。入力cache参照の`relative_path`も`data_root`基準とする。Workflow JSONはArtifact storeへ書き出し、そのSHA-256とArtifact IDで参照する。ManifestとArtifactの内容は変更しない。
 
 ### Recipe
 

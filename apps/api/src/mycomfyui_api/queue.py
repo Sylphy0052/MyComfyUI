@@ -1,7 +1,7 @@
 """GPU直列ジョブキューの実行制御。
 
-Backend実行本体(ComfyUI Adapter等)は後続Issueの対象。ここでは`JobExecutor`
-Protocolで差し込み口を用意し、未接続時は`UnavailableExecutor`で即失敗させる。
+Backend実行本体は`JobExecutor` Protocolで差し込む。既定の実装は
+`adapters.comfyui.executor.ComfyUIExecutor`で、ここはBackendの種類を知らない。
 """
 
 import asyncio
@@ -21,7 +21,6 @@ POLL_INTERVAL_SECONDS = 0.5
 MAX_BACKOFF_SECONDS = 30.0
 
 FAILURE_CODE_INTERRUPTED = "INTERRUPTED"
-FAILURE_CODE_EXECUTOR_UNAVAILABLE = "EXECUTOR_UNAVAILABLE"
 FAILURE_CODE_EXECUTOR_ERROR = "EXECUTOR_ERROR"
 FAILURE_CODE_CLAIM_LOST = "CLAIM_LOST"
 
@@ -44,26 +43,11 @@ class ExecutionOutcome:
 
 
 class JobExecutor(Protocol):
-    """Backend実行を差し込むための抽象。#7でComfyUI Adapter実装に差し替える。"""
+    """Backend実行を差し込むための抽象。"""
 
     async def run(
         self, job: GenerationJob, cancel_event: asyncio.Event
     ) -> ExecutionOutcome: ...
-
-
-class UnavailableExecutor:
-    """Backend未接続時のプレースホルダー。常に実行失敗として扱う。"""
-
-    async def run(
-        self, job: GenerationJob, cancel_event: asyncio.Event
-    ) -> ExecutionOutcome:
-        return ExecutionOutcome(
-            succeeded=False,
-            failure_code=FAILURE_CODE_EXECUTOR_UNAVAILABLE,
-            failure_stage="backend_start",
-            failure_message="実行Backendが未接続のため開始できません。",
-            retryable=True,
-        )
 
 
 async def recover_interrupted_jobs(session: AsyncSession) -> int:

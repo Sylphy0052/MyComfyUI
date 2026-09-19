@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from mycomfyui_api.adapters.comfyui.executor import ComfyUIExecutor
 from mycomfyui_api.db import dispose_engine, get_engine, get_session_factory
 from mycomfyui_api.errors import (
     ApiError,
@@ -15,11 +16,7 @@ from mycomfyui_api.errors import (
     unhandled_error_handler,
     validation_error_handler,
 )
-from mycomfyui_api.queue import (
-    JobQueueWorker,
-    UnavailableExecutor,
-    recover_interrupted_jobs,
-)
+from mycomfyui_api.queue import JobQueueWorker, recover_interrupted_jobs
 from mycomfyui_api.routers import router
 
 logger = logging.getLogger(__name__)
@@ -42,7 +39,7 @@ async def lifespan(app: FastAPI):
         recovered = await recover_interrupted_jobs(session)
         if recovered:
             logger.info("中断Jobを%d件failedへ倒しました。", recovered)
-    worker = JobQueueWorker(session_factory, UnavailableExecutor())
+    worker = JobQueueWorker(session_factory, ComfyUIExecutor(session_factory))
     worker.start()
     app.state.queue_worker = worker
     try:

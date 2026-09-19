@@ -68,33 +68,12 @@ class RecipeRead(ApiModel):
     created_at: str
 
 
-class WorkflowArtifactCreate(ApiModel):
-    """Manifestが参照する実行時Workflow JSONのArtifact。"""
-
-    relative_path: str
-    sha256: Sha256
-    byte_size: int = Field(ge=0)
-    media_type: str = Field(min_length=1)
-
-    @field_validator("relative_path")
-    @classmethod
-    def _validate_relative_path(cls, value: str) -> str:
-        return _reject_unsafe_path(value)
-
-
-class ManifestCreate(ApiModel):
-    engine: str = Field(min_length=1)
-    engine_version: str = Field(min_length=1)
-    model: dict[str, Any]
-    seed: int
-    resolved_prompt: str
-    parameters: dict[str, Any]
-    input_refs: list[dict[str, Any]]
-    workflow_artifact: WorkflowArtifactCreate
-
-
 class GenerationJobCreate(ApiModel):
-    """Jobと実行時Manifestを同一トランザクションで作成する要求。"""
+    """Jobと実行時Manifestを同一トランザクションで作成する要求。
+
+    Workflow JSONはApplication APIがRecipeと`inputs`から組み立てる。呼び出し元は
+    Manifestの中身もComfyUIのノードも組み立てない。
+    """
 
     kind: GenerationKind
     scene_ref: dict[str, Any]
@@ -102,7 +81,22 @@ class GenerationJobCreate(ApiModel):
     recipe_id: ResourceId
     parent_job_id: ResourceId | None = None
     queue_sequence: int = Field(ge=0)
-    manifest: ManifestCreate
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    input_refs: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("input_refs")
+    @classmethod
+    def _validate_input_refs(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """入力cache参照の`relative_path`も`data_root`基準に限定する。
+
+        Manifestへそのまま保存され、後からファイル解決に使われる値のため、保存する
+        時点で絶対パスと親ディレクトリ参照を弾く。
+        """
+        for ref in value:
+            relative_path = ref.get("relative_path")
+            if isinstance(relative_path, str):
+                _reject_unsafe_path(relative_path)
+        return value
 
 
 class GenerationJobRead(ApiModel):
@@ -128,7 +122,7 @@ class GenerationManifestRead(ApiModel):
     id: str
     job_id: str
     engine: str
-    engine_version: str
+    engine_version: str | None
     model: dict[str, Any]
     seed: int
     resolved_prompt: str

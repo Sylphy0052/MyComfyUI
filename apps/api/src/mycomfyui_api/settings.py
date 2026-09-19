@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from platformdirs import user_data_path
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,8 @@ class Settings(BaseSettings):
     )
 
     data_root: Path = user_data_path("MyComfyUI", appauthor=False)
+    comfyui_base_url: str = "http://127.0.0.1:8188"
+    comfyui_timeout_seconds: float = Field(default=600.0, gt=0)
 
     @property
     def database_path(self) -> Path:
@@ -24,6 +27,10 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         return f"sqlite+aiosqlite:///{self.database_path}"
+
+    @property
+    def artifacts_root(self) -> Path:
+        return self.data_root / "artifacts"
 
 
 @lru_cache
