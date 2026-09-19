@@ -46,6 +46,22 @@ def job_directory(job_id: str, settings: Settings | None = None) -> Path:
     return settings.artifacts_root / _safe_name(job_id)
 
 
+def resolve_artifact(relative_path: str, settings: Settings | None = None) -> Path:
+    """DBの相対パスを`data_root`配下の実ファイルへ解決する。
+
+    配信に使うため、symlinkを辿った結果まで含めて`data_root`の外へ出ないことを
+    確かめる。存在しない場合もStorageErrorとする。
+    """
+    settings = settings or get_settings()
+    root = settings.data_root.resolve()
+    candidate = (root / relative_path).resolve()
+    if not candidate.is_relative_to(root):
+        raise StorageError(f"保存先の外を参照しています: {relative_path}")
+    if not candidate.is_file():
+        raise StorageError(f"Artifactの実ファイルがありません: {relative_path}")
+    return candidate
+
+
 def write_artifact(
     job_id: str, file_name: str, data: bytes, settings: Settings | None = None
 ) -> StoredFile:

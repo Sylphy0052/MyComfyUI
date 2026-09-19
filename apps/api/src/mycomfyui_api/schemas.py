@@ -163,6 +163,12 @@ class ArtifactRead(ApiModel):
     decision_at: str | None
 
 
+class ArtifactDecisionUpdate(ApiModel):
+    """候補比較での採否。`undecided`へ戻すこともできる。"""
+
+    decision: ArtifactDecision
+
+
 class ApprovalLogCreate(ApiModel):
     subject_type: str = Field(min_length=1)
     subject_id: str = Field(min_length=1)
