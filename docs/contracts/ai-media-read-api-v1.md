@@ -101,13 +101,13 @@ SceneとShotは次のEnvelopeで返す。
 - `path`:repository rootからの相対path
 - `sha256`:指定revisionにあるfile contentのSHA-256
 
-`anchor`と`note`は表示や参照箇所の特定に使えるが、同一性の判定には使わない。相対pathは絶対pathと`..`を拒否する。`source_locator`はサーバー設定の許可リストからだけ解決し、リクエスト値を任意のrepository cloneやfile accessに使わない。
+`anchor`と`note`は表示や参照箇所の特定に使えるが、同一性の判定には使わない。相対pathは`/`区切りのGit repository pathとし、POSIX形式とWindows形式の絶対path、backslash、`..`を拒否する。`source_locator`はサーバー設定の許可リストからだけ解決し、リクエスト値を任意のrepository cloneやfile accessに使わない。
 
 Scene/Shot本文内の参照は`provenance.references`へ展開する。各要素は元の場所をJSON Pointerで示し、解決前のpathと不変参照を併記する。複数repositoryに同じ相対pathが存在しても、探索順で暗黙に選ばない。
 
 ### Canon
 
-Canon EndpointはCanon本文を返さず、`canon_id`、種別、表示名、不変参照だけを返す。`canon_id`は`[source_locator,revision,path,anchor]`をこの順のJSON配列として空白なしのUTF-8へserializeし、そのSHA-256を小文字16進数64桁で表す。`anchor`が無い場合はJSONの`null`とする。
+Canon EndpointはCanon本文を返さず、`canon_id`、種別、表示名、不変参照だけを返す。`canon_id`は`[source_locator,revision,path,anchor]`をこの順のJSON配列としてRFC 8785のJSON Canonicalization SchemeでUTF-8へserializeし、そのSHA-256を小文字16進数64桁で表す。`anchor`が無い場合はJSONの`null`とする。
 
 MyComfyUIはCanon descriptorを画面表示とGeneration Manifestの参照に使う。Canon本文、Voice Canon YAML、人物preset、SeriesBibleをSQLiteやArtifact領域へ複製しない。生成時に解決済みの値が必要な場合は生成Adapterが参照API側でcompileされた入力を受け取る契約を別Issueで定義する。
 

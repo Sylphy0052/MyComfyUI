@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mycomfyui.local/contracts/ai-media/v1/reference-api.schema.json",
   "title": "ai-media read API v1 responses",
-  "oneOf": [
+  "anyOf": [
     { "$ref": "#/$defs/ProjectList" },
     { "$ref": "#/$defs/Project" },
     { "$ref": "#/$defs/SceneList" },
@@ -15,6 +15,16 @@
     { "$ref": "#/$defs/Problem" }
   ],
   "$defs": {
+    "RepositoryRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        { "pattern": "^[^/\\\\].*$" },
+        { "not": { "pattern": "^[A-Za-z]:" } },
+        { "not": { "pattern": "\\\\" } },
+        { "not": { "pattern": "(^|/)\\.\\.(/|$)" } }
+      ]
+    },
     "SourceRevision": {
       "type": "object",
       "additionalProperties": false,
@@ -31,14 +41,7 @@
       "properties": {
         "source_locator": { "type": "string", "format": "uri" },
         "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
-        "path": {
-          "type": "string",
-          "minLength": 1,
-          "allOf": [
-            { "pattern": "^[^/].*$" },
-            { "not": { "pattern": "(^|/)\\.\\.(/|$)" } }
-          ]
-        },
+        "path": { "$ref": "#/$defs/RepositoryRelativePath" },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "anchor": { "type": ["string", "null"] },
         "note": { "type": ["string", "null"] }
@@ -59,7 +62,7 @@
       "required": ["json_pointer", "declared_path", "reference"],
       "properties": {
         "json_pointer": { "type": "string", "pattern": "^/" },
-        "declared_path": { "type": "string", "minLength": 1 },
+        "declared_path": { "$ref": "#/$defs/RepositoryRelativePath" },
         "reference": { "$ref": "#/$defs/ImmutableReference" }
       }
     },
