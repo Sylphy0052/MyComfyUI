@@ -55,6 +55,10 @@ def resolve_artifact(relative_path: str, settings: Settings | None = None) -> Pa
     settings = settings or get_settings()
     root = settings.data_root.resolve()
     candidate = (root / relative_path).resolve()
+    # Artifact storeの外は、`data_root`配下であっても配信しない。DBファイルのような
+    # 生成物以外を指すレコードが作られても、ここで止める。
+    if not candidate.is_relative_to(settings.artifacts_root.resolve()):
+        raise StorageError(f"Artifact storeの外を参照しています: {relative_path}")
     if not candidate.is_relative_to(root):
         raise StorageError(f"保存先の外を参照しています: {relative_path}")
     if not candidate.is_file():

@@ -14,6 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Protocol, Self, runtime_checkable
+from urllib.parse import quote
 
 import httpx
 
@@ -23,6 +24,24 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT_SECONDS = 10.0
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "reference.json"
+
+#: fixtureが持つべきトップレベル項目。
+FIXTURE_KEYS = (
+    "projects",
+    "scenes",
+    "scene_envelopes",
+    "shots",
+    "shot_envelopes",
+)
+
+
+def _segment(value: str) -> str:
+    """IDを1つのパスセグメントとして埋め込む。
+
+    IDは画面からのパスパラメータをそのまま受け取る。`/`や`..`を含む値が来ても上流の
+    別Endpointを指さないよう、区切り文字ごとエンコードする。
+    """
+    return quote(value, safe="")
 
 
 class AiMediaError(Exception):
@@ -100,22 +119,27 @@ class AiMediaClient:
         return await self._get("/projects")
 
     async def get_project(self, project_id: str) -> dict[str, Any]:
-        return await self._get(f"/projects/{project_id}")
+        return await self._get(f"/projects/{_segment(project_id)}")
 
     async def list_scenes(self, project_id: str) -> dict[str, Any]:
-        return await self._get(f"/projects/{project_id}/scenes")
+        return await self._get(f"/projects/{_segment(project_id)}/scenes")
 
     async def get_scene(self, project_id: str, scene_id: str) -> dict[str, Any]:
-        return await self._get(f"/projects/{project_id}/scenes/{scene_id}")
+        return await self._get(
+            f"/projects/{_segment(project_id)}/scenes/{_segment(scene_id)}"
+        )
 
     async def list_shots(self, project_id: str, scene_id: str) -> dict[str, Any]:
-        return await self._get(f"/projects/{project_id}/scenes/{scene_id}/shots")
+        return await self._get(
+            f"/projects/{_segment(project_id)}/scenes/{_segment(scene_id)}/shots"
+        )
 
     async def get_shot(
         self, project_id: str, scene_id: str, shot_id: str
     ) -> dict[str, Any]:
         return await self._get(
-            f"/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}"
+            f"/projects/{_segment(project_id)}/scenes/{_segment(scene_id)}"
+            f"/shots/{_segment(shot_id)}"
         )
 
     async def _get(self, path: str) -> dict[str, Any]:
@@ -150,7 +174,9 @@ class FixtureReferenceSource:
     """
 
     def __init__(self, document: dict[str, Any] | None = None) -> None:
-        self._document = document if document is not None else _load_fixture()
+        self._document = (
+            _validated(document) if document is not None else _load_fixture()
+        )
 
     async def list_projects(self) -> dict[str, Any]:
         return copy.deepcopy({"items": self._document["projects"]})
@@ -202,11 +228,28 @@ class FixtureReferenceSource:
 @lru_cache
 def _load_fixture() -> dict[str, Any]:
     try:
-        return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        document = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise AiMediaUnavailable(
             f"参照fixtureを読み込めません: {FIXTURE_PATH}"
         ) from error
+    return _validated(document)
+
+
+def _validated(document: Any) -> dict[str, Any]:
+    """fixtureの形を読み込み時に確かめる。
+
+    構造が壊れていると参照のたびにKeyErrorが出て、利用者へは内部エラーとしか伝わらな
+    い。参照データ側の不整合だと分かる例外へここで変換する。
+    """
+    if not isinstance(document, dict):
+        raise AiMediaUnavailable(f"参照fixtureの形式が想定外です: {FIXTURE_PATH}")
+    missing = [key for key in FIXTURE_KEYS if key not in document]
+    if missing:
+        raise AiMediaUnavailable(
+            f"参照fixtureに必要な項目がありません: {', '.join(missing)}"
+        )
+    return document
 
 
 def create_reference_source(base_url: str | None) -> ReferenceSource:

@@ -520,7 +520,7 @@ export interface components {
             /** Parent Job Id */
             parent_job_id?: string | null;
             /** Queue Sequence */
-            queue_sequence: number;
+            queue_sequence?: number | null;
             /** Recipe Id */
             recipe_id: string;
             /** Scene Ref */

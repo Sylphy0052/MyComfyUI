@@ -119,12 +119,12 @@ export const api = {
     return request<GenerationJob[]>(`/generation-jobs${suffix}`);
   },
 
+  // queue_sequence は Application API が採番する。画面からは指定しない。
   createJob: (payload: {
     kind: string;
     scene_ref: Record<string, unknown>;
     shot_ref: Record<string, unknown>;
     recipe_id: string;
-    queue_sequence: number;
     inputs: Record<string, unknown>;
   }) =>
     request<GenerationJob>("/generation-jobs", {

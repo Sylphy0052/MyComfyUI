@@ -47,14 +47,18 @@ async def lifespan(app: FastAPI):
     worker = JobQueueWorker(session_factory, ComfyUIExecutor(session_factory))
     worker.start()
     app.state.queue_worker = worker
-    app.state.reference_source = create_reference_source(
-        get_settings().aimedia_base_url
-    )
+    app.state.reference_source = None
+    # ワーカーを起動した後は、以降どこで失敗しても後始末まで進める。参照Adapterの
+    # 生成はfixtureの読み込みで失敗しうるため、tryの外へ出さない。
     try:
+        app.state.reference_source = create_reference_source(
+            get_settings().aimedia_base_url
+        )
         yield
     finally:
         await worker.stop()
-        await app.state.reference_source.aclose()
+        if app.state.reference_source is not None:
+            await app.state.reference_source.aclose()
         await dispose_engine()
 
 

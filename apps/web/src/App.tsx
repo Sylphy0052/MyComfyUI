@@ -161,10 +161,17 @@ export function App() {
       return;
     }
     let active = true;
+    let issued = 0;
+    let applied = 0;
     const tick = async () => {
+      const sequence = ++issued;
       try {
         const list = await api.listJobs({ shotId });
-        if (active) setJobs(list);
+        // 遅れて届いた古い応答で、新しい状態を上書きしない。
+        if (active && sequence > applied) {
+          applied = sequence;
+          setJobs(list);
+        }
       } catch (cause) {
         if (active) setError(describe(cause));
       }
@@ -204,6 +211,8 @@ export function App() {
     };
   }, [selectedJobId, jobs, manifest]);
 
+  // 成功した Job の集合が変わったときだけ Artifact を取り直す。配列のままでは毎回の
+  // ポーリングで参照が変わり再取得が走るため、依存配列には文字列で渡す。
   const succeededIds = jobs
     .filter((job) => job.state === "succeeded")
     .map((job) => job.id)
@@ -252,16 +261,11 @@ export function App() {
     setSubmitting(true);
     setError(null);
     try {
-      // キューは全 Job で 1 本のため、投入時点の最大値の次を使う。
-      const all = await api.listJobs({});
-      const nextSequence =
-        all.reduce((max, job) => Math.max(max, job.queue_sequence), 0) + 1;
       const job = await api.createJob({
         kind: "image",
         scene_ref: { id: sceneId },
         shot_ref: { id: shotId },
         recipe_id: recipe.id,
-        queue_sequence: nextSequence,
         inputs,
       });
       setSelectedJobId(job.id);

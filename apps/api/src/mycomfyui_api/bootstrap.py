@@ -6,6 +6,10 @@ Recipeを初回起動時に登録する。Recipeは作成後に書き換えな�
 
 `input_schema`にはUIへ見せる変数だけを並べる。モデルファイル名は`defaults`へ固定し、
 通常操作では指定も表示もしない。
+
+存在確認と登録の間にロックは取らない。Application APIはGPUジョブを直列実行する
+JobQueueWorkerを内包しており、もともと複数プロセス・複数workerでの起動に対応しない。
+同時起動しない前提を崩さない限り、重複登録は起きない。
 """
 
 import logging
@@ -81,6 +85,7 @@ async def ensure_default_recipes(session: AsyncSession) -> Recipe | None:
         if isinstance(reference, dict) and reference.get("sha256") == digest:
             return None
 
+    # `existing`は作成日時の降順のため、先頭が直近の版になる。後継はそこへ結ぶ。
     recipe = Recipe(
         id=schemas.new_id(),
         name=DEFAULT_RECIPE_NAME,

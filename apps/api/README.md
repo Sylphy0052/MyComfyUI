@@ -23,9 +23,17 @@ cp .env.example .env
 |`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`|`600`|1 Job の実行上限(秒)|
 |`MYCOMFYUI_AIMEDIA_BASE_URL`|未設定|ai-media 参照 API の接続先。未設定の間は同梱 fixture を返す|
 
-`.env.example` には `MYCOMFYUI_COMFYUI_BASE_URL`、`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、
-`MYCOMFYUI_AIMEDIA_BASE_URL` を追記する必要がある。実行環境の保護によりこのファイルを
-更新できていない。
+開発環境の保護設定が `.env*` への読み書きを拒否するため、`MYCOMFYUI_COMFYUI_BASE_URL`、
+`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、`MYCOMFYUI_AIMEDIA_BASE_URL` を `.env.example` へ
+反映できていない。手元で次を追記してから `.env` へコピーする。既定値のままでよい項目は
+書かなくても動く。
+
+```dotenv
+MYCOMFYUI_COMFYUI_BASE_URL=http://127.0.0.1:8188
+MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=600
+# 未設定なら同梱 fixture を参照する
+MYCOMFYUI_AIMEDIA_BASE_URL=
+```
 
 SQLite は `<data_root>/db/mycomfyui.sqlite3` へ作成する。接続時に WAL、外部キー、busy timeout を有効にする。
 設定値に API キーなどの秘密情報を置かない。データベース、ログ、API 応答にも保存しない。
@@ -128,11 +136,14 @@ curl -X POST http://127.0.0.1:8000/api/v1/generation-jobs \
     "scene_ref": {"path": "scenes/01.md"},
     "shot_ref": {"path": "scenes/01-a.md"},
     "recipe_id": "<recipe-id>",
-    "queue_sequence": 1,
     "inputs": {"positive_prompt": "masterpiece, 1girl, library", "seed": 12345},
     "input_refs": []
   }'
 ```
+
+`queue_sequence` は省略できる。省略すると現在の最大値の次を Application API が採番する。
+キューは全 Job で 1 本のため、呼び出し側ごとに採番すると順番が重複する。順番を明示したい
+場合だけ値を渡す。
 
 API は次の順で処理する。
 

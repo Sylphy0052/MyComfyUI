@@ -4,7 +4,7 @@ from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -243,6 +243,7 @@ async def create_generation_job(
     recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
     _validate_recipe_matches(recipe, payload)
     prepared = _prepare_workflow(recipe, payload.inputs)
+    queue_sequence = await _resolve_queue_sequence(session, payload.queue_sequence)
 
     job_id = schemas.new_id()
     stored = _store_workflow_snapshot(job_id, prepared.workflow)
@@ -250,7 +251,7 @@ async def create_generation_job(
     # 永続化をまとめて囲み、後始末の無い隙間を作らない。
     try:
         job, workflow_artifact, manifest = _build_job_records(
-            job_id, payload, recipe, prepared, stored
+            job_id, payload, recipe, prepared, stored, queue_sequence
         )
         await _persist_job_records(session, job, workflow_artifact, manifest)
     except Exception:
@@ -288,12 +289,26 @@ def _store_workflow_snapshot(
         ) from error
 
 
+async def _resolve_queue_sequence(session: AsyncSession, requested: int | None) -> int:
+    """キュー順を決める。未指定なら現在の最大値の次を採番する。
+
+    キューは全Jobで1本のため、画面ごとに採番すると同じ順番が重複する。既定では
+    Application APIが決め、順番を指定したい呼び出しだけが値を渡す。
+    """
+    if requested is not None:
+        return requested
+    result = await session.execute(func.max(GenerationJob.queue_sequence).select())
+    current = result.scalar()
+    return (current or 0) + 1
+
+
 def _build_job_records(
     job_id: str,
     payload: schemas.GenerationJobCreate,
     recipe: Recipe,
     prepared: workflow_module.PreparedWorkflow,
     stored: storage.StoredFile,
+    queue_sequence: int,
 ) -> tuple[GenerationJob, Artifact, GenerationManifest]:
     manifest_id = schemas.new_id()
     workflow_artifact_id = schemas.new_id()
@@ -307,7 +322,7 @@ def _build_job_records(
         recipe_id=payload.recipe_id,
         manifest_id=manifest_id,
         parent_job_id=payload.parent_job_id,
-        queue_sequence=payload.queue_sequence,
+        queue_sequence=queue_sequence,
     )
     workflow_artifact = Artifact(
         id=workflow_artifact_id,

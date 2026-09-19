@@ -341,9 +341,16 @@
             "title": "Parent Job Id"
           },
           "queue_sequence": {
-            "minimum": 0.0,
-            "title": "Queue Sequence",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Sequence"
           },
           "recipe_id": {
             "maxLength": 36,
@@ -366,8 +373,7 @@
           "kind",
           "scene_ref",
           "shot_ref",
-          "recipe_id",
-          "queue_sequence"
+          "recipe_id"
         ],
         "title": "GenerationJobCreate",
         "type": "object"
