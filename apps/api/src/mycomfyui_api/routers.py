@@ -1514,7 +1514,8 @@ async def decide_agent_proposal(
     """
     proposal = await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
     current_state = proposal.state
-    if current_state != "proposed":
+    decidable_states = await _decidable_states(session, proposal)
+    if current_state not in decidable_states:
         raise ApiError(
             "PROPOSAL_NOT_DECIDABLE",
             "この提案はすでに判断済みか、判断できない状態です。",
@@ -1559,7 +1560,7 @@ async def decide_agent_proposal(
     claimed = await session.execute(
         update(AgentProposal)
         .where(AgentProposal.id == proposal.id)
-        .where(AgentProposal.state == "proposed")
+        .where(AgentProposal.state.in_(decidable_states))
         .values(state=next_state, decided_at=decided_at)
     )
     if claimed.rowcount != 1:
@@ -1574,6 +1575,25 @@ async def decide_agent_proposal(
     await _commit(session)
     await session.refresh(proposal)
     return _proposal_read(proposal)
+
+
+async def _decidable_states(
+    session: AsyncSession, proposal: AgentProposal
+) -> tuple[str, ...]:
+    """判断を受け付ける状態を返す。
+
+    承認は一定時間で切れる。切れた承認では適用できないため、`approved`のまま判断も
+    やり直せないと提案が行き止まりになる。承認が切れているときに限り、同じ提案への
+    判断をもう一度受け付ける。
+    """
+    if proposal.state != "approved":
+        return ("proposed",)
+    latest = await _latest_approval(session, proposal.id)
+    if latest is None or latest.decision != "approved":
+        return ("proposed",)
+    if not approvals.is_expired(latest.expires_at, schemas.now_iso()):
+        return ("proposed",)
+    return ("proposed", "approved")
 
 
 async def _latest_approval(
@@ -1664,13 +1684,28 @@ async def apply_agent_proposal(
             raise
         await _link_applied_job(proposal.id, str(job_id))
         raise
-    await session.execute(
-        update(AgentProposal)
-        .where(AgentProposal.id == proposal.id)
-        .values(applied_job_id=job.id)
-    )
-    await _commit(session)
-    return job
+    # 応答に必要な値はコミットの前に取り出す。紐付けに失敗してrollbackすると、ORMの
+    # objectは属性が失効し、その場では応答を組み立てられなくなる。
+    job_id = job.id
+    job_read = schemas.GenerationJobRead.model_validate(job)
+    try:
+        await session.execute(
+            update(AgentProposal)
+            .where(AgentProposal.id == proposal_id)
+            .values(applied_job_id=job_id)
+        )
+        await session.commit()
+    except SQLAlchemyError:
+        # Jobは作成済みで、提案も`applied`で確定している。ここで失敗を返すと投入済みの
+        # Jobを辿れなくなるため、別のセッションで紐付けを残して応答は返す。
+        logger.exception(
+            "適用した提案の紐付けをコミットできません。proposal_id=%s job_id=%s",
+            proposal_id,
+            job_id,
+        )
+        await session.rollback()
+        await _link_applied_job(proposal_id, job_id)
+    return job_read
 
 
 async def _link_applied_job(proposal_id: str, job_id: str) -> None:

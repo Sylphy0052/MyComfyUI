@@ -34,6 +34,25 @@ const STATE_LABELS: Record<string, string> = {
   failed: "取得失敗",
 };
 
+/**
+ * 選択中の提案の承認が期限切れかを判定する。
+ *
+ * 期限切れの承認では適用できない。承認し直せる状態をこの判定で切り替える。期限を
+ * 解釈できない記録はサーバと同じく期限切れとして扱う。
+ */
+function isApprovalExpired(
+  proposal: AgentProposal | null,
+  logs: ApprovalLog[],
+): boolean {
+  if (proposal?.state !== "approved") return false;
+  const latest = logs[0];
+  if (!latest || latest.decision !== "approved" || !latest.expires_at) {
+    return false;
+  }
+  const deadline = Date.parse(latest.expires_at);
+  return Number.isNaN(deadline) || deadline <= Date.now();
+}
+
 type Props = {
   projectId: string | null;
   sceneId: string | null;
@@ -150,6 +169,8 @@ export function AgentPanel({
     };
   }, [selectedId]);
 
+  // 描画のたびに見直す。選択中に期限が切れた承認でも、次の描画で適用を止める。
+  const approvalExpired = isApprovalExpired(selected, logs);
   const selectedKind = KINDS.find((entry) => entry.value === kind);
   const needsRecipe = kind === "image_prompt";
   const disabled =
@@ -371,24 +392,35 @@ export function AgentPanel({
             </p>
           )}
 
+          {approvalExpired && (
+            <p className="muted">
+              承認の有効期限が切れている。適用するには承認し直す。
+            </p>
+          )}
           <div>
             <button
               type="button"
-              disabled={busy || selected.state !== "proposed" || !operation}
+              disabled={
+                busy ||
+                !operation ||
+                (selected.state !== "proposed" && !approvalExpired)
+              }
               onClick={() => decide("approved")}
             >
               承認する
             </button>
             <button
               type="button"
-              disabled={busy || selected.state !== "proposed"}
+              disabled={
+                busy || (selected.state !== "proposed" && !approvalExpired)
+              }
               onClick={() => decide("rejected")}
             >
               却下する
             </button>
             <button
               type="button"
-              disabled={busy || selected.state !== "approved"}
+              disabled={busy || selected.state !== "approved" || approvalExpired}
               onClick={apply}
             >
               適用して生成Jobを投入

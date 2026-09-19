@@ -136,4 +136,7 @@ def verify(
             "承認した操作の内容と一致しません。承認を取り直してください。",
         )
     if is_expired(getattr(record, "expires_at", None), now):
-        raise ApprovalInvalid("APPROVAL_EXPIRED", "承認の有効期限が切れています。")
+        raise ApprovalInvalid(
+            "APPROVAL_EXPIRED",
+            "承認の有効期限が切れています。承認し直してください。",
+        )
