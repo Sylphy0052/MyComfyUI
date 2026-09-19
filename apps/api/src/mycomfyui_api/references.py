@@ -18,16 +18,17 @@ from mycomfyui_api.adapters.aimedia.client import (
     ReferenceSource,
 )
 from mycomfyui_api.errors import ApiError
+from mycomfyui_api.schemas import CANON_ID_PATTERN, REFERENCE_ID_PATTERN
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
 
-#: 参照IDの書式。契約のIDは英数字とハイフンだけで、ドットもスラッシュも含まない。
-#: 上流URLのパスセグメントへ埋め込む値のため、`.`や`..`が混ざらないようここで弾く。
-REFERENCE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
-
+#: 参照IDの書式は`schemas`を正本とする。上流URLのパスセグメントへ埋め込む値のため、
+#: `.`や`..`が混ざらないよう、要求を受け取る時点で弾く。
 ReferenceId = Annotated[str, Path(pattern=REFERENCE_ID_PATTERN)]
+
+CanonId = Annotated[str, Path(pattern=CANON_ID_PATTERN)]
 
 
 def get_reference_source(request: Request) -> ReferenceSource:
@@ -100,3 +101,17 @@ async def get_shot(
     source: ReferenceSourceDep,
 ) -> dict[str, Any]:
     return await _relay(lambda: source.get_shot(project_id, scene_id, shot_id))
+
+
+@router.get("/projects/{project_id}/canon")
+async def list_canon(
+    project_id: ReferenceId, source: ReferenceSourceDep
+) -> dict[str, Any]:
+    return await _relay(lambda: source.list_canon(project_id))
+
+
+@router.get("/projects/{project_id}/canon/{canon_id}")
+async def get_canon(
+    project_id: ReferenceId, canon_id: CanonId, source: ReferenceSourceDep
+) -> dict[str, Any]:
+    return await _relay(lambda: source.get_canon(project_id, canon_id))

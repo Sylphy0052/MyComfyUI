@@ -45,7 +45,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Artifacts
+         * @description Artifact履歴の一覧。既定は作成の新しい順に返す。
+         *
+         *     `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
+         *     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
+         */
+        get: operations["list_artifacts_api_v1_artifacts_get"];
         put?: never;
         /** Create Artifact */
         post: operations["create_artifact_api_v1_artifacts_post"];
@@ -135,9 +142,10 @@ export interface paths {
          * Create Generation Job
          * @description RecipeからWorkflowを組み立て、JobとManifestのIDを先行採番して作成する。
          *
-         *     JobとManifestは相互参照するため、同一トランザクションで相互参照ごと作成する。
-         *     実行時Workflow JSONは先にArtifact storeへ書き出し、その内容のSHA-256を
-         *     Workflow Artifactとして記録する。投入するのはこのファイルそのものとする。
+         *     Scene、Shot、Canonの不変参照は参照APIから解決してManifestへ固定する。JobとManifest
+         *     は相互参照するため、同一トランザクションで相互参照ごと作成する。実行時Workflow JSON
+         *     は先にArtifact storeへ書き出し、その内容のSHA-256をWorkflow Artifactとして記録する。
+         *     投入するのはこのファイルそのものとする。
          */
         post: operations["create_generation_job_api_v1_generation_jobs_post"];
         delete?: never;
@@ -207,6 +215,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/generation-jobs/{job_id}/canon-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Canon Status
+         * @description 記録済みの参照と現在の参照を比べ、Canon更新と再現可否を返す。
+         *
+         *     記録済みのManifestとArtifactは読むだけで更新しない。Exact Replayの入力を現在値へ
+         *     切り替えることもしない。
+         */
+        get: operations["get_job_canon_status_api_v1_generation_jobs__job_id__canon_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generation-jobs/{job_id}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Lineage
+         * @description 親子Jobと、lineageに含まれるArtifactを返す。
+         *
+         *     派生Artifactは`parent_artifact_id`で結ばれているため、Artifactは関係するJobの分を
+         *     まとめて返し、画面側で辿れるようにする。
+         */
+        get: operations["get_job_lineage_api_v1_generation_jobs__job_id__lineage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generation-jobs/{job_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Generation Job
+         * @description 現在のCanonで再生成する(Regenerate with Current Canon)。
+         *
+         *     Scene、Shot、Canonだけを現在の参照APIから解決し直し、Recipe、Workflow、モデル、
+         *     seed、パラメータは元Manifestを複製する。元Jobを親に持つ派生Jobとして記録する。
+         */
+        post: operations["regenerate_generation_job_api_v1_generation_jobs__job_id__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generation-jobs/{job_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay Generation Job
+         * @description 当時の実行条件で再実行する(Exact Replay)。
+         *
+         *     元Manifestの解決済み入力とWorkflowスナップショットをそのまま使い、現在Canonへ
+         *     暗黙に置き換えない。記録時と同じ内容を取得できない入力が1件でもあれば、Jobを
+         *     作らずに不足項目を返す。
+         */
+        post: operations["replay_generation_job_api_v1_generation_jobs__job_id__replay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generation-manifests/{manifest_id}": {
         parameters: {
             query?: never;
@@ -267,6 +368,40 @@ export interface paths {
         };
         /** Get Project */
         get: operations["get_project_api_v1_projects__project_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/canon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Canon */
+        get: operations["list_canon_api_v1_projects__project_id__canon_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/canon/{canon_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Canon */
+        get: operations["get_canon_api_v1_projects__project_id__canon__canon_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -497,11 +632,38 @@ export interface components {
             sha256: string;
         };
         /**
+         * CanonStatusRead
+         * @description Canon更新警告と、Exact Replayの可否。
+         *
+         *     記録済みのManifestとArtifactは更新しない。`replayable`が`False`のとき、
+         *     `blocking`に当時条件を再現できない参照が入る。
+         */
+        CanonStatusRead: {
+            /** Blocking */
+            blocking: components["schemas"]["ReferenceChangeEntry"][];
+            /** Entries */
+            entries: components["schemas"]["ReferenceChangeEntry"][];
+            /** Job Id */
+            job_id: string;
+            /** Manifest Id */
+            manifest_id: string;
+            /** Reason */
+            reason: string | null;
+            /** Replayable */
+            replayable: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unchanged" | "changed" | "unavailable";
+        };
+        /**
          * GenerationJobCreate
          * @description Jobと実行時Manifestを同一トランザクションで作成する要求。
          *
-         *     Workflow JSONはApplication APIがRecipeと`inputs`から組み立てる。呼び出し元は
-         *     Manifestの中身もComfyUIのノードも組み立てない。
+         *     Workflow JSONはApplication APIがRecipeと`inputs`から組み立てる。Scene、Shot、
+         *     Canonの不変参照も参照APIから解決して固定する。呼び出し元はManifestの中身も
+         *     ComfyUIのノードも参照の中身も組み立てない。
          */
         GenerationJobCreate: {
             /** Input Refs */
@@ -519,18 +681,16 @@ export interface components {
             kind: "image" | "video" | "voice" | "music" | "compose";
             /** Parent Job Id */
             parent_job_id?: string | null;
+            /** Project Id */
+            project_id: string;
             /** Queue Sequence */
             queue_sequence?: number | null;
             /** Recipe Id */
             recipe_id: string;
-            /** Scene Ref */
-            scene_ref: {
-                [key: string]: unknown;
-            };
-            /** Shot Ref */
-            shot_ref: {
-                [key: string]: unknown;
-            };
+            /** Scene Id */
+            scene_id: string;
+            /** Shot Id */
+            shot_id: string;
         };
         /** GenerationJobRead */
         GenerationJobRead: {
@@ -595,6 +755,8 @@ export interface components {
             parameters: {
                 [key: string]: unknown;
             };
+            /** Replay Of Manifest Id */
+            replay_of_manifest_id: string | null;
             /** Resolved Prompt */
             resolved_prompt: string;
             /** Seed */
@@ -606,6 +768,25 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * JobLineageRead
+         * @description 親子Jobと、それぞれのArtifact。
+         *
+         *     `ancestors`は親から順に、`descendants`は世代の浅い順に並べる。`artifacts`は
+         *     `parent_artifact_id`で派生関係を辿れるよう、lineageに含まれる全Jobの分を返す。
+         *     `truncated`は探索を上限で打ち切ったことを表す。全件と取り違えないよう応答へ出す。
+         */
+        JobLineageRead: {
+            /** Ancestors */
+            ancestors: components["schemas"]["GenerationJobRead"][];
+            /** Artifacts */
+            artifacts: components["schemas"]["ArtifactRead"][];
+            /** Descendants */
+            descendants: components["schemas"]["GenerationJobRead"][];
+            job: components["schemas"]["GenerationJobRead"];
+            /** Truncated */
+            truncated: boolean;
         };
         /** RecipeCreate */
         RecipeCreate: {
@@ -659,6 +840,37 @@ export interface components {
             workflow_template_ref: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * ReferenceChangeEntry
+         * @description 1件の参照について、記録時と現在を並べた比較結果。
+         *
+         *     `reason`は参照APIでは解決せず、実ファイルを読んで判定した場合にだけ理由が入る。
+         */
+        ReferenceChangeEntry: {
+            /** Anchor */
+            anchor: string | null;
+            /**
+             * Change
+             * @enum {string}
+             */
+            change: "unchanged" | "updated" | "missing" | "added";
+            /** Current */
+            current: {
+                [key: string]: unknown;
+            } | null;
+            /** Kind */
+            kind: string;
+            /** Note */
+            note: string | null;
+            /** Path */
+            path: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Recorded */
+            recorded: {
+                [key: string]: unknown;
+            } | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -733,6 +945,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApprovalLogRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_artifacts_api_v1_artifacts_get: {
+        parameters: {
+            query?: {
+                scene_id?: string | null;
+                shot_id?: string | null;
+                job_id?: string | null;
+                kind?: ("image" | "video" | "audio" | "workflow" | "log") | null;
+                decision?: ("undecided" | "accepted" | "rejected") | null;
+                availability?: ("complete" | "incomplete") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactRead"][];
                 };
             };
             /** @description Validation Error */
@@ -1037,6 +1287,130 @@ export interface operations {
             };
         };
     };
+    get_job_canon_status_api_v1_generation_jobs__job_id__canon_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanonStatusRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_lineage_api_v1_generation_jobs__job_id__lineage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobLineageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_generation_job_api_v1_generation_jobs__job_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationJobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replay_generation_job_api_v1_generation_jobs__job_id__replay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationJobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_generation_manifest_api_v1_generation_manifests__manifest_id__get: {
         parameters: {
             query?: never;
@@ -1118,6 +1492,73 @@ export interface operations {
             header?: never;
             path: {
                 project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_canon_api_v1_projects__project_id__canon_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_canon_api_v1_projects__project_id__canon__canon_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                canon_id: string;
             };
             cookie?: never;
         };

@@ -299,9 +299,72 @@
         "title": "ArtifactRead",
         "type": "object"
       },
+      "CanonStatusRead": {
+        "additionalProperties": false,
+        "description": "Canon更新警告と、Exact Replayの可否。\n\n記録済みのManifestとArtifactは更新しない。`replayable`が`False`のとき、\n`blocking`に当時条件を再現できない参照が入る。",
+        "properties": {
+          "blocking": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceChangeEntry"
+            },
+            "title": "Blocking",
+            "type": "array"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceChangeEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "manifest_id": {
+            "title": "Manifest Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "replayable": {
+            "title": "Replayable",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "unchanged",
+              "changed",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "manifest_id",
+          "status",
+          "replayable",
+          "reason",
+          "entries",
+          "blocking"
+        ],
+        "title": "CanonStatusRead",
+        "type": "object"
+      },
       "GenerationJobCreate": {
         "additionalProperties": false,
-        "description": "Jobと実行時Manifestを同一トランザクションで作成する要求。\n\nWorkflow JSONはApplication APIがRecipeと`inputs`から組み立てる。呼び出し元は\nManifestの中身もComfyUIのノードも組み立てない。",
+        "description": "Jobと実行時Manifestを同一トランザクションで作成する要求。\n\nWorkflow JSONはApplication APIがRecipeと`inputs`から組み立てる。Scene、Shot、\nCanonの不変参照も参照APIから解決して固定する。呼び出し元はManifestの中身も\nComfyUIのノードも参照の中身も組み立てない。",
         "properties": {
           "input_refs": {
             "items": {
@@ -340,6 +403,11 @@
             ],
             "title": "Parent Job Id"
           },
+          "project_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Project Id",
+            "type": "string"
+          },
           "queue_sequence": {
             "anyOf": [
               {
@@ -358,21 +426,22 @@
             "title": "Recipe Id",
             "type": "string"
           },
-          "scene_ref": {
-            "additionalProperties": true,
-            "title": "Scene Ref",
-            "type": "object"
+          "scene_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Scene Id",
+            "type": "string"
           },
-          "shot_ref": {
-            "additionalProperties": true,
-            "title": "Shot Ref",
-            "type": "object"
+          "shot_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Shot Id",
+            "type": "string"
           }
         },
         "required": [
           "kind",
-          "scene_ref",
-          "shot_ref",
+          "project_id",
+          "scene_id",
+          "shot_id",
           "recipe_id"
         ],
         "title": "GenerationJobCreate",
@@ -573,6 +642,17 @@
             "title": "Parameters",
             "type": "object"
           },
+          "replay_of_manifest_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replay Of Manifest Id"
+          },
           "resolved_prompt": {
             "title": "Resolved Prompt",
             "type": "string"
@@ -597,6 +677,7 @@
           "parameters",
           "input_refs",
           "workflow_artifact_id",
+          "replay_of_manifest_id",
           "created_at"
         ],
         "title": "GenerationManifestRead",
@@ -613,6 +694,49 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JobLineageRead": {
+        "additionalProperties": false,
+        "description": "親子Jobと、それぞれのArtifact。\n\n`ancestors`は親から順に、`descendants`は世代の浅い順に並べる。`artifacts`は\n`parent_artifact_id`で派生関係を辿れるよう、lineageに含まれる全Jobの分を返す。\n`truncated`は探索を上限で打ち切ったことを表す。全件と取り違えないよう応答へ出す。",
+        "properties": {
+          "ancestors": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationJobRead"
+            },
+            "title": "Ancestors",
+            "type": "array"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactRead"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "descendants": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationJobRead"
+            },
+            "title": "Descendants",
+            "type": "array"
+          },
+          "job": {
+            "$ref": "#/components/schemas/GenerationJobRead"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "job",
+          "ancestors",
+          "descendants",
+          "artifacts",
+          "truncated"
+        ],
+        "title": "JobLineageRead",
         "type": "object"
       },
       "RecipeCreate": {
@@ -743,6 +867,105 @@
         "title": "RecipeRead",
         "type": "object"
       },
+      "ReferenceChangeEntry": {
+        "additionalProperties": false,
+        "description": "1件の参照について、記録時と現在を並べた比較結果。\n\n`reason`は参照APIでは解決せず、実ファイルを読んで判定した場合にだけ理由が入る。",
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "change": {
+            "enum": [
+              "unchanged",
+              "updated",
+              "missing",
+              "added"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "recorded": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded"
+          }
+        },
+        "required": [
+          "kind",
+          "change",
+          "path",
+          "anchor",
+          "note",
+          "recorded",
+          "current"
+        ],
+        "title": "ReferenceChangeEntry",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -869,6 +1092,174 @@
       }
     },
     "/api/v1/artifacts": {
+      "get": {
+        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\n`scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。",
+        "operationId": "list_artifacts_api_v1_artifacts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scene_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shot_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shot Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "image",
+                    "video",
+                    "audio",
+                    "workflow",
+                    "log"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "undecided",
+                    "accepted",
+                    "rejected"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decision"
+            }
+          },
+          {
+            "in": "query",
+            "name": "availability",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "complete",
+                    "incomplete"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Availability"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactRead"
+                  },
+                  "title": "Response List Artifacts Api V1 Artifacts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Artifacts"
+      },
       "post": {
         "operationId": "create_artifact_api_v1_artifacts_post",
         "requestBody": {
@@ -1147,7 +1538,7 @@
         "summary": "List Generation Jobs"
       },
       "post": {
-        "description": "RecipeからWorkflowを組み立て、JobとManifestのIDを先行採番して作成する。\n\nJobとManifestは相互参照するため、同一トランザクションで相互参照ごと作成する。\n実行時Workflow JSONは先にArtifact storeへ書き出し、その内容のSHA-256を\nWorkflow Artifactとして記録する。投入するのはこのファイルそのものとする。",
+        "description": "RecipeからWorkflowを組み立て、JobとManifestのIDを先行採番して作成する。\n\nScene、Shot、Canonの不変参照は参照APIから解決してManifestへ固定する。JobとManifest\nは相互参照するため、同一トランザクションで相互参照ごと作成する。実行時Workflow JSON\nは先にArtifact storeへ書き出し、その内容のSHA-256をWorkflow Artifactとして記録する。\n投入するのはこのファイルそのものとする。",
         "operationId": "create_generation_job_api_v1_generation_jobs_post",
         "requestBody": {
           "content": {
@@ -1307,6 +1698,166 @@
         "summary": "Cancel Generation Job"
       }
     },
+    "/api/v1/generation-jobs/{job_id}/canon-status": {
+      "get": {
+        "description": "記録済みの参照と現在の参照を比べ、Canon更新と再現可否を返す。\n\n記録済みのManifestとArtifactは読むだけで更新しない。Exact Replayの入力を現在値へ\n切り替えることもしない。",
+        "operationId": "get_job_canon_status_api_v1_generation_jobs__job_id__canon_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job Canon Status"
+      }
+    },
+    "/api/v1/generation-jobs/{job_id}/lineage": {
+      "get": {
+        "description": "親子Jobと、lineageに含まれるArtifactを返す。\n\n派生Artifactは`parent_artifact_id`で結ばれているため、Artifactは関係するJobの分を\nまとめて返し、画面側で辿れるようにする。",
+        "operationId": "get_job_lineage_api_v1_generation_jobs__job_id__lineage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobLineageRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job Lineage"
+      }
+    },
+    "/api/v1/generation-jobs/{job_id}/regenerate": {
+      "post": {
+        "description": "現在のCanonで再生成する(Regenerate with Current Canon)。\n\nScene、Shot、Canonだけを現在の参照APIから解決し直し、Recipe、Workflow、モデル、\nseed、パラメータは元Manifestを複製する。元Jobを親に持つ派生Jobとして記録する。",
+        "operationId": "regenerate_generation_job_api_v1_generation_jobs__job_id__regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationJobRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate Generation Job"
+      }
+    },
+    "/api/v1/generation-jobs/{job_id}/replay": {
+      "post": {
+        "description": "当時の実行条件で再実行する(Exact Replay)。\n\n元Manifestの解決済み入力とWorkflowスナップショットをそのまま使い、現在Canonへ\n暗黙に置き換えない。記録時と同じ内容を取得できない入力が1件でもあれば、Jobを\n作らずに不足項目を返す。",
+        "operationId": "replay_generation_job_api_v1_generation_jobs__job_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationJobRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay Generation Job"
+      }
+    },
     "/api/v1/generation-manifests/{manifest_id}": {
       "get": {
         "operationId": "get_generation_manifest_api_v1_generation_manifests__manifest_id__get",
@@ -1428,6 +1979,100 @@
           }
         },
         "summary": "Get Project"
+      }
+    },
+    "/api/v1/projects/{project_id}/canon": {
+      "get": {
+        "operationId": "list_canon_api_v1_projects__project_id__canon_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Canon Api V1 Projects  Project Id  Canon Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Canon"
+      }
+    },
+    "/api/v1/projects/{project_id}/canon/{canon_id}": {
+      "get": {
+        "operationId": "get_canon_api_v1_projects__project_id__canon__canon_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "canon_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Canon Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Canon Api V1 Projects  Project Id  Canon  Canon Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Canon"
       }
     },
     "/api/v1/projects/{project_id}/scenes": {

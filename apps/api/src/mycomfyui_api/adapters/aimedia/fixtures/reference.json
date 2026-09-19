@@ -574,5 +574,48 @@
         ]
       }
     }
+  },
+  "canon": {
+    "hirohito": [
+      {
+        "canon_id": "b8378f26375cba4faf55f4483c52580b8e63ddc51e07e2a8fd9defa3bf9d60f2",
+        "kind": "character",
+        "display_name": "akari",
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "canon/characters/akari.md",
+          "sha256": "01d3e03ab68fb4b308f1c6997f21ff835b3614c6a42d2e4430ebcd53f1f562fd",
+          "anchor": "外見",
+          "note": null
+        }
+      },
+      {
+        "canon_id": "4dbcbf2e07d1a618b08a6d1d3a2c4a3ce666230aec6c3b57ff595432cd89a843",
+        "kind": "character",
+        "display_name": "hirohito",
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "canon/characters/hirohito.md",
+          "sha256": "f78ce65322cc26ce57cd736f719db6aff5fc59ebcb070806fad988b77917855f",
+          "anchor": "外見",
+          "note": "髪型と制服の指定"
+        }
+      },
+      {
+        "canon_id": "7b2799f4728f1d9dc2070b41bc58adc3e8b5fa48bcd69081d8e228f96a569b56",
+        "kind": "location",
+        "display_name": "old-school-darkroom",
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "canon/locations/old-school-darkroom.md",
+          "sha256": "3144c303c1de9319baa167308630ec25e620f54832768154804ded5ae4bfe04f",
+          "anchor": null,
+          "note": "暗室の赤色光"
+        }
+      }
+    ]
   }
 }

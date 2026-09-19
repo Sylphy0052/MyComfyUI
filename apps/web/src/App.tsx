@@ -15,6 +15,7 @@ import type {
   ShotEnvelope,
   ShotSummary,
 } from "./api/aimedia";
+import { ArtifactHistory } from "./components/ArtifactHistory";
 import { CandidateGallery } from "./components/CandidateGallery";
 import type { Candidate } from "./components/CandidateGallery";
 import { GenerationForm } from "./components/GenerationForm";
@@ -57,6 +58,8 @@ export function App() {
   >({});
   const [submitting, setSubmitting] = useState(false);
   const [busyArtifactId, setBusyArtifactId] = useState<string | null>(null);
+  // Job を投入・派生させたときに値を変え、Artifact 履歴を取り直させる。
+  const [historyToken, setHistoryToken] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -257,18 +260,20 @@ export function App() {
   }, [artifactsByJob]);
 
   const submit = async (recipe: Recipe, inputs: Record<string, unknown>) => {
-    if (!sceneId || !shotId) return;
+    if (!projectId || !sceneId || !shotId) return;
     setSubmitting(true);
     setError(null);
     try {
       const job = await api.createJob({
         kind: "image",
-        scene_ref: { id: sceneId },
-        shot_ref: { id: shotId },
+        project_id: projectId,
+        scene_id: sceneId,
+        shot_id: shotId,
         recipe_id: recipe.id,
         inputs,
       });
       setSelectedJobId(job.id);
+      setHistoryToken((current) => current + 1);
       await refreshJobs();
     } catch (cause) {
       setError(describe(cause));
@@ -306,6 +311,13 @@ export function App() {
     } finally {
       setBusyArtifactId(null);
     }
+  };
+
+  // 再実行で作った派生 Job も、投入直後と同じようにキューと履歴へ反映する。
+  const handleDerivedJob = (job: GenerationJob) => {
+    setSelectedJobId(job.id);
+    setHistoryToken((current) => current + 1);
+    void refreshJobs().catch((cause) => setError(describe(cause)));
   };
 
   return (
@@ -362,6 +374,14 @@ export function App() {
           manifest={manifest}
           onSelect={setSelectedJobId}
           onCancel={cancel}
+        />
+      </div>
+
+      <div className="full">
+        <ArtifactHistory
+          shotId={shotId}
+          refreshToken={historyToken}
+          onDerivedJob={handleDerivedJob}
         />
       </div>
     </div>
