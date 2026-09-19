@@ -4,12 +4,17 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 
+from mycomfyui_api.db import get_engine
 from mycomfyui_api.errors import ApiError, api_error_handler, validation_error_handler
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    yield
+    engine = get_engine()
+    try:
+        yield
+    finally:
+        await engine.dispose()
 
 
 def create_app() -> FastAPI:
