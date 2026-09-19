@@ -122,7 +122,7 @@ MyComfyUIはCanon descriptorを画面表示とGeneration Manifestの参照に使
 5. 指定revisionがローカルに無くてもAPIから自動fetchしない。
 6. branch名、tag、短縮hash、`HEAD`という文字列をprovenanceへ保存しない。
 
-MyComfyUIは応答を受け取るたびにJSON SchemaとSHA-256を検証する。Generation Manifestには応答時の不変参照を保存する。再実行時にrevisionを取得できない場合、現在の`HEAD`へ置き換えずExact Replayを実行不能にする。
+参照APIは取得したfile contentのSHA-256を算出し、不変参照として返す。MyComfyUIは応答をJSON Schemaで検証し、SHA-256を含む不変参照をGeneration Manifestへ保存する。再実行時にrevisionを取得できない場合、現在の`HEAD`へ置き換えずExact Replayを実行不能にする。
 
 ## Schema version
 
