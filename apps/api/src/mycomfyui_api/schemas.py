@@ -12,6 +12,7 @@ ApprovalDecision = Literal["approved", "rejected", "expired"]
 JobState = Literal[
     "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
 ]
+FailureStage = Literal["backend_start", "execution", "response_disconnect", "timeout"]
 
 # hashは大文字小文字を問わず受け取り、小文字へ正規化して保存する。
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{64}$"), AfterValidator(str.lower)]
@@ -119,6 +120,8 @@ class GenerationJobRead(ApiModel):
     finished_at: str | None
     failure_code: str | None
     failure_message: str | None
+    failure_stage: str | None
+    retryable: bool | None
 
 
 class GenerationManifestRead(ApiModel):

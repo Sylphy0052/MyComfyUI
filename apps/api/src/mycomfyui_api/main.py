@@ -1,3 +1,4 @@
+import logging
 import re
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -6,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from mycomfyui_api.db import dispose_engine, get_engine
+from mycomfyui_api.db import dispose_engine, get_engine, get_session_factory
 from mycomfyui_api.errors import (
     ApiError,
     api_error_handler,
@@ -14,7 +15,14 @@ from mycomfyui_api.errors import (
     unhandled_error_handler,
     validation_error_handler,
 )
+from mycomfyui_api.queue import (
+    JobQueueWorker,
+    UnavailableExecutor,
+    recover_interrupted_jobs,
+)
 from mycomfyui_api.routers import router
+
+logger = logging.getLogger(__name__)
 
 REQUEST_ID_PATTERN = re.compile(r"\A[A-Za-z0-9._-]{1,64}\Z")
 
@@ -27,11 +35,20 @@ def _resolve_request_id(raw: str | None) -> str:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
     get_engine()
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        recovered = await recover_interrupted_jobs(session)
+        if recovered:
+            logger.info("中断Jobを%d件failedへ倒しました。", recovered)
+    worker = JobQueueWorker(session_factory, UnavailableExecutor())
+    worker.start()
+    app.state.queue_worker = worker
     try:
         yield
     finally:
+        await worker.stop()
         await dispose_engine()
 
 

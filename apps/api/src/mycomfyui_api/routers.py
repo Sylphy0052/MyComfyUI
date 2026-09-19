@@ -1,7 +1,8 @@
 import logging
 from typing import Annotated, TypeVar
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -17,6 +18,7 @@ from mycomfyui_api.models import (
     GenerationManifest,
     Recipe,
 )
+from mycomfyui_api.queue import JobQueueWorker
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,13 @@ router = APIRouter(prefix="/api/v1")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 ModelT = TypeVar("ModelT", bound=Base)
+
+
+def get_queue_worker(request: Request) -> JobQueueWorker:
+    return request.app.state.queue_worker
+
+
+QueueWorkerDep = Annotated[JobQueueWorker, Depends(get_queue_worker)]
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -152,9 +161,73 @@ async def create_generation_job(
     return job
 
 
+@router.get("/generation-jobs", response_model=list[schemas.GenerationJobRead])
+async def list_generation_jobs(
+    session: SessionDep, state: schemas.JobState | None = None
+):
+    """キュー状態の確認用。既定はqueue_sequence昇順の全件、state指定で絞り込む。"""
+    query = select(GenerationJob).order_by(GenerationJob.queue_sequence.asc())
+    if state is not None:
+        query = query.where(GenerationJob.state == state)
+    result = await session.execute(query)
+    return result.scalars().all()
+
+
 @router.get("/generation-jobs/{job_id}", response_model=schemas.GenerationJobRead)
 async def get_generation_job(job_id: str, session: SessionDep):
     return await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+
+
+@router.post(
+    "/generation-jobs/{job_id}/cancel", response_model=schemas.GenerationJobRead
+)
+async def cancel_generation_job(
+    job_id: str, session: SessionDep, worker: QueueWorkerDep
+):
+    """queuedは即cancelled、runningはcancellingへ遷移しExecutorへ取消を伝える。
+
+    条件付きUPDATEでワーカーの`_claim_next`/`_finalize`との競合を検知する。
+    更新0件は他プロセスが先に状態を変えたことを意味し、409で再取得を促す。
+    cancellingへの二重要求はidempotentに現在の状態を返す。
+    """
+    job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    if job.state == "cancelling":
+        # ワーカーが直後にfinalizeした可能性があるため、返却前に最新状態を取り直す。
+        await session.refresh(job)
+        return job
+    now = schemas.now_iso()
+    if job.state == "queued":
+        result = await session.execute(
+            update(GenerationJob)
+            .where(GenerationJob.id == job_id, GenerationJob.state == "queued")
+            .values(state="cancelled", cancel_requested_at=now, finished_at=now)
+        )
+    elif job.state == "running":
+        result = await session.execute(
+            update(GenerationJob)
+            .where(GenerationJob.id == job_id, GenerationJob.state == "running")
+            .values(state="cancelling", cancel_requested_at=now)
+        )
+    else:
+        raise ApiError(
+            "JOB_NOT_CANCELLABLE",
+            f"Jobの状態'{job.state}'は取消できません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"state": job.state},
+        )
+    if result.rowcount == 0:
+        await session.rollback()
+        raise ApiError(
+            "JOB_STATE_CONFLICT",
+            "他の処理がJobの状態を変更しました。最新状態を再取得してください。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"job_id": job_id},
+        )
+    await session.commit()
+    await session.refresh(job)
+    if job.state == "cancelling":
+        worker.request_cancel(job_id)
+    return job
 
 
 @router.get(

@@ -1,5 +1,6 @@
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     ForeignKey,
     ForeignKeyConstraint,
@@ -52,6 +53,11 @@ class GenerationJob(Base):
             "state in ('queued','running','cancelling','succeeded','failed','cancelled')",
             name="ck_generation_job_state",
         ),
+        CheckConstraint(
+            "failure_stage is null or failure_stage in "
+            "('backend_start','execution','response_disconnect','timeout')",
+            name="ck_generation_job_failure_stage",
+        ),
         ForeignKeyConstraint(
             ["manifest_id"],
             ["generation_manifest.id"],
@@ -79,6 +85,8 @@ class GenerationJob(Base):
     finished_at: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_stage: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retryable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class GenerationManifest(Base):
