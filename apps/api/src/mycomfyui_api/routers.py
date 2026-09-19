@@ -1,7 +1,8 @@
 import logging
 from typing import Annotated, TypeVar
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -17,6 +18,7 @@ from mycomfyui_api.models import (
     GenerationManifest,
     Recipe,
 )
+from mycomfyui_api.queue import JobQueueWorker
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,13 @@ router = APIRouter(prefix="/api/v1")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 ModelT = TypeVar("ModelT", bound=Base)
+
+
+def get_queue_worker(request: Request) -> JobQueueWorker:
+    return request.app.state.queue_worker
+
+
+QueueWorkerDep = Annotated[JobQueueWorker, Depends(get_queue_worker)]
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -155,6 +164,46 @@ async def create_generation_job(
 @router.get("/generation-jobs/{job_id}", response_model=schemas.GenerationJobRead)
 async def get_generation_job(job_id: str, session: SessionDep):
     return await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+
+
+@router.get("/generation-jobs", response_model=list[schemas.GenerationJobRead])
+async def list_generation_jobs(
+    session: SessionDep, state: schemas.JobState | None = None
+):
+    """キュー状態の確認用。既定はqueue_sequence昇順の全件、state指定で絞り込む。"""
+    query = select(GenerationJob).order_by(GenerationJob.queue_sequence.asc())
+    if state is not None:
+        query = query.where(GenerationJob.state == state)
+    result = await session.execute(query)
+    return result.scalars().all()
+
+
+@router.post(
+    "/generation-jobs/{job_id}/cancel", response_model=schemas.GenerationJobRead
+)
+async def cancel_generation_job(
+    job_id: str, session: SessionDep, worker: QueueWorkerDep
+):
+    """queuedは即cancelled、runningはcancellingへ遷移しExecutorへ取消を伝える。"""
+    job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    now = schemas.now_iso()
+    if job.state == "queued":
+        job.state = "cancelled"
+        job.cancel_requested_at = now
+        job.finished_at = now
+    elif job.state == "running":
+        job.state = "cancelling"
+        job.cancel_requested_at = now
+        worker.request_cancel(job_id)
+    else:
+        raise ApiError(
+            "JOB_NOT_CANCELLABLE",
+            f"Jobの状態'{job.state}'は取消できません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"state": job.state},
+        )
+    await _commit(session)
+    return job
 
 
 @router.get(
