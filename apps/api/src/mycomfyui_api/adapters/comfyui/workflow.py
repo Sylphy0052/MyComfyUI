@@ -20,8 +20,11 @@ from typing import Any
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
-#: seedの上限。ComfyUIのKSamplerが受け付ける符号なし64bitの範囲に合わせる。
-MAX_SEED = 2**64 - 1
+#: seedの上限。ComfyUIのKSamplerは符号なし64bitまで受け付けるが、seedは
+#: SQLiteのINTEGER(符号付き64bit)へ保存し、JSONの数値としてWeb UIまで往復する。
+#: JavaScriptの数値は2^53までしか誤差なく表せず、これを超えると画面に出るseedが実際に
+#: 使った値とずれ、再実行で再現できなくなる。往復できる範囲へ揃える。
+MAX_SEED = 2**53 - 1
 
 #: seedの自動採番を指示する値。
 AUTO_SEED = -1
