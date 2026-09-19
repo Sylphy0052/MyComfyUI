@@ -1,10 +1,15 @@
+import logging
 from typing import Any
+from uuid import uuid4
 
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 from starlette import status
+
+logger = logging.getLogger(__name__)
 
 
 class ErrorEnvelope(BaseModel):
@@ -36,13 +41,40 @@ def error_response(request: Request, error: ApiError) -> JSONResponse:
             code=error.code,
             message=error.message,
             details=error.details,
-            request_id=request.state.request_id,
+            request_id=getattr(request.state, "request_id", None) or str(uuid4()),
         ).model_dump(),
     )
 
 
 async def api_error_handler(request: Request, error: ApiError) -> JSONResponse:
     return error_response(request, error)
+
+
+async def storage_error_handler(
+    request: Request, error: SQLAlchemyError
+) -> JSONResponse:
+    """DB接続やlockの失敗も共通Envelopeで返す。詳細は応答へ出さずログへ残す。"""
+    logger.exception("永続化層でエラーが発生しました。", exc_info=error)
+    return error_response(
+        request,
+        ApiError(
+            "STORAGE_ERROR",
+            "保存先へアクセスできませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ),
+    )
+
+
+async def unhandled_error_handler(request: Request, error: Exception) -> JSONResponse:
+    logger.exception("未処理の例外が発生しました。", exc_info=error)
+    return error_response(
+        request,
+        ApiError(
+            "INTERNAL_ERROR",
+            "サーバ内部でエラーが発生しました。",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ),
+    )
 
 
 def _serializable_errors(error: RequestValidationError) -> list[dict[str, Any]]:

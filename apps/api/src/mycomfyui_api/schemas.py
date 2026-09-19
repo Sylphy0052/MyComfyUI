@@ -2,16 +2,19 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 GenerationKind = Literal["image", "video", "voice", "music", "compose"]
 ArtifactKind = Literal["image", "video", "audio", "workflow", "log"]
 Availability = Literal["complete", "incomplete"]
 ArtifactDecision = Literal["undecided", "accepted", "rejected"]
 ApprovalDecision = Literal["approved", "rejected", "expired"]
-JobState = Literal["queued", "running", "cancelling", "succeeded", "failed", "cancelled"]
+JobState = Literal[
+    "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
+]
 
-Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+# hashは大文字小文字を問わず受け取り、小文字へ正規化して保存する。
+Sha256 = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{64}$"), AfterValidator(str.lower)]
 ResourceId = Annotated[str, Field(min_length=1, max_length=36)]
 
 

@@ -49,3 +49,12 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 async def get_session() -> AsyncIterator[AsyncSession]:
     async with get_session_factory()() as session:
         yield session
+
+
+async def dispose_engine() -> None:
+    """接続を閉じてキャッシュも捨てる。次回は新しいイベントループで作り直す。"""
+    global _engine, _session_factory
+    if _engine is not None:
+        await _engine.dispose()
+    _engine = None
+    _session_factory = None

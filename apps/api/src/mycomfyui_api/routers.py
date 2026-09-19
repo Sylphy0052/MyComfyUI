@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated, TypeVar
 
 from fastapi import APIRouter, Depends
@@ -17,6 +18,8 @@ from mycomfyui_api.models import (
     Recipe,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1")
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -35,11 +38,12 @@ def _not_found(resource: str, resource_id: str) -> ApiError:
 
 def _integrity_error(error: IntegrityError) -> ApiError:
     """外部キー違反などDB制約の違反を機械判定可能なEnvelopeへ変換する。"""
+    logger.info("DB制約に違反しました。", exc_info=error)
     return ApiError(
         "VALIDATION_ERROR",
         "参照先が存在しないか、制約に違反しています。",
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        details={"constraint": type(error.orig).__name__ if error.orig else None},
+        details={"reason": "integrity_constraint"},
     )
 
 

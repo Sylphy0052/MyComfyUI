@@ -118,6 +118,13 @@ Recipe の変更は新しい Recipe として作成し、必要なら `supersede
 |---|---|---|
 |`RESOURCE_NOT_FOUND`|404|指定した ID のリソースが存在しない|
 |`VALIDATION_ERROR`|422|入力値が schema に合わない、または参照先が存在しない|
+|`STORAGE_ERROR`|503|データベースへアクセスできない (lock、migration 未適用など)|
+|`INTERNAL_ERROR`|500|上記以外の未処理の例外|
+
+`STORAGE_ERROR` と `INTERNAL_ERROR` は原因を応答へ含めず、`logging` へ出力する。
+
+要求 header の `X-Request-ID` は `[A-Za-z0-9._-]` の 1〜64 文字だけ引き継ぐ。
+書式を満たさない値は破棄し、サーバ側で採番する。
 
 ## 対象外
 
