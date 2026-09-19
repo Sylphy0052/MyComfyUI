@@ -97,3 +97,63 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 - `Artifact.job_id`、`GenerationManifest.workflow_artifact_id`、各親IDは削除連鎖を行わない外部キーとする。
 - JobとArtifactの親子関係はProjectをまたがない。
 - 外部参照の`revision`と`sha256`の検証に失敗した場合、記録済み値を更新せず、検証失敗としてJobを失敗させるか再実行不能として扱う。
+
+## Job状態遷移
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued: JobとManifestを確定
+    queued --> running: GPUキューが開始
+    queued --> cancelled: 実行前の取消を確定
+    running --> succeeded: 全Artifactを保存・検証
+    running --> failed: Backendまたは検証が失敗
+    running --> cancelling: 取消要求を受理
+    cancelling --> cancelled: Backend停止を確認
+    cancelling --> succeeded: 停止前に出力を完了
+    cancelling --> failed: 停止処理が失敗
+    succeeded --> [*]
+    failed --> [*]
+    cancelled --> [*]
+```
+
+|状態|意味|遷移条件|
+|---|---|---|
+|`queued`|Manifest確定済みでGPU待ち|作成時の初期状態。取消を確定すれば`cancelled`、実行を開始すれば`running`。|
+|`running`|Backendが実行中|Backend開始を確認してから設定する。出力を保存・検証できれば`succeeded`、失敗なら`failed`、取消要求を受理すれば`cancelling`。|
+|`cancelling`|停止要求をBackendへ送信済み|停止確認後に`cancelled`。停止前に完全な出力が保存された場合だけ`succeeded`。停止処理の失敗は`failed`。|
+|`succeeded`|出力とManifestの整合性を確認済み|終端状態。少なくとも1件の主出力ArtifactとWorkflow Artifactが必要。|
+|`failed`|実行、保存、hash検証、停止処理のいずれかに失敗|終端状態。`failure_code`と利用者へ表示可能な`failure_message`を記録する。|
+|`cancelled`|利用者の取消によって実行しなかった、または停止した|終端状態。`cancel_requested_at`を必須とする。|
+
+状態変更はApplication APIだけが行う。同じ遷移要求を複数回受けても、終端状態を後戻りさせない。Jobの取消はArtifactやManifestを削除しない。
+
+## Lineageと再実行
+
+### 親子関係
+
+- 通常の新規生成では`parent_job_id`と`parent_artifact_id`を設定しない。
+- 既存Jobから再実行する場合は、必ず新しいJobと新しいManifestを作る。元Jobを更新しない。
+- 再実行の新Jobは元Jobの`id`を`parent_job_id`へ設定する。入力Artifactを加工した場合は、新Artifactの`parent_artifact_id`へ元Artifactを設定する。
+- lineageは親から子への有向非循環グラフとする。親を後から付け替えない。
+
+### Exact Replay
+
+Exact Replayは元Manifestを読み取り専用の入力として、当時の実行条件を復元する新しいJobを作る。
+
+- 元Manifestの`engine`、`engine_version`、モデル識別子とhash、seed、解決済みprompt、parameters、`input_refs`、Workflow Artifactの内容を使う。
+- 新JobのManifestには、再実行元ManifestのIDと実際に再解決・検証した各入力を記録する。元Manifestを更新しない。
+- 指定revision、モデル、Workflow Artifact、入力ファイルが取得できないかhash不一致なら、Jobを開始しない。利用者へ不足項目を示し、現在の値へ暗黙に置き換えない。
+- 実行可能な場合でも出力は新Artifactとして保存し、元Artifactを置換しない。
+
+### Regenerate with Current Canon
+
+Regenerate with Current Canonは元Jobの派生Jobを作り、Scene、Shot、Canon参照だけを現在の参照APIから解決し直す。
+
+- 新Jobの`parent_job_id`に元Job IDを設定する。
+- 新Manifestには新たに解決した`input_refs`とそのrevision、path、SHA-256を固定する。元ManifestのCanon参照を変更しない。
+- Recipe、Workflow、モデル、seed、parametersの扱いは実行画面で明示する。既定では元Manifestを複製し、変更があれば新Manifestだけに記録する。
+- 現在のCanonと元ManifestのCanon参照が異なる場合は、再生成前に差分警告を表示する。
+
+## Canon更新警告
+
+Artifact一覧と再実行画面は、Manifestの各Canon参照と現在の参照APIから解決した参照を比較する。`revision`、`path`、`sha256`のいずれかが異なる場合、Canon更新ありと表示する。警告は記録済みManifestやArtifactを変更せず、Exact Replayの入力を現在値へ切り替えない。
