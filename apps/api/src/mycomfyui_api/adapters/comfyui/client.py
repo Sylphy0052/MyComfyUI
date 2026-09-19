@@ -212,7 +212,7 @@ class ComfyUIClient:
 
     async def _monitor(self, prompt_id: str) -> None:
         try:
-            await self._monitor_via_websocket(prompt_id)
+            completed = await self._monitor_via_websocket(prompt_id)
         except (OSError, WebSocketException) as error:
             logger.warning(
                 "WebSocket監視を使えないためポーリングへ切り替えます。prompt_id=%s (%s)",
@@ -220,7 +220,12 @@ class ComfyUIClient:
                 type(error).__name__,
             )
         else:
-            return
+            if completed:
+                return
+            logger.warning(
+                "WebSocketが完了前に閉じたためポーリングへ切り替えます。prompt_id=%s",
+                prompt_id,
+            )
         try:
             await self._monitor_via_polling(prompt_id)
         except ComfyUIUnavailable as error:
@@ -228,7 +233,13 @@ class ComfyUIClient:
                 f"実行の監視接続が切れ、履歴も取得できません。prompt_id={prompt_id}"
             ) from error
 
-    async def _monitor_via_websocket(self, prompt_id: str) -> None:
+    async def _monitor_via_websocket(self, prompt_id: str) -> bool:
+        """WebSocketで完了を検知できたかを返す。
+
+        ComfyUIが正常クローズでWebSocketを閉じると`async for`は例外を出さずに終わる
+        (サーバ再起動やプロキシのアイドル切断で起きる)。完了を検知しないまま抜けた
+        ことを呼び出し元へ伝え、ポーリングで確かめ直させる。
+        """
         ws_url = _to_websocket_url(self._base_url, self._client_id)
         async with websockets.connect(ws_url) as connection:
             # 接続前に完了していると通知を取り逃すため、接続直後に履歴を1度確認する。
@@ -236,12 +247,13 @@ class ComfyUIClient:
             if entry is not None:
                 _raise_if_failed(entry, prompt_id)
                 if _is_completed(entry):
-                    return
+                    return True
             async for raw in connection:
                 if not isinstance(raw, str):
                     continue
                 if _is_completion_message(raw, prompt_id):
-                    return
+                    return True
+        return False
 
     async def _monitor_via_polling(self, prompt_id: str) -> None:
         while True:
@@ -299,16 +311,29 @@ class ComfyUIClient:
             interrupted = await self._client.post(
                 "/interrupt", json={"prompt_id": prompt_id}
             )
-            dequeued = await self._client.post("/queue", json={"delete": [prompt_id]})
         except httpx.HTTPError as error:
             raise InterruptFailed(
                 f"停止要求を送れませんでした。prompt_id={prompt_id}"
             ) from error
-        for response in (interrupted, dequeued):
-            if response.status_code >= httpx.codes.BAD_REQUEST:
-                raise InterruptFailed(
-                    f"停止要求が拒否されました(HTTP {response.status_code})。"
-                    f"prompt_id={prompt_id}"
+        if interrupted.status_code >= httpx.codes.BAD_REQUEST:
+            raise InterruptFailed(
+                f"停止要求が拒否されました(HTTP {interrupted.status_code})。"
+                f"prompt_id={prompt_id}"
+            )
+        # 中断そのものは成功している。順番待ちからの削除は取りこぼしを防ぐための
+        # 追加操作であり、ここでの失敗を停止処理の失敗として扱わない。
+        try:
+            dequeued = await self._client.post("/queue", json={"delete": [prompt_id]})
+        except httpx.HTTPError:
+            logger.warning(
+                "順番待ちからの削除を送れませんでした。prompt_id=%s", prompt_id
+            )
+        else:
+            if dequeued.status_code >= httpx.codes.BAD_REQUEST:
+                logger.warning(
+                    "順番待ちからの削除が拒否されました(HTTP %s)。prompt_id=%s",
+                    dequeued.status_code,
+                    prompt_id,
                 )
         logger.info("停止要求を送りました。prompt_id=%s", prompt_id)
 

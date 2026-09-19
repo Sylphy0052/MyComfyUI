@@ -84,6 +84,20 @@ class GenerationJobCreate(ApiModel):
     inputs: dict[str, Any] = Field(default_factory=dict)
     input_refs: list[dict[str, Any]] = Field(default_factory=list)
 
+    @field_validator("input_refs")
+    @classmethod
+    def _validate_input_refs(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """入力cache参照の`relative_path`も`data_root`基準に限定する。
+
+        Manifestへそのまま保存され、後からファイル解決に使われる値のため、保存する
+        時点で絶対パスと親ディレクトリ参照を弾く。
+        """
+        for ref in value:
+            relative_path = ref.get("relative_path")
+            if isinstance(relative_path, str):
+                _reject_unsafe_path(relative_path)
+        return value
+
 
 class GenerationJobRead(ApiModel):
     id: str

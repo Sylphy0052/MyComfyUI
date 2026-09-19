@@ -22,7 +22,6 @@ from mycomfyui_api.models import (
     Recipe,
 )
 from mycomfyui_api.queue import JobQueueWorker
-from mycomfyui_api.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +134,44 @@ def _resolve_template_name(recipe: Recipe) -> str:
     return name
 
 
+def _validate_against_input_schema(
+    recipe: Recipe, template_name: str, inputs: dict[str, Any], values: dict[str, Any]
+) -> None:
+    """Recipeの`input_schema`で、受け取る変数と必須項目を絞る。
+
+    テンプレート側のallowlistより狭い範囲しか許さないRecipeを作れるようにする。
+    `input_schema`は変数名をキーとし、値が`{"required": true}`を持つ項目を必須とする。
+    空のときはテンプレート側の定義だけで判定する。
+    """
+    schema = recipe.input_schema
+    if not isinstance(schema, dict) or not schema:
+        return
+    known = workflow_module.variable_names(template_name)
+    undefined = set(schema) - known
+    if undefined:
+        raise _validation_error(
+            "Recipeのinput_schemaがWorkflowに無い変数を指しています。",
+            {"template": template_name, "unknown": sorted(undefined)},
+        )
+    rejected = set(inputs) - set(schema)
+    if rejected:
+        raise _validation_error(
+            "このRecipeで指定できない変数です。",
+            {"rejected": sorted(rejected), "allowed": sorted(schema)},
+        )
+    missing = [
+        name
+        for name, spec in schema.items()
+        if isinstance(spec, dict)
+        and spec.get("required") is True
+        and name not in values
+    ]
+    if missing:
+        raise _validation_error(
+            "Recipeが必須とする変数が不足しています。", {"missing": sorted(missing)}
+        )
+
+
 def _prepare_workflow(
     recipe: Recipe, inputs: dict[str, Any]
 ) -> workflow_module.PreparedWorkflow:
@@ -142,6 +179,7 @@ def _prepare_workflow(
     template_name = _resolve_template_name(recipe)
     defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
     values: dict[str, Any] = {**defaults, **inputs}
+    _validate_against_input_schema(recipe, template_name, inputs, values)
     try:
         return workflow_module.build_workflow(template_name, values)
     except workflow_module.WorkflowError as error:
@@ -163,6 +201,23 @@ async def create_generation_job(
     Workflow Artifactとして記録する。投入するのはこのファイルそのものとする。
     """
     recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
+    _validate_recipe_matches(recipe, payload)
+    prepared = _prepare_workflow(recipe, payload.inputs)
+
+    job_id = schemas.new_id()
+    stored = _store_workflow_snapshot(job_id, prepared.workflow)
+    job, workflow_artifact, manifest = _build_job_records(
+        job_id, payload, recipe, prepared, stored
+    )
+    await _persist_job_records(
+        session, job, workflow_artifact, manifest, stored.relative_path
+    )
+    return job
+
+
+def _validate_recipe_matches(
+    recipe: Recipe, payload: schemas.GenerationJobCreate
+) -> None:
     if recipe.engine != ENGINE_COMFYUI:
         raise _validation_error(
             f"未対応の実行Backendです: {recipe.engine}", {"engine": recipe.engine}
@@ -173,16 +228,13 @@ async def create_generation_job(
             {"recipe_kind": recipe.kind, "kind": payload.kind},
         )
 
-    prepared = _prepare_workflow(recipe, payload.inputs)
 
-    job_id = schemas.new_id()
-    manifest_id = schemas.new_id()
-    workflow_artifact_id = schemas.new_id()
-    created_at = schemas.now_iso()
-
-    body = json.dumps(prepared.workflow, ensure_ascii=False, indent=2).encode("utf-8")
+def _store_workflow_snapshot(
+    job_id: str, workflow: dict[str, Any]
+) -> storage.StoredFile:
+    body = json.dumps(workflow, ensure_ascii=False, indent=2).encode("utf-8")
     try:
-        stored = storage.write_artifact(job_id, storage.WORKFLOW_FILE_NAME, body)
+        return storage.write_artifact(job_id, storage.WORKFLOW_FILE_NAME, body)
     except storage.StorageError as error:
         logger.exception("Workflowスナップショットを保存できません。job_id=%s", job_id)
         raise ApiError(
@@ -191,6 +243,17 @@ async def create_generation_job(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         ) from error
 
+
+def _build_job_records(
+    job_id: str,
+    payload: schemas.GenerationJobCreate,
+    recipe: Recipe,
+    prepared: workflow_module.PreparedWorkflow,
+    stored: storage.StoredFile,
+) -> tuple[GenerationJob, Artifact, GenerationManifest]:
+    manifest_id = schemas.new_id()
+    workflow_artifact_id = schemas.new_id()
+    created_at = schemas.now_iso()
     job = GenerationJob(
         id=job_id,
         kind=payload.kind,
@@ -234,8 +297,21 @@ async def create_generation_job(
         workflow_artifact_id=workflow_artifact_id,
         created_at=created_at,
     )
-    # Job、Workflow Artifact、Manifestの順にflushする。遅延検証はJobとManifestの
-    # 相互参照だけに必要で、Artifactの参照はこの順序で即時に満たされる。
+    return job, workflow_artifact, manifest
+
+
+async def _persist_job_records(
+    session: AsyncSession,
+    job: GenerationJob,
+    workflow_artifact: Artifact,
+    manifest: GenerationManifest,
+    snapshot_path: str,
+) -> None:
+    """Job、Workflow Artifact、Manifestの順にflushして確定する。
+
+    遅延検証はJobとManifestの相互参照だけに必要で、Artifactの参照はこの順序で即時に
+    満たされる。確定できなければ、先に書いたスナップショットも残さない。
+    """
     try:
         session.add(job)
         await session.flush()
@@ -246,25 +322,12 @@ async def create_generation_job(
         await session.commit()
     except IntegrityError as error:
         await session.rollback()
-        _discard_workflow_snapshot(stored.relative_path)
+        storage.discard_artifacts([snapshot_path])
         raise _integrity_error(error) from error
     except Exception:
         await session.rollback()
-        _discard_workflow_snapshot(stored.relative_path)
+        storage.discard_artifacts([snapshot_path])
         raise
-    return job
-
-
-def _discard_workflow_snapshot(relative_path: str) -> None:
-    """Jobを作れなかったときに、先に書いたスナップショットを残さない。
-
-    どのJobからも参照されないファイルであり、消しても履歴は失われない。
-    """
-    path = get_settings().data_root / relative_path
-    try:
-        path.unlink(missing_ok=True)
-    except OSError:
-        logger.warning("Workflowスナップショットを削除できません: %s", relative_path)
 
 
 @router.get("/generation-jobs", response_model=list[schemas.GenerationJobRead])

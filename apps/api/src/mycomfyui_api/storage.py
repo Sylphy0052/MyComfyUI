@@ -5,10 +5,13 @@
 """
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from mycomfyui_api.settings import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 ARTIFACTS_DIR_NAME = "artifacts"
 WORKFLOW_FILE_NAME = "workflow.json"
@@ -65,6 +68,33 @@ def write_artifact(
         sha256=hashlib.sha256(data).hexdigest(),
         byte_size=len(data),
     )
+
+
+def discard_artifacts(
+    relative_paths: list[str], settings: Settings | None = None
+) -> None:
+    """どのレコードからも参照されなくなったファイルを消す。
+
+    保存には成功したがDBへ記録できなかった場合に使う。記録が無いファイルは再実行で
+    連番違いが増えるだけで、残しても診断に使えないため消す。空になった
+    `artifacts/<job-id>/`も片付ける。
+    """
+    settings = settings or get_settings()
+    directories: set[Path] = set()
+    for relative_path in relative_paths:
+        path = settings.data_root / relative_path
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Artifactを削除できません: %s", relative_path)
+            continue
+        directories.add(path.parent)
+    for directory in directories:
+        try:
+            directory.rmdir()
+        except OSError:
+            # 他のArtifactが残っていれば消さない。空でないrmdirの失敗は想定内。
+            pass
 
 
 def _unique_path(directory: Path, file_name: str) -> Path:

@@ -127,7 +127,7 @@ ANIMA_TXT2IMG = WorkflowBinding(
         "unet_name": VariableRef("unet_loader", "unet_name", "str", required=True),
         "clip_name": VariableRef("clip_loader", "clip_name", "str", required=True),
         "vae_name": VariableRef("vae_loader", "vae_name", "str", required=True),
-        "filename_prefix": VariableRef("save_image", "filename_prefix", "str"),
+        "filename_prefix": VariableRef("save_image", "filename_prefix", "file_prefix"),
     },
     model_slots=(
         ModelSlot("unet_name", "UNETLoader", "unet_name"),
@@ -224,6 +224,18 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
         if not isinstance(value, str):
             raise WorkflowError(f"{name}は文字列で指定します。")
         return value
+    if value_type == "file_prefix":
+        # SaveImageのfilename_prefixはComfyUI側でサブフォルダとして解釈される。
+        # 出力先をComfyUIのoutput配下から動かせないよう、区切り文字を拒否する。
+        if not isinstance(value, str):
+            raise WorkflowError(f"{name}は文字列で指定します。")
+        if not value.strip():
+            raise WorkflowError(f"{name}を空にできません。")
+        if "/" in value or "\\" in value or ".." in value:
+            raise WorkflowError(
+                f"{name}にパス区切りと親ディレクトリ参照を含められません。"
+            )
+        return value
     if value_type == "seed":
         if isinstance(value, bool) or not isinstance(value, int):
             raise WorkflowError(f"{name}は整数で指定します。")
@@ -313,6 +325,16 @@ def build_workflow(template_name: str, values: Mapping[str, Any]) -> PreparedWor
         model=model,
         parameters=parameters,
     )
+
+
+def variable_names(template_name: str) -> frozenset[str]:
+    """テンプレートが受け付ける変数名を返す。Recipeの`input_schema`の検証に使う。"""
+    binding = ALLOWED_TEMPLATES.get(template_name)
+    if binding is None:
+        raise WorkflowError(
+            f"許可されていないWorkflowテンプレートです: {template_name}"
+        )
+    return frozenset(binding.variables)
 
 
 def model_slots(template_name: str) -> tuple[ModelSlot, ...]:

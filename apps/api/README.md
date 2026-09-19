@@ -81,6 +81,9 @@ API は次の順で処理する。
 
 1. Recipe を取得し、`engine` と `kind` が要求と一致するか確かめる。
 2. Recipe の `defaults` と要求の `inputs` をマージし、許可された変数だけかを検証する。
+   Recipe の `input_schema` が空でなければ、そのキーが受け取れる変数の全体になる。
+   値が `{"required": true}` を持つ項目は、`defaults` か `inputs` のどちらかで埋まっている必要がある。
+   `input_schema` が空のときは Workflow テンプレート側の定義だけで判定する。
 3. `workflow_template_ref` が同梱テンプレートを指すか確かめる。`sha256` があれば内容まで照合する。
 4. テンプレートへ変数を注入し、実行用 Workflow JSON を組み立てる。`seed` は `-1` または未指定なら採番する。
 5. `artifacts/<job-id>/workflow.json` へ書き出し、SHA-256 とバイト数を算出する。
@@ -133,6 +136,9 @@ Workflow テンプレートはパッケージ同梱のものだけを実行で�
 
 取消要求を受けたら `/interrupt` に `prompt_id` を付けて送り、`/queue` の `delete` で順番待ちからも外す。
 停止後に出力が揃っていれば `succeeded`、無ければ `cancelled` とする。停止要求自体の失敗は `failed` とする。
+停止後の状態を ComfyUI へ問い合わせられなかった場合は、停止できたのか通信できないだけなのかを
+区別できないため `cancelled` へ丸めず、`BACKEND_DISCONNECTED` として記録する。
+`/queue` の削除だけが失敗した場合は、中断自体は成功しているため停止処理の失敗として扱わない。
 
 失敗理由は次のとおり対応付ける。
 
@@ -140,6 +146,7 @@ Workflow テンプレートはパッケージ同梱のものだけを実行で�
 |---|---|---|---|
 |ComfyUI へ接続できない|`backend_start`|`BACKEND_UNAVAILABLE`|true|
 |モデルファイルが見つからない|`backend_start`|`MODEL_NOT_FOUND`|false|
+|モデルの在庫を確認できない|`backend_start`|`MODEL_NOT_FOUND`|true|
 |Manifest、Recipe、スナップショットを解決できない|`backend_start`|`INPUT_UNRESOLVED`|false|
 |ComfyUI が Workflow を拒否した|`backend_start`|`WORKFLOW_REJECTED`|false|
 |実行中にノードが失敗した|`execution`|`EXECUTION_FAILED`|false|
@@ -158,6 +165,15 @@ Workflow テンプレートはパッケージ同梱のものだけを実行で�
 
 ファイル名は Backend 由来のため、区切り文字と親ディレクトリ参照を取り除いてから使う。
 同名ファイルがある場合は連番を付けて別ファイルにする。保存済みの Artifact は置換しない。
+
+保存はできたが DB へ記録できなかったファイルは削除する。記録の無いファイルは再実行で
+連番違いが増えるだけで診断にも使えないため、ファイルと DB 記録がずれた状態を残さない。
+ただし書き込み後 commit 前にプロセスが強制終了した場合は、孤立した Workflow JSON が残る。
+起動時に回収する仕組みは持たない。
+
+`filename_prefix` は ComfyUI 側でサブフォルダとして解釈されるため、パス区切りと `..` を拒否する。
+モデルファイルの在庫は `/object_info` で確認し、選択肢を取得できなかった場合も失敗させる。
+在庫を確認できないまま任意の文字列をモデルローダーへ渡さない。
 
 ### 更新しない項目
 

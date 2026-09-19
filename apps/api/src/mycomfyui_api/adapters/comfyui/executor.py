@@ -35,16 +35,16 @@ logger = logging.getLogger(__name__)
 
 ENGINE_COMFYUI = "comfyui"
 
-FAILURE_BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
-FAILURE_MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
-FAILURE_INPUT_UNRESOLVED = "INPUT_UNRESOLVED"
-FAILURE_WORKFLOW_REJECTED = "WORKFLOW_REJECTED"
-FAILURE_EXECUTION_FAILED = "EXECUTION_FAILED"
-FAILURE_OUTPUT_NOT_FOUND = "OUTPUT_NOT_FOUND"
-FAILURE_ARTIFACT_WRITE_FAILED = "ARTIFACT_WRITE_FAILED"
-FAILURE_BACKEND_DISCONNECTED = "BACKEND_DISCONNECTED"
-FAILURE_EXECUTION_TIMEOUT = "EXECUTION_TIMEOUT"
-FAILURE_INTERRUPT_FAILED = "INTERRUPT_FAILED"
+FAILURE_CODE_BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
+FAILURE_CODE_MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
+FAILURE_CODE_INPUT_UNRESOLVED = "INPUT_UNRESOLVED"
+FAILURE_CODE_WORKFLOW_REJECTED = "WORKFLOW_REJECTED"
+FAILURE_CODE_EXECUTION_FAILED = "EXECUTION_FAILED"
+FAILURE_CODE_OUTPUT_NOT_FOUND = "OUTPUT_NOT_FOUND"
+FAILURE_CODE_ARTIFACT_WRITE_FAILED = "ARTIFACT_WRITE_FAILED"
+FAILURE_CODE_BACKEND_DISCONNECTED = "BACKEND_DISCONNECTED"
+FAILURE_CODE_EXECUTION_TIMEOUT = "EXECUTION_TIMEOUT"
+FAILURE_CODE_INTERRUPT_FAILED = "INTERRUPT_FAILED"
 
 
 class _PreflightError(Exception):
@@ -101,7 +101,7 @@ class ComfyUIExecutor:
             status = await client.status()
         except ComfyUIUnavailable as error:
             return _failed(
-                FAILURE_BACKEND_UNAVAILABLE,
+                FAILURE_CODE_BACKEND_UNAVAILABLE,
                 "backend_start",
                 f"ComfyUIへ接続できません: {client.base_url}",
                 retryable=True,
@@ -115,7 +115,7 @@ class ComfyUIExecutor:
             return _failed(error.code, "backend_start", error.message, error.retryable)
         except ComfyUIUnavailable as error:
             return _failed(
-                FAILURE_BACKEND_UNAVAILABLE,
+                FAILURE_CODE_BACKEND_UNAVAILABLE,
                 "backend_start",
                 f"ComfyUIへ接続できません: {client.base_url}",
                 retryable=True,
@@ -130,11 +130,14 @@ class ComfyUIExecutor:
             prompt_id = await client.submit(context.workflow)
         except WorkflowRejected as error:
             return _failed(
-                FAILURE_WORKFLOW_REJECTED, "backend_start", str(error), retryable=False
+                FAILURE_CODE_WORKFLOW_REJECTED,
+                "backend_start",
+                str(error),
+                retryable=False,
             )
         except ComfyUIUnavailable as error:
             return _failed(
-                FAILURE_BACKEND_UNAVAILABLE,
+                FAILURE_CODE_BACKEND_UNAVAILABLE,
                 "backend_start",
                 f"ComfyUIへ接続できません: {client.base_url}",
                 retryable=True,
@@ -149,22 +152,22 @@ class ComfyUIExecutor:
             )
         except ExecutionFailed as error:
             return _failed(
-                FAILURE_EXECUTION_FAILED, "execution", str(error), retryable=False
+                FAILURE_CODE_EXECUTION_FAILED, "execution", str(error), retryable=False
             )
         except ExecutionTimeout as error:
             return _failed(
-                FAILURE_EXECUTION_TIMEOUT, "timeout", str(error), retryable=True
+                FAILURE_CODE_EXECUTION_TIMEOUT, "timeout", str(error), retryable=True
             )
         except BackendDisconnected as error:
             return _failed(
-                FAILURE_BACKEND_DISCONNECTED,
+                FAILURE_CODE_BACKEND_DISCONNECTED,
                 "response_disconnect",
                 str(error),
                 retryable=True,
             )
         except ComfyUIUnavailable as error:
             return _failed(
-                FAILURE_BACKEND_DISCONNECTED,
+                FAILURE_CODE_BACKEND_DISCONNECTED,
                 "response_disconnect",
                 f"実行中にComfyUIへ接続できなくなりました: {client.base_url}",
                 retryable=True,
@@ -183,13 +186,23 @@ class ComfyUIExecutor:
             await client.interrupt(prompt_id)
         except InterruptFailed as error:
             return _failed(
-                FAILURE_INTERRUPT_FAILED, "execution", str(error), retryable=False
+                FAILURE_CODE_INTERRUPT_FAILED, "execution", str(error), retryable=False
             )
         try:
             refs = await client.fetch_outputs(prompt_id)
-        except (OutputNotFound, ExecutionFailed, ComfyUIUnavailable):
+        except (OutputNotFound, ExecutionFailed):
             # 停止できていれば出力が無いのが正常。取消として扱う。
             return ExecutionOutcome(succeeded=False, stop_confirmed=True)
+        except ComfyUIUnavailable as error:
+            # 接続できず停止を確認できなかった場合まで取消へ丸めない。停止したのか
+            # 通信できないだけなのかが区別できないため、理由付きの失敗として残す。
+            return _failed(
+                FAILURE_CODE_BACKEND_DISCONNECTED,
+                "response_disconnect",
+                f"停止後の状態を確認できませんでした: {client.base_url}",
+                retryable=True,
+                error=error,
+            )
         return await self._store_outputs(client, context, refs)
 
     async def _collect_outputs(
@@ -199,15 +212,15 @@ class ComfyUIExecutor:
             refs = await client.fetch_outputs(prompt_id)
         except OutputNotFound as error:
             return _failed(
-                FAILURE_OUTPUT_NOT_FOUND, "execution", str(error), retryable=False
+                FAILURE_CODE_OUTPUT_NOT_FOUND, "execution", str(error), retryable=False
             )
         except ExecutionFailed as error:
             return _failed(
-                FAILURE_EXECUTION_FAILED, "execution", str(error), retryable=False
+                FAILURE_CODE_EXECUTION_FAILED, "execution", str(error), retryable=False
             )
         except ComfyUIUnavailable as error:
             return _failed(
-                FAILURE_BACKEND_DISCONNECTED,
+                FAILURE_CODE_BACKEND_DISCONNECTED,
                 "response_disconnect",
                 f"出力の取得中にComfyUIへ接続できなくなりました: {client.base_url}",
                 retryable=True,
@@ -227,29 +240,37 @@ class ComfyUIExecutor:
                         context.job_id, ref.filename, data, self._settings
                     )
                 )
+            await self._create_image_artifacts(context.job_id, stored)
         except OutputNotFound as error:
-            return _failed(
-                FAILURE_OUTPUT_NOT_FOUND, "execution", str(error), retryable=False
+            return self._discard(
+                stored,
+                FAILURE_CODE_OUTPUT_NOT_FOUND,
+                "execution",
+                str(error),
+                retryable=False,
             )
         except ComfyUIUnavailable as error:
-            return _failed(
-                FAILURE_BACKEND_DISCONNECTED,
+            return self._discard(
+                stored,
+                FAILURE_CODE_BACKEND_DISCONNECTED,
                 "response_disconnect",
                 f"出力の取得中にComfyUIへ接続できなくなりました: {client.base_url}",
                 retryable=True,
                 error=error,
             )
         except storage.StorageError as error:
-            return _failed(
-                FAILURE_ARTIFACT_WRITE_FAILED, "execution", str(error), retryable=False
+            return self._discard(
+                stored,
+                FAILURE_CODE_ARTIFACT_WRITE_FAILED,
+                "execution",
+                str(error),
+                retryable=False,
             )
-
-        try:
-            await self._create_image_artifacts(context.job_id, stored)
         except Exception as error:
             logger.exception("Artifactの記録に失敗しました。job_id=%s", context.job_id)
-            return _failed(
-                FAILURE_ARTIFACT_WRITE_FAILED,
+            return self._discard(
+                stored,
+                FAILURE_CODE_ARTIFACT_WRITE_FAILED,
                 "execution",
                 "生成物の記録に失敗しました。",
                 retryable=False,
@@ -257,27 +278,48 @@ class ComfyUIExecutor:
             )
         return ExecutionOutcome(succeeded=True)
 
+    def _discard(
+        self,
+        stored: list[storage.StoredFile],
+        code: str,
+        stage: str,
+        message: str,
+        retryable: bool,
+        *,
+        error: BaseException | None = None,
+    ) -> ExecutionOutcome:
+        """途中まで保存したファイルを消してから失敗として返す。
+
+        複数枚の途中で失敗すると、DBに記録の無いファイルだけが残る。再実行すると
+        連番違いが増えるだけで診断にも使えないため、記録できた分がない限り残さない。
+        """
+        if stored:
+            storage.discard_artifacts(
+                [item.relative_path for item in stored], self._settings
+            )
+        return _failed(code, stage, message, retryable, error=error)
+
     async def _load_context(self, job: GenerationJob) -> _JobContext:
         """Manifest、Recipe、保存済みWorkflow JSONを読み、投入できる形にする。"""
         async with self._session_factory() as session:
             manifest = await session.get(GenerationManifest, job.manifest_id)
             if manifest is None:
                 raise _PreflightError(
-                    FAILURE_INPUT_UNRESOLVED,
+                    FAILURE_CODE_INPUT_UNRESOLVED,
                     "JobのManifestが見つかりません。",
                     retryable=False,
                 )
             recipe = await session.get(Recipe, job.recipe_id)
             if recipe is None:
                 raise _PreflightError(
-                    FAILURE_INPUT_UNRESOLVED,
+                    FAILURE_CODE_INPUT_UNRESOLVED,
                     "JobのRecipeが見つかりません。",
                     retryable=False,
                 )
             artifact = await session.get(Artifact, manifest.workflow_artifact_id)
             if artifact is None:
                 raise _PreflightError(
-                    FAILURE_INPUT_UNRESOLVED,
+                    FAILURE_CODE_INPUT_UNRESOLVED,
                     "Workflowスナップショットが見つかりません。",
                     retryable=False,
                 )
@@ -314,18 +356,29 @@ class ComfyUIExecutor:
             await session.commit()
 
     async def _verify_models(self, client: ComfyUIClient, context: _JobContext) -> None:
-        """Manifestが指すモデルファイルがComfyUI側にあるかを投入前に確かめる。"""
+        """Manifestが指すモデルファイルがComfyUI側にあるかを投入前に確かめる。
+
+        選択肢を取得できなかった場合も失敗させる。ComfyUIのモデルローダーはファイルを
+        読み込む経路のため、在庫を確認できないまま任意の文字列を渡さない。
+        """
         missing: list[str] = []
         for slot in workflow_module.model_slots(context.template_name):
             required = context.model.get(slot.variable)
             if not required:
                 continue
             options = await client.available_options(slot.node_class, slot.option_field)
-            if options and required not in options:
+            if not options:
+                raise _PreflightError(
+                    FAILURE_CODE_MODEL_NOT_FOUND,
+                    f"ComfyUIから{slot.node_class}の選択肢を取得できず、"
+                    f"{slot.variable}の在庫を確認できません。",
+                    retryable=True,
+                )
+            if required not in options:
                 missing.append(f"{slot.variable}={required}")
         if missing:
             raise _PreflightError(
-                FAILURE_MODEL_NOT_FOUND,
+                FAILURE_CODE_MODEL_NOT_FOUND,
                 f"ComfyUIに指定したモデルがありません: {', '.join(missing)}",
                 retryable=False,
             )
@@ -360,7 +413,7 @@ def _template_name(recipe: Recipe) -> str:
     name = reference.get("name") if isinstance(reference, dict) else None
     if not isinstance(name, str) or name not in workflow_module.ALLOWED_TEMPLATES:
         raise _PreflightError(
-            FAILURE_INPUT_UNRESOLVED,
+            FAILURE_CODE_INPUT_UNRESOLVED,
             "Recipeが許可されていないWorkflowテンプレートを指しています。",
             retryable=False,
         )
@@ -378,13 +431,13 @@ def _read_workflow(artifact: Artifact, settings: Settings) -> dict[str, object]:
         raw = path.read_bytes()
     except OSError as error:
         raise _PreflightError(
-            FAILURE_INPUT_UNRESOLVED,
+            FAILURE_CODE_INPUT_UNRESOLVED,
             "Workflowスナップショットを読み込めません。",
             retryable=False,
         ) from error
     if hashlib.sha256(raw).hexdigest() != artifact.sha256:
         raise _PreflightError(
-            FAILURE_INPUT_UNRESOLVED,
+            FAILURE_CODE_INPUT_UNRESOLVED,
             "Workflowスナップショットの内容が記録と一致しません。",
             retryable=False,
         )
@@ -392,13 +445,13 @@ def _read_workflow(artifact: Artifact, settings: Settings) -> dict[str, object]:
         workflow = json.loads(raw)
     except ValueError as error:
         raise _PreflightError(
-            FAILURE_INPUT_UNRESOLVED,
+            FAILURE_CODE_INPUT_UNRESOLVED,
             "Workflowスナップショットを解釈できません。",
             retryable=False,
         ) from error
     if not isinstance(workflow, dict):
         raise _PreflightError(
-            FAILURE_INPUT_UNRESOLVED,
+            FAILURE_CODE_INPUT_UNRESOLVED,
             "Workflowスナップショットの形式が想定外です。",
             retryable=False,
         )
