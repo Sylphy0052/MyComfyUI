@@ -95,7 +95,7 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 
 ## 参照整合性
 
-- `GenerationJob.manifest_id`と`GenerationManifest.job_id`は1対1で一致する。
+- `GenerationJob.manifest_id`と`GenerationManifest.job_id`は1対1で一致する。JobとManifestのIDは保存前に採番し、両レコードは同一トランザクションで作成する。SQLiteの相互外部キーはコミット時まで遅延検証する。
 - `Artifact.job_id`、`GenerationManifest.workflow_artifact_id`、各親IDは削除連鎖を行わない外部キーとする。
 - `succeeded`のJobには`complete`なWorkflow Artifactと少なくとも1件の`complete`な主出力Artifactを関連付ける。`failed`または`cancelled`のJobに関連付ける部分出力は`incomplete`に限定する。
 - JobとArtifactの親子関係はProjectをまたがない。
