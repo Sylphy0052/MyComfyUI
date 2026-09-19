@@ -1,0 +1,55 @@
+{
+  "image_prompt": {
+    "positive_prompt": "1girl, 1boy, school darkroom, red safelight, developing tray, bust shot, eye level, autumn evening, cinematic lighting, detailed",
+    "negative_prompt": "lowres, bad anatomy, extra fingers, watermark, text",
+    "rationale": "Shotの暗室と赤色光、バストショットの指定をpromptへ写した固定応答。"
+  },
+  "shot_breakdown": {
+    "shots": [
+      {
+        "summary": "暗室の赤色光に浮かぶ人物のバストショット。",
+        "camera": "bust / eye_level / locked",
+        "characters": ["hirohito"],
+        "duration_sec": 6.0
+      },
+      {
+        "summary": "現像トレイの中で像が浮かび上がる手元のクローズアップ。",
+        "camera": "close_up / high_angle / locked",
+        "characters": ["hirohito"],
+        "duration_sec": 4.0
+      },
+      {
+        "summary": "写真を差し出す相手と、それを受け取る手のツーショット。",
+        "camera": "medium / eye_level / pan",
+        "characters": ["hirohito", "akari"],
+        "duration_sec": 5.0
+      }
+    ],
+    "rationale": "Sceneの目的である写真の受け渡しへ向かう3 Shotへ分けた固定応答。"
+  },
+  "reference_candidates": {
+    "candidates": [
+      {
+        "artifact_id": "",
+        "label": "暗室の赤色光で撮った既存カット",
+        "reason": "照明条件が一致するため、色味の基準として使える。"
+      },
+      {
+        "artifact_id": "",
+        "label": "同一人物のバストショット",
+        "reason": "髪型と制服の指定を揃えるため。"
+      }
+    ],
+    "rationale": "実在するArtifact IDを持たない固定応答。候補の並べ方だけを示す。"
+  },
+  "recipe_draft": {
+    "name": "暗室ライティング用 Recipe 案",
+    "summary": "赤色光の単光源を前提に、既定のstepsとCFGを下げた派生Recipe。",
+    "inputs": {
+      "positive_prompt": "red safelight, single light source, high contrast",
+      "steps": 24,
+      "cfg": 3.5
+    },
+    "rationale": "既存Recipeの入力欄だけを使って調整した固定応答。"
+  }
+}

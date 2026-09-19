@@ -4,7 +4,53 @@
  */
 
 export interface paths {
-    "/api/v1/approval-logs": {
+    "/api/v1/agent-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Proposals
+         * @description 提案履歴の一覧。既定は作成の新しい順に返す。
+         */
+        get: operations["list_agent_proposals_api_v1_agent_proposals_get"];
+        put?: never;
+        /**
+         * Create Agent Proposal
+         * @description 提案を取得して履歴へ残す。生成Jobは作らない。
+         *
+         *     提案の取得は副作用を持たない操作として承認を求めない。ここで作るのは提案の記録
+         *     だけで、Job、Artifact、Manifestには触れない。
+         *
+         *     Providerが失敗した場合も提案を`failed`として残し、他の機能は止めない。
+         */
+        post: operations["create_agent_proposal_api_v1_agent_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-proposals/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Agent Proposal */
+        get: operations["get_agent_proposal_api_v1_agent_proposals__proposal_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-proposals/{proposal_id}/apply": {
         parameters: {
             query?: never;
             header?: never;
@@ -13,7 +59,87 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Approval Log */
+        /**
+         * Apply Agent Proposal
+         * @description 承認済みの提案を実行する。ここでだけ生成Jobを作る。
+         *
+         *     実行直前に操作内容のdigestを組み立て直し、承認記録と突き合わせる。対象や内容が
+         *     変わっていれば実行しない。適用は1回だけとし、`approved`からの条件付き更新で
+         *     二重投入を防ぐ。
+         */
+        post: operations["apply_agent_proposal_api_v1_agent_proposals__proposal_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-proposals/{proposal_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Agent Proposal
+         * @description 提案への承認・却下をApprovalLogへ追記する。
+         *
+         *     承認しただけでは何も実行しない。実行は適用の要求で明示的に行う。承認時点の操作
+         *     内容のdigestを記録し、提案や対象が変わった後の承認を使い回せないようにする。
+         */
+        post: operations["decide_agent_proposal_api_v1_agent_proposals__proposal_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Providers
+         * @description 設定済みProviderを返す。接続先と認証情報は返さない。
+         */
+        get: operations["list_agent_providers_api_v1_agent_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/approval-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Approval Logs
+         * @description 承認履歴の一覧。既定は判断の新しい順に返す。
+         *
+         *     承認対象、許可した操作、判断、時刻をここで確認できる。ApprovalLogは追記専用の
+         *     ため、この経路でも書き換えない。
+         */
+        get: operations["list_approval_logs_api_v1_approval_logs_get"];
+        put?: never;
+        /**
+         * Create Approval Log
+         * @description 任意の承認記録を追記する。
+         *
+         *     Agent提案の承認はこの経路では作れない。操作内容のdigestを外から持ち込めると、
+         *     提案の内容と対応しない承認を作って適用できてしまうため、専用Endpointだけに限る。
+         */
         post: operations["create_approval_log_api_v1_approval_logs_post"];
         delete?: never;
         options?: never;
@@ -523,6 +649,107 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AgentProposalCreate
+         * @description 提案の取得要求。Jobは作らない。
+         *
+         *     入力コンテキストはApplication APIが参照APIから解決して組み立てる。呼び出し元から
+         *     Providerへ渡す本文を指定させない。
+         */
+        AgentProposalCreate: {
+            /**
+             * Instruction
+             * @default
+             */
+            instruction: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "shot_breakdown" | "image_prompt" | "reference_candidates" | "recipe_draft";
+            /** Project Id */
+            project_id: string;
+            /** Recipe Id */
+            recipe_id?: string | null;
+            /** Scene Id */
+            scene_id: string;
+            /** Shot Id */
+            shot_id?: string | null;
+        };
+        /**
+         * AgentProposalDecision
+         * @description 提案への判断。承認しても、適用は別の要求で明示的に行う。
+         */
+        AgentProposalDecision: {
+            /**
+             * Actor Id
+             * @default local-user
+             */
+            actor_id: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approved" | "rejected";
+        };
+        /** AgentProposalRead */
+        AgentProposalRead: {
+            /** Applied Job Id */
+            applied_job_id: string | null;
+            /** Created At */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /** Failure Code */
+            failure_code: string | null;
+            /** Failure Message */
+            failure_message: string | null;
+            /** Id */
+            id: string;
+            /** Instruction */
+            instruction: string;
+            /** Kind */
+            kind: string;
+            /** Model */
+            model: string | null;
+            /** Output */
+            output: {
+                [key: string]: unknown;
+            } | null;
+            planned_operation?: components["schemas"]["PlannedOperation"] | null;
+            /** Project Id */
+            project_id: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Recipe Id */
+            recipe_id: string | null;
+            /** Request Context */
+            request_context: {
+                [key: string]: unknown;
+            };
+            /** Scene Id */
+            scene_id: string;
+            /** Shot Id */
+            shot_id: string | null;
+            /** State */
+            state: string;
+            /** Usage */
+            usage: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * AgentProviderRead
+         * @description 利用可能なProvider。接続先と認証情報は返さない。
+         */
+        AgentProviderRead: {
+            /** Available */
+            available: boolean;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
         /** ApprovalLogCreate */
         ApprovalLogCreate: {
             /** Actor Id */
@@ -788,6 +1015,32 @@ export interface components {
             /** Truncated */
             truncated: boolean;
         };
+        /**
+         * PlannedOperation
+         * @description 提案を承認したときに実行する操作。
+         *
+         *     `digest`は操作内容から算出する。承認したあとに対象や内容が変わると値が変わり、
+         *     古い承認では実行できない。
+         */
+        PlannedOperation: {
+            /** Digest */
+            digest: string;
+            /**
+             * Effect
+             * @enum {string}
+             */
+            effect: "no_side_effect" | "requires_approval" | "forbidden";
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Target */
+            target: {
+                [key: string]: unknown;
+            };
+            /** Type */
+            type: string;
+        };
         /** RecipeCreate */
         RecipeCreate: {
             /** Defaults */
@@ -894,6 +1147,225 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_agent_proposals_api_v1_agent_proposals_get: {
+        parameters: {
+            query?: {
+                scene_id?: string | null;
+                shot_id?: string | null;
+                state?: ("proposed" | "approved" | "rejected" | "applied" | "failed") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProposalRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_agent_proposal_api_v1_agent_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProposalCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProposalRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_agent_proposal_api_v1_agent_proposals__proposal_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProposalRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_agent_proposal_api_v1_agent_proposals__proposal_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationJobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_agent_proposal_api_v1_agent_proposals__proposal_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProposalDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProposalRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_providers_api_v1_agent_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProviderRead"][];
+                };
+            };
+        };
+    };
+    list_approval_logs_api_v1_approval_logs_get: {
+        parameters: {
+            query?: {
+                subject_type?: string | null;
+                subject_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalLogRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_approval_log_api_v1_approval_logs_post: {
         parameters: {
             query?: never;

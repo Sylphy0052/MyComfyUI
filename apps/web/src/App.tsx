@@ -15,6 +15,7 @@ import type {
   ShotEnvelope,
   ShotSummary,
 } from "./api/aimedia";
+import { AgentPanel } from "./components/AgentPanel";
 import { ArtifactHistory } from "./components/ArtifactHistory";
 import { CandidateGallery } from "./components/CandidateGallery";
 import type { Candidate } from "./components/CandidateGallery";
@@ -374,6 +375,16 @@ export function App() {
           manifest={manifest}
           onSelect={setSelectedJobId}
           onCancel={cancel}
+        />
+      </div>
+
+      <div className="full">
+        <AgentPanel
+          projectId={projectId}
+          sceneId={sceneId}
+          shotId={shotId}
+          recipes={recipes}
+          onAppliedJob={handleDerivedJob}
         />
       </div>
 

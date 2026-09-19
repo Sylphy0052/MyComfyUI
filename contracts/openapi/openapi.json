@@ -1,6 +1,296 @@
 {
   "components": {
     "schemas": {
+      "AgentProposalCreate": {
+        "additionalProperties": false,
+        "description": "提案の取得要求。Jobは作らない。\n\n入力コンテキストはApplication APIが参照APIから解決して組み立てる。呼び出し元から\nProviderへ渡す本文を指定させない。",
+        "properties": {
+          "instruction": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Instruction",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "shot_breakdown",
+              "image_prompt",
+              "reference_candidates",
+              "recipe_draft"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
+          },
+          "scene_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          }
+        },
+        "required": [
+          "kind",
+          "project_id",
+          "scene_id"
+        ],
+        "title": "AgentProposalCreate",
+        "type": "object"
+      },
+      "AgentProposalDecision": {
+        "additionalProperties": false,
+        "description": "提案への判断。承認しても、適用は別の要求で明示的に行う。",
+        "properties": {
+          "actor_id": {
+            "default": "local-user",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "AgentProposalDecision",
+        "type": "object"
+      },
+      "AgentProposalRead": {
+        "additionalProperties": false,
+        "properties": {
+          "applied_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Job Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instruction": {
+            "title": "Instruction",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          },
+          "planned_operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlannedOperation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
+          },
+          "request_context": {
+            "additionalProperties": true,
+            "title": "Request Context",
+            "type": "object"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          }
+        },
+        "required": [
+          "id",
+          "provider_id",
+          "kind",
+          "state",
+          "project_id",
+          "scene_id",
+          "shot_id",
+          "recipe_id",
+          "instruction",
+          "request_context",
+          "output",
+          "usage",
+          "model",
+          "failure_code",
+          "failure_message",
+          "applied_job_id",
+          "created_at",
+          "decided_at"
+        ],
+        "title": "AgentProposalRead",
+        "type": "object"
+      },
+      "AgentProviderRead": {
+        "additionalProperties": false,
+        "description": "利用可能なProvider。接続先と認証情報は返さない。",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "available"
+        ],
+        "title": "AgentProviderRead",
+        "type": "object"
+      },
       "ApprovalLogCreate": {
         "additionalProperties": false,
         "properties": {
@@ -739,6 +1029,48 @@
         "title": "JobLineageRead",
         "type": "object"
       },
+      "PlannedOperation": {
+        "additionalProperties": false,
+        "description": "提案を承認したときに実行する操作。\n\n`digest`は操作内容から算出する。承認したあとに対象や内容が変わると値が変わり、\n古い承認では実行できない。",
+        "properties": {
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "effect": {
+            "enum": [
+              "no_side_effect",
+              "requires_approval",
+              "forbidden"
+            ],
+            "title": "Effect",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "target": {
+            "additionalProperties": true,
+            "title": "Target",
+            "type": "object"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "effect",
+          "target",
+          "payload",
+          "digest"
+        ],
+        "title": "PlannedOperation",
+        "type": "object"
+      },
       "RecipeCreate": {
         "additionalProperties": false,
         "properties": {
@@ -1014,8 +1346,399 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/v1/approval-logs": {
+    "/api/v1/agent-proposals": {
+      "get": {
+        "description": "提案履歴の一覧。既定は作成の新しい順に返す。",
+        "operationId": "list_agent_proposals_api_v1_agent_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scene_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shot_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shot Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "proposed",
+                    "approved",
+                    "rejected",
+                    "applied",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentProposalRead"
+                  },
+                  "title": "Response List Agent Proposals Api V1 Agent Proposals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Agent Proposals"
+      },
       "post": {
+        "description": "提案を取得して履歴へ残す。生成Jobは作らない。\n\n提案の取得は副作用を持たない操作として承認を求めない。ここで作るのは提案の記録\nだけで、Job、Artifact、Manifestには触れない。\n\nProviderが失敗した場合も提案を`failed`として残し、他の機能は止めない。",
+        "operationId": "create_agent_proposal_api_v1_agent_proposals_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProposalCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProposalRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agent Proposal"
+      }
+    },
+    "/api/v1/agent-proposals/{proposal_id}": {
+      "get": {
+        "operationId": "get_agent_proposal_api_v1_agent_proposals__proposal_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProposalRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent Proposal"
+      }
+    },
+    "/api/v1/agent-proposals/{proposal_id}/apply": {
+      "post": {
+        "description": "承認済みの提案を実行する。ここでだけ生成Jobを作る。\n\n実行直前に操作内容のdigestを組み立て直し、承認記録と突き合わせる。対象や内容が\n変わっていれば実行しない。適用は1回だけとし、`approved`からの条件付き更新で\n二重投入を防ぐ。",
+        "operationId": "apply_agent_proposal_api_v1_agent_proposals__proposal_id__apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationJobRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Agent Proposal"
+      }
+    },
+    "/api/v1/agent-proposals/{proposal_id}/decision": {
+      "post": {
+        "description": "提案への承認・却下をApprovalLogへ追記する。\n\n承認しただけでは何も実行しない。実行は適用の要求で明示的に行う。承認時点の操作\n内容のdigestを記録し、提案や対象が変わった後の承認を使い回せないようにする。",
+        "operationId": "decide_agent_proposal_api_v1_agent_proposals__proposal_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProposalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProposalRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Agent Proposal"
+      }
+    },
+    "/api/v1/agent-providers": {
+      "get": {
+        "description": "設定済みProviderを返す。接続先と認証情報は返さない。",
+        "operationId": "list_agent_providers_api_v1_agent_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentProviderRead"
+                  },
+                  "title": "Response List Agent Providers Api V1 Agent Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Agent Providers"
+      }
+    },
+    "/api/v1/approval-logs": {
+      "get": {
+        "description": "承認履歴の一覧。既定は判断の新しい順に返す。\n\n承認対象、許可した操作、判断、時刻をここで確認できる。ApprovalLogは追記専用の\nため、この経路でも書き換えない。",
+        "operationId": "list_approval_logs_api_v1_approval_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApprovalLogRead"
+                  },
+                  "title": "Response List Approval Logs Api V1 Approval Logs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Approval Logs"
+      },
+      "post": {
+        "description": "任意の承認記録を追記する。\n\nAgent提案の承認はこの経路では作れない。操作内容のdigestを外から持ち込めると、\n提案の内容と対応しない承認を作って適用できてしまうため、専用Endpointだけに限る。",
         "operationId": "create_approval_log_api_v1_approval_logs_post",
         "requestBody": {
           "content": {
