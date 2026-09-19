@@ -16,6 +16,7 @@ from typing import Any
 KIND_SCENE = "scene"
 KIND_SHOT = "shot"
 KIND_CANON = "canon"
+KIND_CACHED_INPUT = "cached_input"
 
 #: 参照APIから解決し直せる種別。Canon更新警告と再実行の検証はこれだけを対象にする。
 RESOLVABLE_KINDS = frozenset({KIND_SCENE, KIND_SHOT, KIND_CANON})

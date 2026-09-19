@@ -47,17 +47,23 @@ def now_iso() -> str:
 
 
 def _reject_unsafe_path(value: str) -> str:
-    """data_root基準の相対パスだけを受け付ける。"""
+    """data_root基準の相対パスだけを受け付ける。
+
+    空セグメント(`a//b`)と`.`セグメント(`a/./b`)も拒否する。同じ場所を指すのに文字列
+    としては別物になり、記録した値をそのまま突き合わせる再現判定がずれるためである。
+    """
     candidate = value.strip()
     if not candidate:
         raise ValueError("relative_pathを空にできません。")
-    if candidate.startswith("/") or candidate.startswith("\\"):
+    if candidate.startswith(("/", "\\")):
         raise ValueError("relative_pathに絶対パスを指定できません。")
     if len(candidate) > 1 and candidate[1] == ":":
         raise ValueError("relative_pathに絶対パスを指定できません。")
     parts = candidate.replace("\\", "/").split("/")
     if ".." in parts:
         raise ValueError("relative_pathに親ディレクトリ参照を指定できません。")
+    if any(part in ("", ".") for part in parts):
+        raise ValueError("relative_pathを正規化した形で指定してください。")
     return candidate
 
 
@@ -116,12 +122,17 @@ class GenerationJobCreate(ApiModel):
         Manifestへそのまま保存され、後からファイル解決に使われる値のため、保存する
         時点で絶対パスと親ディレクトリ参照を弾く。参照APIから解決する種別を呼び出し元
         から渡せると、記録済みのCanon参照を外から差し替えられてしまうため拒否する。
+
+        拒否したい種別を並べるのではなく`cached_input`だけを許可する。表記を変えた
+        `Scene`のような値が拒否をすり抜け、解決していない参照が来歴として残るのを
+        防ぐためである。
         """
         for ref in value:
             kind = ref.get("kind")
-            if kind in provenance.RESOLVABLE_KINDS:
+            if kind != provenance.KIND_CACHED_INPUT:
                 raise ValueError(
-                    f"{kind}の参照はApplication APIが解決するため指定できません。"
+                    f"input_refsには{provenance.KIND_CACHED_INPUT}の参照だけを"
+                    f"指定できます: {kind!r}"
                 )
             relative_path = ref.get("relative_path")
             if isinstance(relative_path, str):

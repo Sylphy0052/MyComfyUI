@@ -494,8 +494,21 @@ async def _load_queue_sequence(session: AsyncSession, job: GenerationJob) -> Non
 
     採番はINSERT文の中で評価されるため、確定した値はDBにしかない。コミット済みの
     レコードを読むだけの操作であり、失敗してもJobの記録は有効なまま残す。
+
+    読み直せないときは応答を組み立てられないが、Jobは作成済みである。作成に失敗した
+    と誤解して再送されると同じ内容のJobが増えるため、その旨を専用のcodeで返す。
     """
-    await session.refresh(job)
+    try:
+        await session.refresh(job)
+    except Exception as error:
+        logger.exception("作成済みJobを読み直せません。job_id=%s", job.id)
+        raise ApiError(
+            "JOB_RECORD_UNREADABLE",
+            "Jobは作成済みですが、応答を組み立てられませんでした。"
+            "再送せずにJob一覧で状態を確認してください。",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"job_id": job.id},
+        ) from error
 
 
 @router.get("/generation-jobs", response_model=list[schemas.GenerationJobRead])

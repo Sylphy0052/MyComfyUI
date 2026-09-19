@@ -198,9 +198,25 @@ class FixtureReferenceSource:
         *,
         path: Path | None = None,
     ) -> None:
-        self._document = (
-            _validated(document) if document is not None else _load_fixture(path)
-        )
+        self._path = path
+        self._fixed = _validated(document) if document is not None else None
+        if self._fixed is None:
+            # 読み込めない設定は起動時に失敗させる。参照のたびに503を返す状態で
+            # 立ち上がると、原因が設定にあることが分かりにくい。
+            _load_fixture(path)
+
+    @property
+    def _document(self) -> dict[str, Any]:
+        """参照のたびにfixtureを読む。
+
+        このsourceはアプリの起動時に1つだけ作り、以後使い回す。読み込んだ内容を
+        保持すると、検証中に差し替えfixtureを書き換えてもプロセスを再起動するまで
+        反映されない。同梱fixtureは`_read_bundled_fixture`がキャッシュするため、
+        読み直しの実費が出るのは差し替え時だけである。
+        """
+        if self._fixed is not None:
+            return self._fixed
+        return _load_fixture(self._path)
 
     async def list_projects(self) -> dict[str, Any]:
         return copy.deepcopy({"items": self._document["projects"]})
@@ -264,7 +280,7 @@ def _load_fixture(path: Path | None = None) -> dict[str, Any]:
     """参照fixtureを読む。
 
     同梱fixtureは起動中に変わらないため一度だけ読む。差し替えたfixtureは検証中に内容を
-    書き換えるため、キャッシュせず毎回読み直す。
+    書き換えるため、キャッシュせず呼ばれるたびに読み直す。
     """
     if path is not None:
         return _read_fixture(path)
