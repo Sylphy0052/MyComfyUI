@@ -207,16 +207,12 @@ class FixtureReferenceSource:
             # そのままキャッシュとして使う。
             self._read()
 
-    def _stamp(self) -> tuple[int, int]:
+    def _stamp(self, path: Path) -> tuple[int, int]:
         """差し替えfixtureの世代を表す値。更新時刻とサイズで変化を見る。"""
         try:
-            info = self._path.stat() if self._path is not None else None
+            info = path.stat()
         except OSError as error:
-            raise AiMediaUnavailable(
-                f"参照fixtureを読み込めません: {self._path}"
-            ) from error
-        if info is None:  # pragma: no cover - 同梱fixtureはこの経路を通らない
-            raise AiMediaUnavailable("参照fixtureのパスが設定されていません。")
+            raise AiMediaUnavailable(f"参照fixtureを読み込めません: {path}") from error
         return (info.st_mtime_ns, info.st_size)
 
     def _read(self) -> dict[str, Any]:
@@ -234,7 +230,7 @@ class FixtureReferenceSource:
         """
         if self._path is None:
             return _load_fixture(None)
-        stamp = self._stamp()
+        stamp = self._stamp(self._path)
         cached = self._cached
         if cached is not None and cached[0] == stamp:
             return cached[1]
