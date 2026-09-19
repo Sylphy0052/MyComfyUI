@@ -45,6 +45,19 @@ async def api_error_handler(request: Request, error: ApiError) -> JSONResponse:
     return error_response(request, error)
 
 
+def _serializable_errors(error: RequestValidationError) -> list[dict[str, Any]]:
+    """検証失敗の内訳をJSONへ変換する。`ctx`は例外objectを含むため文字列化する。"""
+    details: list[dict[str, Any]] = []
+    for item in error.errors():
+        entry = dict(item)
+        entry.pop("url", None)
+        ctx = entry.get("ctx")
+        if ctx:
+            entry["ctx"] = {key: str(value) for key, value in ctx.items()}
+        details.append(entry)
+    return details
+
+
 async def validation_error_handler(
     request: Request, error: RequestValidationError
 ) -> JSONResponse:
@@ -54,6 +67,6 @@ async def validation_error_handler(
             "VALIDATION_ERROR",
             "入力値が正しくありません。",
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            details=error.errors(),
+            details=_serializable_errors(error),
         ),
     )

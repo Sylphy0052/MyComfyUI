@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 
 from mycomfyui_api.db import get_engine
 from mycomfyui_api.errors import ApiError, api_error_handler, validation_error_handler
+from mycomfyui_api.routers import router
 
 
 @asynccontextmanager
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="MyComfyUI Application API", version="0.1.0", lifespan=lifespan)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.include_router(router)
 
     @app.middleware("http")
     async def set_request_id(request: Request, call_next):
