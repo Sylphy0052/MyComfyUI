@@ -101,7 +101,7 @@ SceneとShotは次のEnvelopeで返す。
 - `path`:repository rootからの相対path
 - `sha256`:指定revisionにあるfile contentのSHA-256
 
-`anchor`と`note`は表示や参照箇所の特定に使えるが、同一性の判定には使わない。相対pathは`/`区切りのGit repository pathとし、POSIX形式とWindows形式の絶対path、backslash、`..`を拒否する。`source_locator`はサーバー設定の許可リストからだけ解決し、リクエスト値を任意のrepository cloneやfile accessに使わない。
+`anchor`はfile内の参照箇所を識別し、Canon参照の同一性に含める。`note`は表示専用であり、同一性の判定には使わない。相対pathは`/`区切りのGit repository pathとし、POSIX形式とWindows形式の絶対path、backslash、`..`を拒否する。`source_locator`はサーバー設定の許可リストからだけ解決し、リクエスト値を任意のrepository cloneやfile accessに使わない。
 
 Scene/Shot本文内の参照は`provenance.references`へ展開する。各要素は元の場所をJSON Pointerで示し、解決前のpathと不変参照を併記する。複数repositoryに同じ相対pathが存在しても、探索順で暗黙に選ばない。
 
