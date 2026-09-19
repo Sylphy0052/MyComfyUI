@@ -44,9 +44,10 @@
 |`sha256`、`byte_size`、`media_type`|必須|内容識別と表示用メタデータ|不可|
 |`parent_artifact_id`|任意|派生元Artifact ID|不可|
 |`created_at`|必須|保存完了時刻|不可|
-|`decision`、`decision_at`|必須|`undecided`、`accepted`、`rejected`と判断時刻|判断時のみ更新可|
+|`decision`|必須|`undecided`、`accepted`、`rejected`|判断時のみ更新可|
+|`decision_at`|任意|`accepted`または`rejected`にした時刻|判断時のみ1回設定|
 
-`job_id`は成功したJobを指す。`parent_artifact_id`は同一Project内の既存Artifactを指し、循環参照は禁止する。保存済みファイルを置換しない。再出力は別Artifactとして記録する。
+`job_id`は成功したJobを指す。`parent_artifact_id`は同一Project内の既存Artifactを指し、循環参照は禁止する。`undecided`では`decision_at`をNULLとし、採否を設定するときは両項目を同一更新で確定する。保存済みファイルを置換しない。再出力は別Artifactとして記録する。
 
 ### GenerationManifest
 
