@@ -157,3 +157,38 @@ Regenerate with Current Canonは元Jobの派生Jobを作り、Scene、Shot、Can
 ## Canon更新警告
 
 Artifact一覧と再実行画面は、Manifestの各Canon参照と現在の参照APIから解決した参照を比較する。`revision`、`path`、`sha256`のいずれかが異なる場合、Canon更新ありと表示する。警告は記録済みManifestやArtifactを変更せず、Exact Replayの入力を現在値へ切り替えない。
+
+## 保存先と保持方針
+
+### 設定可能なルート
+
+Application APIは`data_root`を設定値として受け取り、その配下だけを管理する。既定値はOS標準の利用者データ領域とし、開発時だけリポジトリ直下の`var/`を明示設定できる。設定の優先順位はADR 0001に従い、アプリケーション既定値、ユーザー設定TOML、`MYCOMFYUI_`環境変数、CLI引数の順とする。
+
+|区分|`data_root`からの相対先|内容|Git管理|
+|---|---|---|---|
+|SQLite|`db/mycomfyui.sqlite3`|Job、Artifact、Manifest、Recipe、ApprovalLogの正本|しない|
+|Artifact store|`artifacts/<job-id>/`|生成画像、動画、音声、Workflow JSON、実行ログ|しない|
+|入力素材cache|`inputs/<sha256>/`|取り込んだ利用者素材のコピー|しない|
+|一時ファイル|`tmp/<job-id>/`|実行途中の出力とdownload|しない。Job完了後に削除可能|
+|診断ログ|`logs/<yyyy-mm-dd>.jsonl`|Application APIとAdapterの構造化ログ|しない|
+
+`data_root`の各パスは起動時に正規化し、ルート外へ脱出する値を拒否する。Artifactを参照するときはDBに保存した相対パスから解決し、利用者入力の絶対パスをManifestやログへ保存しない。
+
+### Git管理の境界
+
+Gitで管理するのはソース、Schema、設計文書、Workflow template、設定例、移植可能な小さなfixtureだけとする。SQLite、生成物、入力素材、実行時Workflowスナップショット、ログ、利用者固有の設定は追跡しない。大容量の生成物をGit LFSへ移すことも初期版では行わない。
+
+`config/mycomfyui.example.toml`には項目名と相対例だけを置く。利用者の`data_root`、Backend URL、APIキー、token、cookie、資格情報を含む設定は追跡対象外のユーザー設定または環境変数へ置く。
+
+### 秘密情報
+
+- APIキー、認証header、cookie、OS資格情報ストアの参照値をSQLite、Manifest、Artifact名、ApprovalLog、構造化ログへ保存しない。
+- Backend呼出しで秘密情報を使う場合、ログには操作名、結果、request IDだけを残し、header、URL query、本文から秘密情報を除外する。
+- Workflow JSONに秘密値が含まれうるBackendでは、保存前に対象ノードを許可リストで検査する。検出時は保存せずJobを`failed`とし、値そのものを失敗理由へ出さない。
+
+### 保持と削除
+
+- `succeeded`のJob、Manifest、Artifact、ApprovalLogは利用者が明示削除するまで保持する。削除機能は後続Issueで設計し、初期版ではDBの親レコードだけを削除する操作を提供しない。
+- `failed`と`cancelled`のJobも診断とlineageのため保持する。部分Artifactは`incomplete`として記録できるが、成功Artifactとして扱わない。
+- `tmp/<job-id>/`だけは終端状態の確定後に削除できる。削除失敗はJob結果を上書きせず、診断ログへ記録する。
+- Artifactの完全削除は、DBレコード、実ファイル、派生関係、再実行可能性に影響するため、対象一覧と影響を確認する明示操作に限定する。
