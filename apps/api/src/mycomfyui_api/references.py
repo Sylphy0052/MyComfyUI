@@ -18,19 +18,15 @@ from mycomfyui_api.adapters.aimedia.client import (
     ReferenceSource,
 )
 from mycomfyui_api.errors import ApiError
+from mycomfyui_api.schemas import CANON_ID_PATTERN, REFERENCE_ID_PATTERN
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
 
-#: 参照IDの書式。契約のIDは英数字とハイフンだけで、ドットもスラッシュも含まない。
-#: 上流URLのパスセグメントへ埋め込む値のため、`.`や`..`が混ざらないようここで弾く。
-REFERENCE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
-
+#: 参照IDの書式は`schemas`を正本とする。上流URLのパスセグメントへ埋め込む値のため、
+#: `.`や`..`が混ざらないよう、要求を受け取る時点で弾く。
 ReferenceId = Annotated[str, Path(pattern=REFERENCE_ID_PATTERN)]
-
-#: Canon descriptorのIDは参照契約で小文字16進数64桁と決まっている。
-CANON_ID_PATTERN = r"^[0-9a-f]{64}$"
 
 CanonId = Annotated[str, Path(pattern=CANON_ID_PATTERN)]
 

@@ -698,7 +698,7 @@
       },
       "JobLineageRead": {
         "additionalProperties": false,
-        "description": "親子Jobと、それぞれのArtifact。\n\n`ancestors`は親から順に、`descendants`は世代の浅い順に並べる。`artifacts`は\n`parent_artifact_id`で派生関係を辿れるよう、lineageに含まれる全Jobの分を返す。",
+        "description": "親子Jobと、それぞれのArtifact。\n\n`ancestors`は親から順に、`descendants`は世代の浅い順に並べる。`artifacts`は\n`parent_artifact_id`で派生関係を辿れるよう、lineageに含まれる全Jobの分を返す。\n`truncated`は探索を上限で打ち切ったことを表す。全件と取り違えないよう応答へ出す。",
         "properties": {
           "ancestors": {
             "items": {
@@ -723,13 +723,18 @@
           },
           "job": {
             "$ref": "#/components/schemas/GenerationJobRead"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
           }
         },
         "required": [
           "job",
           "ancestors",
           "descendants",
-          "artifacts"
+          "artifacts",
+          "truncated"
         ],
         "title": "JobLineageRead",
         "type": "object"
@@ -864,7 +869,7 @@
       },
       "ReferenceChangeEntry": {
         "additionalProperties": false,
-        "description": "1件の参照について、記録時と現在を並べた比較結果。",
+        "description": "1件の参照について、記録時と現在を並べた比較結果。\n\n`reason`は参照APIでは解決せず、実ファイルを読んで判定した場合にだけ理由が入る。",
         "properties": {
           "anchor": {
             "anyOf": [
@@ -924,6 +929,17 @@
               }
             ],
             "title": "Path"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           },
           "recorded": {
             "anyOf": [

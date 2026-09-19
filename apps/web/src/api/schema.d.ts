@@ -775,6 +775,7 @@ export interface components {
          *
          *     `ancestors`は親から順に、`descendants`は世代の浅い順に並べる。`artifacts`は
          *     `parent_artifact_id`で派生関係を辿れるよう、lineageに含まれる全Jobの分を返す。
+         *     `truncated`は探索を上限で打ち切ったことを表す。全件と取り違えないよう応答へ出す。
          */
         JobLineageRead: {
             /** Ancestors */
@@ -784,6 +785,8 @@ export interface components {
             /** Descendants */
             descendants: components["schemas"]["GenerationJobRead"][];
             job: components["schemas"]["GenerationJobRead"];
+            /** Truncated */
+            truncated: boolean;
         };
         /** RecipeCreate */
         RecipeCreate: {
@@ -841,6 +844,8 @@ export interface components {
         /**
          * ReferenceChangeEntry
          * @description 1件の参照について、記録時と現在を並べた比較結果。
+         *
+         *     `reason`は参照APIでは解決せず、実ファイルを読んで判定した場合にだけ理由が入る。
          */
         ReferenceChangeEntry: {
             /** Anchor */
@@ -860,6 +865,8 @@ export interface components {
             note: string | null;
             /** Path */
             path: string | null;
+            /** Reason */
+            reason?: string | null;
             /** Recorded */
             recorded: {
                 [key: string]: unknown;

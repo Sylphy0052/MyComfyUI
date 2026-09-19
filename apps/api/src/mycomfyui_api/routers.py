@@ -277,6 +277,8 @@ async def create_generation_job(
     except Exception:
         storage.discard_artifacts([stored.relative_path])
         raise
+    # ここから先はレコードが確定している。失敗してもスナップショットを消さない。
+    await _load_queue_sequence(session, job)
     return job
 
 
@@ -463,10 +465,13 @@ async def _persist_job_records(
     workflow_artifact: Artifact,
     manifest: GenerationManifest,
 ) -> None:
-    """Job、Workflow Artifact、Manifestの順にflushして確定する。
+    """Job、Workflow Artifact、Manifestの順にflushしてコミットまで行う。
 
     遅延検証はJobとManifestの相互参照だけに必要で、Artifactの参照はこの順序で即時に
     満たされる。スナップショットの後始末は呼び出し元が担う。
+
+    コミット後の読み直しはここでは行わない。コミット済みのレコードに対して呼び出し元の
+    後始末が走ると、DBには記録が残ったまま実ファイルだけが消える。
     """
     try:
         session.add(job)
@@ -476,15 +481,21 @@ async def _persist_job_records(
         session.add(manifest)
         await session.flush()
         await session.commit()
-        # queue_sequenceはINSERT時に採番されることがある。応答へ返すため、確定した
-        # 値をDBから読み直す。
-        await session.refresh(job)
     except IntegrityError as error:
         await session.rollback()
         raise _integrity_error(error) from error
     except Exception:
         await session.rollback()
         raise
+
+
+async def _load_queue_sequence(session: AsyncSession, job: GenerationJob) -> None:
+    """採番済みの`queue_sequence`を読み直す。
+
+    採番はINSERT文の中で評価されるため、確定した値はDBにしかない。コミット済みの
+    レコードを読むだけの操作であり、失敗してもJobの記録は有効なまま残す。
+    """
+    await session.refresh(job)
 
 
 @router.get("/generation-jobs", response_model=list[schemas.GenerationJobRead])
@@ -777,6 +788,56 @@ async def _current_references(
     return [resolved.scene_ref, resolved.shot_ref, *resolved.canon_refs], None
 
 
+def _verify_cached_input(reference: dict[str, Any]) -> dict[str, Any]:
+    """入力cache参照の実ファイルが記録時と同じ内容かを確かめる。
+
+    参照APIで解決できない利用者素材も、当時の入力の一部として再現可否に効く。設計
+    どおり、取得できないか内容が違えばExact Replayを実行しない
+    (docs/design/generation-records.md)。
+    """
+    note = reference.get("note")
+    entry: dict[str, Any] = {
+        "kind": str(reference.get("kind")),
+        "change": provenance.CHANGE_UNCHANGED,
+        "path": reference.get("relative_path"),
+        "anchor": None,
+        "note": note if isinstance(note, str) else None,
+        "reason": None,
+        "recorded": dict(reference),
+        "current": None,
+    }
+    relative_path = reference.get("relative_path")
+    expected = reference.get("sha256")
+    if not isinstance(relative_path, str) or not isinstance(expected, str):
+        entry["change"] = provenance.CHANGE_MISSING
+        entry["reason"] = "入力cache参照にrelative_pathかsha256がありません。"
+        return entry
+    try:
+        raw = storage.resolve_input(relative_path).read_bytes()
+    except (storage.StorageError, OSError):
+        entry["change"] = provenance.CHANGE_MISSING
+        entry["reason"] = "入力cacheの実ファイルを読み込めません。"
+        return entry
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != expected.lower():
+        entry["change"] = provenance.CHANGE_UPDATED
+        entry["reason"] = "入力cacheの内容が記録済みのhashと一致しません。"
+        entry["current"] = {"relative_path": relative_path, "sha256": digest}
+    return entry
+
+
+def _cached_input_entries(input_refs: Any) -> list[dict[str, Any]]:
+    """参照APIで解決しない入力cache参照を、比較結果の形へ揃える。"""
+    if not isinstance(input_refs, list):
+        return []
+    return [
+        _verify_cached_input(reference)
+        for reference in input_refs
+        if isinstance(reference, dict)
+        and reference.get("kind") not in provenance.RESOLVABLE_KINDS
+    ]
+
+
 def _read_workflow_snapshot(artifact: Artifact) -> bytes:
     """Workflowスナップショットを読み、記録済みのSHA-256と突き合わせる。
 
@@ -831,6 +892,7 @@ async def get_job_canon_status(
             blocking=[],
         )
     entries = provenance.compare(manifest.input_refs or [], current)
+    entries.extend(_cached_input_entries(manifest.input_refs))
     blocking = provenance.unreproducible(entries)
     changed = any(entry["change"] != provenance.CHANGE_UNCHANGED for entry in entries)
     return schemas.CanonStatusRead(
@@ -911,6 +973,8 @@ async def _create_derived_job(
     except Exception:
         storage.discard_artifacts([stored.relative_path])
         raise
+    # ここから先はレコードが確定している。失敗してもスナップショットを消さない。
+    await _load_queue_sequence(session, job)
     return job
 
 
@@ -942,9 +1006,9 @@ async def replay_generation_job(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             details={"job_id": job.id},
         )
-    blocking = provenance.unreproducible(
-        provenance.compare(manifest.input_refs or [], current)
-    )
+    entries = provenance.compare(manifest.input_refs or [], current)
+    entries.extend(_cached_input_entries(manifest.input_refs))
+    blocking = provenance.unreproducible(entries)
     if blocking:
         raise ApiError(
             "REPLAY_NOT_REPRODUCIBLE",
@@ -1006,18 +1070,20 @@ async def regenerate_generation_job(
 
 async def _collect_ancestors(
     session: AsyncSession, job: GenerationJob
-) -> list[GenerationJob]:
+) -> tuple[list[GenerationJob], bool]:
     """親から順にJobを辿る。
 
     lineageは有向非循環グラフとして作るが、壊れたデータで無限に辿らないよう、既訪問の
-    IDと深さの上限で打ち切る。
+    IDと深さの上限で打ち切る。打ち切ったかどうかも返し、全件と取り違えさせない。
     """
     ancestors: list[GenerationJob] = []
     seen = {job.id}
     cursor = job.parent_job_id
-    while (
-        cursor is not None and cursor not in seen and len(ancestors) < MAX_LINEAGE_DEPTH
-    ):
+    truncated = False
+    while cursor is not None and cursor not in seen:
+        if len(ancestors) >= MAX_LINEAGE_DEPTH:
+            truncated = True
+            break
         parent = await session.get(GenerationJob, cursor)
         if parent is None:
             break
@@ -1025,17 +1091,18 @@ async def _collect_ancestors(
         seen.add(parent.id)
         cursor = parent.parent_job_id
     ancestors.reverse()
-    return ancestors
+    return ancestors, truncated
 
 
 async def _collect_descendants(
     session: AsyncSession, job: GenerationJob
-) -> list[GenerationJob]:
-    """子孫Jobを世代の浅い順に集める。"""
+) -> tuple[list[GenerationJob], bool]:
+    """子孫Jobを世代の浅い順に集める。件数の上限で打ち切ったかどうかも返す。"""
     descendants: list[GenerationJob] = []
     seen = {job.id}
     frontier = [job.id]
-    while frontier and len(descendants) < MAX_LINEAGE_NODES:
+    truncated = False
+    while frontier:
         result = await session.execute(
             select(GenerationJob)
             .where(GenerationJob.parent_job_id.in_(frontier))
@@ -1046,9 +1113,14 @@ async def _collect_descendants(
             break
         for child in children:
             seen.add(child.id)
-        descendants.extend(children[: MAX_LINEAGE_NODES - len(descendants)])
+        remaining = MAX_LINEAGE_NODES - len(descendants)
+        if len(children) > remaining:
+            descendants.extend(children[:remaining])
+            truncated = True
+            break
+        descendants.extend(children)
         frontier = [child.id for child in children]
-    return descendants
+    return descendants, truncated
 
 
 @router.get("/generation-jobs/{job_id}/lineage", response_model=schemas.JobLineageRead)
@@ -1059,8 +1131,8 @@ async def get_job_lineage(job_id: str, session: SessionDep):
     まとめて返し、画面側で辿れるようにする。
     """
     job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
-    ancestors = await _collect_ancestors(session, job)
-    descendants = await _collect_descendants(session, job)
+    ancestors, ancestors_truncated = await _collect_ancestors(session, job)
+    descendants, descendants_truncated = await _collect_descendants(session, job)
     job_ids = [
         job.id,
         *(item.id for item in ancestors),
@@ -1081,4 +1153,5 @@ async def get_job_lineage(job_id: str, session: SessionDep):
             schemas.GenerationJobRead.model_validate(item) for item in descendants
         ],
         artifacts=[schemas.ArtifactRead.model_validate(item) for item in artifacts],
+        truncated=ancestors_truncated or descendants_truncated,
     )

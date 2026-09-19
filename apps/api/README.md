@@ -105,6 +105,7 @@ UI と API の契約は変えない。
 
 `MYCOMFYUI_AIMEDIA_FIXTURE_PATH` を設定すると、同梱 fixture の代わりに指定したファイルを読む。
 Canon が更新された状態や参照が失われた状態を手元で再現し、更新警告と再実行の判定を確かめるために使う。
+読み込んだ内容はそのまま履歴へ記録されるため、自分で用意した信頼できるファイルだけを指定する。
 
 上流が応答しない場合は `REFERENCE_UNAVAILABLE`(503)、対象が無い場合は
 `REFERENCE_NOT_FOUND`(404)を共通 Envelope で返す。
@@ -210,6 +211,9 @@ Adapter が実行を開始した直後に 1 回だけ設定する。それまで
   書き出す。組み立て直さない。
 - 記録時と同じ内容を取得できない入力があれば `REPLAY_NOT_REPRODUCIBLE`(422)を返し、Job を作らない。
   現在の値へ暗黙に置き換えない。
+- 参照 API で解決しない入力 cache 参照(`kind: "cached_input"`)は、`inputs/` 配下の実ファイルを読み、
+  記録済みの SHA-256 と突き合わせる。取得できないか内容が違えば同じく実行しない。
+  モデルファイルの在庫確認だけは実行時の Adapter に任せ、不足は `MODEL_NOT_FOUND` として Job の失敗理由に残る。
 - 新 Manifest の `replay_of_manifest_id` に元 Manifest を記録する。`engine_version` は実行時の実測値を入れる。
 
 `POST /api/v1/generation-jobs/{job_id}/regenerate` は現在の Canon で再生成する派生 Job を作る。
@@ -220,6 +224,7 @@ Scene、Shot、Canon だけを解決し直し、Recipe、Workflow、モデル、
 無いため、`REFERENCE_IDS_MISSING`(422)として再実行できない。
 
 `GET /api/v1/generation-jobs/{job_id}/lineage` は親子 Job と、それらに属する Artifact を返す。
+探索は深さ 50、子孫 200 件で打ち切り、打ち切った場合は `truncated` を `true` にする。
 
 ### GPU 直列ジョブキュー
 

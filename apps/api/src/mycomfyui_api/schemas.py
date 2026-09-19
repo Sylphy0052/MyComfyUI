@@ -254,13 +254,17 @@ CanonStatusValue = Literal["unchanged", "changed", "unavailable"]
 
 
 class ReferenceChangeEntry(ApiModel):
-    """1件の参照について、記録時と現在を並べた比較結果。"""
+    """1件の参照について、記録時と現在を並べた比較結果。
+
+    `reason`は参照APIでは解決せず、実ファイルを読んで判定した場合にだけ理由が入る。
+    """
 
     kind: str
     change: ReferenceChange
     path: str | None
     anchor: str | None
     note: str | None
+    reason: str | None = None
     recorded: dict[str, Any] | None
     current: dict[str, Any] | None
 
@@ -286,9 +290,11 @@ class JobLineageRead(ApiModel):
 
     `ancestors`は親から順に、`descendants`は世代の浅い順に並べる。`artifacts`は
     `parent_artifact_id`で派生関係を辿れるよう、lineageに含まれる全Jobの分を返す。
+    `truncated`は探索を上限で打ち切ったことを表す。全件と取り違えないよう応答へ出す。
     """
 
     job: GenerationJobRead
     ancestors: list[GenerationJobRead]
     descendants: list[GenerationJobRead]
     artifacts: list[ArtifactRead]
+    truncated: bool

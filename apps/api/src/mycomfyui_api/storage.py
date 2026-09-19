@@ -14,6 +14,7 @@ from mycomfyui_api.settings import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 ARTIFACTS_DIR_NAME = "artifacts"
+INPUTS_DIR_NAME = "inputs"
 WORKFLOW_FILE_NAME = "workflow.json"
 
 
@@ -63,6 +64,23 @@ def resolve_artifact(relative_path: str, settings: Settings | None = None) -> Pa
         raise StorageError(f"保存先の外を参照しています: {relative_path}")
     if not candidate.is_file():
         raise StorageError(f"Artifactの実ファイルがありません: {relative_path}")
+    return candidate
+
+
+def resolve_input(relative_path: str, settings: Settings | None = None) -> Path:
+    """Manifestが持つ入力cache参照を`data_root`配下の実ファイルへ解決する。
+
+    再実行前に、記録時と同じ入力素材が残っているかを確かめるために使う。読み出せる
+    のは`inputs/`配下だけとし、生成物やデータベースを指す値は拒否する。
+    """
+    settings = settings or get_settings()
+    root = settings.data_root.resolve()
+    candidate = (root / relative_path).resolve()
+    inputs_root = (settings.data_root / INPUTS_DIR_NAME).resolve()
+    if not candidate.is_relative_to(inputs_root):
+        raise StorageError(f"入力cacheの外を参照しています: {relative_path}")
+    if not candidate.is_file():
+        raise StorageError(f"入力cacheの実ファイルがありません: {relative_path}")
     return candidate
 
 

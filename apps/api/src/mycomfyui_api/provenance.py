@@ -48,13 +48,19 @@ def _validate_repository_path(path: str) -> str:
 
     参照契約は`/`区切りの相対pathに限定し、絶対path、backslash、`..`を拒否する。
     記録した値は再実行時の突き合わせと画面表示にそのまま使うため、保存前に弾く。
+
+    空セグメントと`.`セグメントも拒否する。`a//b`と`a/./b`は`a/b`と同じ場所を指す
+    のに文字列としては別物になり、同一性の判定が参照先とずれる。
     """
     if path.startswith("/") or (len(path) > 1 and path[1] == ":"):
         raise ReferenceError(f"参照pathに絶対pathを指定できません: {path}")
     if "\\" in path:
         raise ReferenceError(f"参照pathにbackslashを含められません: {path}")
-    if ".." in path.split("/"):
+    segments = path.split("/")
+    if ".." in segments:
         raise ReferenceError(f"参照pathに親ディレクトリ参照を含められません: {path}")
+    if any(segment in ("", ".") for segment in segments):
+        raise ReferenceError(f"参照pathを正規化した形で指定してください: {path}")
     return path
 
 
@@ -115,7 +121,15 @@ def canon_id(reference: Mapping[str, Any]) -> str:
 
 
 def _entry(kind: str, reference: Mapping[str, Any], **extra: Any) -> dict[str, Any]:
-    entry = {"kind": kind, "canon_id": canon_id(reference), **dict(reference)}
+    """1件の参照を`input_refs`へ保存する形へ整える。
+
+    `canon_id`は参照契約がCanon参照の識別子として定義したものであり、Scene/Shot本文の
+    参照には付けない。
+    """
+    entry: dict[str, Any] = {"kind": kind}
+    if kind == KIND_CANON:
+        entry["canon_id"] = canon_id(reference)
+    entry.update(dict(reference))
     entry.update(extra)
     return entry
 
@@ -239,6 +253,9 @@ def compare(
                 "path": raw.get("path"),
                 "anchor": raw.get("anchor"),
                 "note": raw.get("note"),
+                # 参照APIで解決した結果は記録側と現在側の値を並べれば足りる。追加の
+                # 説明が要るのは、ファイルを直接読んで確かめる入力cacheだけとする。
+                "reason": None,
                 "recorded": dict(raw),
                 "current": dict(found) if found is not None else None,
             }
@@ -254,6 +271,7 @@ def compare(
                 "path": entry.get("path"),
                 "anchor": entry.get("anchor"),
                 "note": entry.get("note"),
+                "reason": None,
                 "recorded": None,
                 "current": dict(entry),
             }

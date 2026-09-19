@@ -260,9 +260,23 @@ class FixtureReferenceSource:
             raise AiMediaNotFound(f"Sceneがfixtureにありません: {scene_id}")
 
 
-@lru_cache
 def _load_fixture(path: Path | None = None) -> dict[str, Any]:
-    source = path or FIXTURE_PATH
+    """参照fixtureを読む。
+
+    同梱fixtureは起動中に変わらないため一度だけ読む。差し替えたfixtureは検証中に内容を
+    書き換えるため、キャッシュせず毎回読み直す。
+    """
+    if path is not None:
+        return _read_fixture(path)
+    return _read_bundled_fixture()
+
+
+@lru_cache
+def _read_bundled_fixture() -> dict[str, Any]:
+    return _read_fixture(FIXTURE_PATH)
+
+
+def _read_fixture(source: Path) -> dict[str, Any]:
     try:
         document = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
