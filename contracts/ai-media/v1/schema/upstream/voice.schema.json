@@ -1,0 +1,253 @@
+{
+  "$defs": {
+    "EnginePreferences": {
+      "additionalProperties": false,
+      "description": "どのTTS backendで喋らせるか。\n\nengine名だけを持つ。実際の設定は `config/local-tools.yaml` 側。\nA/Bで決まるまで `primary` は None にしておく。",
+      "properties": {
+        "primary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary"
+        },
+        "secondary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secondary"
+        }
+      },
+      "title": "EnginePreferences",
+      "type": "object"
+    },
+    "VoiceCharacteristics": {
+      "additionalProperties": false,
+      "description": "声の特徴。選抜の根拠として残す。",
+      "properties": {
+        "f0_median_hz": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "F0 Median Hz"
+        },
+        "speech_rate_per_sec": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speech Rate Per Sec"
+        },
+        "pitch": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium_low",
+                "medium",
+                "medium_high",
+                "high"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pitch"
+        },
+        "energy": {
+          "anyOf": [
+            {
+              "enum": [
+                "calm",
+                "soft",
+                "neutral",
+                "bright",
+                "energetic"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Energy"
+        },
+        "speaking_rate": {
+          "anyOf": [
+            {
+              "enum": [
+                "slow",
+                "normal",
+                "fast"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speaking Rate"
+        }
+      },
+      "title": "VoiceCharacteristics",
+      "type": "object"
+    },
+    "VoiceReference": {
+      "additionalProperties": false,
+      "description": "zero-shotクローンの参照音声。",
+      "properties": {
+        "source_audio": {
+          "title": "Source Audio",
+          "type": "string"
+        },
+        "transcript": {
+          "minLength": 1,
+          "title": "Transcript",
+          "type": "string"
+        },
+        "transcript_method": {
+          "enum": [
+            "whisper",
+            "whisper+manual",
+            "manual",
+            "known-input"
+          ],
+          "title": "Transcript Method",
+          "type": "string"
+        },
+        "source_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "sample_rate": {
+          "exclusiveMinimum": 0,
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "duration_sec": {
+          "exclusiveMinimum": 0.0,
+          "title": "Duration Sec",
+          "type": "number"
+        },
+        "leading_silence_sec": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "Leading Silence Sec",
+          "type": "number"
+        }
+      },
+      "required": [
+        "source_audio",
+        "transcript",
+        "transcript_method",
+        "source_sha256",
+        "sample_rate",
+        "duration_sec"
+      ],
+      "title": "VoiceReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "人物の声の正本。",
+  "properties": {
+    "voice_id": {
+      "pattern": "^[a-z0-9-]+-v\\d+$",
+      "title": "Voice Id",
+      "type": "string"
+    },
+    "character_id": {
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Character Id",
+      "type": "string"
+    },
+    "display_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Display Name"
+    },
+    "language": {
+      "default": "ja",
+      "title": "Language",
+      "type": "string"
+    },
+    "reference": {
+      "$ref": "#/$defs/VoiceReference"
+    },
+    "characteristics": {
+      "$ref": "#/$defs/VoiceCharacteristics"
+    },
+    "engine_preferences": {
+      "$ref": "#/$defs/EnginePreferences"
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provenance"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "voice_id",
+    "character_id",
+    "reference"
+  ],
+  "title": "VoiceCanon",
+  "type": "object"
+}

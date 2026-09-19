@@ -1,0 +1,394 @@
+{
+  "$defs": {
+    "CanonRef": {
+      "additionalProperties": false,
+      "description": "Canon(正本)への参照。\n\n**Canonの内容はここへ複製しない。** 髪色・性格・衣装などはすべて参照先が持つ。\nScene / Shot は「どこを見ればよいか」だけを持つ。",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "anchor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "CanonRef",
+      "type": "object"
+    },
+    "CharacterRef": {
+      "additionalProperties": false,
+      "description": "Shot / Scene から人物を指す参照。\n\n`display_name` は人が読むためだけに置く。処理は必ず `id` で行う。\n人物名とIDを取り違えないよう、外見・性格・衣装の情報はここへ書かない。",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "canon_refs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CanonRef"
+          },
+          "title": "Canon Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "CharacterRef",
+      "type": "object"
+    },
+    "LocationRef": {
+      "additionalProperties": false,
+      "description": "場面の場所への参照。",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "canon_refs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CanonRef"
+          },
+          "title": "Canon Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "LocationRef",
+      "type": "object"
+    },
+    "MusicGenerationSpec": {
+      "additionalProperties": false,
+      "description": "SceneのBGM。Shot単位では作らない。",
+      "properties": {
+        "engine": {
+          "default": "ace-step-v1",
+          "title": "Engine",
+          "type": "string"
+        },
+        "profile": {
+          "default": "default",
+          "title": "Profile",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "mood": {
+          "minLength": 1,
+          "title": "Mood",
+          "type": "string"
+        },
+        "genre": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Genre"
+        },
+        "instrumental": {
+          "default": true,
+          "title": "Instrumental",
+          "type": "boolean"
+        },
+        "duration_sec": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Sec"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        }
+      },
+      "required": [
+        "mood"
+      ],
+      "title": "MusicGenerationSpec",
+      "type": "object"
+    },
+    "SourceLocator": {
+      "additionalProperties": false,
+      "description": "Scene / Shot がどの本文から起こされたかを指す。\n\n本文そのものはここへ複製しない。行範囲と根拠ファイルだけを持つ。",
+      "properties": {
+        "novel_file": {
+          "title": "Novel File",
+          "type": "string"
+        },
+        "metadata_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metadata File"
+        },
+        "line_start": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line Start"
+        },
+        "line_end": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line End"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "canon_refs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CanonRef"
+          },
+          "title": "Canon Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "novel_file"
+      ],
+      "title": "SourceLocator",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "1つの場面。Shotの並びとBGMを持つ。",
+  "properties": {
+    "id": {
+      "pattern": "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "location": {
+      "$ref": "#/$defs/LocationRef"
+    },
+    "time_of_day": {
+      "default": "unknown",
+      "enum": [
+        "dawn",
+        "morning",
+        "noon",
+        "afternoon",
+        "evening",
+        "night",
+        "unknown"
+      ],
+      "title": "Time Of Day",
+      "type": "string"
+    },
+    "season": {
+      "anyOf": [
+        {
+          "enum": [
+            "spring",
+            "summer",
+            "autumn",
+            "winter"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Season"
+    },
+    "characters": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CharacterRef"
+      },
+      "title": "Characters",
+      "type": "array"
+    },
+    "goal": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Goal"
+    },
+    "music": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MusicGenerationSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "shots": {
+      "default": [],
+      "items": {
+        "pattern": "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}-sh\\d{2}$",
+        "type": "string"
+      },
+      "title": "Shots",
+      "type": "array"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceLocator"
+    },
+    "canon_refs": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CanonRef"
+      },
+      "title": "Canon Refs",
+      "type": "array"
+    },
+    "unresolved": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "sequence",
+    "summary",
+    "location",
+    "source"
+  ],
+  "title": "Scene",
+  "type": "object"
+}

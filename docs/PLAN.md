@@ -111,6 +111,14 @@ Web UI
 
 Web版とTauri版は同じHTTP/WebSocket契約を使う。UI、Application API、生成Backendのプロセスと依存環境を分け、SQLiteはApplication APIだけが読み書きする。採用理由、開発時の起動構成、リポジトリ構成、バージョン方針、不採用案は[ADR 0001](adr/0001-application-stack-and-boundaries.md)に記録する。
 
+## ai-media参照契約
+
+Phase 0の代表Sceneは`hirohito-arc02-ep005-sc01`とする。3件のShotに画像、ref2v、台詞あり・なし、複数話者、BGM、複数repositoryのCanon参照が含まれ、参照APIの境界を1件で確認できる。
+
+MyComfyUIは`ai-media`の[参照API契約v1](contracts/ai-media-read-api-v1.md)を利用する。Scene/Shot本文は既存JSON Schemaのまま受け取り、本文、Schema、Canon参照を`source_locator`、40桁のGit revision、repository相対path、SHA-256で固定する。Canon Endpointは本文を返さずdescriptorだけを返し、MyComfyUIはCanon本文をSQLiteやArtifact領域へ複製しない。
+
+参照APIの`novel-writer`側実装は[novel-writer#17](https://github.com/Sylphy0052/novel-writer/issues/17)で追跡する。
+
 ## 画面構成
 
 - ダッシュボード:プロジェクト、Scene、Shot、最近の生成、実行中・失敗ジョブを確認する。
@@ -193,6 +201,4 @@ CodexとClaude CodeのCLI/API利用形態、Qwenのローカル推論サーバ�
 
 ## 次に決めること
 
-1. Phase 0で利用する`novel-writer`の代表Sceneを選ぶ。
-2. `ai-media`からProject、Scene、Shot、Canonを取得する参照API契約を決める。
-3. MyComfyUIで新規作成するプロジェクトの資産保存先と、既存作品を参照する接続設定を決める。
+1. MyComfyUIで新規作成するプロジェクトの資産保存先と、既存作品を参照する接続設定を決める。

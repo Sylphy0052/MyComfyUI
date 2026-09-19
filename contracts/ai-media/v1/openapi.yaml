@@ -1,0 +1,208 @@
+openapi: 3.1.0
+info:
+  title: ai-media Read API
+  version: 1.0.0
+  description: MyComfyUIがProject、Scene、Shot、Canonを参照するための読取り専用契約。
+servers:
+  - url: http://127.0.0.1:8765/v1
+paths:
+  /projects:
+    get:
+      operationId: listProjects
+      summary: Project一覧を取得する
+      parameters:
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: Project一覧
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/ProjectList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects/{project_id}:
+    get:
+      operationId: getProject
+      summary: Projectを取得する
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/Project"
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects/{project_id}/scenes:
+    get:
+      operationId: listScenes
+      summary: Scene一覧を取得する
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: Scene一覧
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/SceneList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects/{project_id}/scenes/{scene_id}:
+    get:
+      operationId: getScene
+      summary: Scene本文とprovenanceを取得する
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/SceneId"
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: Scene
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/SceneEnvelope"
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects/{project_id}/scenes/{scene_id}/shots:
+    get:
+      operationId: listShots
+      summary: Sceneに属するShot一覧を取得する
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/SceneId"
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: Shot一覧
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/ShotList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects/{project_id}/scenes/{scene_id}/shots/{shot_id}:
+    get:
+      operationId: getShot
+      summary: Shot本文とprovenanceを取得する
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/SceneId"
+        - $ref: "#/components/parameters/ShotId"
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: Shot
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/ShotEnvelope"
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects/{project_id}/canon:
+    get:
+      operationId: listCanon
+      summary: Canon descriptor一覧を取得する
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: Canon descriptor一覧
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/CanonList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects/{project_id}/canon/{canon_id}:
+    get:
+      operationId: getCanon
+      summary: Canon descriptorを取得する
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/CanonId"
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: Canon descriptor
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/CanonDescriptor"
+        default:
+          $ref: "#/components/responses/Problem"
+  /schemas/{schema_name}:
+    get:
+      operationId: getSchema
+      summary: JSON Schemaを取得する
+      parameters:
+        - $ref: "#/components/parameters/SchemaName"
+        - $ref: "#/components/parameters/Revision"
+      responses:
+        "200":
+          description: JSON Schemaと不変参照
+          content:
+            application/json:
+              schema:
+                $ref: "./schema/reference-api.schema.json#/$defs/SchemaDocument"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+  parameters:
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    SceneId:
+      name: scene_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}$"
+    ShotId:
+      name: shot_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}-sh\\d{2}$"
+    CanonId:
+      name: canon_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{64}$"
+    SchemaName:
+      name: schema_name
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [scene, shot, voice]
+    Revision:
+      name: revision
+      in: query
+      required: false
+      description: 省略時は設定されたai-media sourceのHEADをリクエスト開始時に解決する。
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{40}$"
+  responses:
+    Problem:
+      description: 参照APIエラー
+      content:
+        application/json:
+          schema:
+            $ref: "./schema/reference-api.schema.json#/$defs/Problem"
