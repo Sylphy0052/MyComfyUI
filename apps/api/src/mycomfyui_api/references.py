@@ -9,7 +9,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Request
 from starlette import status
 
 from mycomfyui_api.adapters.aimedia.client import (
@@ -22,6 +22,12 @@ from mycomfyui_api.errors import ApiError
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
+
+#: 参照IDの書式。契約のIDは英数字とハイフンだけで、ドットもスラッシュも含まない。
+#: 上流URLのパスセグメントへ埋め込む値のため、`.`や`..`が混ざらないようここで弾く。
+REFERENCE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+
+ReferenceId = Annotated[str, Path(pattern=REFERENCE_ID_PATTERN)]
 
 
 def get_reference_source(request: Request) -> ReferenceSource:
@@ -59,31 +65,38 @@ async def list_projects(source: ReferenceSourceDep) -> dict[str, Any]:
 
 
 @router.get("/projects/{project_id}")
-async def get_project(project_id: str, source: ReferenceSourceDep) -> dict[str, Any]:
+async def get_project(
+    project_id: ReferenceId, source: ReferenceSourceDep
+) -> dict[str, Any]:
     return await _relay(lambda: source.get_project(project_id))
 
 
 @router.get("/projects/{project_id}/scenes")
-async def list_scenes(project_id: str, source: ReferenceSourceDep) -> dict[str, Any]:
+async def list_scenes(
+    project_id: ReferenceId, source: ReferenceSourceDep
+) -> dict[str, Any]:
     return await _relay(lambda: source.list_scenes(project_id))
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}")
 async def get_scene(
-    project_id: str, scene_id: str, source: ReferenceSourceDep
+    project_id: ReferenceId, scene_id: ReferenceId, source: ReferenceSourceDep
 ) -> dict[str, Any]:
     return await _relay(lambda: source.get_scene(project_id, scene_id))
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}/shots")
 async def list_shots(
-    project_id: str, scene_id: str, source: ReferenceSourceDep
+    project_id: ReferenceId, scene_id: ReferenceId, source: ReferenceSourceDep
 ) -> dict[str, Any]:
     return await _relay(lambda: source.list_shots(project_id, scene_id))
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}")
 async def get_shot(
-    project_id: str, scene_id: str, shot_id: str, source: ReferenceSourceDep
+    project_id: ReferenceId,
+    scene_id: ReferenceId,
+    shot_id: ReferenceId,
+    source: ReferenceSourceDep,
 ) -> dict[str, Any]:
     return await _relay(lambda: source.get_shot(project_id, scene_id, shot_id))

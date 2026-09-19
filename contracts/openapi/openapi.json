@@ -1397,6 +1397,7 @@
             "name": "project_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Project Id",
               "type": "string"
             }
@@ -1438,6 +1439,7 @@
             "name": "project_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Project Id",
               "type": "string"
             }
@@ -1479,6 +1481,7 @@
             "name": "project_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Project Id",
               "type": "string"
             }
@@ -1488,6 +1491,7 @@
             "name": "scene_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Scene Id",
               "type": "string"
             }
@@ -1529,6 +1533,7 @@
             "name": "project_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Project Id",
               "type": "string"
             }
@@ -1538,6 +1543,7 @@
             "name": "scene_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Scene Id",
               "type": "string"
             }
@@ -1579,6 +1585,7 @@
             "name": "project_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Project Id",
               "type": "string"
             }
@@ -1588,6 +1595,7 @@
             "name": "scene_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Scene Id",
               "type": "string"
             }
@@ -1597,6 +1605,7 @@
             "name": "shot_id",
             "required": true,
             "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Shot Id",
               "type": "string"
             }

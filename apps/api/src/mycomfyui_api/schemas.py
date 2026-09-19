@@ -25,6 +25,9 @@ ResourceId = Annotated[str, Field(min_length=1, max_length=36)]
 ALLOWED_MEDIA_TYPE_PREFIXES = ("image/", "video/", "audio/")
 ALLOWED_MEDIA_TYPES = frozenset({"application/json", "text/plain"})
 
+#: 画像だがスクリプトを埋め込める形式。生成物として扱わない。
+REJECTED_MEDIA_TYPES = frozenset({"image/svg+xml", "image/svg"})
+
 
 def new_id() -> str:
     return str(uuid4())
@@ -172,6 +175,8 @@ class ArtifactCreate(ApiModel):
     def _validate_media_type(cls, value: str) -> str:
         """配信時のContent-Typeになるため、生成物として扱う型だけを受け付ける。"""
         media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES:
+            raise ValueError(f"扱えないmedia_typeです: {value}")
         if media_type in ALLOWED_MEDIA_TYPES:
             return value
         if media_type.startswith(ALLOWED_MEDIA_TYPE_PREFIXES):

@@ -243,7 +243,7 @@ async def create_generation_job(
     recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
     _validate_recipe_matches(recipe, payload)
     prepared = _prepare_workflow(recipe, payload.inputs)
-    queue_sequence = await _resolve_queue_sequence(session, payload.queue_sequence)
+    queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
     stored = _store_workflow_snapshot(job_id, prepared.workflow)
@@ -289,17 +289,20 @@ def _store_workflow_snapshot(
         ) from error
 
 
-async def _resolve_queue_sequence(session: AsyncSession, requested: int | None) -> int:
+def _resolve_queue_sequence(requested: int | None) -> int | Any:
     """キュー順を決める。未指定なら現在の最大値の次を採番する。
 
-    キューは全Jobで1本のため、画面ごとに採番すると同じ順番が重複する。既定では
+    キューは全Jobで1本のため、呼び出し側ごとに採番すると同じ順番が重複する。既定では
     Application APIが決め、順番を指定したい呼び出しだけが値を渡す。
+
+    採番はINSERT文の中で評価する副問い合わせとして渡す。最大値の読み取りとINSERTを
+    別の文に分けると、その隙間に別の要求が同じ値を読み、同じ順番のJobが2件できる。
     """
     if requested is not None:
         return requested
-    result = await session.execute(func.max(GenerationJob.queue_sequence).select())
-    current = result.scalar()
-    return (current or 0) + 1
+    return select(
+        func.coalesce(func.max(GenerationJob.queue_sequence), 0) + 1
+    ).scalar_subquery()
 
 
 def _build_job_records(
@@ -308,7 +311,7 @@ def _build_job_records(
     recipe: Recipe,
     prepared: workflow_module.PreparedWorkflow,
     stored: storage.StoredFile,
-    queue_sequence: int,
+    queue_sequence: int | Any,
 ) -> tuple[GenerationJob, Artifact, GenerationManifest]:
     manifest_id = schemas.new_id()
     workflow_artifact_id = schemas.new_id()
@@ -378,6 +381,9 @@ async def _persist_job_records(
         session.add(manifest)
         await session.flush()
         await session.commit()
+        # queue_sequenceはINSERT時に採番されることがある。応答へ返すため、確定した
+        # 値をDBから読み直す。
+        await session.refresh(job)
     except IntegrityError as error:
         await session.rollback()
         raise _integrity_error(error) from error

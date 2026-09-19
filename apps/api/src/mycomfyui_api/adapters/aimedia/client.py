@@ -25,22 +25,28 @@ REQUEST_TIMEOUT_SECONDS = 10.0
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "reference.json"
 
-#: fixtureが持つべきトップレベル項目。
-FIXTURE_KEYS = (
-    "projects",
-    "scenes",
-    "scene_envelopes",
-    "shots",
-    "shot_envelopes",
-)
+#: fixtureが持つべきトップレベル項目と、その型。
+FIXTURE_KEYS: dict[str, type] = {
+    "projects": list,
+    "scenes": dict,
+    "scene_envelopes": dict,
+    "shots": dict,
+    "shot_envelopes": dict,
+}
 
 
 def _segment(value: str) -> str:
     """IDを1つのパスセグメントとして埋め込む。
 
-    IDは画面からのパスパラメータをそのまま受け取る。`/`や`..`を含む値が来ても上流の
-    別Endpointを指さないよう、区切り文字ごとエンコードする。
+    IDは画面からのパスパラメータをそのまま受け取る。`/`を含む値が来ても上流の別
+    Endpointを指さないよう、区切り文字ごとエンコードする。
+
+    `.`と`..`はURLのセグメントとして特別な意味を持ち、`quote`もエンコードしない。
+    HTTPクライアントがパスを正規化すると、意図したProject/Sceneの配下から外れた
+    Endpointへ要求が飛ぶため、エンコードに頼らずここで拒否する。
     """
+    if value in (".", ".."):
+        raise AiMediaNotFound(f"参照できないIDです: {value}")
     return quote(value, safe="")
 
 
@@ -248,6 +254,17 @@ def _validated(document: Any) -> dict[str, Any]:
     if missing:
         raise AiMediaUnavailable(
             f"参照fixtureに必要な項目がありません: {', '.join(missing)}"
+        )
+    # 型まで見る。項目はあるが形が違う場合、参照のたびにAttributeErrorが出て
+    # 内部エラーとしか伝わらない。
+    malformed = [
+        key
+        for key, expected in FIXTURE_KEYS.items()
+        if not isinstance(document[key], expected)
+    ]
+    if malformed:
+        raise AiMediaUnavailable(
+            f"参照fixtureの項目の形式が想定外です: {', '.join(malformed)}"
         )
     return document
 
