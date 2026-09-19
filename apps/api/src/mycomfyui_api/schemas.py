@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
+from mycomfyui_api.storage import ARTIFACTS_DIR_NAME
+
 GenerationKind = Literal["image", "video", "voice", "music", "compose"]
 ArtifactKind = Literal["image", "video", "audio", "workflow", "log"]
 Availability = Literal["complete", "incomplete"]
@@ -17,6 +19,14 @@ FailureStage = Literal["backend_start", "execution", "response_disconnect", "tim
 # hashは大文字小文字を問わず受け取り、小文字へ正規化して保存する。
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{64}$"), AfterValidator(str.lower)]
 ResourceId = Annotated[str, Field(min_length=1, max_length=36)]
+
+#: Artifactとして受け付けるmedia_type。配信時のContent-Typeになるため、
+#: `text/html`のようにブラウザが解釈する型を混ぜない。
+ALLOWED_MEDIA_TYPE_PREFIXES = ("image/", "video/", "audio/")
+ALLOWED_MEDIA_TYPES = frozenset({"application/json", "text/plain"})
+
+#: 画像だがスクリプトを埋め込める形式。生成物として扱わない。
+REJECTED_MEDIA_TYPES = frozenset({"image/svg+xml", "image/svg"})
 
 
 def new_id() -> str:
@@ -80,7 +90,8 @@ class GenerationJobCreate(ApiModel):
     shot_ref: dict[str, Any]
     recipe_id: ResourceId
     parent_job_id: ResourceId | None = None
-    queue_sequence: int = Field(ge=0)
+    #: 未指定ならApplication APIが現在の最大値の次を採番する。
+    queue_sequence: int | None = Field(default=None, ge=0)
     inputs: dict[str, Any] = Field(default_factory=dict)
     input_refs: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -145,7 +156,32 @@ class ArtifactCreate(ApiModel):
     @field_validator("relative_path")
     @classmethod
     def _validate_relative_path(cls, value: str) -> str:
-        return _reject_unsafe_path(value)
+        """Artifact storeの外にあるファイルをArtifactとして登録させない。
+
+        登録した`relative_path`は`GET /artifacts/{id}/content`でそのまま配信される。
+        `data_root`配下であることだけを条件にすると、DBファイルのような生成物以外を
+        指すレコードを作り、配信経路から読み出せてしまう。
+        """
+        candidate = _reject_unsafe_path(value)
+        normalized = candidate.replace("\\", "/")
+        if not normalized.startswith(f"{ARTIFACTS_DIR_NAME}/"):
+            raise ValueError(
+                f"relative_pathは{ARTIFACTS_DIR_NAME}/配下を指す必要があります。"
+            )
+        return candidate
+
+    @field_validator("media_type")
+    @classmethod
+    def _validate_media_type(cls, value: str) -> str:
+        """配信時のContent-Typeになるため、生成物として扱う型だけを受け付ける。"""
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES:
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        if media_type in ALLOWED_MEDIA_TYPES:
+            return value
+        if media_type.startswith(ALLOWED_MEDIA_TYPE_PREFIXES):
+            return value
+        raise ValueError(f"扱えないmedia_typeです: {value}")
 
 
 class ArtifactRead(ApiModel):
@@ -161,6 +197,12 @@ class ArtifactRead(ApiModel):
     created_at: str
     decision: str
     decision_at: str | None
+
+
+class ArtifactDecisionUpdate(ApiModel):
+    """候補比較での採否。`undecided`へ戻すこともできる。"""
+
+    decision: ArtifactDecision
 
 
 class ApprovalLogCreate(ApiModel):

@@ -182,7 +182,8 @@ class JobQueueWorker:
             result = await session.execute(
                 select(GenerationJob.id)
                 .where(GenerationJob.state == "queued")
-                .order_by(GenerationJob.queue_sequence.asc())
+                # 同じqueue_sequenceのJobが並んだときも順序を決めておく。
+                .order_by(GenerationJob.queue_sequence.asc(), GenerationJob.id.asc())
                 .limit(1)
             )
             job_id = result.scalars().first()

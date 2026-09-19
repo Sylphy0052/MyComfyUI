@@ -11,3 +11,10 @@ __pycache__/
 .venv/
 .ruff_cache/
 .pytest_cache/
+
+# Node.js
+node_modules/
+apps/web/dist/
+
+# Playwright MCP の作業出力
+.playwright-mcp/

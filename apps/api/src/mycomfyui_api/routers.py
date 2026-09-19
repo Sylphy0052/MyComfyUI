@@ -2,8 +2,9 @@ import json
 import logging
 from typing import Annotated, Any, TypeVar
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import FileResponse
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -32,6 +33,9 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ModelT = TypeVar("ModelT", bound=Base)
 
 WORKFLOW_MEDIA_TYPE = "application/json"
+
+#: 採否を記録できるArtifactの種別。Workflowスナップショットやログは対象外とする。
+DECIDABLE_ARTIFACT_KINDS = frozenset({"image", "video", "audio"})
 
 
 def get_queue_worker(request: Request) -> JobQueueWorker:
@@ -99,6 +103,32 @@ async def create_recipe(payload: schemas.RecipeCreate, session: SessionDep):
     session.add(recipe)
     await _commit(session)
     return recipe
+
+
+@router.get("/recipes", response_model=list[schemas.RecipeRead])
+async def list_recipes(
+    session: SessionDep,
+    kind: schemas.GenerationKind | None = None,
+    engine: str | None = None,
+    latest: bool = True,
+):
+    """画面のプリセット選択用。
+
+    Recipeは作成後に書き換えず、更新時は`supersedes_recipe_id`で後継を作る。既定では
+    後継に置き換えられたRecipeを除き、選択肢に古い版が並ばないようにする。
+    """
+    query = select(Recipe).order_by(Recipe.created_at.desc(), Recipe.id.asc())
+    if kind is not None:
+        query = query.where(Recipe.kind == kind)
+    if engine is not None:
+        query = query.where(Recipe.engine == engine)
+    if latest:
+        superseded = select(Recipe.supersedes_recipe_id).where(
+            Recipe.supersedes_recipe_id.is_not(None)
+        )
+        query = query.where(Recipe.id.not_in(superseded))
+    result = await session.execute(query)
+    return result.scalars().all()
 
 
 @router.get("/recipes/{recipe_id}", response_model=schemas.RecipeRead)
@@ -213,6 +243,7 @@ async def create_generation_job(
     recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
     _validate_recipe_matches(recipe, payload)
     prepared = _prepare_workflow(recipe, payload.inputs)
+    queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
     stored = _store_workflow_snapshot(job_id, prepared.workflow)
@@ -220,7 +251,7 @@ async def create_generation_job(
     # 永続化をまとめて囲み、後始末の無い隙間を作らない。
     try:
         job, workflow_artifact, manifest = _build_job_records(
-            job_id, payload, recipe, prepared, stored
+            job_id, payload, recipe, prepared, stored, queue_sequence
         )
         await _persist_job_records(session, job, workflow_artifact, manifest)
     except Exception:
@@ -258,12 +289,29 @@ def _store_workflow_snapshot(
         ) from error
 
 
+def _resolve_queue_sequence(requested: int | None) -> int | Any:
+    """キュー順を決める。未指定なら現在の最大値の次を採番する。
+
+    キューは全Jobで1本のため、呼び出し側ごとに採番すると同じ順番が重複する。既定では
+    Application APIが決め、順番を指定したい呼び出しだけが値を渡す。
+
+    採番はINSERT文の中で評価する副問い合わせとして渡す。最大値の読み取りとINSERTを
+    別の文に分けると、その隙間に別の要求が同じ値を読み、同じ順番のJobが2件できる。
+    """
+    if requested is not None:
+        return requested
+    return select(
+        func.coalesce(func.max(GenerationJob.queue_sequence), 0) + 1
+    ).scalar_subquery()
+
+
 def _build_job_records(
     job_id: str,
     payload: schemas.GenerationJobCreate,
     recipe: Recipe,
     prepared: workflow_module.PreparedWorkflow,
     stored: storage.StoredFile,
+    queue_sequence: int | Any,
 ) -> tuple[GenerationJob, Artifact, GenerationManifest]:
     manifest_id = schemas.new_id()
     workflow_artifact_id = schemas.new_id()
@@ -277,7 +325,7 @@ def _build_job_records(
         recipe_id=payload.recipe_id,
         manifest_id=manifest_id,
         parent_job_id=payload.parent_job_id,
-        queue_sequence=payload.queue_sequence,
+        queue_sequence=queue_sequence,
     )
     workflow_artifact = Artifact(
         id=workflow_artifact_id,
@@ -333,6 +381,9 @@ async def _persist_job_records(
         session.add(manifest)
         await session.flush()
         await session.commit()
+        # queue_sequenceはINSERT時に採番されることがある。応答へ返すため、確定した
+        # 値をDBから読み直す。
+        await session.refresh(job)
     except IntegrityError as error:
         await session.rollback()
         raise _integrity_error(error) from error
@@ -343,13 +394,28 @@ async def _persist_job_records(
 
 @router.get("/generation-jobs", response_model=list[schemas.GenerationJobRead])
 async def list_generation_jobs(
-    session: SessionDep, state: schemas.JobState | None = None
+    session: SessionDep,
+    state: schemas.JobState | None = None,
+    scene_id: str | None = None,
+    shot_id: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    """キュー状態の確認用。既定はqueue_sequence昇順の全件、state指定で絞り込む。"""
-    query = select(GenerationJob).order_by(GenerationJob.queue_sequence.asc())
+    """キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。
+
+    `scene_id`と`shot_id`は`scene_ref`/`shot_ref`の`id`と突き合わせる。画面が特定の
+    Shotの生成履歴だけを見るために使う。
+    """
+    query = select(GenerationJob).order_by(
+        GenerationJob.queue_sequence.asc(), GenerationJob.id.asc()
+    )
     if state is not None:
         query = query.where(GenerationJob.state == state)
-    result = await session.execute(query)
+    if scene_id is not None:
+        query = query.where(GenerationJob.scene_ref["id"].as_string() == scene_id)
+    if shot_id is not None:
+        query = query.where(GenerationJob.shot_ref["id"].as_string() == shot_id)
+    result = await session.execute(query.limit(limit).offset(offset))
     return result.scalars().all()
 
 
@@ -454,6 +520,48 @@ async def create_artifact(payload: schemas.ArtifactCreate, session: SessionDep):
 @router.get("/artifacts/{artifact_id}", response_model=schemas.ArtifactRead)
 async def get_artifact(artifact_id: str, session: SessionDep):
     return await _get_or_404(session, Artifact, "Artifact", artifact_id)
+
+
+@router.get("/artifacts/{artifact_id}/content")
+async def get_artifact_content(artifact_id: str, session: SessionDep):
+    """Artifactの実ファイルを配信する。候補比較のプレビューに使う。
+
+    画面へ渡すのは`artifact_id`だけとし、保存先の絶対パスを外へ出さない。パスの解決は
+    `storage`へ閉じ、`data_root`の外は配信しない。
+    """
+    artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    try:
+        path = storage.resolve_artifact(artifact.relative_path)
+    except storage.StorageError as error:
+        logger.warning(
+            "Artifactの実ファイルを配信できません。artifact_id=%s", artifact_id
+        )
+        raise ApiError(
+            "ARTIFACT_FILE_MISSING",
+            "Artifactの実ファイルを取得できませんでした。",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"artifact_id": artifact_id},
+        ) from error
+    return FileResponse(path, media_type=artifact.media_type, filename=path.name)
+
+
+@router.patch("/artifacts/{artifact_id}/decision", response_model=schemas.ArtifactRead)
+async def update_artifact_decision(
+    artifact_id: str, payload: schemas.ArtifactDecisionUpdate, session: SessionDep
+):
+    """生成候補の採否を記録する。`undecided`へ戻すと判断時刻も消す。"""
+    artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    if artifact.kind not in DECIDABLE_ARTIFACT_KINDS:
+        raise _validation_error(
+            "この種別のArtifactには採否を記録できません。",
+            {"kind": artifact.kind, "allowed": sorted(DECIDABLE_ARTIFACT_KINDS)},
+        )
+    artifact.decision = payload.decision
+    artifact.decision_at = (
+        None if payload.decision == "undecided" else schemas.now_iso()
+    )
+    await _commit(session)
+    return artifact
 
 
 @router.post(

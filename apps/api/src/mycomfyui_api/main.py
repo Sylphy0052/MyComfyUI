@@ -7,7 +7,9 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from mycomfyui_api.adapters.aimedia.client import create_reference_source
 from mycomfyui_api.adapters.comfyui.executor import ComfyUIExecutor
+from mycomfyui_api.bootstrap import ensure_default_recipes
 from mycomfyui_api.db import dispose_engine, get_engine, get_session_factory
 from mycomfyui_api.errors import (
     ApiError,
@@ -17,7 +19,9 @@ from mycomfyui_api.errors import (
     validation_error_handler,
 )
 from mycomfyui_api.queue import JobQueueWorker, recover_interrupted_jobs
+from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
+from mycomfyui_api.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +43,22 @@ async def lifespan(app: FastAPI):
         recovered = await recover_interrupted_jobs(session)
         if recovered:
             logger.info("中断Jobを%d件failedへ倒しました。", recovered)
+        await ensure_default_recipes(session)
     worker = JobQueueWorker(session_factory, ComfyUIExecutor(session_factory))
     worker.start()
     app.state.queue_worker = worker
+    app.state.reference_source = None
+    # ワーカーを起動した後は、以降どこで失敗しても後始末まで進める。参照Adapterの
+    # 生成はfixtureの読み込みで失敗しうるため、tryの外へ出さない。
     try:
+        app.state.reference_source = create_reference_source(
+            get_settings().aimedia_base_url
+        )
         yield
     finally:
         await worker.stop()
+        if app.state.reference_source is not None:
+            await app.state.reference_source.aclose()
         await dispose_engine()
 
 
@@ -56,6 +69,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(SQLAlchemyError, storage_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
     app.include_router(router)
+    app.include_router(reference_router)
 
     @app.middleware("http")
     async def set_request_id(request: Request, call_next):
