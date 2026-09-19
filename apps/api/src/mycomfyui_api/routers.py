@@ -1,5 +1,6 @@
+import json
 import logging
-from typing import Annotated, TypeVar
+from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select, update
@@ -7,7 +8,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from mycomfyui_api import schemas
+from mycomfyui_api import schemas, storage
+from mycomfyui_api.adapters.comfyui import workflow as workflow_module
+from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
 from mycomfyui_api.db import get_session
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
@@ -19,6 +22,7 @@ from mycomfyui_api.models import (
     Recipe,
 )
 from mycomfyui_api.queue import JobQueueWorker
+from mycomfyui_api.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,8 @@ router = APIRouter(prefix="/api/v1")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 ModelT = TypeVar("ModelT", bound=Base)
+
+WORKFLOW_MEDIA_TYPE = "application/json"
 
 
 def get_queue_worker(request: Request) -> JobQueueWorker:
@@ -42,6 +48,15 @@ def _not_found(resource: str, resource_id: str) -> ApiError:
         f"{resource}が見つかりません。",
         status_code=status.HTTP_404_NOT_FOUND,
         details={"resource": resource, "id": resource_id},
+    )
+
+
+def _validation_error(message: str, details: Any | None = None) -> ApiError:
+    return ApiError(
+        "VALIDATION_ERROR",
+        message,
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        details=details,
     )
 
 
@@ -92,6 +107,47 @@ async def get_recipe(recipe_id: str, session: SessionDep):
     return await _get_or_404(session, Recipe, "Recipe", recipe_id)
 
 
+def _resolve_template_name(recipe: Recipe) -> str:
+    """Recipeが指すWorkflowテンプレートを許可済み一覧から解決する。
+
+    利用者入力から任意のJSONを実行させないため、参照できるのは同梱テンプレートだけ
+    とする。`sha256`を持つ参照は、指している版が同梱物と一致することまで確かめる。
+    """
+    reference = recipe.workflow_template_ref
+    if not isinstance(reference, dict):
+        raise _validation_error("Recipeのworkflow_template_refが不正です。")
+    name = reference.get("name")
+    if not isinstance(name, str) or name not in workflow_module.ALLOWED_TEMPLATES:
+        raise _validation_error(
+            "許可されていないWorkflowテンプレートです。",
+            {
+                "name": name,
+                "allowed": sorted(workflow_module.ALLOWED_TEMPLATES),
+            },
+        )
+    expected = reference.get("sha256")
+    if isinstance(
+        expected, str
+    ) and expected.lower() != workflow_module.template_digest(name):
+        raise _validation_error(
+            "Workflowテンプレートの内容が参照と一致しません。", {"name": name}
+        )
+    return name
+
+
+def _prepare_workflow(
+    recipe: Recipe, inputs: dict[str, Any]
+) -> workflow_module.PreparedWorkflow:
+    """Recipeの既定値と要求の`inputs`をマージし、投入用Workflowを組み立てる。"""
+    template_name = _resolve_template_name(recipe)
+    defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
+    values: dict[str, Any] = {**defaults, **inputs}
+    try:
+        return workflow_module.build_workflow(template_name, values)
+    except workflow_module.WorkflowError as error:
+        raise _validation_error(str(error), {"template": template_name}) from error
+
+
 @router.post(
     "/generation-jobs",
     response_model=schemas.GenerationJobRead,
@@ -100,12 +156,40 @@ async def get_recipe(recipe_id: str, session: SessionDep):
 async def create_generation_job(
     payload: schemas.GenerationJobCreate, session: SessionDep
 ):
-    """JobとManifestのIDを先行採番し、同一トランザクションで相互参照ごと作成する。"""
+    """RecipeからWorkflowを組み立て、JobとManifestのIDを先行採番して作成する。
+
+    JobとManifestは相互参照するため、同一トランザクションで相互参照ごと作成する。
+    実行時Workflow JSONは先にArtifact storeへ書き出し、その内容のSHA-256を
+    Workflow Artifactとして記録する。投入するのはこのファイルそのものとする。
+    """
+    recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
+    if recipe.engine != ENGINE_COMFYUI:
+        raise _validation_error(
+            f"未対応の実行Backendです: {recipe.engine}", {"engine": recipe.engine}
+        )
+    if recipe.kind != payload.kind:
+        raise _validation_error(
+            "Recipeの生成種別と要求の種別が一致しません。",
+            {"recipe_kind": recipe.kind, "kind": payload.kind},
+        )
+
+    prepared = _prepare_workflow(recipe, payload.inputs)
+
     job_id = schemas.new_id()
     manifest_id = schemas.new_id()
     workflow_artifact_id = schemas.new_id()
     created_at = schemas.now_iso()
-    manifest_payload = payload.manifest
+
+    body = json.dumps(prepared.workflow, ensure_ascii=False, indent=2).encode("utf-8")
+    try:
+        stored = storage.write_artifact(job_id, storage.WORKFLOW_FILE_NAME, body)
+    except storage.StorageError as error:
+        logger.exception("Workflowスナップショットを保存できません。job_id=%s", job_id)
+        raise ApiError(
+            "STORAGE_ERROR",
+            "Workflowスナップショットを保存できませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
 
     job = GenerationJob(
         id=job_id,
@@ -122,10 +206,10 @@ async def create_generation_job(
         id=workflow_artifact_id,
         job_id=job_id,
         kind="workflow",
-        relative_path=manifest_payload.workflow_artifact.relative_path,
-        sha256=manifest_payload.workflow_artifact.sha256,
-        byte_size=manifest_payload.workflow_artifact.byte_size,
-        media_type=manifest_payload.workflow_artifact.media_type,
+        relative_path=stored.relative_path,
+        sha256=stored.sha256,
+        byte_size=stored.byte_size,
+        media_type=WORKFLOW_MEDIA_TYPE,
         availability="complete",
         parent_artifact_id=None,
         created_at=created_at,
@@ -135,13 +219,18 @@ async def create_generation_job(
     manifest = GenerationManifest(
         id=manifest_id,
         job_id=job_id,
-        engine=manifest_payload.engine,
-        engine_version=manifest_payload.engine_version,
-        model=manifest_payload.model,
-        seed=manifest_payload.seed,
-        resolved_prompt=manifest_payload.resolved_prompt,
-        parameters=manifest_payload.parameters,
-        input_refs=manifest_payload.input_refs,
+        engine=recipe.engine,
+        # 実行基盤の版はExecutorが実行開始直後に1回だけ設定する。
+        engine_version=None,
+        model=prepared.model,
+        seed=prepared.seed,
+        resolved_prompt=prepared.resolved_prompt,
+        parameters={
+            **prepared.parameters,
+            "workflow_template": prepared.template_name,
+            "workflow_template_sha256": prepared.template_sha256,
+        },
+        input_refs=payload.input_refs,
         workflow_artifact_id=workflow_artifact_id,
         created_at=created_at,
     )
@@ -154,11 +243,28 @@ async def create_generation_job(
         await session.flush()
         session.add(manifest)
         await session.flush()
+        await session.commit()
     except IntegrityError as error:
         await session.rollback()
+        _discard_workflow_snapshot(stored.relative_path)
         raise _integrity_error(error) from error
-    await _commit(session)
+    except Exception:
+        await session.rollback()
+        _discard_workflow_snapshot(stored.relative_path)
+        raise
     return job
+
+
+def _discard_workflow_snapshot(relative_path: str) -> None:
+    """Jobを作れなかったときに、先に書いたスナップショットを残さない。
+
+    どのJobからも参照されないファイルであり、消しても履歴は失われない。
+    """
+    path = get_settings().data_root / relative_path
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Workflowスナップショットを削除できません: %s", relative_path)
 
 
 @router.get("/generation-jobs", response_model=list[schemas.GenerationJobRead])
@@ -176,6 +282,20 @@ async def list_generation_jobs(
 @router.get("/generation-jobs/{job_id}", response_model=schemas.GenerationJobRead)
 async def get_generation_job(job_id: str, session: SessionDep):
     return await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+
+
+@router.get(
+    "/generation-jobs/{job_id}/artifacts", response_model=list[schemas.ArtifactRead]
+)
+async def list_job_artifacts(job_id: str, session: SessionDep):
+    """Jobに紐付くArtifactを作成順に返す。Workflowスナップショットも含む。"""
+    await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    result = await session.execute(
+        select(Artifact)
+        .where(Artifact.job_id == job_id)
+        .order_by(Artifact.created_at.asc(), Artifact.id.asc())
+    )
+    return result.scalars().all()
 
 
 @router.post(

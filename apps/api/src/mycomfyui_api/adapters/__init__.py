@@ -1,0 +1,1 @@
+"""Backendごとの実行Adapter。"""

@@ -108,7 +108,8 @@ class GenerationManifest(Base):
         String(UUID_LENGTH), nullable=False, unique=True
     )
     engine: Mapped[str] = mapped_column(Text, nullable=False)
-    engine_version: Mapped[str] = mapped_column(Text, nullable=False)
+    # 実行基盤の版はJob作成時点では確定できない。Executorが実行開始直後に1回だけ設定する。
+    engine_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[dict] = mapped_column(JSON, nullable=False)
     seed: Mapped[int] = mapped_column(Integer, nullable=False)
     resolved_prompt: Mapped[str] = mapped_column(Text, nullable=False)
