@@ -1,0 +1,578 @@
+{
+  "projects": [
+    {
+      "id": "hirohito",
+      "title": "裕仁アーク",
+      "source": {
+        "source_locator": "https://github.com/Sylphy0052/novel-writer",
+        "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970"
+      },
+      "scene_count": 1,
+      "canon_count": 3
+    }
+  ],
+  "scenes": {
+    "hirohito": [
+      {
+        "id": "hirohito-arc02-ep005-sc01",
+        "project_id": "hirohito",
+        "sequence": 1,
+        "summary": "夕暮れの旧校舎で、裕仁と灯が写真部の暗室に残る。",
+        "shot_count": 3,
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "tools/ai-media/data/scenes/hirohito-arc02-ep005-sc01.json",
+          "sha256": "73c8f8139242cc99ec0522e26c68b26c932c0353ef1c5f3fb13f0b2aecb9eeba"
+        }
+      }
+    ]
+  },
+  "scene_envelopes": {
+    "hirohito-arc02-ep005-sc01": {
+      "kind": "scene",
+      "data": {
+        "id": "hirohito-arc02-ep005-sc01",
+        "project_id": "hirohito",
+        "sequence": 1,
+        "summary": "夕暮れの旧校舎で、裕仁と灯が写真部の暗室に残る。",
+        "location": {
+          "id": "old-school-darkroom",
+          "display_name": "旧校舎 写真部暗室",
+          "canon_refs": [
+            {
+              "path": "canon/locations/old-school-darkroom.md",
+              "anchor": null,
+              "note": "暗室の赤色光"
+            }
+          ]
+        },
+        "time_of_day": "evening",
+        "season": "autumn",
+        "characters": [
+          {
+            "id": "hirohito",
+            "display_name": "裕仁",
+            "canon_refs": [
+              {
+                "path": "canon/characters/hirohito.md",
+                "anchor": "外見",
+                "note": "髪型と制服の指定"
+              }
+            ]
+          },
+          {
+            "id": "akari",
+            "display_name": "灯",
+            "canon_refs": [
+              {
+                "path": "canon/characters/akari.md",
+                "anchor": "外見",
+                "note": null
+              }
+            ]
+          }
+        ],
+        "goal": "灯が裕仁へ写真を託す。",
+        "music": null,
+        "shots": [
+          "hirohito-arc02-ep005-sc01-sh01",
+          "hirohito-arc02-ep005-sc01-sh02",
+          "hirohito-arc02-ep005-sc01-sh03"
+        ],
+        "source": {
+          "novel_file": "contents/arc02/ep005.md",
+          "metadata_file": "contents/arc02/ep005.meta.json",
+          "line_start": 120,
+          "line_end": 198,
+          "excerpt": "赤い光の下で、灯は現像液の匂いごと息を止めた。",
+          "canon_refs": [
+            {
+              "path": "canon/characters/hirohito.md",
+              "anchor": "外見",
+              "note": "髪型と制服の指定"
+            },
+            {
+              "path": "canon/characters/akari.md",
+              "anchor": "外見",
+              "note": null
+            },
+            {
+              "path": "canon/locations/old-school-darkroom.md",
+              "anchor": null,
+              "note": "暗室の赤色光"
+            }
+          ]
+        },
+        "canon_refs": [
+          {
+            "path": "canon/characters/hirohito.md",
+            "anchor": "外見",
+            "note": "髪型と制服の指定"
+          },
+          {
+            "path": "canon/characters/akari.md",
+            "anchor": "外見",
+            "note": null
+          },
+          {
+            "path": "canon/locations/old-school-darkroom.md",
+            "anchor": null,
+            "note": "暗室の赤色光"
+          }
+        ],
+        "unresolved": []
+      },
+      "provenance": {
+        "resource": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "tools/ai-media/data/scenes/hirohito-arc02-ep005-sc01.json",
+          "sha256": "73c8f8139242cc99ec0522e26c68b26c932c0353ef1c5f3fb13f0b2aecb9eeba"
+        },
+        "schema": {
+          "name": "scene",
+          "reference": {
+            "source_locator": "https://github.com/Sylphy0052/novel-writer",
+            "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+            "path": "tools/ai-media/schema/scene.schema.json",
+            "sha256": "162964f8c3021f71bedabf8238f8ec776f946c15f31a80a491009fbe52e3e0d6"
+          }
+        },
+        "references": [
+          {
+            "json_pointer": "/canon_refs/0",
+            "declared_path": "canon/characters/hirohito.md",
+            "reference": {
+              "source_locator": "https://github.com/Sylphy0052/novel-writer",
+              "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+              "path": "canon/characters/hirohito.md",
+              "sha256": "f78ce65322cc26ce57cd736f719db6aff5fc59ebcb070806fad988b77917855f",
+              "anchor": "外見",
+              "note": "髪型と制服の指定"
+            }
+          },
+          {
+            "json_pointer": "/canon_refs/1",
+            "declared_path": "canon/characters/akari.md",
+            "reference": {
+              "source_locator": "https://github.com/Sylphy0052/novel-writer",
+              "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+              "path": "canon/characters/akari.md",
+              "sha256": "01d3e03ab68fb4b308f1c6997f21ff835b3614c6a42d2e4430ebcd53f1f562fd",
+              "anchor": "外見"
+            }
+          },
+          {
+            "json_pointer": "/canon_refs/2",
+            "declared_path": "canon/locations/old-school-darkroom.md",
+            "reference": {
+              "source_locator": "https://github.com/Sylphy0052/novel-writer",
+              "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+              "path": "canon/locations/old-school-darkroom.md",
+              "sha256": "3144c303c1de9319baa167308630ec25e620f54832768154804ded5ae4bfe04f",
+              "note": "暗室の赤色光"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "shots": {
+    "hirohito-arc02-ep005-sc01": [
+      {
+        "id": "hirohito-arc02-ep005-sc01-sh01",
+        "scene_id": "hirohito-arc02-ep005-sc01",
+        "sequence": 1,
+        "duration_sec": 6.0,
+        "summary": "暗室の赤色光に浮かぶ裕仁のバストショット。",
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "tools/ai-media/data/shots/hirohito-arc02-ep005-sc01-sh01.json",
+          "sha256": "a48604c6cd6a2c329633ab69ececee0c6c481ccb67bfac06f872150fdd8ff912"
+        }
+      },
+      {
+        "id": "hirohito-arc02-ep005-sc01-sh02",
+        "scene_id": "hirohito-arc02-ep005-sc01",
+        "sequence": 2,
+        "duration_sec": 8.0,
+        "summary": "灯が現像済みの写真を差し出す。台詞あり。",
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "tools/ai-media/data/shots/hirohito-arc02-ep005-sc01-sh02.json",
+          "sha256": "9ecb21f68565d9c6779361973af8abb4118b0787eda2a2d4edd02de67de07f61"
+        }
+      },
+      {
+        "id": "hirohito-arc02-ep005-sc01-sh03",
+        "scene_id": "hirohito-arc02-ep005-sc01",
+        "sequence": 3,
+        "duration_sec": 5.0,
+        "summary": "暗室全体のワイド。引きで二人の距離を見せる。",
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "tools/ai-media/data/shots/hirohito-arc02-ep005-sc01-sh03.json",
+          "sha256": "fd73a19fc3d9d1d53fc728dfded31786e63c3e2ae09f811b32db4f0c2e42c450"
+        }
+      }
+    ]
+  },
+  "shot_envelopes": {
+    "hirohito-arc02-ep005-sc01-sh01": {
+      "kind": "shot",
+      "data": {
+        "id": "hirohito-arc02-ep005-sc01-sh01",
+        "scene_id": "hirohito-arc02-ep005-sc01",
+        "sequence": 1,
+        "duration_sec": 6.0,
+        "summary": "暗室の赤色光に浮かぶ裕仁のバストショット。",
+        "camera": {
+          "framing": "bust",
+          "angle": "eye_level",
+          "movement": "locked",
+          "composition": "右三分割に人物"
+        },
+        "characters": [
+          {
+            "character_id": "hirohito",
+            "role": "primary",
+            "action": "印画紙をトレイから引き上げる",
+            "expression": "驚き",
+            "gaze": "手元"
+          }
+        ],
+        "dialogue": [],
+        "image": {
+          "engine": "comfyui-anima",
+          "profile": "default",
+          "seed": null,
+          "use_existing": null,
+          "required": true
+        },
+        "video": {
+          "engine": "minimax-h3",
+          "mode": "i2v",
+          "audio_mode": "silent",
+          "profile": "default",
+          "seed": null,
+          "references": [],
+          "first_frame": null,
+          "last_frame": null
+        },
+        "source": {
+          "novel_file": "contents/arc02/ep005.md",
+          "metadata_file": "contents/arc02/ep005.meta.json",
+          "line_start": 130,
+          "line_end": 138,
+          "excerpt": "暗室の赤色光に浮かぶ裕仁のバストショット。",
+          "canon_refs": [
+            {
+              "path": "canon/characters/hirohito.md",
+              "anchor": "外見",
+              "note": "髪型と制服の指定"
+            },
+            {
+              "path": "canon/locations/old-school-darkroom.md",
+              "anchor": null,
+              "note": "暗室の赤色光"
+            }
+          ]
+        },
+        "canon_refs": [
+          {
+            "path": "canon/characters/hirohito.md",
+            "anchor": "外見",
+            "note": "髪型と制服の指定"
+          },
+          {
+            "path": "canon/locations/old-school-darkroom.md",
+            "anchor": null,
+            "note": "暗室の赤色光"
+          }
+        ],
+        "unresolved": []
+      },
+      "provenance": {
+        "resource": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "tools/ai-media/data/shots/hirohito-arc02-ep005-sc01-sh01.json",
+          "sha256": "a48604c6cd6a2c329633ab69ececee0c6c481ccb67bfac06f872150fdd8ff912"
+        },
+        "schema": {
+          "name": "shot",
+          "reference": {
+            "source_locator": "https://github.com/Sylphy0052/novel-writer",
+            "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+            "path": "tools/ai-media/schema/shot.schema.json",
+            "sha256": "895f437d752ac8ad4650782967e7dd2ee9a142f9cefd459473f3b819b1f3fc85"
+          }
+        },
+        "references": [
+          {
+            "json_pointer": "/canon_refs/0",
+            "declared_path": "canon/characters/hirohito.md",
+            "reference": {
+              "source_locator": "https://github.com/Sylphy0052/novel-writer",
+              "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+              "path": "canon/characters/hirohito.md",
+              "sha256": "f78ce65322cc26ce57cd736f719db6aff5fc59ebcb070806fad988b77917855f",
+              "anchor": "外見",
+              "note": "髪型と制服の指定"
+            }
+          },
+          {
+            "json_pointer": "/canon_refs/1",
+            "declared_path": "canon/locations/old-school-darkroom.md",
+            "reference": {
+              "source_locator": "https://github.com/Sylphy0052/novel-writer",
+              "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+              "path": "canon/locations/old-school-darkroom.md",
+              "sha256": "3144c303c1de9319baa167308630ec25e620f54832768154804ded5ae4bfe04f",
+              "note": "暗室の赤色光"
+            }
+          }
+        ]
+      }
+    },
+    "hirohito-arc02-ep005-sc01-sh02": {
+      "kind": "shot",
+      "data": {
+        "id": "hirohito-arc02-ep005-sc01-sh02",
+        "scene_id": "hirohito-arc02-ep005-sc01",
+        "sequence": 2,
+        "duration_sec": 8.0,
+        "summary": "灯が現像済みの写真を差し出す。台詞あり。",
+        "camera": {
+          "framing": "medium",
+          "angle": "eye_level",
+          "movement": "slow_push_in",
+          "composition": null
+        },
+        "characters": [
+          {
+            "character_id": "akari",
+            "role": "primary",
+            "action": "写真を差し出す",
+            "expression": "微笑",
+            "gaze": "裕仁"
+          },
+          {
+            "character_id": "hirohito",
+            "role": "secondary",
+            "action": "受け取る",
+            "expression": null,
+            "gaze": "写真"
+          }
+        ],
+        "dialogue": [
+          {
+            "speaker": "akari",
+            "text": "これ、あなたに預ける。",
+            "reading": "これ、あなたにあずける。",
+            "voice_id": "akari-v1",
+            "delivery": "ささやき",
+            "start_sec": 1.5
+          }
+        ],
+        "image": {
+          "engine": "comfyui-anima",
+          "profile": "default",
+          "seed": null,
+          "use_existing": null,
+          "required": true
+        },
+        "video": {
+          "engine": "minimax-h3",
+          "mode": "ref2v",
+          "audio_mode": "external_voice",
+          "profile": "default",
+          "seed": null,
+          "references": [],
+          "first_frame": null,
+          "last_frame": null
+        },
+        "source": {
+          "novel_file": "contents/arc02/ep005.md",
+          "metadata_file": "contents/arc02/ep005.meta.json",
+          "line_start": 140,
+          "line_end": 148,
+          "excerpt": "灯が現像済みの写真を差し出す。台詞あり。",
+          "canon_refs": [
+            {
+              "path": "canon/characters/hirohito.md",
+              "anchor": "外見",
+              "note": "髪型と制服の指定"
+            },
+            {
+              "path": "canon/characters/akari.md",
+              "anchor": "外見",
+              "note": null
+            }
+          ]
+        },
+        "canon_refs": [
+          {
+            "path": "canon/characters/hirohito.md",
+            "anchor": "外見",
+            "note": "髪型と制服の指定"
+          },
+          {
+            "path": "canon/characters/akari.md",
+            "anchor": "外見",
+            "note": null
+          }
+        ],
+        "unresolved": []
+      },
+      "provenance": {
+        "resource": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "tools/ai-media/data/shots/hirohito-arc02-ep005-sc01-sh02.json",
+          "sha256": "9ecb21f68565d9c6779361973af8abb4118b0787eda2a2d4edd02de67de07f61"
+        },
+        "schema": {
+          "name": "shot",
+          "reference": {
+            "source_locator": "https://github.com/Sylphy0052/novel-writer",
+            "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+            "path": "tools/ai-media/schema/shot.schema.json",
+            "sha256": "895f437d752ac8ad4650782967e7dd2ee9a142f9cefd459473f3b819b1f3fc85"
+          }
+        },
+        "references": [
+          {
+            "json_pointer": "/canon_refs/0",
+            "declared_path": "canon/characters/hirohito.md",
+            "reference": {
+              "source_locator": "https://github.com/Sylphy0052/novel-writer",
+              "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+              "path": "canon/characters/hirohito.md",
+              "sha256": "f78ce65322cc26ce57cd736f719db6aff5fc59ebcb070806fad988b77917855f",
+              "anchor": "外見",
+              "note": "髪型と制服の指定"
+            }
+          },
+          {
+            "json_pointer": "/canon_refs/1",
+            "declared_path": "canon/characters/akari.md",
+            "reference": {
+              "source_locator": "https://github.com/Sylphy0052/novel-writer",
+              "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+              "path": "canon/characters/akari.md",
+              "sha256": "01d3e03ab68fb4b308f1c6997f21ff835b3614c6a42d2e4430ebcd53f1f562fd",
+              "anchor": "外見"
+            }
+          }
+        ]
+      }
+    },
+    "hirohito-arc02-ep005-sc01-sh03": {
+      "kind": "shot",
+      "data": {
+        "id": "hirohito-arc02-ep005-sc01-sh03",
+        "scene_id": "hirohito-arc02-ep005-sc01",
+        "sequence": 3,
+        "duration_sec": 5.0,
+        "summary": "暗室全体のワイド。引きで二人の距離を見せる。",
+        "camera": {
+          "framing": "wide",
+          "angle": "high",
+          "movement": "locked",
+          "composition": "手前に乾燥中の印画紙"
+        },
+        "characters": [
+          {
+            "character_id": "hirohito",
+            "role": "primary",
+            "action": "立ち尽くす",
+            "expression": null,
+            "gaze": "灯"
+          },
+          {
+            "character_id": "akari",
+            "role": "secondary",
+            "action": "戸口へ向かう",
+            "expression": null,
+            "gaze": "前方"
+          }
+        ],
+        "dialogue": [],
+        "image": {
+          "engine": "comfyui-anima",
+          "profile": "default",
+          "seed": null,
+          "use_existing": null,
+          "required": true
+        },
+        "video": {
+          "engine": "minimax-h3",
+          "mode": "i2v",
+          "audio_mode": "silent",
+          "profile": "default",
+          "seed": null,
+          "references": [],
+          "first_frame": null,
+          "last_frame": null
+        },
+        "source": {
+          "novel_file": "contents/arc02/ep005.md",
+          "metadata_file": "contents/arc02/ep005.meta.json",
+          "line_start": 150,
+          "line_end": 158,
+          "excerpt": "暗室全体のワイド。引きで二人の距離を見せる。",
+          "canon_refs": [
+            {
+              "path": "canon/locations/old-school-darkroom.md",
+              "anchor": null,
+              "note": "暗室の赤色光"
+            }
+          ]
+        },
+        "canon_refs": [
+          {
+            "path": "canon/locations/old-school-darkroom.md",
+            "anchor": null,
+            "note": "暗室の赤色光"
+          }
+        ],
+        "unresolved": []
+      },
+      "provenance": {
+        "resource": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "tools/ai-media/data/shots/hirohito-arc02-ep005-sc01-sh03.json",
+          "sha256": "fd73a19fc3d9d1d53fc728dfded31786e63c3e2ae09f811b32db4f0c2e42c450"
+        },
+        "schema": {
+          "name": "shot",
+          "reference": {
+            "source_locator": "https://github.com/Sylphy0052/novel-writer",
+            "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+            "path": "tools/ai-media/schema/shot.schema.json",
+            "sha256": "895f437d752ac8ad4650782967e7dd2ee9a142f9cefd459473f3b819b1f3fc85"
+          }
+        },
+        "references": [
+          {
+            "json_pointer": "/canon_refs/0",
+            "declared_path": "canon/locations/old-school-darkroom.md",
+            "reference": {
+              "source_locator": "https://github.com/Sylphy0052/novel-writer",
+              "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+              "path": "canon/locations/old-school-darkroom.md",
+              "sha256": "3144c303c1de9319baa167308630ec25e620f54832768154804ded5ae4bfe04f",
+              "note": "暗室の赤色光"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

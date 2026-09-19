@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     data_root: Path = user_data_path("MyComfyUI", appauthor=False)
     comfyui_base_url: str = "http://127.0.0.1:8188"
     comfyui_timeout_seconds: float = Field(default=600.0, gt=0)
+    #: ai-media参照APIの接続先。未設定の間は同梱fixtureを参照する。
+    aimedia_base_url: str | None = None
 
     @property
     def database_path(self) -> Path:
