@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -72,6 +72,8 @@ export function AgentPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [logs, setLogs] = useState<ApprovalLog[]>([]);
   const [busy, setBusy] = useState(false);
+  // 非同期処理の後で、操作した提案がまだ選ばれているかを見るために持つ。
+  const selectedIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -96,23 +98,20 @@ export function AgentPanel({
   }, [recipes, recipeId]);
 
   const refreshProposals = useCallback(async () => {
-    if (!sceneId) {
-      setProposals([]);
-      return;
-    }
-    const list = await api.listAgentProposals({ sceneId, limit: 50 });
-    setProposals(list);
+    if (!sceneId) return [];
+    return api.listAgentProposals({ sceneId, limit: 50 });
   }, [sceneId]);
+
+  const reloadProposals = useCallback(async () => {
+    setProposals(await refreshProposals());
+  }, [refreshProposals]);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        if (!sceneId) {
-          if (active) setProposals([]);
-          return;
-        }
-        const list = await api.listAgentProposals({ sceneId, limit: 50 });
+        const list = await refreshProposals();
+        // Scene を切り替えた直後の応答で、古い Scene の提案を表示しない。
         if (active) setProposals(list);
       } catch (cause) {
         if (active) setError(describe(cause));
@@ -121,12 +120,16 @@ export function AgentPanel({
     return () => {
       active = false;
     };
-  }, [sceneId]);
+  }, [refreshProposals]);
 
   const selected = useMemo(
     () => proposals.find((proposal) => proposal.id === selectedId) ?? null,
     [proposals, selectedId],
   );
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   useEffect(() => {
     let active = true;
@@ -172,11 +175,11 @@ export function AgentPanel({
       });
       setSelectedId(proposal.id);
       setNotice("提案を取得した。生成Jobは投入していない。");
-      await refreshProposals();
+      await reloadProposals();
     } catch (cause) {
       setError(describe(cause));
       // 取得に失敗した提案も履歴へ残る。一覧を取り直して失敗記録を見せる。
-      await refreshProposals().catch(() => undefined);
+      await reloadProposals().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -184,18 +187,23 @@ export function AgentPanel({
 
   const decide = async (decision: AgentDecision) => {
     if (!selected) return;
+    const target = selected.id;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      await api.decideAgentProposal(selected.id, decision);
-      setNotice(
-        decision === "approved"
-          ? "承認を記録した。適用するまで生成Jobは投入されない。"
-          : "却下を記録した。",
-      );
-      await refreshProposals();
-      setLogs(await api.listApprovalLogs({ subjectId: selected.id }));
+      await api.decideAgentProposal(target, decision);
+      const logList = await api.listApprovalLogs({ subjectId: target });
+      await reloadProposals();
+      // 操作中に別の提案へ切り替えられていたら、その提案の履歴を上書きしない。
+      if (selectedIdRef.current === target) {
+        setNotice(
+          decision === "approved"
+            ? "承認を記録した。適用するまで生成Jobは投入されない。"
+            : "却下を記録した。",
+        );
+        setLogs(logList);
+      }
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -205,14 +213,17 @@ export function AgentPanel({
 
   const apply = async () => {
     if (!selected) return;
+    const target = selected.id;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const job = await api.applyAgentProposal(selected.id);
-      setNotice(`承認済みの提案を適用した。job_id=${job.id}`);
+      const job = await api.applyAgentProposal(target);
+      if (selectedIdRef.current === target) {
+        setNotice(`承認済みの提案を適用した。job_id=${job.id}`);
+      }
       onAppliedJob(job);
-      await refreshProposals();
+      await reloadProposals();
     } catch (cause) {
       setError(describe(cause));
     } finally {

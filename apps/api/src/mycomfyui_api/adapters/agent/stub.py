@@ -29,7 +29,15 @@ FIXTURE_PATH = Path(__file__).parent / "fixtures" / "proposals.json"
 
 @lru_cache
 def _load_fixture() -> dict[str, Any]:
-    document = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    """同梱fixtureを読む。読めないときもAdapterの例外へ揃える。
+
+    fixtureの欠落や壊れたJSONをそのまま投げると、提案取得の失敗として扱われず、
+    失敗した提案が履歴へ残らない。
+    """
+    try:
+        document = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise AgentUnavailable("提案fixtureを読み込めません。") from error
     if not isinstance(document, dict):
         raise AgentInvalidResponse("提案fixtureがJSON objectではありません。")
     return document

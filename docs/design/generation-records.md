@@ -94,6 +94,50 @@ Recipeの変更は更新ではなく新規Recipeで表し、必要なら`superse
 
 ApprovalLogは追記専用とする。承認済みの記録を編集・再利用せず、操作対象または差分が変わった場合は新しい承認を要求する。
 
+`requested_operation`には操作種別、対象、実行予定の入力と、それらを正規化したJSONから算出したSHA-256 digestを含める。実行の直前に同じ手順でdigestを組み立て直し、記録した値と一致しない承認では実行しない。`expires_at`は承認時に既定の有効期間から設定し、期限を過ぎた承認も実行に使わない。期限の文字列を解釈できない記録は期限切れとして扱う。
+
+### AgentProposal
+
+|項目|必須|内容|更新可否|
+|---|---|---|---|
+|`id`|必須|提案ID|不可|
+|`provider_id`|必須|提案を返したProvider|不可|
+|`kind`|必須|`shot_breakdown`、`image_prompt`、`reference_candidates`、`recipe_draft`|不可|
+|`state`|必須|`proposed`、`approved`、`rejected`、`applied`、`failed`|状態遷移規則に従う|
+|`project_id`、`scene_id`|必須|対象Project/SceneのID|不可|
+|`shot_id`|任意|対象ShotのID|不可|
+|`recipe_id`|任意|承認後に投入するJobのRecipe ID|不可|
+|`instruction`|必須|利用者の指示|不可|
+|`request_context`|必須|Providerへ渡した入力。許可した表示用フィールドだけで組み立てる|不可|
+|`output`|任意|提案本体。取得に失敗した提案はNULL|不可|
+|`usage`|任意|費用、所要時間、往復回数の実測値|不可|
+|`model`|任意|実行モデル|不可|
+|`failure_code`、`failure_message`|任意|取得失敗の理由|`failed`時のみ1回設定|
+|`applied_job_id`|任意|承認後に投入したJob ID|適用時のみ1回設定|
+|`created_at`|必須|取得時刻|不可|
+|`decided_at`|任意|承認または却下の時刻|判断時のみ1回設定|
+
+状態遷移は`proposed → approved → applied`、`proposed → rejected`とし、取得に失敗した提案は`failed`のまま残す。`request_context`と`output`は作成後に更新しない。提案の取得だけでは生成Job、Artifact、Manifestを作らない。
+
+`request_context`にはCanon本文を入れず、Canon参照は`path`、`anchor`、`note`に限る。APIキー、認証情報、環境変数、ローカル絶対パスも入れない。
+
+## エージェント操作の承認境界
+
+副作用のある操作は、許可する操作種別を列挙した許可リストで分類する。列挙に無い種別は実行しない。
+
+|操作種別|扱い|
+|---|---|
+|`agent.propose`|副作用なし。承認を求めずに実行する|
+|`generation_job.create`|承認必須。ApprovalLogの承認を確認してから実行する|
+|`file.move`、`git.commit`、`external.send`|初期版では実行しない|
+
+承認と実行は別の操作として分ける。承認しただけでは何も実行せず、実行時に次をすべて満たす場合だけ進める。
+
+- 対象の提案に対する直近のApprovalLogが`approved`であること。
+- 記録した操作のdigestが、実行直前に組み立てた操作のdigestと一致すること。
+- 承認の有効期限を過ぎていないこと。
+- 提案が`approved`であり、同じ提案から2件目の実行を作らないこと。
+
 ## 参照整合性
 
 - `GenerationJob.manifest_id`と`GenerationManifest.job_id`は1対1で一致する。JobとManifestのIDは保存前に採番し、両レコードは同一トランザクションで作成する。SQLiteの相互外部キーはコミット時まで遅延検証する。
@@ -171,10 +215,11 @@ Application APIは`data_root`を設定値として受け取り、その配下だ
 
 |区分|`data_root`からの相対先|内容|Git管理|
 |---|---|---|---|
-|SQLite|`db/mycomfyui.sqlite3`|Job、Artifact、Manifest、Recipe、ApprovalLogの正本|しない|
+|SQLite|`db/mycomfyui.sqlite3`|Job、Artifact、Manifest、Recipe、ApprovalLog、AgentProposalの正本|しない|
 |Artifact store|`artifacts/<job-id>/`|生成画像、動画、音声、Workflow JSON、実行ログ|しない|
 |入力素材cache|`inputs/<sha256>/`|取り込んだ利用者素材のコピー|しない|
 |一時ファイル|`tmp/<job-id>/`|実行途中の出力とdownload|しない。Job完了後に削除可能|
+|提案Providerの作業領域|`tmp/agent/<request-id>/`|提案Providerを起動する空のディレクトリ|しない。提案の取得後に削除する|
 |診断ログ|`logs/<yyyy-mm-dd>.jsonl`|Application APIとAdapterの構造化ログ|しない|
 
 `data_root`の各パスは起動時に正規化し、ルート外へ脱出する値を拒否する。Artifactを参照するときはDBに保存した相対パスから解決し、利用者入力の絶対パスをManifestやログへ保存しない。

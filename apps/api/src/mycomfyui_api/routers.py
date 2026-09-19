@@ -22,7 +22,7 @@ from mycomfyui_api.adapters.aimedia.client import (
 )
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
-from mycomfyui_api.db import get_session
+from mycomfyui_api.db import get_session, get_session_factory
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
     AgentProposal,
@@ -1311,6 +1311,18 @@ def _planned_operation(proposal: AgentProposal) -> dict[str, Any] | None:
     }
 
 
+def _context_artifact_ids(context: dict[str, Any]) -> set[str]:
+    """入力コンテキストへ載せたArtifact IDの集合。提案の出力を突き合わせるのに使う。"""
+    entries = context.get("artifacts")
+    if not isinstance(entries, list):
+        return set()
+    return {
+        str(entry["artifact_id"])
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("artifact_id")
+    }
+
+
 def _proposal_read(proposal: AgentProposal) -> schemas.AgentProposalRead:
     """提案の応答。適用予定の操作とそのdigestを一緒に返す。
 
@@ -1365,6 +1377,8 @@ async def _record_proposal_failure(
     """失敗した提案も履歴へ残す。記録に失敗しても提案の失敗を返す。
 
     Providerの不調で履歴管理まで止めないため、ここでの失敗は呼び出し元へ伝えない。
+    握るのは永続化層の失敗だけとする。それ以外の例外は実装の誤りであり、提案の失敗へ
+    読み替えるとJobや履歴の不整合を見落とすため、そのまま外へ出す。
     """
     proposal.state = "failed"
     proposal.failure_code = (
@@ -1439,7 +1453,9 @@ async def create_agent_proposal(
     except agent_base.AgentError as error:
         await _record_proposal_failure(session, proposal, error)
         raise _agent_error(error) from error
-    proposal.output = result.output
+    proposal.output = proposals.restrict_reference_candidates(
+        payload.kind, result.output, _context_artifact_ids(context)
+    )
     proposal.usage = result.usage or None
     proposal.model = result.model
     session.add(proposal)
@@ -1497,12 +1513,13 @@ async def decide_agent_proposal(
     内容のdigestを記録し、提案や対象が変わった後の承認を使い回せないようにする。
     """
     proposal = await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
-    if proposal.state != "proposed":
+    current_state = proposal.state
+    if current_state != "proposed":
         raise ApiError(
             "PROPOSAL_NOT_DECIDABLE",
             "この提案はすでに判断済みか、判断できない状態です。",
             status_code=status.HTTP_409_CONFLICT,
-            details={"state": proposal.state},
+            details={"state": current_state},
         )
     operation = _planned_operation(proposal)
     if payload.decision == "approved":
@@ -1536,10 +1553,26 @@ async def decide_agent_proposal(
             else None
         ),
     )
+    # 承認と却下がほぼ同時に届いても、両方をApprovalLogへ残さない。状態を条件に含めて
+    # 更新し、更新できた要求だけが判断を記録する。
+    next_state = "approved" if payload.decision == "approved" else "rejected"
+    claimed = await session.execute(
+        update(AgentProposal)
+        .where(AgentProposal.id == proposal.id)
+        .where(AgentProposal.state == "proposed")
+        .values(state=next_state, decided_at=decided_at)
+    )
+    if claimed.rowcount != 1:
+        await session.rollback()
+        raise ApiError(
+            "PROPOSAL_NOT_DECIDABLE",
+            "この提案はすでに判断済みか、判断できない状態です。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"state": current_state},
+        )
     session.add(approval_log)
-    proposal.state = "approved" if payload.decision == "approved" else "rejected"
-    proposal.decided_at = decided_at
     await _commit(session)
+    await session.refresh(proposal)
     return _proposal_read(proposal)
 
 
@@ -1619,9 +1652,18 @@ async def apply_agent_proposal(
         recipe_id=target["recipe_id"],
         inputs=operation["payload"]["inputs"],
     )
-    job = await create_generation_job(
-        payload=job_payload, session=session, source=source
-    )
+    try:
+        job = await create_generation_job(
+            payload=job_payload, session=session, source=source
+        )
+    except ApiError as error:
+        # Jobは作成済みだが応答を組み立てられなかった場合。提案は`applied`で確定して
+        # いるため、ここで紐付けを残さないとどのJobを投入したのか辿れなくなる。
+        job_id = (error.details or {}).get("job_id")
+        if error.code != "JOB_RECORD_UNREADABLE" or not job_id:
+            raise
+        await _link_applied_job(proposal.id, str(job_id))
+        raise
     await session.execute(
         update(AgentProposal)
         .where(AgentProposal.id == proposal.id)
@@ -1629,6 +1671,28 @@ async def apply_agent_proposal(
     )
     await _commit(session)
     return job
+
+
+async def _link_applied_job(proposal_id: str, job_id: str) -> None:
+    """提案へ投入済みJobを結ぶ。応答を返せなかった経路からの後追い記録に使う。
+
+    呼び出し元のセッションは応答を組み立てられない状態のため、別のセッションで書く。
+    ここでの失敗はJobの作成結果を変えないため、警告だけ残す。
+    """
+    try:
+        async with get_session_factory()() as session:
+            await session.execute(
+                update(AgentProposal)
+                .where(AgentProposal.id == proposal_id)
+                .values(applied_job_id=job_id)
+            )
+            await session.commit()
+    except SQLAlchemyError:
+        logger.warning(
+            "適用した提案へJobを結べません。proposal_id=%s job_id=%s",
+            proposal_id,
+            job_id,
+        )
 
 
 @router.get("/approval-logs", response_model=list[schemas.ApprovalLogRead])

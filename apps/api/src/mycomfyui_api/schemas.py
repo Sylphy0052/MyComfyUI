@@ -14,6 +14,7 @@ from pydantic import (
 from mycomfyui_api import provenance
 from mycomfyui_api.adapters.agent.base import AgentProposalKind
 from mycomfyui_api.adapters.agent.proposals import MAX_INSTRUCTION_LENGTH
+from mycomfyui_api.approvals import OperationEffect
 from mycomfyui_api.storage import ARTIFACTS_DIR_NAME
 
 GenerationKind = Literal["image", "video", "voice", "music", "compose"]
@@ -323,7 +324,6 @@ class JobLineageRead(ApiModel):
 AgentProposalState = Literal["proposed", "approved", "rejected", "applied", "failed"]
 #: 画面から記録できる判断。`expired`は期限切れの検出結果であり、画面からは送らない。
 AgentDecision = Literal["approved", "rejected"]
-OperationEffect = Literal["no_side_effect", "requires_approval", "forbidden"]
 
 
 class AgentProviderRead(ApiModel):

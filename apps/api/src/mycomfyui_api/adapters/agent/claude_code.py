@@ -10,6 +10,10 @@ APIキーをMyComfyUI側へ持たず、CLIの既存認証をそのまま使う�
   MCP、skillを読み込ませない。
 - cwdは提案ごとに作る空ディレクトリとする。リポジトリも`data_root`の他の領域も見せない。
 - 環境変数は`PATH`と`HOME`だけを渡す。`HOME`はCLIの既存認証に必要なため残す。
+
+この条件が効くことはCLI 2.1.270で実測した。ツール実行・ファイル作成・設定ファイルの読み出しを
+促す指示文を与えても、応答は提案JSONだけで、ツール使用と許可要求は発生せず、作業ディレクトリに
+ファイルも残らなかった。CLIを更新したときは同じ確認をやり直す。
 """
 
 import asyncio
@@ -104,8 +108,10 @@ class ClaudeCodeProvider:
     async def propose(self, request: ProposalRequest) -> ProposalResult:
         executable = self._executable()
         if executable is None:
+            # 設定した実行ファイルのパスは失敗理由へ載せない。この文言は提案の履歴へ
+            # 保存され、APIから読み出せるため、ローカル固有のパスを残さない。
             raise AgentUnavailable(
-                f"Claude Code CLIを実行できません: {self._settings.agent_cli_path}"
+                "Claude Code CLIを実行できません。実行ファイルの設定を確認してください。"
             )
         workspace = self._settings.agent_workspace_root / str(uuid4())
         try:
@@ -115,8 +121,21 @@ class ClaudeCodeProvider:
         try:
             payload = await self._run(executable, request, workspace)
         finally:
-            shutil.rmtree(workspace, ignore_errors=True)
+            self._discard_workspace(workspace)
         return self._result(request, payload)
+
+    def _discard_workspace(self, workspace: Path) -> None:
+        """作業ディレクトリを消す。失敗しても提案の結果は変えない。
+
+        消せないまま黙って進むと`tmp/agent/`配下が溜まり続けるため、検知できるよう
+        警告だけ残す。
+        """
+        try:
+            shutil.rmtree(workspace)
+        except OSError:
+            logger.warning(
+                "提案の作業ディレクトリを削除できません。provider=%s", PROVIDER_ID
+            )
 
     async def _run(
         self, executable: str, request: ProposalRequest, workspace: Path

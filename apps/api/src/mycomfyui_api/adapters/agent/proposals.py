@@ -146,6 +146,34 @@ def build_prompt(request: ProposalRequest) -> str:
     )
 
 
+def restrict_reference_candidates(
+    kind: AgentProposalKind, output: dict[str, Any], allowed_ids: set[str]
+) -> dict[str, Any]:
+    """参照候補のArtifact IDを、渡した一覧にあるものだけへ制限する。
+
+    IDはProviderの出力であり、一覧から選ぶという指示を守る保証はない。範囲外のIDを
+    そのまま履歴へ残すと、後からこの値を使う画面や機能が存在しないArtifactを指せる。
+    範囲外は空にし、候補の説明だけを残す。
+    """
+    if kind != "reference_candidates":
+        return output
+    candidates = output.get("candidates")
+    if not isinstance(candidates, list):
+        return output
+    restricted = [
+        {
+            **candidate,
+            "artifact_id": (
+                candidate.get("artifact_id")
+                if candidate.get("artifact_id") in allowed_ids
+                else ""
+            ),
+        }
+        for candidate in candidates
+    ]
+    return {**output, "candidates": restricted}
+
+
 def _canon_refs(refs: Any) -> list[dict[str, Any]]:
     """Canon参照の位置情報だけを渡す。Canon本文は渡さない。"""
     entries: list[dict[str, Any]] = []
