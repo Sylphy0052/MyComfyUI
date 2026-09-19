@@ -1,0 +1,643 @@
+{
+  "$defs": {
+    "Camera": {
+      "additionalProperties": false,
+      "description": "カメラの指定。",
+      "properties": {
+        "framing": {
+          "enum": [
+            "extreme_wide",
+            "wide",
+            "full",
+            "medium",
+            "bust",
+            "close_up"
+          ],
+          "title": "Framing",
+          "type": "string"
+        },
+        "angle": {
+          "default": "eye_level",
+          "enum": [
+            "low",
+            "eye_level",
+            "high",
+            "overhead"
+          ],
+          "title": "Angle",
+          "type": "string"
+        },
+        "movement": {
+          "default": "locked",
+          "enum": [
+            "locked",
+            "slow_push_in",
+            "slow_pull_out",
+            "pan_left",
+            "pan_right",
+            "follow"
+          ],
+          "title": "Movement",
+          "type": "string"
+        },
+        "composition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Composition"
+        }
+      },
+      "required": [
+        "framing"
+      ],
+      "title": "Camera",
+      "type": "object"
+    },
+    "CanonRef": {
+      "additionalProperties": false,
+      "description": "Canon(正本)への参照。\n\n**Canonの内容はここへ複製しない。** 髪色・性格・衣装などはすべて参照先が持つ。\nScene / Shot は「どこを見ればよいか」だけを持つ。",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "anchor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "CanonRef",
+      "type": "object"
+    },
+    "CharacterAction": {
+      "additionalProperties": false,
+      "description": "Shot内での人物のふるまい。",
+      "properties": {
+        "character_id": {
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "role": {
+          "default": "primary",
+          "enum": [
+            "primary",
+            "secondary",
+            "background",
+            "offscreen"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expression"
+        },
+        "gaze": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gaze"
+        }
+      },
+      "required": [
+        "character_id"
+      ],
+      "title": "CharacterAction",
+      "type": "object"
+    },
+    "Dialogue": {
+      "additionalProperties": false,
+      "description": "Shot内の台詞。\n\n`text` は本文の表記、`reading` はTTSへ渡す読み。\n**漢字はTTSが読みを誤る** (検証_minimax/24: 「女子」→「温座子」)。\n読みが本文表記から一意に定まらない台詞には `reading` を書く。",
+      "properties": {
+        "speaker": {
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Speaker",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "reading": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reading"
+        },
+        "voice_id": {
+          "pattern": "^[a-z0-9-]+-v\\d+$",
+          "title": "Voice Id",
+          "type": "string"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delivery"
+        },
+        "start_sec": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Sec"
+        }
+      },
+      "required": [
+        "speaker",
+        "text",
+        "voice_id"
+      ],
+      "title": "Dialogue",
+      "type": "object"
+    },
+    "ImageGenerationSpec": {
+      "additionalProperties": false,
+      "description": "Shotの画像生成の要求。\n\n構図・人物・表情はShot本体(`camera` / `characters`)が持つ。ここにあるのは\n「どのengineで、どの設定の束で、再現可能に作るか」だけ。",
+      "properties": {
+        "engine": {
+          "default": "comfyui-anima",
+          "title": "Engine",
+          "type": "string"
+        },
+        "profile": {
+          "default": "default",
+          "title": "Profile",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "use_existing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Use Existing"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "title": "ImageGenerationSpec",
+      "type": "object"
+    },
+    "LipSyncSpec": {
+      "additionalProperties": false,
+      "description": "口パクの差し替え。既定では使わない。\n\nまず `H3 video + 外部音声 + ffmpeg` で許容できるかを見て、\nズレが問題になるShotだけ有効にする。",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "engine": {
+          "default": "musetalk",
+          "title": "Engine",
+          "type": "string"
+        },
+        "profile": {
+          "default": "default",
+          "title": "Profile",
+          "type": "string"
+        }
+      },
+      "title": "LipSyncSpec",
+      "type": "object"
+    },
+    "ShotReference": {
+      "additionalProperties": false,
+      "description": "動画生成へ渡す参照画像。\n\n枚数が処理時間へ直結する (検証_minimax: 2枚140秒 / 5枚293秒 / 9枚440秒)。\n1人なら5-7枚、2人なら各3枚+背景で7枚が目安。上限は9枚。",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "background",
+            "standing",
+            "detail",
+            "expression",
+            "action"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "character_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Character Id"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "path",
+        "role"
+      ],
+      "title": "ShotReference",
+      "type": "object"
+    },
+    "SourceLocator": {
+      "additionalProperties": false,
+      "description": "Scene / Shot がどの本文から起こされたかを指す。\n\n本文そのものはここへ複製しない。行範囲と根拠ファイルだけを持つ。",
+      "properties": {
+        "novel_file": {
+          "title": "Novel File",
+          "type": "string"
+        },
+        "metadata_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metadata File"
+        },
+        "line_start": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line Start"
+        },
+        "line_end": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Line End"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "canon_refs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CanonRef"
+          },
+          "title": "Canon Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "novel_file"
+      ],
+      "title": "SourceLocator",
+      "type": "object"
+    },
+    "VideoGenerationSpec": {
+      "additionalProperties": false,
+      "description": "Shotの動画生成の要求。",
+      "properties": {
+        "engine": {
+          "default": "minimax-h3",
+          "title": "Engine",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "t2v",
+            "i2v",
+            "ref2v"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "audio_mode": {
+          "default": "external_voice",
+          "enum": [
+            "native",
+            "external_voice",
+            "silent"
+          ],
+          "title": "Audio Mode",
+          "type": "string"
+        },
+        "profile": {
+          "default": "default",
+          "title": "Profile",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "references": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ShotReference"
+          },
+          "title": "References",
+          "type": "array"
+        },
+        "first_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Frame"
+        },
+        "last_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Frame"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "VideoGenerationSpec",
+      "type": "object"
+    },
+    "VoiceGenerationSpec": {
+      "additionalProperties": false,
+      "description": "Shotの音声生成の要求。台詞ごとの内容は `Shot.dialogue` が持つ。",
+      "properties": {
+        "engine": {
+          "default": "cosyvoice3",
+          "title": "Engine",
+          "type": "string"
+        },
+        "profile": {
+          "default": "default",
+          "title": "Profile",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "verify_with_asr": {
+          "default": true,
+          "title": "Verify With Asr",
+          "type": "boolean"
+        }
+      },
+      "title": "VoiceGenerationSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "生成と再生成の最小単位。",
+  "properties": {
+    "id": {
+      "pattern": "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}-sh\\d{2}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "scene_id": {
+      "pattern": "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}$",
+      "title": "Scene Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "duration_sec": {
+      "maximum": 15.0,
+      "minimum": 1.0,
+      "title": "Duration Sec",
+      "type": "number"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "camera": {
+      "$ref": "#/$defs/Camera"
+    },
+    "characters": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CharacterAction"
+      },
+      "title": "Characters",
+      "type": "array"
+    },
+    "dialogue": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Dialogue"
+      },
+      "title": "Dialogue",
+      "type": "array"
+    },
+    "image": {
+      "$ref": "#/$defs/ImageGenerationSpec"
+    },
+    "video": {
+      "$ref": "#/$defs/VideoGenerationSpec"
+    },
+    "voice": {
+      "$ref": "#/$defs/VoiceGenerationSpec"
+    },
+    "lip_sync": {
+      "$ref": "#/$defs/LipSyncSpec"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceLocator"
+    },
+    "canon_refs": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CanonRef"
+      },
+      "title": "Canon Refs",
+      "type": "array"
+    },
+    "unresolved": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "scene_id",
+    "sequence",
+    "duration_sec",
+    "summary",
+    "camera",
+    "video",
+    "source"
+  ],
+  "title": "Shot",
+  "type": "object"
+}

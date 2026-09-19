@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mycomfyui.local/contracts/ai-media/v1/reference-api.schema.json",
+  "title": "ai-media read API v1 responses",
+  "anyOf": [
+    { "$ref": "#/$defs/ProjectList" },
+    { "$ref": "#/$defs/Project" },
+    { "$ref": "#/$defs/SceneList" },
+    { "$ref": "#/$defs/SceneEnvelope" },
+    { "$ref": "#/$defs/ShotList" },
+    { "$ref": "#/$defs/ShotEnvelope" },
+    { "$ref": "#/$defs/CanonList" },
+    { "$ref": "#/$defs/CanonDescriptor" },
+    { "$ref": "#/$defs/SchemaDocument" },
+    { "$ref": "#/$defs/Problem" }
+  ],
+  "$defs": {
+    "RepositoryRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        { "pattern": "^[^/\\\\].*$" },
+        { "not": { "pattern": "^[A-Za-z]:" } },
+        { "not": { "pattern": "\\\\" } },
+        { "not": { "pattern": "(^|/)\\.\\.(/|$)" } }
+      ]
+    },
+    "SourceRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_locator", "revision"],
+      "properties": {
+        "source_locator": { "type": "string", "format": "uri" },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "ImmutableReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_locator", "revision", "path", "sha256"],
+      "properties": {
+        "source_locator": { "type": "string", "format": "uri" },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "path": { "$ref": "#/$defs/RepositoryRelativePath" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "anchor": { "type": ["string", "null"] },
+        "note": { "type": ["string", "null"] }
+      }
+    },
+    "SchemaDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "reference"],
+      "properties": {
+        "name": { "type": "string", "enum": ["scene", "shot", "voice"] },
+        "reference": { "$ref": "#/$defs/ImmutableReference" }
+      }
+    },
+    "ResolvedReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["json_pointer", "declared_path", "reference"],
+      "properties": {
+        "json_pointer": { "type": "string", "pattern": "^/" },
+        "declared_path": { "$ref": "#/$defs/RepositoryRelativePath" },
+        "reference": { "$ref": "#/$defs/ImmutableReference" }
+      }
+    },
+    "Provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource", "schema", "references"],
+      "properties": {
+        "resource": { "$ref": "#/$defs/ImmutableReference" },
+        "schema": { "$ref": "#/$defs/SchemaDescriptor" },
+        "references": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ResolvedReference" }
+        }
+      }
+    },
+    "Project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "source", "scene_count", "canon_count"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "title": { "type": ["string", "null"] },
+        "source": { "$ref": "#/$defs/SourceRevision" },
+        "scene_count": { "type": "integer", "minimum": 0 },
+        "canon_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ProjectList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Project" }
+        }
+      }
+    },
+    "SceneSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "project_id", "sequence", "summary", "shot_count", "reference"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "shot_count": { "type": "integer", "minimum": 0 },
+        "reference": { "$ref": "#/$defs/ImmutableReference" }
+      }
+    },
+    "SceneList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SceneSummary" }
+        }
+      }
+    },
+    "SceneEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "data", "provenance"],
+      "properties": {
+        "kind": { "const": "scene" },
+        "data": {
+          "$ref": "./upstream/scene.schema.json"
+        },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "ShotSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scene_id", "sequence", "duration_sec", "summary", "reference"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}-sh\\d{2}$"
+        },
+        "scene_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+-arc\\d{2}-ep\\d{3}-sc\\d{2}$"
+        },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "duration_sec": { "type": "number", "minimum": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "reference": { "$ref": "#/$defs/ImmutableReference" }
+      }
+    },
+    "ShotList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ShotSummary" }
+        }
+      }
+    },
+    "ShotEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "data", "provenance"],
+      "properties": {
+        "kind": { "const": "shot" },
+        "data": {
+          "$ref": "./upstream/shot.schema.json"
+        },
+        "provenance": { "$ref": "#/$defs/Provenance" }
+      }
+    },
+    "CanonDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canon_id", "kind", "display_name", "reference"],
+      "properties": {
+        "canon_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "kind": {
+          "type": "string",
+          "enum": ["voice", "character", "location", "story", "preset", "media", "other"]
+        },
+        "display_name": { "type": ["string", "null"] },
+        "reference": { "$ref": "#/$defs/ImmutableReference" }
+      }
+    },
+    "CanonList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CanonDescriptor" }
+        }
+      }
+    },
+    "SchemaDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "document", "reference"],
+      "properties": {
+        "name": { "type": "string", "enum": ["scene", "shot", "voice"] },
+        "document": { "type": "object" },
+        "reference": { "$ref": "#/$defs/ImmutableReference" }
+      }
+    },
+    "Problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "details", "request_id"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+        "message": { "type": "string", "minLength": 1 },
+        "details": { "type": "object" },
+        "request_id": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
