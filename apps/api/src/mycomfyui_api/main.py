@@ -51,8 +51,9 @@ async def lifespan(app: FastAPI):
     # ワーカーを起動した後は、以降どこで失敗しても後始末まで進める。参照Adapterの
     # 生成はfixtureの読み込みで失敗しうるため、tryの外へ出さない。
     try:
+        settings = get_settings()
         app.state.reference_source = create_reference_source(
-            get_settings().aimedia_base_url
+            settings.aimedia_base_url, settings.aimedia_fixture_path
         )
         yield
     finally:

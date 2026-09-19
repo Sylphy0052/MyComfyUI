@@ -1,5 +1,7 @@
+import hashlib
 import json
 import logging
+from dataclasses import dataclass
 from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -9,7 +11,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from mycomfyui_api import schemas, storage
+from mycomfyui_api import provenance, schemas, storage
+from mycomfyui_api.adapters.aimedia.client import (
+    AiMediaNotFound,
+    AiMediaUnavailable,
+    ReferenceSource,
+)
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
 from mycomfyui_api.db import get_session
@@ -23,6 +30,7 @@ from mycomfyui_api.models import (
     Recipe,
 )
 from mycomfyui_api.queue import JobQueueWorker
+from mycomfyui_api.references import get_reference_source
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +51,12 @@ def get_queue_worker(request: Request) -> JobQueueWorker:
 
 
 QueueWorkerDep = Annotated[JobQueueWorker, Depends(get_queue_worker)]
+ReferenceSourceDep = Annotated[ReferenceSource, Depends(get_reference_source)]
+
+#: lineageを辿る上限。DB上は循環を作らない設計だが、壊れたデータで無限に辿らない。
+MAX_LINEAGE_DEPTH = 50
+#: lineageで返す子孫Jobの上限。
+MAX_LINEAGE_NODES = 200
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -232,17 +246,23 @@ def _prepare_workflow(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_generation_job(
-    payload: schemas.GenerationJobCreate, session: SessionDep
+    payload: schemas.GenerationJobCreate,
+    session: SessionDep,
+    source: ReferenceSourceDep,
 ):
     """RecipeからWorkflowを組み立て、JobとManifestのIDを先行採番して作成する。
 
-    JobとManifestは相互参照するため、同一トランザクションで相互参照ごと作成する。
-    実行時Workflow JSONは先にArtifact storeへ書き出し、その内容のSHA-256を
-    Workflow Artifactとして記録する。投入するのはこのファイルそのものとする。
+    Scene、Shot、Canonの不変参照は参照APIから解決してManifestへ固定する。JobとManifest
+    は相互参照するため、同一トランザクションで相互参照ごと作成する。実行時Workflow JSON
+    は先にArtifact storeへ書き出し、その内容のSHA-256をWorkflow Artifactとして記録する。
+    投入するのはこのファイルそのものとする。
     """
     recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
     _validate_recipe_matches(recipe, payload)
     prepared = _prepare_workflow(recipe, payload.inputs)
+    resolved = await _resolve_references(
+        source, payload.project_id, payload.scene_id, payload.shot_id
+    )
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
@@ -251,13 +271,78 @@ async def create_generation_job(
     # 永続化をまとめて囲み、後始末の無い隙間を作らない。
     try:
         job, workflow_artifact, manifest = _build_job_records(
-            job_id, payload, recipe, prepared, stored, queue_sequence
+            job_id, payload, recipe, prepared, stored, queue_sequence, resolved
         )
         await _persist_job_records(session, job, workflow_artifact, manifest)
     except Exception:
         storage.discard_artifacts([stored.relative_path])
         raise
     return job
+
+
+@dataclass(frozen=True)
+class _ResolvedReferences:
+    """参照APIから解決した、Manifestへ固定する不変参照の組。"""
+
+    scene_ref: dict[str, Any]
+    shot_ref: dict[str, Any]
+    canon_refs: list[dict[str, Any]]
+
+    def input_refs(self, extra: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Manifestの`input_refs`を組み立てる。`extra`は入力cache参照を想定する。"""
+        return [self.scene_ref, self.shot_ref, *self.canon_refs, *extra]
+
+
+async def _resolve_references(
+    source: ReferenceSource, project_id: str, scene_id: str, shot_id: str
+) -> _ResolvedReferences:
+    """Scene/Shotを参照APIから取得し、本文とCanonの不変参照を固定する。
+
+    Canon参照を解決できないままJobを作ると、どのCanonで生成したか後から説明できない
+    履歴だけが残る。取得できない場合と応答から参照を取り出せない場合はJobを作らない。
+    """
+    try:
+        scene_envelope = await source.get_scene(project_id, scene_id)
+        shot_envelope = await source.get_shot(project_id, scene_id, shot_id)
+    except AiMediaNotFound as error:
+        raise ApiError(
+            "REFERENCE_NOT_FOUND",
+            str(error),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={
+                "project_id": project_id,
+                "scene_id": scene_id,
+                "shot_id": shot_id,
+            },
+        ) from error
+    except AiMediaUnavailable as error:
+        logger.warning("ai-media参照APIを利用できません。", exc_info=error)
+        raise ApiError(
+            "REFERENCE_UNAVAILABLE",
+            "ai-media参照APIを利用できませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+
+    try:
+        scene_ref, scene_canon = provenance.resolve_envelope(
+            provenance.KIND_SCENE, scene_id, scene_envelope
+        )
+        shot_ref, shot_canon = provenance.resolve_envelope(
+            provenance.KIND_SHOT, shot_id, shot_envelope
+        )
+    except provenance.ReferenceError as error:
+        logger.warning("参照APIの応答から不変参照を取り出せません。", exc_info=error)
+        raise ApiError(
+            "REFERENCE_UNAVAILABLE",
+            f"参照APIの応答から不変参照を取り出せませんでした: {error}",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+
+    return _ResolvedReferences(
+        scene_ref={**scene_ref, "project_id": project_id},
+        shot_ref={**shot_ref, "project_id": project_id, "scene_id": scene_id},
+        canon_refs=provenance.deduplicate([*scene_canon, *shot_canon]),
+    )
 
 
 def _validate_recipe_matches(
@@ -278,6 +363,14 @@ def _store_workflow_snapshot(
     job_id: str, workflow: dict[str, Any]
 ) -> storage.StoredFile:
     body = json.dumps(workflow, ensure_ascii=False, indent=2).encode("utf-8")
+    return _store_workflow_body(job_id, body)
+
+
+def _store_workflow_body(job_id: str, body: bytes) -> storage.StoredFile:
+    """Workflow JSONをArtifact storeへ書き出す。
+
+    再実行では組み立て直さず、記録済みスナップショットと同じ内容をそのまま書き出す。
+    """
     try:
         return storage.write_artifact(job_id, storage.WORKFLOW_FILE_NAME, body)
     except storage.StorageError as error:
@@ -312,6 +405,7 @@ def _build_job_records(
     prepared: workflow_module.PreparedWorkflow,
     stored: storage.StoredFile,
     queue_sequence: int | Any,
+    resolved: _ResolvedReferences,
 ) -> tuple[GenerationJob, Artifact, GenerationManifest]:
     manifest_id = schemas.new_id()
     workflow_artifact_id = schemas.new_id()
@@ -320,8 +414,8 @@ def _build_job_records(
         id=job_id,
         kind=payload.kind,
         state="queued",
-        scene_ref=payload.scene_ref,
-        shot_ref=payload.shot_ref,
+        scene_ref=resolved.scene_ref,
+        shot_ref=resolved.shot_ref,
         recipe_id=payload.recipe_id,
         manifest_id=manifest_id,
         parent_job_id=payload.parent_job_id,
@@ -355,8 +449,9 @@ def _build_job_records(
             "workflow_template": prepared.template_name,
             "workflow_template_sha256": prepared.template_sha256,
         },
-        input_refs=payload.input_refs,
+        input_refs=resolved.input_refs(payload.input_refs),
         workflow_artifact_id=workflow_artifact_id,
+        replay_of_manifest_id=None,
         created_at=created_at,
     )
     return job, workflow_artifact, manifest
@@ -517,6 +612,43 @@ async def create_artifact(payload: schemas.ArtifactCreate, session: SessionDep):
     return artifact
 
 
+@router.get("/artifacts", response_model=list[schemas.ArtifactRead])
+async def list_artifacts(
+    session: SessionDep,
+    scene_id: str | None = None,
+    shot_id: str | None = None,
+    job_id: str | None = None,
+    kind: schemas.ArtifactKind | None = None,
+    decision: schemas.ArtifactDecision | None = None,
+    availability: schemas.Availability | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    """Artifact履歴の一覧。既定は作成の新しい順に返す。
+
+    `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
+    Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
+    """
+    query = select(Artifact).order_by(Artifact.created_at.desc(), Artifact.id.asc())
+    if job_id is not None:
+        query = query.where(Artifact.job_id == job_id)
+    if scene_id is not None or shot_id is not None:
+        jobs = select(GenerationJob.id)
+        if scene_id is not None:
+            jobs = jobs.where(GenerationJob.scene_ref["id"].as_string() == scene_id)
+        if shot_id is not None:
+            jobs = jobs.where(GenerationJob.shot_ref["id"].as_string() == shot_id)
+        query = query.where(Artifact.job_id.in_(jobs))
+    if kind is not None:
+        query = query.where(Artifact.kind == kind)
+    if decision is not None:
+        query = query.where(Artifact.decision == decision)
+    if availability is not None:
+        query = query.where(Artifact.availability == availability)
+    result = await session.execute(query.limit(limit).offset(offset))
+    return result.scalars().all()
+
+
 @router.get("/artifacts/{artifact_id}", response_model=schemas.ArtifactRead)
 async def get_artifact(artifact_id: str, session: SessionDep):
     return await _get_or_404(session, Artifact, "Artifact", artifact_id)
@@ -583,3 +715,370 @@ async def create_approval_log(payload: schemas.ApprovalLogCreate, session: Sessi
 @router.get("/approval-logs/{approval_log_id}", response_model=schemas.ApprovalLogRead)
 async def get_approval_log(approval_log_id: str, session: SessionDep):
     return await _get_or_404(session, ApprovalLog, "ApprovalLog", approval_log_id)
+
+
+async def _get_manifest(
+    session: AsyncSession, job: GenerationJob
+) -> GenerationManifest:
+    manifest = await session.get(GenerationManifest, job.manifest_id)
+    if manifest is None:
+        raise _not_found("GenerationManifest", job.manifest_id)
+    return manifest
+
+
+async def _get_workflow_artifact(
+    session: AsyncSession, manifest: GenerationManifest
+) -> Artifact:
+    artifact = await session.get(Artifact, manifest.workflow_artifact_id)
+    if artifact is None:
+        raise _not_found("Artifact", manifest.workflow_artifact_id)
+    return artifact
+
+
+def _reference_ids(job: GenerationJob) -> tuple[str, str, str]:
+    """Jobに記録した参照IDを取り出す。
+
+    参照を解決する前に作られたJobには`project_id`が無い。現在値を引けないため、
+    推測で補わずに再実行不能として扱う。
+    """
+    scene_ref = job.scene_ref if isinstance(job.scene_ref, dict) else {}
+    shot_ref = job.shot_ref if isinstance(job.shot_ref, dict) else {}
+    project_id = scene_ref.get("project_id") or shot_ref.get("project_id")
+    scene_id = scene_ref.get("id")
+    shot_id = shot_ref.get("id")
+    if not (
+        isinstance(project_id, str)
+        and isinstance(scene_id, str)
+        and isinstance(shot_id, str)
+    ):
+        raise ApiError(
+            "REFERENCE_IDS_MISSING",
+            "JobにProject、Scene、Shotの参照IDが記録されていません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"job_id": job.id},
+        )
+    return project_id, scene_id, shot_id
+
+
+async def _current_references(
+    source: ReferenceSource, job: GenerationJob
+) -> tuple[list[dict[str, Any]] | None, ApiError | None]:
+    """現在のScene、Shot、Canon参照を解決する。
+
+    引けない場合は送出せず、失敗を表すApiErrorを添えて`None`を返す。Canon更新警告は
+    参照APIが使えないときも画面へ状態を出す必要があり、再実行はそのまま失敗として
+    返す必要があるため、扱いを呼び出し側で分ける。
+    """
+    try:
+        project_id, scene_id, shot_id = _reference_ids(job)
+        resolved = await _resolve_references(source, project_id, scene_id, shot_id)
+    except ApiError as error:
+        return None, error
+    return [resolved.scene_ref, resolved.shot_ref, *resolved.canon_refs], None
+
+
+def _read_workflow_snapshot(artifact: Artifact) -> bytes:
+    """Workflowスナップショットを読み、記録済みのSHA-256と突き合わせる。
+
+    再実行で投入するのは記録したJSONそのものとする。内容が変わっていれば当時の条件を
+    再現できないため、組み立て直さずに実行不能として扱う。
+    """
+    try:
+        path = storage.resolve_artifact(artifact.relative_path)
+        raw = path.read_bytes()
+    except (storage.StorageError, OSError) as error:
+        logger.warning(
+            "Workflowスナップショットを読み込めません。artifact_id=%s", artifact.id
+        )
+        raise ApiError(
+            "WORKFLOW_SNAPSHOT_UNAVAILABLE",
+            "記録済みのWorkflowスナップショットを読み込めませんでした。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"artifact_id": artifact.id},
+        ) from error
+    if hashlib.sha256(raw).hexdigest() != artifact.sha256:
+        raise ApiError(
+            "WORKFLOW_SNAPSHOT_MISMATCH",
+            "記録済みのWorkflowスナップショットの内容がhashと一致しません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"artifact_id": artifact.id},
+        )
+    return raw
+
+
+@router.get(
+    "/generation-jobs/{job_id}/canon-status", response_model=schemas.CanonStatusRead
+)
+async def get_job_canon_status(
+    job_id: str, session: SessionDep, source: ReferenceSourceDep
+):
+    """記録済みの参照と現在の参照を比べ、Canon更新と再現可否を返す。
+
+    記録済みのManifestとArtifactは読むだけで更新しない。Exact Replayの入力を現在値へ
+    切り替えることもしない。
+    """
+    job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    manifest = await _get_manifest(session, job)
+    current, failure = await _current_references(source, job)
+    if current is None:
+        return schemas.CanonStatusRead(
+            job_id=job.id,
+            manifest_id=manifest.id,
+            status="unavailable",
+            replayable=False,
+            reason=failure.message if failure is not None else None,
+            entries=[],
+            blocking=[],
+        )
+    entries = provenance.compare(manifest.input_refs or [], current)
+    blocking = provenance.unreproducible(entries)
+    changed = any(entry["change"] != provenance.CHANGE_UNCHANGED for entry in entries)
+    return schemas.CanonStatusRead(
+        job_id=job.id,
+        manifest_id=manifest.id,
+        status="changed" if changed else "unchanged",
+        replayable=not blocking,
+        reason=None,
+        entries=entries,
+        blocking=blocking,
+    )
+
+
+async def _create_derived_job(
+    session: AsyncSession,
+    origin_job: GenerationJob,
+    origin_manifest: GenerationManifest,
+    workflow_body: bytes,
+    parent_artifact_id: str,
+    *,
+    scene_ref: dict[str, Any],
+    shot_ref: dict[str, Any],
+    input_refs: list[dict[str, Any]],
+    replay_of_manifest_id: str | None,
+) -> GenerationJob:
+    """元Jobを親に持つ新しいJobとManifestを作る。
+
+    元のJob、Manifest、Artifactは更新しない。Workflowは記録済みの内容をそのまま新しい
+    Jobのディレクトリへ書き出し、派生元のArtifactを親として記録する。
+    """
+    job_id = schemas.new_id()
+    manifest_id = schemas.new_id()
+    workflow_artifact_id = schemas.new_id()
+    created_at = schemas.now_iso()
+    stored = _store_workflow_body(job_id, workflow_body)
+    try:
+        job = GenerationJob(
+            id=job_id,
+            kind=origin_job.kind,
+            state="queued",
+            scene_ref=dict(scene_ref),
+            shot_ref=dict(shot_ref),
+            recipe_id=origin_job.recipe_id,
+            manifest_id=manifest_id,
+            parent_job_id=origin_job.id,
+            queue_sequence=_resolve_queue_sequence(None),
+        )
+        workflow_artifact = Artifact(
+            id=workflow_artifact_id,
+            job_id=job_id,
+            kind="workflow",
+            relative_path=stored.relative_path,
+            sha256=stored.sha256,
+            byte_size=stored.byte_size,
+            media_type=WORKFLOW_MEDIA_TYPE,
+            availability="complete",
+            parent_artifact_id=parent_artifact_id,
+            created_at=created_at,
+            decision="undecided",
+            decision_at=None,
+        )
+        manifest = GenerationManifest(
+            id=manifest_id,
+            job_id=job_id,
+            engine=origin_manifest.engine,
+            # 実行基盤の版は再実行時の実測値を入れる。元の値は複製しない。
+            engine_version=None,
+            model=dict(origin_manifest.model or {}),
+            seed=origin_manifest.seed,
+            resolved_prompt=origin_manifest.resolved_prompt,
+            parameters=dict(origin_manifest.parameters or {}),
+            input_refs=input_refs,
+            workflow_artifact_id=workflow_artifact_id,
+            replay_of_manifest_id=replay_of_manifest_id,
+            created_at=created_at,
+        )
+        await _persist_job_records(session, job, workflow_artifact, manifest)
+    except Exception:
+        storage.discard_artifacts([stored.relative_path])
+        raise
+    return job
+
+
+@router.post(
+    "/generation-jobs/{job_id}/replay",
+    response_model=schemas.GenerationJobRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def replay_generation_job(
+    job_id: str, session: SessionDep, source: ReferenceSourceDep
+):
+    """当時の実行条件で再実行する(Exact Replay)。
+
+    元Manifestの解決済み入力とWorkflowスナップショットをそのまま使い、現在Canonへ
+    暗黙に置き換えない。記録時と同じ内容を取得できない入力が1件でもあれば、Jobを
+    作らずに不足項目を返す。
+    """
+    job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    manifest = await _get_manifest(session, job)
+    workflow_artifact = await _get_workflow_artifact(session, manifest)
+    workflow_body = _read_workflow_snapshot(workflow_artifact)
+
+    current, failure = await _current_references(source, job)
+    if current is None:
+        # 参照IDの欠落と上流の不調では原因が違う。解決を試みたときの分類をそのまま返す。
+        raise failure or ApiError(
+            "REFERENCE_UNAVAILABLE",
+            "記録済みの入力を検証できませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            details={"job_id": job.id},
+        )
+    blocking = provenance.unreproducible(
+        provenance.compare(manifest.input_refs or [], current)
+    )
+    if blocking:
+        raise ApiError(
+            "REPLAY_NOT_REPRODUCIBLE",
+            "記録時の入力を取得できないため、当時の条件で再実行できません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"job_id": job.id, "blocking": blocking},
+        )
+    return await _create_derived_job(
+        session,
+        job,
+        manifest,
+        workflow_body,
+        workflow_artifact.id,
+        scene_ref=job.scene_ref if isinstance(job.scene_ref, dict) else {},
+        shot_ref=job.shot_ref if isinstance(job.shot_ref, dict) else {},
+        input_refs=list(manifest.input_refs or []),
+        replay_of_manifest_id=manifest.id,
+    )
+
+
+@router.post(
+    "/generation-jobs/{job_id}/regenerate",
+    response_model=schemas.GenerationJobRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def regenerate_generation_job(
+    job_id: str, session: SessionDep, source: ReferenceSourceDep
+):
+    """現在のCanonで再生成する(Regenerate with Current Canon)。
+
+    Scene、Shot、Canonだけを現在の参照APIから解決し直し、Recipe、Workflow、モデル、
+    seed、パラメータは元Manifestを複製する。元Jobを親に持つ派生Jobとして記録する。
+    """
+    job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    manifest = await _get_manifest(session, job)
+    workflow_artifact = await _get_workflow_artifact(session, manifest)
+    workflow_body = _read_workflow_snapshot(workflow_artifact)
+
+    project_id, scene_id, shot_id = _reference_ids(job)
+    resolved = await _resolve_references(source, project_id, scene_id, shot_id)
+    # 利用者素材のcache参照は参照APIで解決できないため、記録済みの値を引き継ぐ。
+    cached = [
+        dict(ref)
+        for ref in (manifest.input_refs or [])
+        if isinstance(ref, dict) and ref.get("kind") not in provenance.RESOLVABLE_KINDS
+    ]
+    return await _create_derived_job(
+        session,
+        job,
+        manifest,
+        workflow_body,
+        workflow_artifact.id,
+        scene_ref=resolved.scene_ref,
+        shot_ref=resolved.shot_ref,
+        input_refs=resolved.input_refs(cached),
+        replay_of_manifest_id=None,
+    )
+
+
+async def _collect_ancestors(
+    session: AsyncSession, job: GenerationJob
+) -> list[GenerationJob]:
+    """親から順にJobを辿る。
+
+    lineageは有向非循環グラフとして作るが、壊れたデータで無限に辿らないよう、既訪問の
+    IDと深さの上限で打ち切る。
+    """
+    ancestors: list[GenerationJob] = []
+    seen = {job.id}
+    cursor = job.parent_job_id
+    while (
+        cursor is not None and cursor not in seen and len(ancestors) < MAX_LINEAGE_DEPTH
+    ):
+        parent = await session.get(GenerationJob, cursor)
+        if parent is None:
+            break
+        ancestors.append(parent)
+        seen.add(parent.id)
+        cursor = parent.parent_job_id
+    ancestors.reverse()
+    return ancestors
+
+
+async def _collect_descendants(
+    session: AsyncSession, job: GenerationJob
+) -> list[GenerationJob]:
+    """子孫Jobを世代の浅い順に集める。"""
+    descendants: list[GenerationJob] = []
+    seen = {job.id}
+    frontier = [job.id]
+    while frontier and len(descendants) < MAX_LINEAGE_NODES:
+        result = await session.execute(
+            select(GenerationJob)
+            .where(GenerationJob.parent_job_id.in_(frontier))
+            .order_by(GenerationJob.queue_sequence.asc(), GenerationJob.id.asc())
+        )
+        children = [child for child in result.scalars().all() if child.id not in seen]
+        if not children:
+            break
+        for child in children:
+            seen.add(child.id)
+        descendants.extend(children[: MAX_LINEAGE_NODES - len(descendants)])
+        frontier = [child.id for child in children]
+    return descendants
+
+
+@router.get("/generation-jobs/{job_id}/lineage", response_model=schemas.JobLineageRead)
+async def get_job_lineage(job_id: str, session: SessionDep):
+    """親子Jobと、lineageに含まれるArtifactを返す。
+
+    派生Artifactは`parent_artifact_id`で結ばれているため、Artifactは関係するJobの分を
+    まとめて返し、画面側で辿れるようにする。
+    """
+    job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    ancestors = await _collect_ancestors(session, job)
+    descendants = await _collect_descendants(session, job)
+    job_ids = [
+        job.id,
+        *(item.id for item in ancestors),
+        *(item.id for item in descendants),
+    ]
+    result = await session.execute(
+        select(Artifact)
+        .where(Artifact.job_id.in_(job_ids))
+        .order_by(Artifact.created_at.asc(), Artifact.id.asc())
+    )
+    artifacts = result.scalars().all()
+    return schemas.JobLineageRead(
+        job=schemas.GenerationJobRead.model_validate(job),
+        ancestors=[
+            schemas.GenerationJobRead.model_validate(item) for item in ancestors
+        ],
+        descendants=[
+            schemas.GenerationJobRead.model_validate(item) for item in descendants
+        ],
+        artifacts=[schemas.ArtifactRead.model_validate(item) for item in artifacts],
+    )

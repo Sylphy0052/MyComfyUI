@@ -32,6 +32,7 @@ FIXTURE_KEYS: dict[str, type] = {
     "scene_envelopes": dict,
     "shots": dict,
     "shot_envelopes": dict,
+    "canon": dict,
 }
 
 
@@ -79,6 +80,10 @@ class ReferenceSource(Protocol):
     async def get_shot(
         self, project_id: str, scene_id: str, shot_id: str
     ) -> dict[str, Any]: ...
+
+    async def list_canon(self, project_id: str) -> dict[str, Any]: ...
+
+    async def get_canon(self, project_id: str, canon_id: str) -> dict[str, Any]: ...
 
     async def aclose(self) -> None: ...
 
@@ -148,6 +153,14 @@ class AiMediaClient:
             f"/shots/{_segment(shot_id)}"
         )
 
+    async def list_canon(self, project_id: str) -> dict[str, Any]:
+        return await self._get(f"/projects/{_segment(project_id)}/canon")
+
+    async def get_canon(self, project_id: str, canon_id: str) -> dict[str, Any]:
+        return await self._get(
+            f"/projects/{_segment(project_id)}/canon/{_segment(canon_id)}"
+        )
+
     async def _get(self, path: str) -> dict[str, Any]:
         try:
             response = await self._client.get(path)
@@ -179,9 +192,14 @@ class FixtureReferenceSource:
     呼び出し側が返り値を書き換えても元データへ影響しないよう複製して返す。
     """
 
-    def __init__(self, document: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        document: dict[str, Any] | None = None,
+        *,
+        path: Path | None = None,
+    ) -> None:
         self._document = (
-            _validated(document) if document is not None else _load_fixture()
+            _validated(document) if document is not None else _load_fixture(path)
         )
 
     async def list_projects(self) -> dict[str, Any]:
@@ -216,6 +234,17 @@ class FixtureReferenceSource:
             raise AiMediaNotFound(f"Shotがfixtureにありません: {shot_id}")
         return copy.deepcopy(envelope)
 
+    async def list_canon(self, project_id: str) -> dict[str, Any]:
+        await self.get_project(project_id)
+        return copy.deepcopy({"items": self._document["canon"].get(project_id, [])})
+
+    async def get_canon(self, project_id: str, canon_id: str) -> dict[str, Any]:
+        await self.get_project(project_id)
+        for descriptor in self._document["canon"].get(project_id, []):
+            if descriptor.get("canon_id") == canon_id:
+                return copy.deepcopy(descriptor)
+        raise AiMediaNotFound(f"Canonがfixtureにありません: {canon_id}")
+
     async def aclose(self) -> None:
         return None
 
@@ -232,24 +261,23 @@ class FixtureReferenceSource:
 
 
 @lru_cache
-def _load_fixture() -> dict[str, Any]:
+def _load_fixture(path: Path | None = None) -> dict[str, Any]:
+    source = path or FIXTURE_PATH
     try:
-        document = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        document = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
-        raise AiMediaUnavailable(
-            f"参照fixtureを読み込めません: {FIXTURE_PATH}"
-        ) from error
-    return _validated(document)
+        raise AiMediaUnavailable(f"参照fixtureを読み込めません: {source}") from error
+    return _validated(document, source)
 
 
-def _validated(document: Any) -> dict[str, Any]:
+def _validated(document: Any, source: Path = FIXTURE_PATH) -> dict[str, Any]:
     """fixtureの形を読み込み時に確かめる。
 
     構造が壊れていると参照のたびにKeyErrorが出て、利用者へは内部エラーとしか伝わらな
     い。参照データ側の不整合だと分かる例外へここで変換する。
     """
     if not isinstance(document, dict):
-        raise AiMediaUnavailable(f"参照fixtureの形式が想定外です: {FIXTURE_PATH}")
+        raise AiMediaUnavailable(f"参照fixtureの形式が想定外です: {source}")
     missing = [key for key in FIXTURE_KEYS if key not in document]
     if missing:
         raise AiMediaUnavailable(
@@ -269,11 +297,16 @@ def _validated(document: Any) -> dict[str, Any]:
     return document
 
 
-def create_reference_source(base_url: str | None) -> ReferenceSource:
+def create_reference_source(
+    base_url: str | None, fixture_path: Path | None = None
+) -> ReferenceSource:
     """接続先の設定有無で、HTTP実装とfixture実装を切り替える。"""
     if base_url:
         logger.info("ai-media参照APIへ接続します。base_url=%s", base_url)
         return AiMediaClient(base_url)
+    if fixture_path is not None:
+        logger.info("差し替えた参照fixtureを読みます。path=%s", fixture_path)
+        return FixtureReferenceSource(path=fixture_path)
     logger.info(
         "ai-media参照APIの接続先が未設定のため、同梱fixtureを参照します。"
         "実データを使うにはMYCOMFYUI_AIMEDIA_BASE_URLを設定してください。"

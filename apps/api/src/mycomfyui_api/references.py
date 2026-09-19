@@ -29,6 +29,11 @@ REFERENCE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
 
 ReferenceId = Annotated[str, Path(pattern=REFERENCE_ID_PATTERN)]
 
+#: Canon descriptorのIDは参照契約で小文字16進数64桁と決まっている。
+CANON_ID_PATTERN = r"^[0-9a-f]{64}$"
+
+CanonId = Annotated[str, Path(pattern=CANON_ID_PATTERN)]
+
 
 def get_reference_source(request: Request) -> ReferenceSource:
     return request.app.state.reference_source
@@ -100,3 +105,17 @@ async def get_shot(
     source: ReferenceSourceDep,
 ) -> dict[str, Any]:
     return await _relay(lambda: source.get_shot(project_id, scene_id, shot_id))
+
+
+@router.get("/projects/{project_id}/canon")
+async def list_canon(
+    project_id: ReferenceId, source: ReferenceSourceDep
+) -> dict[str, Any]:
+    return await _relay(lambda: source.list_canon(project_id))
+
+
+@router.get("/projects/{project_id}/canon/{canon_id}")
+async def get_canon(
+    project_id: ReferenceId, canon_id: CanonId, source: ReferenceSourceDep
+) -> dict[str, Any]:
+    return await _relay(lambda: source.get_canon(project_id, canon_id))

@@ -22,6 +22,7 @@ cp .env.example .env
 |`MYCOMFYUI_COMFYUI_BASE_URL`|`http://127.0.0.1:8188`|ComfyUI のエンドポイント|
 |`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`|`600`|1 Job の実行上限(秒)|
 |`MYCOMFYUI_AIMEDIA_BASE_URL`|未設定|ai-media 参照 API の接続先。未設定の間は同梱 fixture を返す|
+|`MYCOMFYUI_AIMEDIA_FIXTURE_PATH`|未設定|参照 fixture の差し替え先。Canon が更新された状態を手元で再現するときに使う|
 
 開発環境の保護設定が `.env*` への読み書きを拒否するため、`MYCOMFYUI_COMFYUI_BASE_URL`、
 `MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、`MYCOMFYUI_AIMEDIA_BASE_URL` を `.env.example` へ
@@ -69,7 +70,12 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |Job の取得・一覧|`GET /api/v1/generation-jobs/{job_id}` / `GET /api/v1/generation-jobs`|
 |Job の Artifact 一覧|`GET /api/v1/generation-jobs/{job_id}/artifacts`|
 |Job の取消要求|`POST /api/v1/generation-jobs/{job_id}/cancel`|
+|Canon 更新警告と再現可否|`GET /api/v1/generation-jobs/{job_id}/canon-status`|
+|Exact Replay|`POST /api/v1/generation-jobs/{job_id}/replay`|
+|Regenerate with Current Canon|`POST /api/v1/generation-jobs/{job_id}/regenerate`|
+|親子 Job と派生 Artifact|`GET /api/v1/generation-jobs/{job_id}/lineage`|
 |Manifest の取得|`GET /api/v1/generation-manifests/{manifest_id}`|
+|Artifact の一覧|`GET /api/v1/artifacts`(`scene_id`、`shot_id`、`job_id`、`kind`、`decision`、`availability` で絞り込む)|
 |Artifact の作成・取得|`POST /api/v1/artifacts` / `GET /api/v1/artifacts/{artifact_id}`|
 |Artifact の実ファイル配信|`GET /api/v1/artifacts/{artifact_id}/content`|
 |Artifact の採否記録|`PATCH /api/v1/artifacts/{artifact_id}/decision`|
@@ -86,10 +92,19 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |Project 一覧・取得|`GET /api/v1/projects` / `GET /api/v1/projects/{project_id}`|
 |Scene 一覧・取得|`GET /api/v1/projects/{project_id}/scenes` / `.../scenes/{scene_id}`|
 |Shot 一覧・取得|`GET /api/v1/projects/{project_id}/scenes/{scene_id}/shots` / `.../shots/{shot_id}`|
+|Canon descriptor 一覧・取得|`GET /api/v1/projects/{project_id}/canon` / `.../canon/{canon_id}`|
+
+Canon Endpoint は Canon 本文を返さず、`canon_id`、種別、表示名、不変参照だけを返す。
+`canon_id` は `[source_locator, revision, path, anchor]` を RFC 8785 の JSON Canonicalization
+Scheme で serialize した SHA-256 とする。
 
 上流実装(novel-writer#17)が未完のため、`MYCOMFYUI_AIMEDIA_BASE_URL` が未設定のときは
-同梱 fixture を返す。fixture は代表 Scene `hirohito-arc02-ep005-sc01` と 3 件の Shot を含む。
-上流が動いたら接続先を設定するだけで実データへ切り替わる。UI と API の契約は変えない。
+同梱 fixture を返す。fixture は代表 Scene `hirohito-arc02-ep005-sc01`、3 件の Shot、
+3 件の Canon descriptor を含む。上流が動いたら接続先を設定するだけで実データへ切り替わる。
+UI と API の契約は変えない。
+
+`MYCOMFYUI_AIMEDIA_FIXTURE_PATH` を設定すると、同梱 fixture の代わりに指定したファイルを読む。
+Canon が更新された状態や参照が失われた状態を手元で再現し、更新警告と再実行の判定を確かめるために使う。
 
 上流が応答しない場合は `REFERENCE_UNAVAILABLE`(503)、対象が無い場合は
 `REFERENCE_NOT_FOUND`(404)を共通 Envelope で返す。
@@ -128,18 +143,24 @@ npm run contracts
 
 呼び出し元は Manifest の中身も ComfyUI の Workflow も組み立てない。Recipe と `inputs` だけを渡す。
 
+Scene、Shot、Canon の不変参照も Application API が参照 API から解決して Manifest へ固定する。
+呼び出し元が渡すのは ID だけとする。
+
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/generation-jobs \
   -H 'Content-Type: application/json' \
   -d '{
     "kind": "image",
-    "scene_ref": {"path": "scenes/01.md"},
-    "shot_ref": {"path": "scenes/01-a.md"},
+    "project_id": "hirohito",
+    "scene_id": "hirohito-arc02-ep005-sc01",
+    "shot_id": "hirohito-arc02-ep005-sc01-sh01",
     "recipe_id": "<recipe-id>",
-    "inputs": {"positive_prompt": "masterpiece, 1girl, library", "seed": 12345},
-    "input_refs": []
+    "inputs": {"positive_prompt": "masterpiece, 1girl, library", "seed": 12345}
   }'
 ```
+
+`input_refs` には利用者素材の cache 参照だけを渡せる。Scene、Shot、Canon の参照を呼び出し元から
+渡すことはできない。記録済みの参照を外から差し替えられないようにするためである。
 
 `queue_sequence` は省略できる。省略すると現在の最大値の次を Application API が採番する。
 キューは全 Job で 1 本のため、呼び出し側ごとに採番すると順番が重複する。順番を明示したい
@@ -154,8 +175,10 @@ API は次の順で処理する。
    `input_schema` が空のときは Workflow テンプレート側の定義だけで判定する。
 3. `workflow_template_ref` が同梱テンプレートを指すか確かめる。`sha256` があれば内容まで照合する。
 4. テンプレートへ変数を注入し、実行用 Workflow JSON を組み立てる。`seed` は `-1` または未指定なら採番する。
-5. `artifacts/<job-id>/workflow.json` へ書き出し、SHA-256 とバイト数を算出する。
-6. Job、Workflow Artifact、Manifest の ID を先行採番し、同一トランザクションでこの順に書き込む。
+5. 参照 API から Scene と Shot を取得し、本文の不変参照と `provenance.references` の Canon 参照を
+   `input_refs` へ固定する。取得できない場合は Job を作らない(`REFERENCE_NOT_FOUND` / `REFERENCE_UNAVAILABLE`)。
+6. `artifacts/<job-id>/workflow.json` へ書き出し、SHA-256 とバイト数を算出する。
+7. Job、Workflow Artifact、Manifest の ID を先行採番し、同一トランザクションでこの順に書き込む。
 
 `GenerationJob.manifest_id` と `GenerationManifest.job_id` は相互に参照するため、両者を分けて作成できない。
 相互参照はコミット時まで遅延検証する。Job の作成に失敗した場合、書き出し済みの Workflow JSON は削除する。
@@ -163,6 +186,40 @@ API は次の順で処理する。
 応答の `manifest_id` で `GET /api/v1/generation-manifests/{manifest_id}` を呼ぶと Manifest を取得できる。
 Job の初期状態は `queued` とする。`engine_version` だけは実行 Backend の実測値のため、
 Adapter が実行を開始した直後に 1 回だけ設定する。それまでは `null` になる。
+
+### Canon 更新警告と再実行
+
+`GET /api/v1/generation-jobs/{job_id}/canon-status` は、Manifest に記録した参照と現在の参照 API の
+値を突き合わせる。記録側は読むだけで更新しない。判定は参照ごとに次の 4 種とする。
+
+|`change`|意味|
+|---|---|
+|`unchanged`|`revision` と `sha256` が記録時と一致する|
+|`updated`|同じ参照先だが `revision` か `sha256` が違う|
+|`missing`|現在の参照に同じ参照先が無い|
+|`added`|記録に無い参照が現在側に増えている|
+
+`replayable` は Exact Replay を実行できるかを表し、`updated` と `missing` が 1 件でもあれば `False` になる。
+参照 API を引けなかった場合は `status` を `unavailable` とし、`reason` に理由を入れる。一致と混同させない
+ため、この場合も `replayable` は `False` とする。
+
+`POST /api/v1/generation-jobs/{job_id}/replay` は当時の実行条件で新しい Job を作る(Exact Replay)。
+
+- 元 Manifest の `engine`、モデル、`seed`、解決済みプロンプト、パラメータ、`input_refs` を複製する。
+- Workflow は記録済みスナップショットを SHA-256 で照合してから、同じ内容を新しい Job のディレクトリへ
+  書き出す。組み立て直さない。
+- 記録時と同じ内容を取得できない入力があれば `REPLAY_NOT_REPRODUCIBLE`(422)を返し、Job を作らない。
+  現在の値へ暗黙に置き換えない。
+- 新 Manifest の `replay_of_manifest_id` に元 Manifest を記録する。`engine_version` は実行時の実測値を入れる。
+
+`POST /api/v1/generation-jobs/{job_id}/regenerate` は現在の Canon で再生成する派生 Job を作る。
+Scene、Shot、Canon だけを解決し直し、Recipe、Workflow、モデル、`seed`、パラメータは元 Manifest を複製する。
+
+どちらも `parent_job_id` に元 Job を設定し、Workflow Artifact の `parent_artifact_id` に元 Artifact を
+設定する。元の Job、Manifest、Artifact は更新しない。参照を解決する前に作られた Job には Project ID が
+無いため、`REFERENCE_IDS_MISSING`(422)として再実行できない。
+
+`GET /api/v1/generation-jobs/{job_id}/lineage` は親子 Job と、それらに属する Artifact を返す。
 
 ### GPU 直列ジョブキュー
 

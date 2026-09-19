@@ -118,6 +118,10 @@ class GenerationManifest(Base):
     workflow_artifact_id: Mapped[str] = mapped_column(
         String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=False
     )
+    # Exact Replayで作ったManifestだけが、再実行元のManifestを指す。
+    replay_of_manifest_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_manifest.id"), nullable=True
+    )
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 

@@ -238,3 +238,59 @@ dl.kv dd {
   margin: 0;
   word-break: break-all;
 }
+
+.app > .full {
+  grid-column: 1 / -1;
+}
+
+.history-body {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 12px;
+  align-items: start;
+  margin-top: 8px;
+}
+
+.history h3 {
+  font-size: 13px;
+  margin: 8px 0 4px;
+  color: var(--muted);
+}
+
+ul.list.plain li {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+ul.list.plain li.current {
+  border-color: var(--accent);
+}
+
+.badge.canon-unchanged {
+  color: var(--ok);
+}
+
+.badge.canon-changed,
+.badge.change-updated,
+.badge.change-added {
+  color: var(--accent);
+}
+
+.badge.canon-unavailable,
+.badge.change-missing {
+  color: var(--danger);
+}
+
+.badge.change-unchanged {
+  color: var(--ok);
+}
+
+details summary {
+  cursor: pointer;
+  font-size: 12px;
+}

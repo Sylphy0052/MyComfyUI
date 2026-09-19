@@ -15,6 +15,10 @@ export type Artifact = components["schemas"]["ArtifactRead"];
 export type ArtifactDecision =
   components["schemas"]["ArtifactDecisionUpdate"]["decision"];
 export type JobState = GenerationJob["state"];
+export type CanonStatus = components["schemas"]["CanonStatusRead"];
+export type ReferenceChangeEntry =
+  components["schemas"]["ReferenceChangeEntry"];
+export type JobLineage = components["schemas"]["JobLineageRead"];
 
 const BASE = "/api/v1";
 
@@ -120,16 +124,19 @@ export const api = {
   },
 
   // queue_sequence は Application API が採番する。画面からは指定しない。
+  // Scene/Shot/Canon の不変参照も Application API が参照 API から解決するため、
+  // 画面が送るのは ID だけとする (Issue #9)。
   createJob: (payload: {
     kind: string;
-    scene_ref: Record<string, unknown>;
-    shot_ref: Record<string, unknown>;
+    project_id: string;
+    scene_id: string;
+    shot_id: string;
     recipe_id: string;
     inputs: Record<string, unknown>;
   }) =>
     request<GenerationJob>("/generation-jobs", {
       method: "POST",
-      body: JSON.stringify({ ...payload, input_refs: [] }),
+      body: JSON.stringify(payload),
     }),
 
   cancelJob: (jobId: string) =>
@@ -152,6 +159,48 @@ export const api = {
     request<Artifact>(
       `/artifacts/${encodeURIComponent(artifactId)}/decision`,
       { method: "PATCH", body: JSON.stringify({ decision }) },
+    ),
+
+  listArtifacts: (params: {
+    sceneId?: string;
+    shotId?: string;
+    jobId?: string;
+    kind?: string;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.sceneId) query.set("scene_id", params.sceneId);
+    if (params.shotId) query.set("shot_id", params.shotId);
+    if (params.jobId) query.set("job_id", params.jobId);
+    if (params.kind) query.set("kind", params.kind);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<Artifact[]>(`/artifacts${suffix}`);
+  },
+
+  getJob: (jobId: string) =>
+    request<GenerationJob>(`/generation-jobs/${encodeURIComponent(jobId)}`),
+
+  getCanonStatus: (jobId: string) =>
+    request<CanonStatus>(
+      `/generation-jobs/${encodeURIComponent(jobId)}/canon-status`,
+    ),
+
+  getLineage: (jobId: string) =>
+    request<JobLineage>(`/generation-jobs/${encodeURIComponent(jobId)}/lineage`),
+
+  // 当時の条件での再実行。現在 Canon へ暗黙に置き換えられることはない。
+  replayJob: (jobId: string) =>
+    request<GenerationJob>(
+      `/generation-jobs/${encodeURIComponent(jobId)}/replay`,
+      { method: "POST" },
+    ),
+
+  // 現在 Canon で解決し直した派生 Job を作る。元 Job が親になる。
+  regenerateJob: (jobId: string) =>
+    request<GenerationJob>(
+      `/generation-jobs/${encodeURIComponent(jobId)}/regenerate`,
+      { method: "POST" },
     ),
 
   artifactContentUrl: (artifactId: string) =>
