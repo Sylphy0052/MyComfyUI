@@ -80,7 +80,7 @@ def _reject_unsafe_path(value: str) -> str:
     return candidate
 
 
-def _normalize_tag(value: str) -> str:
+def normalize_tag(value: str) -> str:
     """タグとして受け付ける値だけを通す。
 
     前後の空白だけを落とし、大文字小文字と表記の揺れはそのまま残す。正規化は同義語の
@@ -105,7 +105,7 @@ def _normalize_tag(value: str) -> str:
 
 #: Artifactへ付けるタグ。前後の空白を落とした値を保存し、完全一致で絞り込む。
 ArtifactTagValue = Annotated[
-    str, Field(min_length=1, max_length=MAX_TAG_LENGTH), AfterValidator(_normalize_tag)
+    str, Field(min_length=1, max_length=MAX_TAG_LENGTH), AfterValidator(normalize_tag)
 ]
 
 
@@ -342,9 +342,10 @@ class ArtifactIntegrityRead(ApiModel):
     `checked`は判定したArtifactの件数、`truncated`は上限で打ち切ったかどうかを表す。
     `items`の件数だけでは全件を見たのか途中で止めたのかが判らないため応答へ出す。
 
-    `canon_available`が`False`のとき、参照APIを引けず`canon_updated`の判定ができて
-    いない。理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、
-    `items`は`canon_updated`以外の理由だけを含む。
+    `canon_available`が`False`のとき、`canon_updated`の判定ができていない。参照APIを
+    引けなかった場合と、`include_canon=false`で判定を求められなかった場合の両方が
+    あり、理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、`items`は
+    `canon_updated`以外の理由だけを含む。
     """
 
     items: list[ArtifactIntegrityEntry]

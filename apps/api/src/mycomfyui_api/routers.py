@@ -10,10 +10,11 @@ from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
+from starlette.concurrency import run_in_threadpool
 
 from mycomfyui_api import approvals, provenance, schemas, storage
 from mycomfyui_api import workflows as workflow_registry
@@ -86,6 +87,10 @@ MAX_LINEAGE_NODES = 200
 #: タグをまとめて引くときに、1回のIN句へ渡すArtifact IDの上限。SQLiteのbind
 #: parameter上限に当たらない範囲へ収める。
 TAG_LOOKUP_CHUNK = 200
+
+#: 1回の検索で指定できるタグの数。条件は1件ごとにEXISTSを重ねるため、際限なく
+#: 受け取るとクエリだけが肥大する。
+MAX_TAG_FILTERS = 10
 
 #: 整合性一覧でhashを取り直すときの読み込み単位。
 DIGEST_CHUNK_SIZE = 1024 * 1024
@@ -888,7 +893,7 @@ async def create_artifact(payload: schemas.ArtifactCreate, session: SessionDep):
 
 
 def _artifact_filters(
-    query: Any,
+    query: Select[tuple[Artifact]],
     *,
     scene_id: str | None,
     shot_id: str | None,
@@ -897,7 +902,7 @@ def _artifact_filters(
     decision: str | None = None,
     availability: str | None = None,
     tags: list[str] | None = None,
-) -> Any:
+) -> Select[tuple[Artifact]]:
     """Artifactの絞り込み条件を組み立てる。条件はすべてANDで重ねる。
 
     `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
@@ -933,11 +938,11 @@ def _artifact_filters(
 
 async def _apply_lineage_filters(
     session: AsyncSession,
-    query: Any,
+    query: Select[tuple[Artifact]],
     *,
     lineage_artifact_id: str | None,
     lineage_job_id: str | None,
-) -> tuple[Any, bool]:
+) -> tuple[Select[tuple[Artifact]], bool]:
     """派生関係の絞り込みを重ねる。探索を上限で打ち切ったかどうかも返す。"""
     truncated = False
     if lineage_artifact_id is not None:
@@ -955,7 +960,23 @@ async def _apply_lineage_filters(
     return query, truncated
 
 
-@router.get("/artifacts", response_model=list[schemas.ArtifactRead])
+@router.get(
+    "/artifacts",
+    response_model=list[schemas.ArtifactRead],
+    responses={
+        200: {
+            "headers": {
+                LINEAGE_TRUNCATED_HEADER: {
+                    "description": (
+                        "派生関係の探索を上限で打ち切ったかどうか。"
+                        "`true`のとき、絞り込みの対象は全件ではない。"
+                    ),
+                    "schema": {"type": "string", "enum": ["true", "false"]},
+                }
+            }
+        }
+    },
+)
 async def list_artifacts(
     session: SessionDep,
     response: Response,
@@ -965,7 +986,9 @@ async def list_artifacts(
     kind: schemas.ArtifactKind | None = None,
     decision: schemas.ArtifactDecision | None = None,
     availability: schemas.Availability | None = None,
-    tag: Annotated[list[schemas.ArtifactTagValue] | None, Query()] = None,
+    tag: Annotated[
+        list[schemas.ArtifactTagValue] | None, Query(max_length=MAX_TAG_FILTERS)
+    ] = None,
     lineage_artifact_id: str | None = None,
     lineage_job_id: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
@@ -1071,7 +1094,6 @@ async def _job_integrity_findings(
     job_id: str,
     *,
     canon_state: _CanonState,
-    check_canon: bool,
 ) -> list[schemas.ArtifactIntegrityFinding]:
     """作成元Jobの記録から、参照切れとCanon更新を判定する。
 
@@ -1098,7 +1120,7 @@ async def _job_integrity_findings(
         for entry in _local_input_entries(manifest.input_refs)
         if entry["change"] != provenance.CHANGE_UNCHANGED
     ]
-    if not check_canon or not canon_state.available:
+    if not canon_state.available:
         return findings
     current, failure = await _current_references(source, job, manifest.input_refs)
     if current is None:
@@ -1127,7 +1149,9 @@ async def list_artifact_integrity(
     shot_id: str | None = None,
     job_id: str | None = None,
     kind: schemas.ArtifactKind | None = None,
-    tag: Annotated[list[schemas.ArtifactTagValue] | None, Query()] = None,
+    tag: Annotated[
+        list[schemas.ArtifactTagValue] | None, Query(max_length=MAX_TAG_FILTERS)
+    ] = None,
     reason: Annotated[list[schemas.ArtifactIntegrityReason] | None, Query()] = None,
     include_canon: bool = True,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -1141,6 +1165,8 @@ async def list_artifact_integrity(
 
     `reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。
     `include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。
+    このとき`canon_available`は`false`になる。判定した結果として更新が無かったのか、
+    そもそも見ていないのかを取り違えさせない。
 
     判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。
     """
@@ -1177,12 +1203,14 @@ async def list_artifact_integrity(
                 source,
                 artifact.job_id,
                 canon_state=canon_state,
-                check_canon=include_canon,
             )
+        # hashの取り直しは1件あたりのファイル全体を読む同期I/Oになる。対象が最大
+        # `limit`件続くため、そのまま呼ぶとイベントループを塞いで他の要求が止まる。
+        file_findings = await run_in_threadpool(_artifact_file_findings, artifact)
         found.append(
             (
                 artifact,
-                [*_artifact_file_findings(artifact), *job_findings[artifact.job_id]],
+                [*file_findings, *job_findings[artifact.job_id]],
             )
         )
 
@@ -1309,7 +1337,14 @@ async def remove_artifact_tag(artifact_id: str, tag: str, session: SessionDep):
 
     付与と違い、外す操作は対象が存在しないことを伝える価値がある。画面のタグ一覧が
     古いまま操作された場合に、成功として返すと消えたことになってしまう。
+
+    パスから受け取る値も付与時と同じ書式で検証する。検証せずに落とすと、付与では
+    受け付けない値がエラー応答の`details`へそのまま載る。
     """
+    try:
+        tag = schemas.normalize_tag(tag)
+    except ValueError as error:
+        raise _validation_error(str(error)) from error
     await _get_or_404(session, Artifact, "Artifact", artifact_id)
     result = await session.execute(
         select(ArtifactTag).where(

@@ -556,7 +556,7 @@
       },
       "ArtifactIntegrityRead": {
         "additionalProperties": false,
-        "description": "整合性一覧。判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。\n\n`checked`は判定したArtifactの件数、`truncated`は上限で打ち切ったかどうかを表す。\n`items`の件数だけでは全件を見たのか途中で止めたのかが判らないため応答へ出す。\n\n`canon_available`が`False`のとき、参照APIを引けず`canon_updated`の判定ができて\nいない。理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、\n`items`は`canon_updated`以外の理由だけを含む。",
+        "description": "整合性一覧。判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。\n\n`checked`は判定したArtifactの件数、`truncated`は上限で打ち切ったかどうかを表す。\n`items`の件数だけでは全件を見たのか途中で止めたのかが判らないため応答へ出す。\n\n`canon_available`が`False`のとき、`canon_updated`の判定ができていない。参照APIを\n引けなかった場合と、`include_canon=false`で判定を求められなかった場合の両方が\nあり、理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、`items`は\n`canon_updated`以外の理由だけを含む。",
         "properties": {
           "canon_available": {
             "title": "Canon Available",
@@ -2613,6 +2613,7 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "maxItems": 10,
                   "type": "array"
                 },
                 {
@@ -2691,7 +2692,19 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "X-Lineage-Truncated": {
+                "description": "派生関係の探索を上限で打ち切ったかどうか。`true`のとき、絞り込みの対象は全件ではない。",
+                "schema": {
+                  "enum": [
+                    "true",
+                    "false"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -2745,7 +2758,7 @@
     },
     "/api/v1/artifacts/integrity": {
       "get": {
-        "description": "整合性を欠いたArtifactを理由付きで一覧する。\n\n`limit`と`offset`は判定する対象の範囲であり、返す件数ではない。実ファイルを読んで\nhashを取り直すため、対象を絞らずに走らせると重い。作成の新しい順に`limit`件だけを\n判定し、まだ対象が残っている場合は`truncated`を`true`にする。\n\n`reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。\n`include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。\n\n判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。",
+        "description": "整合性を欠いたArtifactを理由付きで一覧する。\n\n`limit`と`offset`は判定する対象の範囲であり、返す件数ではない。実ファイルを読んで\nhashを取り直すため、対象を絞らずに走らせると重い。作成の新しい順に`limit`件だけを\n判定し、まだ対象が残っている場合は`truncated`を`true`にする。\n\n`reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。\n`include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。\nこのとき`canon_available`は`false`になる。判定した結果として更新が無かったのか、\nそもそも見ていないのかを取り違えさせない。\n\n判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。",
         "operationId": "list_artifact_integrity_api_v1_artifacts_integrity_get",
         "parameters": [
           {
@@ -2831,6 +2844,7 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "maxItems": 10,
                   "type": "array"
                 },
                 {
@@ -3103,7 +3117,7 @@
     },
     "/api/v1/artifacts/{artifact_id}/tags/{tag}": {
       "delete": {
-        "description": "Artifactからタグを外す。付いていないタグの指定は404とする。\n\n付与と違い、外す操作は対象が存在しないことを伝える価値がある。画面のタグ一覧が\n古いまま操作された場合に、成功として返すと消えたことになってしまう。",
+        "description": "Artifactからタグを外す。付いていないタグの指定は404とする。\n\n付与と違い、外す操作は対象が存在しないことを伝える価値がある。画面のタグ一覧が\n古いまま操作された場合に、成功として返すと消えたことになってしまう。\n\nパスから受け取る値も付与時と同じ書式で検証する。検証せずに落とすと、付与では\n受け付けない値がエラー応答の`details`へそのまま載る。",
         "operationId": "remove_artifact_tag_api_v1_artifacts__artifact_id__tags__tag__delete",
         "parameters": [
           {

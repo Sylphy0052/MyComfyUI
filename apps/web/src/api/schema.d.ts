@@ -212,6 +212,8 @@ export interface paths {
          *
          *     `reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。
          *     `include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。
+         *     このとき`canon_available`は`false`になる。判定した結果として更新が無かったのか、
+         *     そもそも見ていないのかを取り違えさせない。
          *
          *     判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。
          */
@@ -324,6 +326,9 @@ export interface paths {
          *
          *     付与と違い、外す操作は対象が存在しないことを伝える価値がある。画面のタグ一覧が
          *     古いまま操作された場合に、成功として返すと消えたことになってしまう。
+         *
+         *     パスから受け取る値も付与時と同じ書式で検証する。検証せずに落とすと、付与では
+         *     受け付けない値がエラー応答の`details`へそのまま載る。
          */
         delete: operations["remove_artifact_tag_api_v1_artifacts__artifact_id__tags__tag__delete"];
         options?: never;
@@ -1143,9 +1148,10 @@ export interface components {
          *     `checked`は判定したArtifactの件数、`truncated`は上限で打ち切ったかどうかを表す。
          *     `items`の件数だけでは全件を見たのか途中で止めたのかが判らないため応答へ出す。
          *
-         *     `canon_available`が`False`のとき、参照APIを引けず`canon_updated`の判定ができて
-         *     いない。理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、
-         *     `items`は`canon_updated`以外の理由だけを含む。
+         *     `canon_available`が`False`のとき、`canon_updated`の判定ができていない。参照APIを
+         *     引けなかった場合と、`include_canon=false`で判定を求められなかった場合の両方が
+         *     あり、理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、`items`は
+         *     `canon_updated`以外の理由だけを含む。
          */
         ArtifactIntegrityRead: {
             /** Canon Available */
@@ -2004,6 +2010,8 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description 派生関係の探索を上限で打ち切ったかどうか。`true`のとき、絞り込みの対象は全件ではない。 */
+                    "X-Lineage-Truncated"?: "true" | "false";
                     [name: string]: unknown;
                 };
                 content: {
