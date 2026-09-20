@@ -4,6 +4,7 @@
 このモジュールへ閉じ込め、呼び出し元が絶対パスを持ち回らないようにする。
 """
 
+import errno
 import hashlib
 import logging
 import os
@@ -114,7 +115,9 @@ def move_artifact(
     うえで`replace`へ落とす。
 
     既に移動先にある場合は何もせず現在の相対パスを返す。狙いどおりの状態になっている
-    ことを結果とし、再実行でファイルを二重に動かさない。
+    ことを結果とし、再実行でファイルを二重に動かさない。linkを張った後に移動元を消す
+    前で中断した場合は、移動元と移動先が同じ実体を指す。その状態は残りの手順だけを
+    進めて移動済みとして扱う。
 
     移動元のディレクトリが空になっても消さない。他のArtifactがそのディレクトリを参照
     しているかを、この関数からは判定できないためである。
@@ -127,6 +130,11 @@ def move_artifact(
     if target == source:
         return _artifact_relative_path(source, root)
     if target.exists() or target.is_symlink():
+        if _is_same_file(source, target):
+            # hard linkを張った後、移動元を消す前に中断した。残りの手順だけ進める。
+            # 同じ実体を指しているため、ここで移動元を消しても内容は失われない。
+            source.unlink()
+            return _artifact_relative_path(target, root)
         raise StorageError(f"移動先に同名のファイルがあります: {target.name}")
     try:
         directory.mkdir(parents=True, exist_ok=True)
@@ -140,19 +148,47 @@ def move_artifact(
     return _artifact_relative_path(target, root)
 
 
+def _is_same_file(source: Path, target: Path) -> bool:
+    """2つのパスが同じ実体を指すか。hard linkを張った直後の中断を見分けるのに使う。"""
+    try:
+        return target.is_file() and not target.is_symlink() and target.samefile(source)
+    except OSError:
+        return False
+
+
+#: hard linkを作れないことを表すerrno。これ以外の失敗は権限や故障の類とみなす。
+_LINK_UNSUPPORTED_ERRNOS = frozenset(
+    {errno.EXDEV, errno.EPERM, errno.EOPNOTSUPP, errno.ENOSYS, errno.EMLINK}
+)
+
+
 def _place(source: Path, target: Path) -> None:
     """移動元を移動先の名前へ置く。既に同じ名前があれば`FileExistsError`とする。
 
     `os.link`は名前が埋まっていれば失敗するため、確認と配置を1手で行える。hard linkを
-    作れないファイルシステム(FATや一部のマウント)では作成に失敗するため、その場合だけ
-    `replace`へ落とす。落とした先は後勝ちの上書きになるが、呼び出し元が直前に存在を
-    確認している。
+    作れないファイルシステム(FATや一部のマウント)でだけ`replace`へ落とす。落とした先は
+    後勝ちの上書きになるため、直前にもう一度名前が空いていることを確かめる。隙間は残る
+    が、hard linkを使えない環境に限られる。
+
+    linkを張った後に移動元を消す前で中断すると、両方に同じ実体が残る。その状態は
+    `move_artifact`が`_is_same_file`で見分けて後始末する。
     """
     try:
         os.link(source, target)
     except FileExistsError:
         raise
-    except OSError:
+    except OSError as error:
+        if error.errno not in _LINK_UNSUPPORTED_ERRNOS:
+            raise
+        # どの環境でfallbackへ落ちたかを残す。上書きの隙が残るのはこの経路だけで、
+        # 競合を疑うときに最初に見る手掛かりになる。
+        logger.warning(
+            "hard linkを作れないため上書き確認つきの移動へ切り替えます。errno=%s path=%s",
+            error.errno,
+            target,
+        )
+        if target.exists() or target.is_symlink():
+            raise FileExistsError(str(target)) from error
         source.replace(target)
         return
     source.unlink()
