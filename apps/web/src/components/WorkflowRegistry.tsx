@@ -50,7 +50,12 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
         setRecipes(recipeList);
         setWorkflowId(workflowList[0]?.id ?? null);
       } catch (cause) {
-        if (active) setError(describe(cause));
+        if (!active) return;
+        // 取得できなかったものを古い内容で埋めない。
+        setWorkflows([]);
+        setRecipes([]);
+        setWorkflowId(null);
+        setError(describe(cause));
       }
     })();
     return () => {
@@ -69,7 +74,9 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
         const list = await api.listWorkflowVersions(workflowId);
         if (active) setVersions(list);
       } catch (cause) {
-        if (active) setError(describe(cause));
+        if (!active) return;
+        setVersions([]);
+        setError(describe(cause));
       }
     })();
     return () => {
@@ -89,7 +96,9 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
         });
         if (active) setSnapshots(list);
       } catch (cause) {
-        if (active) setError(describe(cause));
+        if (!active) return;
+        setSnapshots([]);
+        setError(describe(cause));
       }
     })();
     return () => {
@@ -204,7 +213,7 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
         <h2>実行時スナップショット</h2>
         <p className="muted">
           {
-            "実行時にArtifactとして保存されたWorkflow JSON。登録された版ではなく、そのJobが実際に投げた内容の記録。"
+            "実行時にArtifactとして保存されたWorkflow JSON。登録された版ではなく、そのJobが実際に投げた内容の記録。一覧APIはWorkflowを返さないため、上で選んだWorkflowに限らず対象Scene/Shotの実行をすべて新しい順に並べる。"
           }
         </p>
         {snapshots.length === 0 ? (

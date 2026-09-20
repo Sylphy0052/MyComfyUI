@@ -291,9 +291,6 @@ export const api = {
       `/workflows/${encodeURIComponent(workflowId)}/versions`,
     ),
 
-  getArtifact: (artifactId: string) =>
-    request<Artifact>(`/artifacts/${encodeURIComponent(artifactId)}`),
-
   getJob: (jobId: string) =>
     request<GenerationJob>(`/generation-jobs/${encodeURIComponent(jobId)}`),
 

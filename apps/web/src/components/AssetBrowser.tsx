@@ -81,6 +81,8 @@ export function AssetBrowser({
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // 0件が「条件に合わない」のか「取得に失敗した」のかを区別する。
+  const [listFailed, setListFailed] = useState(false);
   const [busyArtifactId, setBusyArtifactId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -101,6 +103,7 @@ export function AssetBrowser({
           limit: PAGE_SIZE,
         });
         if (!active) return;
+        setListFailed(false);
         setArtifacts(list);
         setSelectedArtifactId((current) =>
           current && list.some((item) => item.id === current)
@@ -108,7 +111,12 @@ export function AssetBrowser({
             : (list[0]?.id ?? null),
         );
       } catch (cause) {
-        if (active) setError(describe(cause));
+        if (!active) return;
+        // 失敗した条件の結果を残すと、表示が最新の絞込みを反映しているか判らない。
+        setArtifacts([]);
+        setSelectedArtifactId(null);
+        setListFailed(true);
+        setError(describe(cause));
       } finally {
         if (active) setLoading(false);
       }
@@ -148,12 +156,16 @@ export function AssetBrowser({
       return;
     }
     let active = true;
+    // 取得が終わるまで前の詳細を残さない。選択と違うArtifactの出自を見せない。
+    setDetail(null);
     (async () => {
       try {
         const loaded = await loadDetail(selected);
         if (active) setDetail(loaded);
       } catch (cause) {
-        if (active) setError(describe(cause));
+        if (!active) return;
+        setDetail(null);
+        setError(describe(cause));
       }
     })();
     return () => {
@@ -171,14 +183,14 @@ export function AssetBrowser({
     setTagDraft("");
   };
 
+  // タグを変えると絞込み条件との一致も変わる。手元の配列を書き換えるだけでは
+  // 条件から外れたArtifactが残るため、一覧ごと取り直す。
   const applyTag = async (artifact: Artifact, tag: string) => {
     setBusyArtifactId(artifact.id);
     setError(null);
     try {
-      const updated = await api.addArtifactTag(artifact.id, tag);
-      setArtifacts((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
+      await api.addArtifactTag(artifact.id, tag);
+      setReloadToken((current) => current + 1);
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -191,11 +203,7 @@ export function AssetBrowser({
     setError(null);
     try {
       await api.removeArtifactTag(artifact.id, tag);
-      // 削除は204を返すため、現在の状態を引き直す。
-      const updated = await api.getArtifact(artifact.id);
-      setArtifacts((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
+      setReloadToken((current) => current + 1);
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -366,7 +374,11 @@ export function AssetBrowser({
       <div className="asset-body">
         <div>
           {artifacts.length === 0 && !loading ? (
-            <p className="muted">条件に合うArtifactがありません。</p>
+            <p className="muted">
+              {listFailed
+                ? "一覧を取得できませんでした。条件を変えるか再取得してください。"
+                : "条件に合うArtifactがありません。"}
+            </p>
           ) : (
             <div className="gallery">
               {artifacts.map((artifact) => (

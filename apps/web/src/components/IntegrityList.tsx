@@ -56,7 +56,10 @@ export function IntegrityList({ sceneId, shotId }: Props) {
         });
         if (active) setResult(found);
       } catch (cause) {
-        if (active) setError(describe(cause));
+        if (!active) return;
+        // 失敗した条件の判定結果を残すと、現在の絞込みの結果と見分けが付かない。
+        setResult(null);
+        setError(describe(cause));
       } finally {
         if (active) setLoading(false);
       }
