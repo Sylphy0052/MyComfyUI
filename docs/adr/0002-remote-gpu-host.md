@@ -17,7 +17,7 @@ ComfyUIの待受は`--listen 0.0.0.0`でLANへ直接公開し、ルーターで�
 
 ADR 0001はBackendが手元PCのloopbackにいることを前提に書かれている。`docs/PLAN.md`も同じ前提で、ComfyUIを「起動→1コマンド→停止」で運用すると記述していた。
 
-2026-09-20に手元PCを実測した結果、この前提が成立しないことがわかった(#11)。手元PCのGPUはRTX 4050 Laptop、VRAM 6141 MiB(空き約4.9 GB)である。`ai-media/docs/tts-backends.md`に記録されたVRAM実測値は、Qwen3-TTSが生成peak 5.5 GB、VoxCPM2が7.6 GB、CosyVoice3が5.8 GBであり、いずれも手元PCの空きVRAMを超える。画像生成についても、モデルによっては同じ制約に当たる。
+2026-09-20に手元PCを実測した結果、この前提が成立しないことがわかった(#11)。手元PCのGPUはRTX 4050 Laptop、VRAM 6141 MiB(空き約4.9 GB)である。`novel-writer/tools/ai-media/docs/tts-backends.md`(以降`ai-media`)に記録されたVRAM実測値は、Qwen3-TTSが生成peak 5.5 GB、VoxCPM2が7.6 GB、CosyVoice3が5.8 GBであり、いずれも手元PCの空きVRAMを超える。画像生成についても、モデルによっては同じ制約に当たる。
 
 #11では音声Backendに限って「UIとApplication APIを手元PCで動かし、実行は別マシンのGPUへ委ねる」方針を決めた。本ADRはこれをComfyUIを含む生成Backend全体の構成として確定し、文書間の前提を揃える。
 

@@ -286,7 +286,7 @@ WebSocketが通らない場合、Adapterは`/history/{prompt_id}`のポーリン
 
 Qwen3-TTS、VoxCPM2、CosyVoice3、WhisperのvenvをRemote PCへ用意する。起動はしない。`voice-runner`(#11)が要求時に起動し、終了後にプロセスを落としてVRAMを返す。
 
-ComfyUIと同時に常駐させない。VRAMの実測値は`ai-media/docs/tts-backends.md`に記録がある。
+ComfyUIと同時に常駐させない。VRAMの実測値は`<novel-writer>/tools/ai-media/docs/tts-backends.md`に記録がある。以降、この配下を`ai-media`と呼ぶ。独立したリポジトリではなく、`novel-writer`の作業ディレクトリの中にある。
 
 **新しくvenvを作る前に、既にあるものを探す。**`novel-writer/tools/ai-media/`配下と利用者のhomeに、これらのvenvが既に置かれていることがある。重複して作ると数十GBを無駄にし、`engines.yaml`がどちらを指しているか分からなくなる。
 
@@ -295,9 +295,9 @@ ls -d ~/qwen-tts/.venv ~/voxcpm/.venv 2>/dev/null
 ls -d <novel-writer>/tools/ai-media/tools/*/.venv 2>/dev/null
 ```
 
-用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。**`engines.yaml`を実機へ合わせるのではなく、まず実機が`engines.yaml`の指すpathを満たしているかを確かめる。**値の出典は`ai-media/config/local-tools.yaml`であり、勝手に別の場所へ作ると出典から外れる。
+用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。**`engines.yaml`を実機へ合わせるのではなく、まず実機が`engines.yaml`の指すpathを満たしているかを確かめる。**値の出典は`<novel-writer>/tools/ai-media/config/local-tools.yaml`であり、勝手に別の場所へ作ると出典から外れる。
 
-ASRは専用のvenvを作らない。`engines.yaml`の`asr.python`はQwen3-TTSのvenvを指す。`ai-media/tools/asr/transcribe.py`が、HFキャッシュ済みの`openai/whisper-large-v3-turbo`をtransformersの`pipeline`で読む設計であり、既存環境へ書き込まない。faster-whisperは使わない。
+ASRは専用のvenvを作らない。`engines.yaml`の`asr.python`はQwen3-TTSのvenvを指す。`<novel-writer>/tools/ai-media/tools/asr/transcribe.py`が、HFキャッシュ済みの`openai/whisper-large-v3-turbo`をtransformersの`pipeline`で読む設計であり、既存環境へ書き込まない。faster-whisperは使わない。
 
 venvには推論に使わない依存を入れない。既に入っているものも、推論経路で使わないなら除く。常駐ホストでは使わない依存がそのまま攻撃面になる。学習用の`deepspeed`がその例で、CUDAツールキット(nvcc)が無い環境ではimport時に`CUDA_HOME does not exist`で落ちるため、機能面でも残す理由がない。
 
