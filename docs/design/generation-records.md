@@ -82,7 +82,7 @@ Workflow本体はリポジトリ同梱のテンプレートとAdapterの実装�
 
 |項目|必須|内容|更新可否|
 |---|---|---|---|
-|`id`|必須|Workflowバージョン ID|不可|
+|`id`|必須|Workflowバージョンの ID|不可|
 |`workflow_id`|必須|対象Workflow ID|不可|
 |`version`|必須|版の識別子。Workflowごとに一意|不可|
 |`template_sha256`|任意|同梱テンプレートのSHA-256。テンプレートファイルを持たない版ではNULL|不可|
@@ -104,12 +104,12 @@ Workflow本体はリポジトリ同梱のテンプレートとAdapterの実装�
 |`name`、`kind`|必須|利用者向け名称と生成種別|不可|
 |`engine`|必須|対象Backend|不可|
 |`workflow_template_ref`|必須|登録済みWorkflow templateの不変参照|不可|
-|`workflow_version_id`|任意|参照するWorkflowバージョン ID。レジストリ導入前に作られたRecipeではNULL|不可|
+|`workflow_version_id`|任意|参照するWorkflowバージョンの ID。レジストリ導入前に作られたRecipeではNULL|不可|
 |`input_schema`、`defaults`|必須|受け取る変数と既定値|不可|
 |`supersedes_recipe_id`|任意|置換したRecipe ID|不可|
 |`created_at`|必須|作成時刻|不可|
 
-RecipeはWorkflow本体を書き換えず、指した版が宣言した変数の範囲でだけ値を差し替える。`input_schema`は版の宣言より狭くはできるが広くはできず、宣言に無い変数を指すRecipeでは投入時に失敗する。`workflow_version_id`を指定せずにRecipeを作った場合は、`workflow_template_ref`から登録済みの版を解決する。解決できなければNULLのままとし、作成は止めない。
+RecipeはWorkflow本体を書き換えず、指した版が宣言した変数の範囲でだけ値を差し替える。`input_schema`は版の宣言より狭くはできるが広くはできない。版の宣言と同じ定義から組み立てた許可リストで投入前に検証し、宣言に無い変数を指すRecipeではJobを作らずに失敗させる。`workflow_version_id`を指定せずにRecipeを作った場合は、`workflow_template_ref`から登録済みの版を解決する。解決できなければNULLのままとし、作成は止めない。
 
 Recipeの変更は更新ではなく新規Recipeで表し、必要なら`supersedes_recipe_id`で後継を結ぶ。Jobは実行時に使用したRecipe IDを保持する。
 

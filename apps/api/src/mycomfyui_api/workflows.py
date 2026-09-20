@@ -24,7 +24,7 @@ from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
 from mycomfyui_api.adapters.compose import plan as compose_plan
 from mycomfyui_api.adapters.voice import plan as voice_plan
 from mycomfyui_api.adapters.voice.base import VOICE_ENGINES
-from mycomfyui_api.models import Workflow, WorkflowVersion
+from mycomfyui_api.models import Recipe, Workflow, WorkflowVersion
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +177,20 @@ def _compose_definition() -> WorkflowDefinition:
 
 
 def definitions() -> list[WorkflowDefinition]:
-    """登録するWorkflowの定義を、実装から組み立てて返す。"""
+    """登録するWorkflowの定義を、実装から組み立てて返す。
+
+    `_COMFYUI_KINDS`と`ALLOWED_TEMPLATES`は別のモジュールで定義しているため、片方だけ
+    更新すると添字アクセスが生のKeyErrorで落ちる。起動時に原因を読み取れるよう、
+    先に両者の食い違いを検出して落とす。
+    """
+    unregistered = set(workflow_module.ALLOWED_TEMPLATES) - set(_COMFYUI_KINDS)
+    missing_template = set(_COMFYUI_KINDS) - set(workflow_module.ALLOWED_TEMPLATES)
+    if unregistered or missing_template:
+        raise workflow_module.WorkflowError(
+            "登録簿とWorkflowテンプレートの定義が食い違っています: "
+            f"生成種別が未登録={sorted(unregistered)}, "
+            f"テンプレートが無い={sorted(missing_template)}"
+        )
     built = [_comfyui_definition(name) for name in sorted(_COMFYUI_KINDS)]
     built.append(_voice_definition())
     built.append(_compose_definition())
@@ -213,7 +226,79 @@ async def ensure_workflows(session: AsyncSession) -> dict[str, WorkflowVersion]:
     if created:
         await session.commit()
         logger.info("Workflowの版を%d件登録しました。", created)
+    backfilled = await backfill_recipe_versions(session)
+    if backfilled:
+        logger.info("既存Recipeへ%d件のWorkflow版を結びました。", backfilled)
     return latest
+
+
+async def backfill_recipe_versions(session: AsyncSession) -> int:
+    """レジストリ導入前に作られたRecipeへ、参照から解決した版を後から結ぶ。
+
+    既存Recipeは`workflow_template_ref`しか持たないため、そのままでは画面がどの版を
+    使っているか判別できない。結ぶのは`workflow_version_id`だけで、Recipeの他の項目は
+    書き換えない。解決できない参照はNULLのまま残す。
+    """
+    result = await session.execute(
+        select(Recipe).where(Recipe.workflow_version_id.is_(None))
+    )
+    updated = 0
+    for recipe in result.scalars().all():
+        version_id = await resolve_version_id(session, recipe.workflow_template_ref)
+        if version_id is None:
+            continue
+        recipe.workflow_version_id = version_id
+        updated += 1
+    if updated:
+        await session.commit()
+    return updated
+
+
+async def resolve_version_id(session: AsyncSession, template_ref: Any) -> str | None:
+    """`workflow_template_ref`が指す登録済みWorkflow版のIDを返す。
+
+    レジストリ導入前の形で作られたRecipeも受け付けるため、解決できなければNoneを
+    返す。版の表し方はWorkflowにより`sha256`と`version`へ分かれるため、テンプレート
+    ファイルを持つ版を先に見る`sha256`を優先し、見つからなければ`version`で引く。
+    先に見た側で決めるのは、両方を一度に突き合わせると別の版の値とたまたま一致した
+    ときに取り違えるためである。
+    """
+    if not isinstance(template_ref, dict):
+        return None
+    name = template_ref.get("name")
+    if not isinstance(name, str):
+        return None
+    result = await session.execute(select(Workflow).where(Workflow.name == name))
+    workflow = result.scalar_one_or_none()
+    if workflow is None:
+        return None
+    for key in ("sha256", "version"):
+        value = template_ref.get(key)
+        if value is None:
+            continue
+        result = await session.execute(
+            select(WorkflowVersion).where(
+                WorkflowVersion.workflow_id == workflow.id,
+                WorkflowVersion.version == str(value),
+            )
+        )
+        version = result.scalar_one_or_none()
+        if version is not None:
+            return version.id
+    return None
+
+
+async def load_version(
+    session: AsyncSession, workflow_version_id: str
+) -> tuple[Workflow, WorkflowVersion] | None:
+    """Workflow版と、それが属するWorkflowを引く。見つからなければNoneを返す。"""
+    result = await session.execute(
+        select(Workflow, WorkflowVersion)
+        .join(WorkflowVersion, WorkflowVersion.workflow_id == Workflow.id)
+        .where(WorkflowVersion.id == workflow_version_id)
+    )
+    row = result.first()
+    return None if row is None else (row[0], row[1])
 
 
 async def _get_or_create_workflow(

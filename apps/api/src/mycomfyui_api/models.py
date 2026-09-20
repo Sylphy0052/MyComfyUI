@@ -45,6 +45,7 @@ class Workflow(Base):
     id: Mapped[str] = _uuid_column(primary_key=True)
     #: 同梱テンプレート名、またはAdapterのスナップショット名。
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 生成種別。Recipeの`kind`と揃える。
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     #: このWorkflowを実行できるBackend。音声のように複数Backendが同じ形を使う。
     engines: Mapped[list] = mapped_column(JSON, nullable=False)

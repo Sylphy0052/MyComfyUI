@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from mycomfyui_api import approvals, provenance, schemas, storage
+from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import proposals
 from mycomfyui_api.adapters.agent.base import AgentProvider
@@ -184,39 +185,32 @@ async def get_workflow_version(workflow_version_id: str, session: SessionDep):
     )
 
 
-async def _resolve_workflow_version_id(
-    session: AsyncSession, template_ref: Any
-) -> str | None:
-    """`workflow_template_ref`が指す登録済みWorkflow版のIDを返す。
+async def _validate_workflow_version(
+    session: AsyncSession, values: dict[str, Any]
+) -> None:
+    """明示指定されたWorkflow版が、Recipeの参照と生成種別に合うかを確かめる。
 
-    レジストリ導入前の形で作られたRecipeも受け付けるため、解決できなければNoneを
-    返して作成は止めない。`sha256`と`version`のどちらで版を表すかはWorkflowにより
-    異なるため、両方を版の候補として突き合わせる。
+    版が宣言した変数は投入値の許可リストになるため、`workflow_template_ref`と別の
+    Workflowを指す版を結べると、参照とは違う宣言を通して値を流し込む余地が残る。
+    存在確認を外部キー制約だけに任せず、作成の時点で組み合わせを弾く。
     """
-    if not isinstance(template_ref, dict):
-        return None
-    name = template_ref.get("name")
-    if not isinstance(name, str):
-        return None
-    result = await session.execute(select(Workflow).where(Workflow.name == name))
-    workflow = result.scalar_one_or_none()
-    if workflow is None:
-        return None
-    candidates = [
-        str(value)
-        for key in ("sha256", "version")
-        if (value := template_ref.get(key)) is not None
-    ]
-    if not candidates:
-        return None
-    result = await session.execute(
-        select(WorkflowVersion).where(
-            WorkflowVersion.workflow_id == workflow.id,
-            WorkflowVersion.version.in_(candidates),
+    workflow_version_id = values["workflow_version_id"]
+    loaded = await workflow_registry.load_version(session, workflow_version_id)
+    if loaded is None:
+        raise _not_found("WorkflowVersion", workflow_version_id)
+    workflow, _version = loaded
+    template_ref = values["workflow_template_ref"]
+    name = template_ref.get("name") if isinstance(template_ref, dict) else None
+    if name != workflow.name:
+        raise _validation_error(
+            "workflow_version_idとworkflow_template_refが別のWorkflowを指しています。",
+            {"template_ref_name": name, "workflow_name": workflow.name},
         )
-    )
-    version = result.scalars().first()
-    return None if version is None else version.id
+    if workflow.kind != values["kind"]:
+        raise _validation_error(
+            "workflow_version_idのWorkflowと生成種別が一致しません。",
+            {"workflow_kind": workflow.kind, "recipe_kind": values["kind"]},
+        )
 
 
 @router.post(
@@ -225,9 +219,11 @@ async def _resolve_workflow_version_id(
 async def create_recipe(payload: schemas.RecipeCreate, session: SessionDep):
     values = payload.model_dump()
     if values.get("workflow_version_id") is None:
-        values["workflow_version_id"] = await _resolve_workflow_version_id(
+        values["workflow_version_id"] = await workflow_registry.resolve_version_id(
             session, values["workflow_template_ref"]
         )
+    else:
+        await _validate_workflow_version(session, values)
     recipe = Recipe(
         id=schemas.new_id(),
         created_at=schemas.now_iso(),
