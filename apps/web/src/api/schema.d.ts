@@ -50,6 +50,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-proposals/{proposal_id}/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Proposal Applications
+         * @description 計画の適用状態を返す。投入したJobやRecipeはここから辿る。
+         */
+        get: operations["list_agent_proposal_applications_api_v1_agent_proposals__proposal_id__applications_get"];
+        put?: never;
+        /**
+         * Apply Agent Proposal Steps
+         * @description 承認済みの計画をstep単位で適用する。
+         *
+         *     突き合わせは計画全体のdigestとstepごとのdigestの両方で行う。承認したあとに提案や
+         *     対象が変われば、どちらかが必ず食い違って実行しない。
+         *
+         *     1stepが失敗した時点で打ち切り、成功済みのstepは`applied`のまま残す。失敗したstep
+         *     だけを`step_indexes`で指定して再実行できる。適用済みのstepは指定しても実行し直さ
+         *     ない。
+         */
+        post: operations["apply_agent_proposal_steps_api_v1_agent_proposals__proposal_id__applications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-proposals/{proposal_id}/apply": {
         parameters: {
             query?: never;
@@ -963,6 +994,54 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AgentProposalApplicationRead
+         * @description 計画1stepの適用状態。適用先はここから辿る。
+         */
+        AgentProposalApplicationRead: {
+            /** Applied Ref Id */
+            applied_ref_id: string | null;
+            /** Applied Ref Type */
+            applied_ref_type: ("generation_job" | "recipe" | "artifact_tag") | null;
+            /** Created At */
+            created_at: string;
+            /** Failure Code */
+            failure_code: string | null;
+            /** Failure Message */
+            failure_message: string | null;
+            /** Id */
+            id: string;
+            /** Operation Digest */
+            operation_digest: string;
+            /** Operation Type */
+            operation_type: string;
+            /** Proposal Id */
+            proposal_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "applied" | "failed";
+            /** Step Index */
+            step_index: number;
+            /** Target */
+            target: {
+                [key: string]: unknown;
+            };
+            /** Updated At */
+            updated_at: string;
+        };
+        /**
+         * AgentProposalApplyRequest
+         * @description 計画の適用要求。
+         *
+         *     `step_indexes`を省略すると未適用のstepを順に処理する。指定すると、そのstepだけを
+         *     処理する。失敗したstepの再実行に使う。
+         */
+        AgentProposalApplyRequest: {
+            /** Step Indexes */
+            step_indexes?: number[] | null;
+        };
+        /**
          * AgentProposalCreate
          * @description 提案の取得要求。Jobは作らない。
          *
@@ -979,7 +1058,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "shot_breakdown" | "image_prompt" | "reference_candidates" | "recipe_draft";
+            kind: "shot_breakdown" | "image_prompt" | "reference_candidates" | "recipe_draft" | "workflow_registration_draft" | "batch_generation_plan" | "asset_organization_plan";
             /** Project Id */
             project_id: string;
             /** Provider Id */
@@ -1032,6 +1111,8 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             planned_operation?: components["schemas"]["PlannedOperation"] | null;
+            /** Planned Operations */
+            planned_operations?: components["schemas"]["PlannedOperation"][];
             /** Project Id */
             project_id: string;
             /** Provider Id */
@@ -1926,6 +2007,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentProposalRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_proposal_applications_api_v1_agent_proposals__proposal_id__applications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProposalApplicationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_agent_proposal_steps_api_v1_agent_proposals__proposal_id__applications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AgentProposalApplyRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProposalApplicationRead"][];
                 };
             };
             /** @description Validation Error */

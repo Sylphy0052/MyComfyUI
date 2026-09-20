@@ -282,7 +282,9 @@ class AgentProposal(Base):
     __tablename__ = "agent_proposal"
     __table_args__ = (
         CheckConstraint(
-            "kind in ('shot_breakdown','image_prompt','reference_candidates','recipe_draft')",
+            "kind in ('shot_breakdown','image_prompt','reference_candidates',"
+            "'recipe_draft','workflow_registration_draft','batch_generation_plan',"
+            "'asset_organization_plan')",
             name="ck_agent_proposal_kind",
         ),
         CheckConstraint(
@@ -312,11 +314,58 @@ class AgentProposal(Base):
     model: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 単一のJob投入を伴う提案(`image_prompt`)の互換用。複数stepの提案では書かず、
+    # 適用先の正本は`agent_proposal_application`とする。
     applied_job_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=True
     )
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     decided_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AgentProposalApplication(Base):
+    """提案の計画1stepごとの適用状態。
+
+    1件の提案が複数の操作を持つため、適用先を提案の列では表せない。stepごとに行を
+    作り、成功した分だけ`applied`で確定させる。一部が失敗しても成功済みのstepを
+    実行し直さないための正本にあたる。
+
+    行は承認時ではなく最初の適用要求時に作る。承認しただけでは何も実行しないという
+    扱いを、記録の側でも保つためである。
+    """
+
+    __tablename__ = "agent_proposal_application"
+    __table_args__ = (
+        CheckConstraint(
+            "state in ('pending','applied','failed')",
+            name="ck_agent_proposal_application_state",
+        ),
+        UniqueConstraint(
+            "proposal_id",
+            "step_index",
+            name="uq_agent_proposal_application_proposal_id_step_index",
+        ),
+        Index("ix_agent_proposal_application_proposal_id", "proposal_id"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("agent_proposal.id"), nullable=False
+    )
+    #: 計画内での順序。承認した計画の並びと対応する。
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation_type: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 承認時の操作内容のdigest。適用直前に組み立て直した値と突き合わせる。
+    operation_digest: Mapped[str] = mapped_column(Text, nullable=False)
+    target: Mapped[dict] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 適用先の種別。`generation_job`/`recipe`/`artifact_tag`のいずれか。
+    applied_ref_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    applied_ref_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class VoiceVerification(Base):

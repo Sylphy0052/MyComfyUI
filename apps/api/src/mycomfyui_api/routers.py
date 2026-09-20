@@ -44,6 +44,7 @@ from mycomfyui_api.execution import (
 )
 from mycomfyui_api.models import (
     AgentProposal,
+    AgentProposalApplication,
     ApprovalLog,
     Artifact,
     ArtifactTag,
@@ -2291,17 +2292,68 @@ async def _fetch_envelopes(
     return scene_envelope, shot_envelope
 
 
+async def _context_artifacts(session: AsyncSession, scene_id: str) -> list[Artifact]:
+    """入力へ載せる既存Artifactを引く。Scene配下の完成済み画像だけを対象にする。"""
+    jobs = select(GenerationJob.id).where(
+        GenerationJob.scene_ref["id"].as_string() == scene_id
+    )
+    query = (
+        select(Artifact)
+        .where(Artifact.job_id.in_(jobs))
+        .where(Artifact.kind == "image")
+        .where(Artifact.availability == "complete")
+        .order_by(Artifact.created_at.desc(), Artifact.id.asc())
+        .limit(AGENT_CONTEXT_ARTIFACT_LIMIT)
+    )
+    result = await session.execute(query)
+    return list(result.scalars().all())
+
+
+async def _fetch_shot_list(
+    source: ReferenceSource, project_id: str, scene_id: str
+) -> list[dict[str, Any]]:
+    """バッチ生成計画の入力に使うScene配下のShot一覧を参照APIから取得する。
+
+    失敗の扱いはScene/Shotの取得と揃える。一覧を読めないまま提案すると、入力へ載せて
+    いないShotを対象にした計画を許すことになる。
+    """
+    try:
+        document = await source.list_shots(project_id, scene_id)
+    except AiMediaNotFound as error:
+        raise ApiError(
+            "REFERENCE_NOT_FOUND",
+            str(error),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"project_id": project_id, "scene_id": scene_id},
+        ) from error
+    except AiMediaUnavailable as error:
+        logger.warning("ai-media参照APIを利用できません。", exc_info=error)
+        raise ApiError(
+            "REFERENCE_UNAVAILABLE",
+            "ai-media参照APIを利用できませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+    items = document.get("items")
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
 async def _agent_context(
     session: AsyncSession,
     payload: schemas.AgentProposalCreate,
     recipe: Recipe | None,
     scene_envelope: dict[str, Any],
     shot_envelope: dict[str, Any] | None,
+    shot_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Providerへ渡す入力コンテキストを許可リストで組み立てる。
 
     渡す項目は`proposals`側で列挙する。ここでは対象の取得だけを行い、参照APIの応答を
     そのまま流さない。秘密情報、環境変数、ローカル絶対パスは含めない。
+
+    準備段階の提案は適用対象を出力へ含めるため、ここで載せた一覧が適用してよい対象の
+    範囲になる。範囲外のIDは`proposals.restrict_output`で落とす。
     """
     context: dict[str, Any] = {
         "scene": proposals.scene_context(scene_envelope.get("data")),
@@ -2311,54 +2363,258 @@ async def _agent_context(
     if recipe is not None:
         context["recipe"] = proposals.recipe_context(recipe)
     if payload.kind == "reference_candidates":
-        jobs = select(GenerationJob.id).where(
-            GenerationJob.scene_ref["id"].as_string() == payload.scene_id
+        context["artifacts"] = proposals.artifact_context(
+            await _context_artifacts(session, payload.scene_id)
         )
-        query = (
-            select(Artifact)
-            .where(Artifact.job_id.in_(jobs))
-            .where(Artifact.kind == "image")
-            .where(Artifact.availability == "complete")
-            .order_by(Artifact.created_at.desc(), Artifact.id.asc())
-            .limit(AGENT_CONTEXT_ARTIFACT_LIMIT)
-        )
-        result = await session.execute(query)
-        context["artifacts"] = proposals.artifact_context(list(result.scalars().all()))
+    if payload.kind == "asset_organization_plan":
+        artifacts = await _context_artifacts(session, payload.scene_id)
+        tags = await _artifact_tag_map(session, [artifact.id for artifact in artifacts])
+        context["artifacts"] = proposals.artifact_context(artifacts, tags)
+    if payload.kind == "batch_generation_plan":
+        context["shots"] = proposals.shot_list_context(shot_items)
     return context
 
 
-def _planned_operation(proposal: AgentProposal) -> dict[str, Any] | None:
-    """提案から、承認後に実行する操作を組み立てる。
+def _context_artifact_tags(context: dict[str, Any]) -> dict[str, list[str]]:
+    """入力コンテキストへ載せたArtifactごとの現在のタグ。"""
+    entries = context.get("artifacts")
+    if not isinstance(entries, list):
+        return {}
+    tags: dict[str, list[str]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("artifact_id"):
+            continue
+        current = entry.get("tags")
+        values = current if isinstance(current, list) else []
+        tags[str(entry["artifact_id"])] = [
+            value for value in values if isinstance(value, str)
+        ]
+    return tags
+
+
+def _context_shot_ids(context: dict[str, Any]) -> set[str]:
+    """入力コンテキストへ載せたShot IDの集合。計画の対象を突き合わせるのに使う。"""
+    entries = context.get("shots")
+    if not isinstance(entries, list):
+        return set()
+    return {
+        str(entry["id"])
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("id")
+    }
+
+
+def _context_recipe_input_names(context: dict[str, Any]) -> set[str]:
+    """基準Recipeが宣言した入力名の集合。Recipe案の`defaults`を絞るのに使う。"""
+    recipe = context.get("recipe")
+    if not isinstance(recipe, dict):
+        return set()
+    fields = recipe.get("inputs")
+    if not isinstance(fields, list):
+        return set()
+    return {
+        str(field_definition["name"])
+        for field_definition in fields
+        if isinstance(field_definition, dict) and field_definition.get("name")
+    }
+
+
+#: 操作を1件だけ持つ提案の種別。既存のApplication APIはこの種別だけを受け付ける。
+SINGLE_OPERATION_KINDS = ("image_prompt",)
+
+
+def _planned_operations(proposal: AgentProposal) -> list[dict[str, Any]]:
+    """提案から、承認後に実行する操作を0件以上で組み立てる。
 
     提案の内容から毎回組み立て直す。承認時に記録したdigestと突き合わせるため、提案が
     差し替わればdigestも変わり、古い承認では実行できない。
 
-    副作用のある操作へつながるのは`image_prompt`だけとする。Shot構成案、参照候補、
-    Recipe案は表示だけで、ai-mediaへの書き込みとRecipe登録は本Issueの範囲外とする。
+    副作用のある操作へつながるのは`image_prompt`と準備段階の3種だけとする。Shot構成案、
+    参照候補、Recipe案は表示だけで、ai-mediaへの書き込みは範囲外とする。
     """
-    if proposal.kind != "image_prompt":
-        return None
     output = proposal.output
-    if not isinstance(output, dict) or proposal.recipe_id is None:
+    if not isinstance(output, dict):
+        return []
+    if proposal.kind == "image_prompt":
+        operation = _image_prompt_operation(proposal, output)
+        return [] if operation is None else [operation]
+    if proposal.kind == "batch_generation_plan":
+        return _batch_generation_operations(proposal, output)
+    if proposal.kind == "workflow_registration_draft":
+        return _recipe_registration_operations(proposal, output)
+    if proposal.kind == "asset_organization_plan":
+        return _asset_organization_operations(proposal, output)
+    return []
+
+
+def _image_prompt_operation(
+    proposal: AgentProposal, output: dict[str, Any]
+) -> dict[str, Any] | None:
+    """prompt案から投入するJob 1件を組み立てる。"""
+    if proposal.recipe_id is None or proposal.shot_id is None:
         return None
-    if proposal.shot_id is None:
-        return None
+    return _generation_job_operation(
+        proposal,
+        proposal.shot_id,
+        output.get("positive_prompt"),
+        output.get("negative_prompt", ""),
+    )
+
+
+def _generation_job_operation(
+    proposal: AgentProposal,
+    shot_id: str,
+    positive_prompt: Any,
+    negative_prompt: Any,
+) -> dict[str, Any]:
+    """生成Jobの投入操作。prompt案とバッチ計画で同じ形にする。"""
     return {
         "type": approvals.OPERATION_GENERATION_JOB_CREATE,
         "target": {
             "project_id": proposal.project_id,
             "scene_id": proposal.scene_id,
-            "shot_id": proposal.shot_id,
+            "shot_id": shot_id,
             "recipe_id": proposal.recipe_id,
         },
         "payload": {
             "kind": "image",
             "inputs": {
-                "positive_prompt": output.get("positive_prompt"),
-                "negative_prompt": output.get("negative_prompt", ""),
+                "positive_prompt": positive_prompt,
+                "negative_prompt": negative_prompt,
             },
         },
     }
+
+
+def _batch_generation_operations(
+    proposal: AgentProposal, output: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """バッチ生成計画から、Shotごとの投入操作を組み立てる。
+
+    対象Shotは提案の作成時に入力へ載せた一覧へ制限済みとする。ここでは件数の上限だけ
+    を改めて当て、長いキューを1回の承認で積ませない。
+    """
+    if proposal.recipe_id is None:
+        return []
+    items = output.get("items")
+    if not isinstance(items, list):
+        return []
+    operations: list[dict[str, Any]] = []
+    for item in items[: proposals.MAX_PLAN_STEPS]:
+        if not isinstance(item, dict):
+            continue
+        shot_id = item.get("shot_id")
+        if not isinstance(shot_id, str) or not shot_id:
+            continue
+        operations.append(
+            _generation_job_operation(
+                proposal,
+                shot_id,
+                item.get("positive_prompt"),
+                item.get("negative_prompt", ""),
+            )
+        )
+    return operations
+
+
+def _recipe_registration_operations(
+    proposal: AgentProposal, output: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Workflow登録案から、Recipe登録の操作を組み立てる。
+
+    登録先のWorkflow版は基準Recipeから引き継ぐ。提案の出力はRecipeの名前と既定値だけ
+    に使い、Workflowテンプレートの指定には使わない。実行できるWorkflowを提案の内容で
+    増やさないためである。
+    """
+    if proposal.recipe_id is None:
+        return []
+    name = output.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return []
+    defaults = output.get("defaults")
+    return [
+        {
+            "type": approvals.OPERATION_RECIPE_CREATE,
+            "target": {
+                "project_id": proposal.project_id,
+                "scene_id": proposal.scene_id,
+                "base_recipe_id": proposal.recipe_id,
+            },
+            "payload": {
+                "name": name.strip(),
+                "defaults": defaults if isinstance(defaults, dict) else {},
+            },
+        }
+    ]
+
+
+def _plan_tags(values: Any) -> list[str]:
+    """計画が指定したタグを、保存できる値だけへ揃える。
+
+    タグの書式はタグAPIと同じ検証を通す。通らない値は落とし、適用の直前で初めて
+    弾かれる形にしない。
+    """
+    if not isinstance(values, list):
+        return []
+    tags: list[str] = []
+    for value in values[: proposals.MAX_PLAN_TAGS]:
+        if not isinstance(value, str):
+            continue
+        try:
+            tag = schemas.normalize_tag(value)
+        except ValueError:
+            continue
+        if tag not in tags:
+            tags.append(tag)
+    return tags
+
+
+def _asset_organization_operations(
+    proposal: AgentProposal, output: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """資産整理案から、Artifactごとのタグ更新操作を組み立てる。
+
+    付与と除去に同じタグが並んだ場合は付与を残す。順序で結果が変わる指定を、実行する
+    側の順番任せにしない。付けるものも外すものも無いstepは操作にしない。
+    """
+    items = output.get("items")
+    if not isinstance(items, list):
+        return []
+    operations: list[dict[str, Any]] = []
+    for item in items[: proposals.MAX_PLAN_STEPS]:
+        if not isinstance(item, dict):
+            continue
+        artifact_id = item.get("artifact_id")
+        if not isinstance(artifact_id, str) or not artifact_id:
+            continue
+        add_tags = _plan_tags(item.get("add_tags"))
+        remove_tags = [
+            tag for tag in _plan_tags(item.get("remove_tags")) if tag not in add_tags
+        ]
+        if not add_tags and not remove_tags:
+            continue
+        operations.append(
+            {
+                "type": approvals.OPERATION_ARTIFACT_TAG_UPDATE,
+                "target": {"artifact_id": artifact_id},
+                "payload": {"add_tags": add_tags, "remove_tags": remove_tags},
+            }
+        )
+    return operations
+
+
+def _approval_subject(
+    proposal: AgentProposal, operations: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """承認記録へ残し、適用時に突き合わせる対象を返す。
+
+    単一操作の提案は操作そのものを対象にする。既存の`image_prompt`の承認記録と
+    digestの計算を変えないためである。複数操作を持つ提案は計画全体を対象にし、step
+    が1件でも入れ替われば全体のdigestが変わるようにする。
+    """
+    if proposal.kind in SINGLE_OPERATION_KINDS:
+        return operations[0]
+    return {"operations": operations}
 
 
 def _context_artifact_ids(context: dict[str, Any]) -> set[str]:
@@ -2373,35 +2629,51 @@ def _context_artifact_ids(context: dict[str, Any]) -> set[str]:
     }
 
 
+def _planned_operation_read(operation: dict[str, Any]) -> schemas.PlannedOperation:
+    return schemas.PlannedOperation(
+        type=operation["type"],
+        effect=approvals.effect_of(operation["type"]),
+        target=operation["target"],
+        payload=operation["payload"],
+        digest=approvals.operation_digest(operation),
+    )
+
+
 def _proposal_read(proposal: AgentProposal) -> schemas.AgentProposalRead:
     """提案の応答。適用予定の操作とそのdigestを一緒に返す。
 
-    画面は対象と内容をこの値で表示し、同じdigestの承認だけが実行へ進む。
+    画面は対象と内容をこの値で表示し、同じdigestの承認だけが実行へ進む。複数操作を
+    持つ提案は`planned_operations`で返し、単一操作の提案だけが従来どおり
+    `planned_operation`にも入る。
     """
     read = schemas.AgentProposalRead.model_validate(proposal)
-    operation = _planned_operation(proposal)
-    if operation is None:
+    operations = [
+        _planned_operation_read(operation)
+        for operation in _planned_operations(proposal)
+    ]
+    if not operations:
         return read
     return read.model_copy(
         update={
-            "planned_operation": schemas.PlannedOperation(
-                type=operation["type"],
-                effect=approvals.effect_of(operation["type"]),
-                target=operation["target"],
-                payload=operation["payload"],
-                digest=approvals.operation_digest(operation),
-            )
+            "planned_operation": (
+                operations[0] if proposal.kind in SINGLE_OPERATION_KINDS else None
+            ),
+            "planned_operations": operations,
         }
     )
 
 
 def _validate_agent_recipe(recipe: Recipe, kind: str) -> None:
-    """承認後にJobを作れるRecipeかを、提案を取る前に確かめる。"""
-    if kind != "image_prompt":
+    """承認後にJobを作れるRecipeかを、提案を取る前に確かめる。
+
+    バッチ生成計画も投入するのは画像のJobのため、prompt案と同じRecipeを求める。
+    Workflow登録案は登録するRecipeの基準にするだけで、Jobを作らないため種別を問わない。
+    """
+    if kind not in ("image_prompt", "batch_generation_plan"):
         return
     if recipe.kind != "image" or recipe.engine != ENGINE_COMFYUI:
         raise _validation_error(
-            "image_promptの提案には画像生成のRecipeを指定してください。",
+            f"{kind}の提案には画像生成のRecipeを指定してください。",
             {"recipe_kind": recipe.kind, "engine": recipe.engine},
         )
 
@@ -2473,8 +2745,13 @@ async def create_agent_proposal(
     scene_envelope, shot_envelope = await _fetch_envelopes(
         source, payload.project_id, payload.scene_id, payload.shot_id
     )
+    shot_items = (
+        await _fetch_shot_list(source, payload.project_id, payload.scene_id)
+        if payload.kind == "batch_generation_plan"
+        else None
+    )
     context = await _agent_context(
-        session, payload, recipe, scene_envelope, shot_envelope
+        session, payload, recipe, scene_envelope, shot_envelope, shot_items
     )
     proposal = AgentProposal(
         id=schemas.new_id(),
@@ -2504,8 +2781,12 @@ async def create_agent_proposal(
     except agent_base.AgentError as error:
         await _record_proposal_failure(session, proposal, error)
         raise _agent_error(error) from error
-    proposal.output = proposals.restrict_reference_candidates(
-        payload.kind, result.output, _context_artifact_ids(context)
+    proposal.output = proposals.restrict_output(
+        payload.kind,
+        result.output,
+        artifact_ids=_context_artifact_ids(context),
+        shot_ids=_context_shot_ids(context),
+        recipe_input_names=_context_recipe_input_names(context),
     )
     proposal.usage = result.usage or None
     proposal.model = result.model
@@ -2574,15 +2855,16 @@ async def decide_agent_proposal(
             status_code=status.HTTP_409_CONFLICT,
             details={"state": current_state},
         )
-    operation = _planned_operation(proposal)
+    operations = _planned_operations(proposal)
     if payload.decision == "approved":
-        if operation is None:
+        if not operations:
             raise _validation_error(
                 "この提案は副作用のある操作を伴わないため、承認の対象になりません。",
                 {"kind": proposal.kind},
             )
         try:
-            approvals.require_executable(operation["type"])
+            for operation in operations:
+                approvals.require_executable(operation["type"])
         except approvals.OperationNotAllowed as error:
             raise _operation_not_allowed(error) from error
     decided_at = schemas.now_iso()
@@ -2592,8 +2874,8 @@ async def decide_agent_proposal(
         subject_type=approvals.SUBJECT_TYPE_AGENT_PROPOSAL,
         subject_id=proposal.id,
         requested_operation=(
-            approvals.requested_operation(operation)
-            if operation is not None
+            approvals.requested_operation(_approval_subject(proposal, operations))
+            if operations
             else {"type": approvals.OPERATION_AGENT_PROPOSE, "kind": proposal.kind}
         ),
         decision=payload.decision,
@@ -2682,11 +2964,22 @@ async def apply_agent_proposal(
     二重投入を防ぐ。
     """
     proposal = await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
-    operation = _planned_operation(proposal)
-    if operation is None:
+    if proposal.kind not in SINGLE_OPERATION_KINDS:
+        raise ApiError(
+            "PROPOSAL_REQUIRES_APPLICATIONS",
+            "この提案は複数の操作を持つため、applicationsへ適用を要求してください。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={
+                "kind": proposal.kind,
+                "endpoint": f"/agent-proposals/{proposal_id}/applications",
+            },
+        )
+    operations = _planned_operations(proposal)
+    if not operations:
         raise _validation_error(
             "この提案には実行できる操作がありません。", {"kind": proposal.kind}
         )
+    operation = operations[0]
     try:
         approvals.require_executable(operation["type"])
     except approvals.OperationNotAllowed as error:
@@ -2785,6 +3078,333 @@ async def _link_applied_job(proposal_id: str, job_id: str) -> None:
             proposal_id,
             job_id,
         )
+
+
+async def _load_applications(
+    session: AsyncSession, proposal_id: str
+) -> list[AgentProposalApplication]:
+    """提案の適用状態をstepの順に引く。"""
+    result = await session.execute(
+        select(AgentProposalApplication)
+        .where(AgentProposalApplication.proposal_id == proposal_id)
+        .order_by(AgentProposalApplication.step_index.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def _ensure_application_rows(
+    session: AsyncSession, proposal: AgentProposal, operations: list[dict[str, Any]]
+) -> dict[int, AgentProposalApplication]:
+    """未作成のstepへ`pending`の行を足し、step番号から引ける形で返す。
+
+    行は承認時ではなく最初の適用要求で作る。同じ提案へ適用要求が同時に届いても、
+    `(proposal_id, step_index)`の一意制約で片方だけが行を作り、もう片方は作られた行を
+    読み直す。
+    """
+    existing = {
+        row.step_index: row for row in await _load_applications(session, proposal.id)
+    }
+    missing = [index for index in range(len(operations)) if index not in existing]
+    if missing:
+        now = schemas.now_iso()
+        for index in missing:
+            operation = operations[index]
+            session.add(
+                AgentProposalApplication(
+                    id=schemas.new_id(),
+                    proposal_id=proposal.id,
+                    step_index=index,
+                    operation_type=operation["type"],
+                    operation_digest=approvals.operation_digest(operation),
+                    target=operation["target"],
+                    state="pending",
+                    applied_ref_type=None,
+                    applied_ref_id=None,
+                    failure_code=None,
+                    failure_message=None,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+    return {
+        row.step_index: row for row in await _load_applications(session, proposal.id)
+    }
+
+
+async def _finalize_application(
+    session: AsyncSession, application_id: str, **values: Any
+) -> None:
+    """stepの適用結果を残す。実行済みの副作用を辿れる形にしてから次へ進む。"""
+    await session.execute(
+        update(AgentProposalApplication)
+        .where(AgentProposalApplication.id == application_id)
+        .values(updated_at=schemas.now_iso(), **values)
+    )
+    await session.commit()
+
+
+async def _apply_recipe_registration(
+    session: AsyncSession, operation: dict[str, Any]
+) -> str:
+    """Workflow登録案のstepを適用し、登録したRecipeのIDを返す。
+
+    Workflowの参照と入力の宣言は基準Recipeから引き継ぎ、提案が決めるのは名前と既定値
+    だけとする。既定値も基準Recipeが宣言した入力に限る。提案の内容で実行できる
+    Workflowテンプレートを増やさないためである。
+    """
+    base = await _get_or_404(
+        session, Recipe, "Recipe", operation["target"]["base_recipe_id"]
+    )
+    declared = set(base.input_schema) if isinstance(base.input_schema, dict) else set()
+    defaults = dict(base.defaults) if isinstance(base.defaults, dict) else {}
+    proposed = operation["payload"].get("defaults")
+    for name, value in (proposed if isinstance(proposed, dict) else {}).items():
+        if name in declared:
+            defaults[name] = value
+    recipe = await create_recipe(
+        payload=schemas.RecipeCreate(
+            name=operation["payload"]["name"],
+            kind=base.kind,
+            engine=base.engine,
+            workflow_template_ref=base.workflow_template_ref,
+            input_schema=base.input_schema,
+            defaults=defaults,
+            workflow_version_id=base.workflow_version_id,
+            supersedes_recipe_id=None,
+        ),
+        session=session,
+    )
+    return recipe.id
+
+
+async def _apply_artifact_tag_update(
+    session: AsyncSession, operation: dict[str, Any]
+) -> str:
+    """資産整理案のstepを適用し、対象ArtifactのIDを返す。
+
+    付いていないタグの除去と、付いているタグの付与は成功として扱う。狙いどおりの
+    状態になっていることが結果であり、再実行でstepが失敗し続ける形にしない。
+    """
+    artifact_id = operation["target"]["artifact_id"]
+    await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    payload = operation["payload"]
+    for tag in payload.get("remove_tags", []):
+        entry = await _find_artifact_tag(session, artifact_id, tag)
+        if entry is not None:
+            await session.delete(entry)
+    for tag in payload.get("add_tags", []):
+        if await _find_artifact_tag(session, artifact_id, tag) is None:
+            session.add(
+                ArtifactTag(
+                    id=schemas.new_id(),
+                    artifact_id=artifact_id,
+                    tag=tag,
+                    created_at=schemas.now_iso(),
+                )
+            )
+    await _commit(session)
+    return artifact_id
+
+
+async def _execute_application(
+    session: AsyncSession,
+    source: ReferenceSource,
+    operation: dict[str, Any],
+) -> tuple[str, str]:
+    """1stepを実行し、適用先の種別とIDを返す。
+
+    実行は既存の経路をそのまま使う。承認と履歴の形を揃えるために、ここへJob作成や
+    Recipe登録の別実装を置かない。
+    """
+    operation_type = operation["type"]
+    if operation_type == approvals.OPERATION_GENERATION_JOB_CREATE:
+        target = operation["target"]
+        job = await create_generation_job(
+            payload=schemas.GenerationJobCreate(
+                kind="image",
+                project_id=target["project_id"],
+                scene_id=target["scene_id"],
+                shot_id=target["shot_id"],
+                recipe_id=target["recipe_id"],
+                inputs=operation["payload"]["inputs"],
+            ),
+            session=session,
+            source=source,
+        )
+        return "generation_job", job.id
+    if operation_type == approvals.OPERATION_RECIPE_CREATE:
+        return "recipe", await _apply_recipe_registration(session, operation)
+    if operation_type == approvals.OPERATION_ARTIFACT_TAG_UPDATE:
+        return "artifact_tag", await _apply_artifact_tag_update(session, operation)
+    # 許可リストの確認を通った種別だけがここへ来る。実装の取りこぼしを実行時に握り
+    # つぶさず、許可リストと実装の食い違いとして落とす。
+    raise approvals.OperationNotAllowed(
+        f"適用の実装がない操作種別です: {operation_type}"
+    )
+
+
+async def _sync_proposal_state(
+    session: AsyncSession,
+    proposal_id: str,
+    applications: list[AgentProposalApplication],
+) -> None:
+    """全stepが適用済みになったときだけ提案を`applied`へ進める。
+
+    一部が失敗している間は`approved`のまま残す。失敗したstepだけを承認のやり直し
+    なしで再実行できるようにするためである。
+    """
+    if not applications or any(row.state != "applied" for row in applications):
+        return
+    await session.execute(
+        update(AgentProposal)
+        .where(AgentProposal.id == proposal_id)
+        .where(AgentProposal.state == "approved")
+        .values(state="applied")
+    )
+    await session.commit()
+
+
+def _single_operation_error(proposal: AgentProposal) -> ApiError:
+    return ApiError(
+        "PROPOSAL_SINGLE_OPERATION",
+        "この提案は単一の操作を持つため、applyへ適用を要求してください。",
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        details={
+            "kind": proposal.kind,
+            "endpoint": f"/agent-proposals/{proposal.id}/apply",
+        },
+    )
+
+
+@router.post(
+    "/agent-proposals/{proposal_id}/applications",
+    response_model=list[schemas.AgentProposalApplicationRead],
+)
+async def apply_agent_proposal_steps(
+    proposal_id: str,
+    session: SessionDep,
+    source: ReferenceSourceDep,
+    payload: schemas.AgentProposalApplyRequest | None = None,
+):
+    """承認済みの計画をstep単位で適用する。
+
+    突き合わせは計画全体のdigestとstepごとのdigestの両方で行う。承認したあとに提案や
+    対象が変われば、どちらかが必ず食い違って実行しない。
+
+    1stepが失敗した時点で打ち切り、成功済みのstepは`applied`のまま残す。失敗したstep
+    だけを`step_indexes`で指定して再実行できる。適用済みのstepは指定しても実行し直さ
+    ない。
+    """
+    request = payload or schemas.AgentProposalApplyRequest()
+    proposal = await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
+    if proposal.kind in SINGLE_OPERATION_KINDS:
+        raise _single_operation_error(proposal)
+    operations = _planned_operations(proposal)
+    if not operations:
+        raise _validation_error(
+            "この提案には実行できる操作がありません。", {"kind": proposal.kind}
+        )
+    try:
+        for operation in operations:
+            approvals.require_executable(operation["type"])
+    except approvals.OperationNotAllowed as error:
+        raise _operation_not_allowed(error) from error
+    if proposal.state != "approved":
+        raise ApiError(
+            "PROPOSAL_NOT_APPROVED",
+            "承認済みの提案ではありません。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"state": proposal.state},
+        )
+    record = await _latest_approval(session, proposal.id)
+    try:
+        approvals.verify(
+            record,
+            _approval_subject(proposal, operations),
+            now=schemas.now_iso(),
+            subject_id=proposal.id,
+        )
+    except approvals.ApprovalInvalid as error:
+        raise ApiError(
+            error.code, str(error), status_code=status.HTTP_409_CONFLICT
+        ) from error
+    rows = await _ensure_application_rows(session, proposal, operations)
+    step_indexes = _resolve_step_indexes(request.step_indexes, operations, rows)
+    for index in step_indexes:
+        row = rows[index]
+        operation = operations[index]
+        if row.state == "applied":
+            continue
+        if row.operation_digest != approvals.operation_digest(operation):
+            raise ApiError(
+                "APPROVAL_STALE",
+                "承認した操作の内容と一致しません。承認を取り直してください。",
+                status_code=status.HTTP_409_CONFLICT,
+                details={"step_index": index},
+            )
+        application_id = row.id
+        try:
+            ref_type, ref_id = await _execute_application(session, source, operation)
+        except (ApiError, approvals.OperationNotAllowed) as error:
+            # 失敗したstepだけを記録して打ち切る。後続を続けると、失敗の原因が共通
+            # している場合に同じ失敗を残りのstep分だけ積み増すことになる。
+            await session.rollback()
+            code = (
+                error.code if isinstance(error, ApiError) else "OPERATION_NOT_ALLOWED"
+            )
+            await _finalize_application(
+                session,
+                application_id,
+                state="failed",
+                failure_code=code,
+                failure_message=str(error)[:500],
+            )
+            break
+        await _finalize_application(
+            session,
+            application_id,
+            state="applied",
+            applied_ref_type=ref_type,
+            applied_ref_id=ref_id,
+            failure_code=None,
+            failure_message=None,
+        )
+    applications = await _load_applications(session, proposal_id)
+    await _sync_proposal_state(session, proposal_id, applications)
+    return applications
+
+
+def _resolve_step_indexes(
+    requested: list[int] | None,
+    operations: list[dict[str, Any]],
+    rows: dict[int, AgentProposalApplication],
+) -> list[int]:
+    """処理するstepを決める。省略時は未適用のstepを順に処理する。"""
+    if requested is None:
+        return [
+            index for index in range(len(operations)) if rows[index].state != "applied"
+        ]
+    unknown = [index for index in requested if index >= len(operations)]
+    if unknown:
+        raise _validation_error(
+            "計画に無いstepを指定しています。",
+            {"step_indexes": unknown, "step_count": len(operations)},
+        )
+    return sorted(requested)
+
+
+@router.get(
+    "/agent-proposals/{proposal_id}/applications",
+    response_model=list[schemas.AgentProposalApplicationRead],
+)
+async def list_agent_proposal_applications(proposal_id: str, session: SessionDep):
+    """計画の適用状態を返す。投入したJobやRecipeはここから辿る。"""
+    await _get_or_404(session, AgentProposal, "Agent提案", proposal_id)
+    return await _load_applications(session, proposal_id)
 
 
 @router.get("/approval-logs", response_model=list[schemas.ApprovalLogRead])

@@ -9,12 +9,19 @@ Provider実装は`ReferenceSource`と同じく、Protocolと差し替え可能�
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
 
-#: 提案の種別。`image_prompt`だけが承認後の生成Job投入へつながる。
+#: 提案の種別。提案段階の4種と、承認後に適用できる準備段階の3種を持つ。
+#:
+#: 副作用のある操作へつながるのは`image_prompt`と準備段階の3種だけで、残りは表示に
+#: とどまる。準備段階の適用先はRecipe登録、生成Jobの一括投入、Artifactタグの更新とし、
+#: 実行できるWorkflowテンプレートは増やさない。
 AgentProposalKind = Literal[
     "shot_breakdown",
     "image_prompt",
     "reference_candidates",
     "recipe_draft",
+    "workflow_registration_draft",
+    "batch_generation_plan",
+    "asset_organization_plan",
 ]
 
 AGENT_PROPOSAL_KINDS: tuple[AgentProposalKind, ...] = (
@@ -22,6 +29,9 @@ AGENT_PROPOSAL_KINDS: tuple[AgentProposalKind, ...] = (
     "image_prompt",
     "reference_candidates",
     "recipe_draft",
+    "workflow_registration_draft",
+    "batch_generation_plan",
+    "asset_organization_plan",
 )
 
 

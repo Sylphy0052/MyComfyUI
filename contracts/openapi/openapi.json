@@ -1,6 +1,143 @@
 {
   "components": {
     "schemas": {
+      "AgentProposalApplicationRead": {
+        "additionalProperties": false,
+        "description": "計画1stepの適用状態。適用先はここから辿る。",
+        "properties": {
+          "applied_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Ref Id"
+          },
+          "applied_ref_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "generation_job",
+                  "recipe",
+                  "artifact_tag"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Ref Type"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "operation_digest": {
+            "title": "Operation Digest",
+            "type": "string"
+          },
+          "operation_type": {
+            "title": "Operation Type",
+            "type": "string"
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "applied",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "step_index": {
+            "title": "Step Index",
+            "type": "integer"
+          },
+          "target": {
+            "additionalProperties": true,
+            "title": "Target",
+            "type": "object"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "proposal_id",
+          "step_index",
+          "operation_type",
+          "operation_digest",
+          "target",
+          "state",
+          "applied_ref_type",
+          "applied_ref_id",
+          "failure_code",
+          "failure_message",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentProposalApplicationRead",
+        "type": "object"
+      },
+      "AgentProposalApplyRequest": {
+        "additionalProperties": false,
+        "description": "計画の適用要求。\n\n`step_indexes`を省略すると未適用のstepを順に処理する。指定すると、そのstepだけを\n処理する。失敗したstepの再実行に使う。",
+        "properties": {
+          "step_indexes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Indexes"
+          }
+        },
+        "title": "AgentProposalApplyRequest",
+        "type": "object"
+      },
       "AgentProposalCreate": {
         "additionalProperties": false,
         "description": "提案の取得要求。Jobは作らない。\n\n入力コンテキストはApplication APIが参照APIから解決して組み立てる。呼び出し元から\nProviderへ渡す本文を指定させない。",
@@ -16,7 +153,10 @@
               "shot_breakdown",
               "image_prompt",
               "reference_candidates",
-              "recipe_draft"
+              "recipe_draft",
+              "workflow_registration_draft",
+              "batch_generation_plan",
+              "asset_organization_plan"
             ],
             "title": "Kind",
             "type": "string"
@@ -203,6 +343,13 @@
                 "type": "null"
               }
             ]
+          },
+          "planned_operations": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedOperation"
+            },
+            "title": "Planned Operations",
+            "type": "array"
           },
           "project_id": {
             "title": "Project Id",
@@ -2482,6 +2629,109 @@
           }
         },
         "summary": "Get Agent Proposal"
+      }
+    },
+    "/api/v1/agent-proposals/{proposal_id}/applications": {
+      "get": {
+        "description": "計画の適用状態を返す。投入したJobやRecipeはここから辿る。",
+        "operationId": "list_agent_proposal_applications_api_v1_agent_proposals__proposal_id__applications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentProposalApplicationRead"
+                  },
+                  "title": "Response List Agent Proposal Applications Api V1 Agent Proposals  Proposal Id  Applications Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Agent Proposal Applications"
+      },
+      "post": {
+        "description": "承認済みの計画をstep単位で適用する。\n\n突き合わせは計画全体のdigestとstepごとのdigestの両方で行う。承認したあとに提案や\n対象が変われば、どちらかが必ず食い違って実行しない。\n\n1stepが失敗した時点で打ち切り、成功済みのstepは`applied`のまま残す。失敗したstep\nだけを`step_indexes`で指定して再実行できる。適用済みのstepは指定しても実行し直さ\nない。",
+        "operationId": "apply_agent_proposal_steps_api_v1_agent_proposals__proposal_id__applications_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentProposalApplyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentProposalApplicationRead"
+                  },
+                  "title": "Response Apply Agent Proposal Steps Api V1 Agent Proposals  Proposal Id  Applications Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Agent Proposal Steps"
       }
     },
     "/api/v1/agent-proposals/{proposal_id}/apply": {

@@ -19,6 +19,11 @@ SUBJECT_TYPE_AGENT_PROPOSAL = "agent_proposal"
 OPERATION_AGENT_PROPOSE = "agent.propose"
 #: 生成Jobの投入。GPUを使い、Artifactと履歴を作る。
 OPERATION_GENERATION_JOB_CREATE = "generation_job.create"
+#: Recipeの登録。既存のWorkflow版に対する新しいRecipeを作る。実行できるWorkflow
+#: テンプレートは増えない。
+OPERATION_RECIPE_CREATE = "recipe.create"
+#: Artifactのタグ付与・除去。ファイルには触れない。
+OPERATION_ARTIFACT_TAG_UPDATE = "artifact_tag.update"
 #: 資産ファイルの移動。本Issueでは実装しない。
 OPERATION_FILE_MOVE = "file.move"
 #: Git操作。本Issueでは実装しない。
@@ -32,6 +37,8 @@ OperationEffect = Literal["no_side_effect", "requires_approval", "forbidden"]
 OPERATION_POLICIES: dict[str, OperationEffect] = {
     OPERATION_AGENT_PROPOSE: "no_side_effect",
     OPERATION_GENERATION_JOB_CREATE: "requires_approval",
+    OPERATION_RECIPE_CREATE: "requires_approval",
+    OPERATION_ARTIFACT_TAG_UPDATE: "requires_approval",
     OPERATION_FILE_MOVE: "forbidden",
     OPERATION_GIT_COMMIT: "forbidden",
     OPERATION_EXTERNAL_SEND: "forbidden",
