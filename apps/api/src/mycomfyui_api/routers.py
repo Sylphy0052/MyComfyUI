@@ -56,7 +56,7 @@ from mycomfyui_api.models import (
     Workflow,
     WorkflowVersion,
 )
-from mycomfyui_api.queue import JobQueueWorker
+from mycomfyui_api.queue import FAILURE_CODE_INTERRUPTED, JobQueueWorker
 from mycomfyui_api.references import get_reference_source
 from mycomfyui_api.settings import get_settings
 
@@ -3397,6 +3397,29 @@ async def apply_agent_proposal_steps(
                 failure_message=str(error)[:500],
             )
             break
+        except Exception:
+            # 想定外の失敗でも占有を残さない。残すと同じstepを再実行できなくなる。
+            # 原因は握りつぶさず、記録を失敗へ倒してからそのまま外へ出す。
+            logger.exception(
+                "提案の適用で想定外のエラーが発生しました。proposal_id=%s step_index=%s",
+                proposal_id,
+                index,
+            )
+            await session.rollback()
+            try:
+                await _finalize_application(
+                    session,
+                    application_id,
+                    state="failed",
+                    failure_code="APPLICATION_FAILED",
+                    failure_message="適用中に想定外のエラーが発生しました。",
+                )
+            except SQLAlchemyError:
+                # 記録にも失敗した場合。元の失敗を隠さないよう警告だけ残す。
+                logger.warning(
+                    "適用の失敗を記録できません。application_id=%s", application_id
+                )
+            raise
         await _finalize_application(
             session,
             application_id,
@@ -3416,10 +3439,19 @@ def _resolve_step_indexes(
     operations: list[dict[str, Any]],
     rows: dict[int, AgentProposalApplication],
 ) -> list[int]:
-    """処理するstepを決める。省略時は未適用のstepを順に処理する。"""
+    """処理するstepを決める。省略時は未適用のstepを順に処理する。
+
+    中断で倒したstepは省略時の対象から外す。適用の途中でプロセスが落ちた場合、実行
+    済みかどうかはこちらで判定できない。まとめて再実行すると、既に投入したJobや登録
+    したRecipeを重ねて作りうる。利用者が適用先の有無を確かめ、`step_indexes`で明示
+    したときだけ再実行する。
+    """
     if requested is None:
         return [
-            index for index in range(len(operations)) if rows[index].state != "applied"
+            index
+            for index in range(len(operations))
+            if rows[index].state != "applied"
+            and rows[index].failure_code != FAILURE_CODE_INTERRUPTED
         ]
     unknown = [index for index in requested if index >= len(operations)]
     if unknown:
