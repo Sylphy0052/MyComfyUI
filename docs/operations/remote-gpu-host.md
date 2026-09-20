@@ -138,6 +138,8 @@ curl --max-time 5 -sS http://<remote>:8188/system_stats; echo "exit=$?"
 
 **Remote PC自身からこのテストを行っても意味がない。**自ホスト宛のパケットは送信元アドレスに関わらず`lo`を通り、Firewallの層まで届かない。送信元をdocker0などへ変えても結果は同じで、応答が返ってくる。通ったことを制限の失敗と読み違えないよう、必ず別の端末から実行する。
 
+WSL2 mirroredモードでも同じであることを2026-09-20に実測した。送信元を`172.18.0.1`(docker0)にして`192.168.1.2:8188`へ繋ぐとJSONが返るが、`ip route get 192.168.1.2 from 172.18.0.1`は`local ... dev lo`を返しており、Hyper-V Firewallの層には届いていない。
+
 Remote PC上で`curl http://127.0.0.1:8188/system_stats`が200を返すことも併せて確かめる。
 
 ルーターでのポート開放(WAN公開)は行わない。
@@ -296,6 +298,8 @@ ls -d <novel-writer>/tools/ai-media/tools/*/.venv 2>/dev/null
 用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。**`engines.yaml`を実機へ合わせるのではなく、まず実機が`engines.yaml`の指すpathを満たしているかを確かめる。**値の出典は`ai-media/config/local-tools.yaml`であり、勝手に別の場所へ作ると出典から外れる。
 
 ASRは専用のvenvを作らない。`engines.yaml`の`asr.python`はQwen3-TTSのvenvを指す。`ai-media/tools/asr/transcribe.py`が、HFキャッシュ済みの`openai/whisper-large-v3-turbo`をtransformersの`pipeline`で読む設計であり、既存環境へ書き込まない。faster-whisperは使わない。
+
+venvには推論に使わない依存を入れない。既に入っているものも、推論経路で使わないなら除く。常駐ホストでは使わない依存がそのまま攻撃面になる。学習用の`deepspeed`がその例で、CUDAツールキット(nvcc)が無い環境ではimport時に`CUDA_HOME does not exist`で落ちるため、機能面でも残す理由がない。
 
 CosyVoice3の実行には`PYTHONPATH`が要る。`engines.yaml`の`home`からの相対で次を指定する。
 
