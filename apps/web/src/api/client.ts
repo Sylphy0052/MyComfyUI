@@ -24,6 +24,8 @@ export type AgentProvider = components["schemas"]["AgentProviderRead"];
 export type AgentProposal = components["schemas"]["AgentProposalRead"];
 export type AgentProposalKind =
   components["schemas"]["AgentProposalCreate"]["kind"];
+export type AgentProviderId =
+  NonNullable<components["schemas"]["AgentProposalCreate"]["provider_id"]>;
 export type AgentProposalState = NonNullable<AgentProposal["state"]>;
 export type PlannedOperation = components["schemas"]["PlannedOperation"];
 export type ApprovalLog = components["schemas"]["ApprovalLogRead"];
@@ -324,6 +326,7 @@ export const api = {
   // 提案の取得は生成 Job を投入しない。投入は承認後の適用だけが行う。
   createAgentProposal: (payload: {
     kind: AgentProposalKind;
+    provider_id?: AgentProviderId | null;
     project_id: string;
     scene_id: string;
     shot_id?: string | null;

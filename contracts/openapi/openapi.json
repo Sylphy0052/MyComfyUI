@@ -26,6 +26,22 @@
             "title": "Project Id",
             "type": "string"
           },
+          "provider_id": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude_code",
+                  "codex",
+                  "stub"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Id"
+          },
           "recipe_id": {
             "anyOf": [
               {

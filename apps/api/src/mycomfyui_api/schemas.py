@@ -15,6 +15,7 @@ from mycomfyui_api import provenance
 from mycomfyui_api.adapters.agent.base import AgentProposalKind
 from mycomfyui_api.adapters.agent.proposals import MAX_INSTRUCTION_LENGTH
 from mycomfyui_api.approvals import OperationEffect
+from mycomfyui_api.settings import AgentProviderId
 from mycomfyui_api.storage import ARTIFACTS_DIR_NAME
 
 GenerationKind = Literal["image", "video", "voice", "music", "compose"]
@@ -505,6 +506,8 @@ class AgentProposalCreate(ApiModel):
     """
 
     kind: AgentProposalKind
+    #: 未指定なら設定の既定Providerを使う。
+    provider_id: AgentProviderId | None = None
     project_id: AiMediaId
     scene_id: AiMediaId
     shot_id: AiMediaId | None = None

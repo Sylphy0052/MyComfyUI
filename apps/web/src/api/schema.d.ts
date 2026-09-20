@@ -982,6 +982,8 @@ export interface components {
             kind: "shot_breakdown" | "image_prompt" | "reference_candidates" | "recipe_draft";
             /** Project Id */
             project_id: string;
+            /** Provider Id */
+            provider_id?: ("claude_code" | "codex" | "stub") | null;
             /** Recipe Id */
             recipe_id?: string | null;
             /** Scene Id */

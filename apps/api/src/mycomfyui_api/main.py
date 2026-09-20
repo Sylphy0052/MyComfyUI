@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette import status
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
-from mycomfyui_api.adapters.agent import create_agent_provider
+from mycomfyui_api.adapters.agent import create_agent_providers
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
 from mycomfyui_api.bootstrap import (
     ensure_default_recipes,
@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
     worker.start()
     app.state.queue_worker = worker
     app.state.reference_source = None
-    app.state.agent_provider = None
+    app.state.agent_providers = {}
     # ワーカーを起動した後は、以降どこで失敗しても後始末まで進める。参照Adapterの
     # 生成はfixtureの読み込みで失敗しうるため、tryの外へ出さない。
     try:
@@ -73,14 +73,14 @@ async def lifespan(app: FastAPI):
         )
         # 提案Providerは接続を張らない。CLIが無い環境でも起動を止めず、提案を
         # 要求したときに初めて失敗する。
-        app.state.agent_provider = create_agent_provider(settings)
+        app.state.agent_providers = create_agent_providers(settings)
         yield
     finally:
         await worker.stop()
         if app.state.reference_source is not None:
             await app.state.reference_source.aclose()
-        if app.state.agent_provider is not None:
-            await app.state.agent_provider.aclose()
+        for provider in app.state.agent_providers.values():
+            await provider.aclose()
         await dispose_engine()
 
 
