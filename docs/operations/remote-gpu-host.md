@@ -340,7 +340,7 @@ systemctl --user enable --now voice-runner
 
 ComfyUIと同じく`loginctl enable-linger $USER`が要る。ComfyUIの手順で済ませていれば重ねて実行しなくてよい。
 
-上の`~/MyComfyUI/logs`はcloneしたリポジトリの作業ディレクトリの中にある。リポジトリの`.gitignore`は`logs/`を追跡対象外にしてあるため、ここへ出力しても`git status`は汚れず、`git pull`の妨げにもならない。これを既定とする。後述のWindowsの`C:\MyComfyUI\logs`も同じ扱いである。
+上の`~/MyComfyUI/logs`はcloneしたリポジトリの作業ディレクトリの中にある。リポジトリの`.gitignore`はリポジトリ直下の`/logs/`を追跡対象外にしてあるため、ここへ出力しても`git status`は汚れず、`git pull`の妨げにもならない。これを既定とする。後述のWindowsの`C:\MyComfyUI\logs`も同じ扱いである。
 
 リポジトリ外へ出したい場合は`~/.local/share/mycomfyui/logs`のようなpathへ置き換えてよい。unitの`StandardOutput`と`StandardError`、および`mkdir`のpathを揃えて変える。`WorkingDirectory`はリポジトリのままにする。`uv run --project tools/voice-runner`がリポジトリ内の相対pathを前提にしているためである。
 
