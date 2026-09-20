@@ -3389,13 +3389,23 @@ async def apply_agent_proposal_steps(
             code = (
                 error.code if isinstance(error, ApiError) else "OPERATION_NOT_ALLOWED"
             )
-            await _finalize_application(
-                session,
-                application_id,
-                state="failed",
-                failure_code=code,
-                failure_message=str(error)[:500],
-            )
+            try:
+                await _finalize_application(
+                    session,
+                    application_id,
+                    state="failed",
+                    failure_code=code,
+                    failure_message=str(error)[:500],
+                )
+            except SQLAlchemyError:
+                # 失敗の記録にも失敗した。操作は実行していないため副作用は無い。行は
+                # 占有されたまま残り、次回起動のリカバリが中断として倒す。
+                logger.exception(
+                    "適用の失敗を記録できません。proposal_id=%s step_index=%s",
+                    proposal_id,
+                    index,
+                )
+                await session.rollback()
             break
         except Exception:
             # 想定外の失敗でも占有を残さない。残すと同じstepを再実行できなくなる。
