@@ -78,6 +78,26 @@ ComfyUIは既定で`127.0.0.1`へbindするため、そのままでは手元PC�
 
 **Firewallを入れてから待受を広げる。**順序を逆にすると、その間はLAN全体へ無認証で公開される。手順1に記録したとおり、Hyper-V Firewallの既定が`Allow`のまま待受を広げる事故は実機で起きている。本節は上から順に実行すればこの順序になる。待受を広げるコマンドは末尾に置いた。
 
+### 既定が拒否だと確認済みの場合の順序
+
+手順1で**該当する層のすべてが既定拒否である**ことを実測できている場合に限り、待受を広げる操作(手順3の常駐化を含む)を、個別のFirewallルール追加より先に行ってよい。既定拒否の層では、ルールを足していないポートはLANから到達しないため、bindを広げただけでは無認証公開にならない。
+
+確認すべき値は種別で決まる。
+
+- Linux単体: `ufw status verbose`が`Default: deny (incoming)`、またはfirewalldのゾーンtargetが`default`/`%%REJECT%%`/`DROP`
+- Windows単体: `Get-NetFirewallProfile`の適用中プロファイルが`Enabled=True`かつ`DefaultInboundAction`が`Block`(または既定値の`NotConfigured`)
+- WSL2: 上のWSL内Firewallに加えて、`Get-NetFirewallHyperVVMSetting`の`DefaultInboundAction`が`Block`
+
+2026-09-20のRemote PC(192.168.1.2、WSL2 mirrored)の復旧作業では、Hyper-V Firewallが`DefaultInboundAction=Block`、WSL内ufwが`Default: deny (incoming)`であることを先に実測した上で、voice-runnerの常駐(手順3)を先に行った。同日の構築時の事故はHyper-V Firewallの既定が`Allow`だったケースであり、既定がBlockだと確認できている場合には当てはまらない。
+
+緩和が効くのは既定拒否の確認まで含めて実測したときだけである。次のいずれかに当てはまるなら緩和せず、本節を上から順に実行する。
+
+- 手順1を飛ばした、または片方の層しか見ていない
+- 別のPCへ手順を流用しており、そのPCでは既定を確認していない
+- 既定拒否を確認したあとにFirewallの設定を変更した
+
+緩和しても、到達元を手元PCへ限定するルールは最終的に必要である。省略してよいのは順序だけであり、ルール自体ではない。
+
 まずFirewallで8188への受信を許可する。到達元は必ず手元PCのアドレスへ限定する。送信元を指定せずにポートを開けると、LAN上の全ホストから到達できる。`<手元PCのIP>`は実際のアドレスへ置き換える。
 
 Windowsの場合、管理者権限のPowerShellで次を実行する。
@@ -287,6 +307,8 @@ ComfyUIはINFOを標準エラーへ出す。障害調査で見るのは`comfyui.
 
 **先に8770のFirewallルールを入れる。**「ComfyUI以外のポートも同じ扱いにする」の8770向けルール(到達元を手元PCのIPへ限定)を入れてから、以下の常駐設定を行う。`--host 0.0.0.0`はComfyUIと同じく無認証公開である。順序を逆にすると、その間はLAN上の全ホストが生成を投入できる。runnerには認証もrate limitも同時実行数の上限もなく、Application API側の直列キューもrunnerを直接叩かれると迂回される。
 
+例外は手順2の「既定が拒否だと確認済みの場合の順序」の条件を満たすときだけである。該当する層のすべてが既定拒否だと実測できていれば、ルール追加より先に常駐設定を行ってよい。その場合も8770のルール自体は最終的に要る。入れるまで手元PCからrunnerへ到達できない。
+
 runnerはMyComfyUIのリポジトリから起動する。Remote PCへリポジトリをcloneし、uvを入れておく。runner自身のvenvにはFastAPIとUvicornとPyYAMLしか入らないため、GPUもモデルも要らない。
 
 Linuxではsystemdのuser unitを作る。`<user>`と各pathは実際の環境へ置き換える。
@@ -317,6 +339,10 @@ systemctl --user enable --now voice-runner
 ```
 
 ComfyUIと同じく`loginctl enable-linger $USER`が要る。ComfyUIの手順で済ませていれば重ねて実行しなくてよい。
+
+上の`~/MyComfyUI/logs`はcloneしたリポジトリの作業ディレクトリの中にある。リポジトリの`.gitignore`は`logs/`を追跡対象外にしてあるため、ここへ出力しても`git status`は汚れず、`git pull`の妨げにもならない。これを既定とする。後述のWindowsの`C:\MyComfyUI\logs`も同じ扱いである。
+
+リポジトリ外へ出したい場合は`~/.local/share/mycomfyui/logs`のようなpathへ置き換えてよい。unitの`StandardOutput`と`StandardError`、および`mkdir`のpathを揃えて変える。`WorkingDirectory`はリポジトリのままにする。`uv run --project tools/voice-runner`がリポジトリ内の相対pathを前提にしているためである。
 
 WindowsではNSSMでサービス化する。pathは実際の環境へ置き換える。
 

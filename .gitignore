@@ -18,3 +18,6 @@ apps/web/dist/
 
 # Playwright MCP の作業出力
 .playwright-mcp/
+
+# 常駐運用のログ出力先(docs/operations/remote-gpu-host.md 手順3)
+logs/
