@@ -3425,12 +3425,13 @@ async def apply_agent_proposal_steps(
                     failure_message="適用中に想定外のエラーが発生しました。",
                 )
             except SQLAlchemyError:
-                # 記録にも失敗した場合。元の失敗を隠さないよう警告だけ残す。
-                logger.warning(
+                # 記録にも失敗した場合。元の失敗を隠さないよう記録だけ残して外へ出す。
+                logger.exception(
                     "適用の失敗を記録できません。proposal_id=%s step_index=%s",
                     proposal_id,
                     index,
                 )
+                await session.rollback()
             raise
         try:
             await _finalize_application(
