@@ -10,6 +10,7 @@ engineとして分ける。
 """
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -80,7 +81,11 @@ def workflow_defaults(recipe: Any) -> dict[str, Any]:
     try:
         template_name = comfyui_prepare.resolve_template_name(recipe)
         return comfyui_workflow.template_defaults(template_name)
-    except (PreparationError, comfyui_workflow.WorkflowError):
+    except (
+        PreparationError,
+        comfyui_workflow.WorkflowError,
+        json.JSONDecodeError,
+    ):
         # 既定値を引けないこと自体は準備処理が同じ理由で拒否する。差分の基準が
         # 無いだけとして扱い、ここでは失敗させない。
         return {}

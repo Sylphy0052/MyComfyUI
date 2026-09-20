@@ -57,6 +57,12 @@ export function ExecutionPreview({
         </span>
       </div>
 
+      {/* 入力を変えてもこの内容は取り直さない。投入する値と読み比べられるよう、 */}
+      {/* いつ時点のものかを明示する。 */}
+      <p className="muted">
+        確認を押した時点の入力による内容です。入力を変えたら確認し直してください。
+      </p>
+
       <div>
         <p className="muted">解決済みプロンプト</p>
         <p className="mono">{preview.resolved_prompt || "-"}</p>

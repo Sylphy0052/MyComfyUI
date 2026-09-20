@@ -291,7 +291,7 @@ export function MusicPanel({
         <div className="row">
           <button
             type="button"
-            disabled={previewing || !shotId || !recipeId}
+            disabled={submitting || previewing || !shotId || !recipeId}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -299,7 +299,7 @@ export function MusicPanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || !shotId || !recipeId}
+            disabled={submitting || previewing || !shotId || !recipeId}
             onClick={submit}
           >
             {submitting ? "投入中..." : "音楽生成を投入"}

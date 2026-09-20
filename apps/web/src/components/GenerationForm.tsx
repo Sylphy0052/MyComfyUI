@@ -198,7 +198,7 @@ export function GenerationForm({
         <div className="row">
           <button
             type="button"
-            disabled={disabled || previewing || !recipe}
+            disabled={disabled || submitting || previewing || !recipe}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -206,7 +206,7 @@ export function GenerationForm({
           <button
             type="button"
             className="primary"
-            disabled={disabled || submitting || !recipe}
+            disabled={disabled || submitting || previewing || !recipe}
             onClick={submit}
           >
             {submitting ? "投入中..." : "画像生成を投入"}

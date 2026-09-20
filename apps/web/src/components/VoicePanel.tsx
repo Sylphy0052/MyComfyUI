@@ -469,7 +469,7 @@ export function VoicePanel({
             <button
               type="button"
               className="primary"
-              disabled={submitting || !shotId || !recipeId}
+              disabled={submitting || previewing || !shotId || !recipeId}
               onClick={submit}
             >
               {submitting ? "投入中..." : "音声生成を投入"}
