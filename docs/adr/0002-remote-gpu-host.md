@@ -100,9 +100,11 @@ LANの信頼を前提にできない環境で使う場合は、この判断を�
 
 ## 設定
 
-接続先は`MYCOMFYUI_COMFYUI_BASE_URL`で指定する(`apps/api/src/mycomfyui_api/settings.py`)。Remote構成ではRemote PCのURLを指す。Application APIのコードは変更しない。
+ComfyUIの接続先は`MYCOMFYUI_COMFYUI_BASE_URL`で指定する(`apps/api/src/mycomfyui_api/settings.py`)。Remote構成ではRemote PCのURLを指す。Application APIのコードは変更しない。
 
 `MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`はネットワーク往復と生成物の転送分の余裕を見る。
+
+`voice-runner`の接続先は別の環境変数`MYCOMFYUI_VOICE_RUNNER_BASE_URL`で指定する。Remote構成ではこちらも同じRemote PCへ向ける。上の配置表のとおり`voice-runner`も常駐させる対象であり、ComfyUIだけを移しても音声経路は手元PCの`127.0.0.1:8770`を指したままになる。
 
 Remote PCの準備手順は[Remote GPUホストの準備](../operations/remote-gpu-host.md)に置く。
 
