@@ -42,6 +42,16 @@ uv run --project tools/voice-runner \
   uvicorn voice_runner.app:app --host 127.0.0.1 --port 8770
 ```
 
+上の例の `--host 127.0.0.1` は、UI と Backend が同じマシンにある手元完結構成のもの
+である。bind アドレスは構成で変わる。
+
+- 手元完結構成 (UI と Backend が同一マシン): `--host 127.0.0.1`。LAN から
+  到達しない。
+- Remote 構成 (Backend を別マシンへ置く): `--host 0.0.0.0`。Firewall で到達元を
+  手元 PC へ限定した上で使う。手順は
+  [Remote GPUホストの準備](../../docs/operations/remote-gpu-host.md)の
+  「ComfyUI以外のポートも同じ扱いにする」と手順 3 にある。
+
 Backend を別マシンへ置く構成では、そのマシンで `--host 0.0.0.0` を付けて起動し、
 Application API 側の `MYCOMFYUI_VOICE_RUNNER_BASE_URL` をそのホストへ向ける。
 認証を持たないため、公開先は信頼できるネットワークの中だけに限る。到達できる相手は
