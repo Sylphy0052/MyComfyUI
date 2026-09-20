@@ -1,0 +1,46 @@
+# voice-runner が起動する Backend の所在。
+#
+# 値の出典は novel-writer の `tools/ai-media/config/local-tools.yaml` の `voice` と
+# `asr`。ai-media 側は参照専用の契約のため、MyComfyUI からは書き換えない。実行する
+# マシンに合わせてこのファイルだけを書き換える。
+#
+# 1 リクエストにつき 1 つの Backend だけをロードし、生成が終わったらプロセスを落として
+# VRAM を返す (tools/ai-media/docs/tts-backends.md の「Adapter の共通契約」)。
+
+engines:
+  qwen3-tts-clone:
+    python: /home/sylphy/qwen-tts/.venv/bin/python
+    model_id: Qwen/Qwen3-TTS-12Hz-1.7B-Base
+    model_revision: fd4b254389122332181a7c3db7f27e918eec64e3
+    sample_rate: 24000
+    needs_katakana: false
+    timeout_sec: 300
+
+  voxcpm2-prompt:
+    python: /home/sylphy/voxcpm/.venv/bin/python
+    model_id: openbmb/VoxCPM2
+    model_revision: 32279effe8c19989596f05d353d1447f51d9e915
+    sample_rate: 48000
+    needs_katakana: false
+    timeout_sec: 300
+    # generate(prompt_wav_path=..., prompt_text=...) の continuation mode。
+    # reference_wav_path のみの方式は抑揚は写るが読みが崩れる
+    # (検証_tts/05: 完全一致 12/15 対 7/15)。セリフ用途では prompt を使う。
+    mode: prompt_wav_path
+
+  cosyvoice3:
+    python: /home/sylphy/workspace/novel-writer/tools/ai-media/tools/cosyvoice/.venv/bin/python
+    home: /home/sylphy/workspace/novel-writer/tools/ai-media/tools/cosyvoice
+    model_id: FunAudioLLM/Fun-CosyVoice3-0.5B-2512
+    model_revision: 29e01c4e8d000f4bcd70751be16fa94bf3d85a18
+    sample_rate: 24000
+    # 日本語はカタカナの分かち書きで渡す (CosyVoice/example.py の注記)。
+    # 変換には `home` に置かれた jp_kana.py を使う。
+    needs_katakana: true
+    timeout_sec: 300
+
+asr:
+  python: /home/sylphy/qwen-tts/.venv/bin/python
+  model_id: openai/whisper-large-v3-turbo
+  language: ja
+  timeout_sec: 300

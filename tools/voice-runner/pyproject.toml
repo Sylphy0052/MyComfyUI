@@ -1,0 +1,19 @@
+[project]
+name = "voice-runner"
+version = "0.1.0"
+description = "MyComfyUI voice/ASR backend runner"
+requires-python = ">=3.12,<3.13"
+# runner自身はTTSとASRのライブラリを持たない。各Backendは別venvのPythonを
+# subprocessで起動する。torchとtransformersの版が違うものを同じプロセスへ載せない。
+dependencies = [
+  "fastapi>=0.115,<1",
+  "pyyaml>=6,<7",
+  "uvicorn[standard]>=0.30,<1",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voice_runner"]
