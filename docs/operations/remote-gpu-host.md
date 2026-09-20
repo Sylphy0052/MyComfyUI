@@ -97,9 +97,16 @@ grep IPV6 /etc/default/ufw
 ip -6 addr show scope global
 ```
 
-`IPV6=yes`なら、既定のdenyもルールもIPv6へ適用される。`no`のままにするなら、Remote PCがグローバルスコープのIPv6アドレスを持たないことを確かめる。どちらも満たさない場合、デュアルスタックのLANではIPv6経由で8188へ到達できる。
+`IPV6=yes`にして既定のdenyとルールをIPv6へも適用するのを既定とする。`no`のままにするなら、Remote PCがグローバルスコープのIPv6アドレスを持たないことが条件になるが、これは一度確かめれば済むものではない。ルーター側の設定変更やISPからのプレフィックス配布で後からアドレスが付くと、その時点で8188がIPv6経由で無認証のまま到達可能になる。`no`を選ぶなら再確認を運用へ組み込む。
 
-firewalldを使う場合。`--add-rich-rule`は`family="ipv4"`を指定しており、IPv6には効かない。同じ懸念があるため、IPv6アドレスを持つ場合は`family="ipv6"`のルールを別に足すか、IPv6を無効にする。
+firewalldを使う場合。`--add-rich-rule`は`family="ipv4"`を指定しており、IPv6には効かない。IPv6が素通りするかはゾーンのtargetで決まるため、先に次で確かめる。
+
+```bash
+sudo firewall-cmd --get-active-zones
+sudo firewall-cmd --zone=<zone> --list-all   # target の値を見る
+```
+
+targetが`default`、`%%REJECT%%`、`DROP`のいずれかなら、許可していないIPv6も落ちる。`ACCEPT`ならIPv6は素通りするため、`family="ipv6"`のルールを別に足すか、IPv6を無効にする。
 
 ```bash
 sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<手元PCのIP>" port port="8188" protocol="tcp" accept'
@@ -145,7 +152,7 @@ sudo ufw allow in on loopback0
 python main.py --listen 0.0.0.0 --port 8188
 ```
 
-常駐させる場合は、手順3のservice定義へ同じ引数を入れる。
+常駐させる場合は、手順3のservice定義へ同じ引数を入れる。手順3の定義だけを別のPCへ流用すると、Firewallが無いまま待受が広がる。再構築のときも手順2から行う。
 
 設定後、手元PC以外の端末から8188へ到達できないことを確かめる。
 
