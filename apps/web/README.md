@@ -1,6 +1,6 @@
 # MyComfyUI Web UI
 
-Scene/Shot から画像生成を投入し、キューと候補を確認する画面。React 19、TypeScript、Vite で実装する(ADR 0001)。
+Scene/Shot から画像と音声の生成を投入し、キューと候補を確認する画面。React 19、TypeScript、Vite で実装する(ADR 0001)。
 
 ## 前提
 
@@ -44,6 +44,12 @@ ai-media 参照 API の本文は Application API が中継するだけで、Open
 |左|Project、Scene、Shot の選択。選択中の Scene と Shot は `revision`、`path`、`sha256` を表示する|
 |中央|Recipe の選択と入力、候補画像の比較と採否|
 |右|Job キュー、状態、失敗理由、取消、再投入に必要な入力|
+|全幅(音声生成)|voice-runner の状態、Shot の台詞一覧、Voice Canon と参照音声の指定、音声 Job の投入、台詞ごとの読み検証と尺|
+
+音声生成の欄では、台詞が参照する `voice_id` ごとに Voice Canon と参照音声 wav、その書き起こしを
+指定する。参照 API は Voice Canon 本文を返さないため、参照音声と書き起こしは画面から渡す。
+読み検証の一覧は、一致しなかった台詞と、読みの指定が無いまま不一致になった台詞(Shot へ `reading`
+を追記する候補)、Shot の尺を超えた台詞を区別して表示する。
 
 入力欄は Recipe の `input_schema` から組み立てる。モデルファイル名と ComfyUI のノード名は
 Recipe の `defaults` 側に固定されており、画面には出さない。

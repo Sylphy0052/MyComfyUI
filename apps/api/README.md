@@ -23,17 +23,27 @@ cp .env.example .env
 |`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`|`600`|1 Job の実行上限(秒)|
 |`MYCOMFYUI_AIMEDIA_BASE_URL`|未設定|ai-media 参照 API の接続先。未設定の間は同梱 fixture を返す|
 |`MYCOMFYUI_AIMEDIA_FIXTURE_PATH`|未設定|参照 fixture の差し替え先。Canon が更新された状態を手元で再現するときに使う|
+|`MYCOMFYUI_VOICE_RUNNER_BASE_URL`|`http://127.0.0.1:8770`|voice-runner のエンドポイント。別 PC で動かす場合もこの値だけを変える|
+|`MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS`|`300`|音声 1 台詞あたりの実行上限(秒)|
+|`MYCOMFYUI_VOICE_MAX_AUDIO_BYTES`|`33554432`|取り込む参照音声と受け取る生成音声の上限バイト数|
+|`MYCOMFYUI_VOICE_STUB`|`false`|voice-runner の代わりに内蔵 stub で実行する。Backend なしで経路を確かめるときに使う|
+|`MYCOMFYUI_VOICE_STUB_FAILURE`|`false`|stub を必ず失敗させる。失敗記録の経路を確かめるときに使う|
 
 開発環境の保護設定が `.env*` への読み書きを拒否するため、`MYCOMFYUI_COMFYUI_BASE_URL`、
-`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、`MYCOMFYUI_AIMEDIA_BASE_URL` を `.env.example` へ
-反映できていない。手元で次を追記してから `.env` へコピーする。既定値のままでよい項目は
-書かなくても動く。
+`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、`MYCOMFYUI_AIMEDIA_BASE_URL`、`MYCOMFYUI_VOICE_*` を
+`.env.example` へ反映できていない。手元で次を追記してから `.env` へコピーする。既定値のままで
+よい項目は書かなくても動く。
 
 ```dotenv
 MYCOMFYUI_COMFYUI_BASE_URL=http://127.0.0.1:8188
 MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=600
 # 未設定なら同梱 fixture を参照する
 MYCOMFYUI_AIMEDIA_BASE_URL=
+# 別 PC の voice-runner を使う場合はここだけを差し替える
+MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://127.0.0.1:8770
+MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS=300
+# Backend を立てずに経路だけ確かめる場合は true
+MYCOMFYUI_VOICE_STUB=false
 ```
 
 SQLite は `<data_root>/db/mycomfyui.sqlite3` へ作成する。接続時に WAL、外部キー、busy timeout を有効にする。
@@ -74,6 +84,9 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |Exact Replay|`POST /api/v1/generation-jobs/{job_id}/replay`|
 |Regenerate with Current Canon|`POST /api/v1/generation-jobs/{job_id}/regenerate`|
 |親子 Job と派生 Artifact|`GET /api/v1/generation-jobs/{job_id}/lineage`|
+|音声 Job の読み検証結果|`GET /api/v1/generation-jobs/{job_id}/voice-verifications`|
+|voice-runner の疎通確認|`GET /api/v1/backends/voice/health`|
+|参照音声の取り込み|`POST /api/v1/voice-references`|
 |Manifest の取得|`GET /api/v1/generation-manifests/{manifest_id}`|
 |Artifact の一覧|`GET /api/v1/artifacts`(`scene_id`、`shot_id`、`job_id`、`kind`、`decision`、`availability` で絞り込む)|
 |Artifact の作成・取得|`POST /api/v1/artifacts` / `GET /api/v1/artifacts/{artifact_id}`|
@@ -119,6 +132,10 @@ Canon が更新された状態や参照が失われた状態を手元で再現�
 
 `input_schema` には画面へ出す変数だけを置き、モデルファイル名と出力名は `defaults` に固定する。
 これにより、UI からモデルファイルや ComfyUI のノードを指定できない。
+
+音声側も同じ仕組みで、`kind: "voice"` の Recipe を engine ごとに 1 件ずつ登録する
+(`qwen3-tts-clone` / `voxcpm2-prompt` / `cosyvoice3`)。model ID と sample rate は voice-runner
+側の設定が正本のため Recipe には持たせず、`defaults` には `profile` と検証の既定値だけを置く。
 
 ### Artifact の配信と採否
 
@@ -289,12 +306,117 @@ Workflow テンプレートはパッケージ同梱のものだけを実行で�
 |制限時間内に完了しない|`timeout`|`EXECUTION_TIMEOUT`|true|
 |停止要求が失敗した|`execution`|`INTERRUPT_FAILED`|false|
 
+### 音声 Adapter (voice-runner)
+
+音声生成は `tools/voice-runner` が提供する HTTP サービス経由で実行する。Application API は
+TTS/ASR のライブラリを持たず、`POST /v1/speech`、`POST /v1/transcribe`、`GET /v1/health` だけを
+呼ぶ。Backend を同じ PC で動かすか別 PC で動かすかの違いは
+`MYCOMFYUI_VOICE_RUNNER_BASE_URL` の値だけで、Application API 側の分岐は無い。
+
+engine は Recipe の `engine` で決まる。`qwen3-tts-clone`(Primary)、`voxcpm2-prompt`(Secondary)、
+`cosyvoice3`(比較用)の 3 種とし、実行中に別 engine へ自動で切り替えない。engine ごとの
+Python 環境は voice-runner 側で分けて持ち、Application API の venv へは混ぜない。
+
+Job の単位は Shot 1 件とする。Shot 内の台詞ごとに音声を 1 件ずつ生成し、まとめて 1 Job で扱う。
+台詞単位で Job を分けないのは、モデルのロードが 29〜67 秒かかるのに対し生成そのものは
+平均 1.77 秒で、1 回のプロセス起動でまとめて生成するほうが速いためである。
+
+実行時の手順は次のとおり。
+
+1. `GET /v1/health` で疎通と engine の利用可否を確認し、`engine_version` を Manifest へ 1 回だけ記録する。
+   モデル ID、モデルの版、sample rate も実測値のため、未記録のときだけ同時に埋める。
+2. `artifacts/<job-id>/workflow.json` に保存した実行スナップショットを読み、記録済みの SHA-256 と突き合わせる。
+3. 参照音声を `inputs/` から読み、実ファイルの SHA-256 が Manifest の記録と一致することを確かめる。
+4. 台詞ごとに `POST /v1/speech` を呼ぶ。`seed` は Job 全体で 1 つとし、生成直前に voice-runner 側で固定する。
+5. `pad_to_duration` が真なら、生成音声の末尾へ無音を足して Shot の尺へそろえる。尺を超える場合は切り詰めない。
+6. `verify_with_asr` が真なら、パディング前の音声を `POST /v1/transcribe` で書き起こし、読みを突き合わせる。
+7. 音声 Artifact と検証結果を同一トランザクションで記録する。
+
+取消要求は台詞と台詞の間で受け取る。生成途中の Shot は音声として成立しないため、書き出し済みの
+ファイルを消してから `cancelled` とする。
+
+#### 読み検証 (ASR)
+
+`GET /api/v1/generation-jobs/{job_id}/voice-verifications` が台詞ごとの検証結果を返す。
+比較は表記のままでは行わない。ASR は同音の別表記(朝比奈 → 朝日菜)を返すため、表記で比べると
+読めているものが不一致になる。期待側は `reading` があればそれを、無ければ `text` を使い、両方を
+カタカナへ正規化してから `difflib` で差分率を取る。句読点と記号は変換の前に落とす。
+
+|`status`|意味|
+|---|---|
+|`verified`|ASR まで実行し、`match` に一致可否が入っている|
+|`skipped`|`verify_with_asr` が偽で、検証していない|
+|`asr_failed`|ASR を実行できなかった。生成は成立しているため Job は `succeeded` のまま|
+|`kana_unavailable`|カタカナ正規化を実行できなかった(形態素解析器の欠落など)|
+
+読みの不一致は Job の失敗にしない。音声は生成できているため `succeeded` とし、不一致は記録して
+利用者の判断に委ねる。`reading` の指定が無い台詞で不一致になった場合は、Shot 側へ `reading` を
+追記する候補として UI が区別して表示する。
+
+#### Voice Canon 本文の扱い
+
+参照 API の Canon Endpoint は Canon 本文を返さず、`canon_id`、種別、表示名、不変参照だけを返す
+(`docs/contracts/ai-media-read-api-v1.md`)。そのため、参照音声のパスと書き起こしを
+Voice Canon の YAML から読むことはできない。Voice Canon の YAML を SQLite や Artifact 領域へ
+複製することも禁止されている。
+
+この制約のもと、次のように分担する。
+
+- 参照音声そのものと書き起こしは、利用者が `POST /api/v1/voice-references` と `inputs.voices` で渡す。
+- どの Voice Canon で生成したかは `canon_id` で示す。Application API は参照 API から descriptor を
+  引き、その不変参照を `canon` の `input_ref` として `declared_by: "input"` で記録する。
+  指定した `canon_id` と不変参照から算出した ID が食い違う場合は Job を作らない。
+- 実行時に、取り込んだ参照音声の実ファイル SHA-256 が Manifest の記録と一致することを確かめる。
+  違えば `VOICE_REFERENCE_MISMATCH` として失敗させる。
+
+つまり参照音声の内容の正しさは利用者が保証し、Application API は「どの Voice Canon を指したか」と
+「どの音声ファイルを使ったか」を履歴として固定する。上流が Voice Canon 本文を返すようになれば、
+書き起こしと `source_sha256` を参照 API から取る実装へ寄せられる。契約側の変更が要るため、
+本 Issue の範囲では入力として受け取る。
+
+#### 参照音声の取り込み
+
+`POST /api/v1/voice-references` は wav を base64 で受け取り、`inputs/<sha256>/<file-name>` へ保存して
+相対パスと SHA-256 を返す。同じ内容が既にあれば書き直さない。`multipart/form-data` を使わないのは、
+依存を増やさないためである。
+
+受け付けるのは PCM の wav だけとし、`MYCOMFYUI_VOICE_MAX_AUDIO_BYTES` を超える入力は拒否する。
+ファイル名は区切り文字と親ディレクトリ参照を取り除いてから使う。
+
+#### 疎通確認と stub
+
+`GET /api/v1/backends/voice/health` は voice-runner の接続先、到達可否、engine ごとの利用可否を返す。
+接続できない場合も 200 で返し、`reachable` を偽にして `reason` に理由を入れる。画面で Backend の
+状態を出すための Endpoint であり、ここで 5xx を返すと画面全体が落ちるためである。
+
+`MYCOMFYUI_VOICE_STUB=true` にすると、voice-runner の代わりに内蔵 stub が応答する。stub は
+seed と本文から決まる正弦波の wav を返し、ASR では既知の誤認識(女子 → 温座子、放課後 → 降下後)を
+混ぜた書き起こしを返す。GPU の無い環境で、投入から読み検証までの経路と不一致の表示を確かめるために使う。
+`MYCOMFYUI_VOICE_STUB_FAILURE=true` を足すと必ず失敗させ、失敗記録の経路を確かめられる。
+
+#### 失敗理由
+
+|事象|`failure_stage`|`failure_code`|`retryable`|
+|---|---|---|---|
+|voice-runner へ接続できない、engine が使えない|`backend_start`|`BACKEND_UNAVAILABLE`|true|
+|Manifest、スナップショット、参照音声を解決できない|`backend_start`|`INPUT_UNRESOLVED`|false|
+|参照音声の内容が記録した SHA-256 と違う|`backend_start`|`VOICE_REFERENCE_MISMATCH`|false|
+|Backend が生成に失敗した|`execution`|`EXECUTION_FAILED`|false|
+|音声のやり取りが上限バイト数を超えた|`execution`|`VOICE_PAYLOAD_TOO_LARGE`|false|
+|生成音声を wav として扱えない|`execution`|`AUDIO_DECODE_FAILED`|false|
+|生成物を保存・記録できない|`execution`|`ARTIFACT_WRITE_FAILED`|false|
+|実行中に voice-runner へ接続できなくなった|`response_disconnect`|`BACKEND_DISCONNECTED`|true|
+|制限時間内に完了しない|`timeout`|`EXECUTION_TIMEOUT`|true|
+
 ### 保存先
 
 |内容|`data_root` からの相対先|
 |---|---|
 |実行時 Workflow JSON|`artifacts/<job-id>/workflow.json`|
 |生成画像|`artifacts/<job-id>/<ComfyUI の出力ファイル名>`|
+|音声の実行スナップショット|`artifacts/<job-id>/workflow.json`|
+|生成音声|`artifacts/<job-id>/voice_<台詞の連番>.wav`|
+|取り込んだ参照音声|`inputs/<sha256>/<ファイル名>`|
 
 ファイル名は Backend 由来のため、区切り文字と親ディレクトリ参照を取り除いてから使う。
 同名ファイルがある場合は連番を付けて別ファイルにする。保存済みの Artifact は置換しない。
@@ -350,6 +472,6 @@ Recipe の変更は新しい Recipe として作成し、必要なら `supersede
 
 ## 対象外
 
-動画・音声・音楽生成、img2img、LoRA、hires fix、ControlNet、IPAdapter、
+動画・音楽生成、img2img、LoRA、hires fix、ControlNet、IPAdapter、
 再実行(Exact Replay / Regenerate with Current Canon)、Web UI、進捗の UI への中継、認証、削除 API は
 本 API の対象外とする。複数 GPU への分散、優先度付きスケジューリング、クラウドキューも対象外とする。

@@ -121,6 +121,31 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 
 `request_context`にはCanon本文を入れず、Canon参照は`path`、`anchor`、`note`に限る。APIキー、認証情報、環境変数、ローカル絶対パスも入れない。
 
+### VoiceVerification
+
+|項目|必須|内容|更新可否|
+|---|---|---|---|
+|`id`|必須|検証記録ID|不可|
+|`job_id`|必須|対象の音声Job|不可|
+|`artifact_id`|必須|検証した音声Artifact|不可|
+|`dialogue_index`|必須|Shot内での台詞の位置|不可|
+|`expected_text`|必須|Shotが持つ台詞本文|不可|
+|`expected_reading`|任意|Shotが指定した読み。指定が無ければNULL|不可|
+|`asr_text`|任意|ASRの書き起こし。実行しなかった、または失敗した場合はNULL|不可|
+|`normalized_expected`、`normalized_asr`|任意|カタカナへ正規化した比較対象|不可|
+|`match`|任意|正規化後の完全一致可否。検証していない場合はNULL|不可|
+|`diff_ratio`|任意|不一致時の差分率。0.0で完全一致、1.0で共通部分なし|不可|
+|`audio_sec`、`padded_sec`|必須|生成音声の尺と、パディング後の尺|不可|
+|`target_duration_sec`|必須|Shotが求める尺|不可|
+|`status`|必須|`verified`、`skipped`、`asr_failed`、`kana_unavailable`|不可|
+|`created_at`|必須|記録時刻|不可|
+
+台詞ごとに1件記録し、後から書き換えない。ArtifactへJSONとして持たせず表にするのは、台詞単位の一覧と不一致の絞り込みをAPIで返すためである。
+
+読みの一致判定は表記では行わず、期待側 (`expected_reading`があればそれ、無ければ`expected_text`) とASRの書き起こしをカタカナへ正規化してから比較する。ASRは同音の別表記を返すため、表記のまま比べると読めているものが不一致になる。
+
+読みの不一致はJobの失敗ではない。音声は生成できているためJobは`succeeded`とし、不一致は記録として残して利用者の判断に委ねる。`expected_reading`がNULLの台詞で不一致になった場合は、Shot側へ読みを追記する候補として扱う。
+
 ## エージェント操作の承認境界
 
 副作用のある操作は、許可する操作種別を列挙した許可リストで分類する。列挙に無い種別は実行しない。
