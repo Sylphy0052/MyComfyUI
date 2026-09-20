@@ -44,7 +44,10 @@ uv run --project tools/voice-runner \
 
 Backend を別マシンへ置く構成では、そのマシンで `--host 0.0.0.0` を付けて起動し、
 Application API 側の `MYCOMFYUI_VOICE_RUNNER_BASE_URL` をそのホストへ向ける。
-認証は持たないため、信頼できるネットワークの中だけで公開する。
+認証を持たないため、公開先は信頼できるネットワークの中だけに限る。到達できる相手は
+誰でも生成を投入でき、rate limit も同時実行数の上限も無い。Application API 側の直列
+キューは runner を直接叩かれると迂回されるため、`--host 0.0.0.0` で公開する場合は
+ファイアウォールか VPN で到達範囲を絞る。
 
 ## Endpoint
 

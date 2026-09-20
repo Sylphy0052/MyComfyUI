@@ -193,6 +193,11 @@ export function VoicePanel({
     const voices: Record<string, unknown> = {};
     for (const voiceId of voiceIds) {
       const binding = bindings[voiceId] ?? EMPTY_BINDING;
+      if (!binding.canonId) {
+        // どの Voice Canon で生成したかを残さない Job は作らない。
+        setError(`${voiceId}のVoice Canonを選んでください。`);
+        return;
+      }
       if (!binding.relativePath || !binding.sha256) {
         setError(`${voiceId}の参照音声を取り込んでください。`);
         return;
@@ -208,7 +213,7 @@ export function VoicePanel({
         return;
       }
       voices[voiceId] = {
-        canon_id: binding.canonId || null,
+        canon_id: binding.canonId,
         reference_relative_path: binding.relativePath,
         // Voice Canon の source_sha256 と突き合わせる値。取り込んだファイルの
         // 内容 hash をそのまま使う。実行前に実ファイルと照合される。

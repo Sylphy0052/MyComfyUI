@@ -86,6 +86,13 @@ class HealthResponse(RunnerModel):
 
 
 def _decode(raw: str, label: str) -> bytes:
+    # 復号の前に文字数で弾く。復号してから測ると、上限の数倍のメモリを確保した後で
+    # 断ることになる。base64は3バイトを4文字で表すため、文字数から上限を逆算する。
+    if len(raw) > (MAX_AUDIO_BYTES + 2) // 3 * 4:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"{label}が上限({MAX_AUDIO_BYTES}バイト)を超えています。",
+        )
     try:
         data = base64.b64decode(raw, validate=True)
     except (binascii.Error, ValueError) as error:

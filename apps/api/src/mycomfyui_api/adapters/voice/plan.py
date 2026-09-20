@@ -138,8 +138,13 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
             f"{voice_id}のreference_sha256は小文字16進数64桁で指定します。"
         )
     canon_id = raw.get("canon_id")
-    if canon_id is not None and not _is_sha256(canon_id):
-        raise PreparationError(f"{voice_id}のcanon_idは小文字16進数64桁で指定します。")
+    if not _is_sha256(canon_id):
+        # どのVoice Canonで生成したかを後から説明できないJobを作らない。省略できる
+        # ようにすると、参照音声だけを渡したJobが履歴にCanon参照を残さずに残る。
+        raise PreparationError(
+            f"{voice_id}のcanon_idは小文字16進数64桁で指定します。"
+            "Voice Canonを指定しない音声Jobは作れません。"
+        )
     leading_silence = raw.get("leading_silence_sec", 0.0)
     if isinstance(leading_silence, bool) or not isinstance(
         leading_silence, int | float
@@ -149,7 +154,7 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
         raise PreparationError(f"{voice_id}のleading_silence_secは0以上です。")
     return {
         "voice_id": voice_id,
-        "canon_id": canon_id.lower() if isinstance(canon_id, str) else None,
+        "canon_id": str(canon_id).lower(),
         "reference": {
             "relative_path": _cached_input_path(
                 raw.get("reference_relative_path"), voice_id
@@ -250,15 +255,13 @@ async def _canon_refs(
 ) -> list[dict[str, Any]]:
     """Voice Canon descriptorを参照APIから引き、不変参照として記録する。
 
-    Canon本文は取得しない。`canon_id`を指定しないJobは、どのVoice Canonで生成したかを
-    後から説明できないため、参照を引けない場合はJobを作らない。
+    Canon本文は取得しない。`canon_id`は`_binding`で必須にしてあり、参照を引けない
+    場合はJobを作らない。どのVoice Canonで生成したかを説明できない履歴を残さない。
     """
     source = context.canon_lookup
     entries: list[dict[str, Any]] = []
     for voice_id, binding in bindings.items():
-        canon_id = binding.get("canon_id")
-        if canon_id is None:
-            continue
+        canon_id = binding["canon_id"]
         if source is None:
             raise PreparationError("Voice Canonを解決できません。")
         try:
