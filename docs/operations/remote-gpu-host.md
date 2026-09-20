@@ -8,6 +8,9 @@
 
 - Remote PCと手元PCが同じLANにいる。
 - Remote PCのアドレスが変わらない。DHCP予約か固定IPで固定する。hostnameで引く場合は、手元PCから名前解決できることを確かめる。
+  - 固定IPにする場合、そのアドレスがルーターのDHCP配布範囲の外にあることを確かめる。範囲内だと他の端末が同じアドレスを受け取って競合し、Jobが不定期に`BACKEND_UNAVAILABLE`で落ちる。
+  - 設定直後の疎通テストは`AddressState`が`Preferred`になってから行う。`Tentative`(重複アドレス検出中)の間は失敗する。
+  - Remote PCがWSL2 mirroredモードなら、ホスト側のIP変更に再起動なしで追従する。`wsl --shutdown`は通常要らない。追従しないときだけ行う。
 - Remote PCにComfyUIが導入済みで、単体で起動できる。
 
 ## Remote PCの種別を先に決める
@@ -133,6 +136,8 @@ curl --max-time 5 -sS http://<remote>:8188/system_stats; echo "exit=$?"
 
 到達元制限が効いていれば接続が張れず、`exit=28`(タイムアウト)または`exit=7`(接続拒否)になる。**HTTPステータスが返ってきたら到達できている。**`curl`は4xxや5xxを受け取っても既定では非0で終わらないため、本文が返ったかどうかで判断する。
 
+**Remote PC自身からこのテストを行っても意味がない。**自ホスト宛のパケットは送信元アドレスに関わらず`lo`を通り、Firewallの層まで届かない。送信元をdocker0などへ変えても結果は同じで、応答が返ってくる。通ったことを制限の失敗と読み違えないよう、必ず別の端末から実行する。
+
 Remote PC上で`curl http://127.0.0.1:8188/system_stats`が200を返すことも併せて確かめる。
 
 ルーターでのポート開放(WAN公開)は行わない。
@@ -240,6 +245,8 @@ ComfyUIはINFOを標準エラーへ出す。障害調査で見るのは`comfyui.
 
 常駐させる以上、ComfyUI本体とカスタムノードは更新せずに放置しない。LANへ待受を広げた分だけ、これらの脆弱性がそのまま攻撃面になる([ADR 0002](../adr/0002-remote-gpu-host.md))。
 
+カスタムノードにはgit管理下にないものが混じる。HuggingFaceなどからファイルを取得して配置したものがこれにあたり、`git log`では版が分からない。配布元URLと取得時のrevisionを別途記録しておく。ComfyUI Managerの管理対象外になるため、更新確認は手動で行う。
+
 ## 4. モデル資産を配置する
 
 checkpoint、LoRA、VAEはRemote PCから読める場所へ置く。手元PCには置かない。
@@ -279,23 +286,30 @@ Qwen3-TTS、VoxCPM2、CosyVoice3、WhisperのvenvをRemote PCへ用意する。�
 
 ComfyUIと同時に常駐させない。VRAMの実測値は`ai-media/docs/tts-backends.md`に記録がある。
 
-用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。venvを置いてから、このファイルの`engines.python`と`asr.python`を実機のpathへ合わせる。
+**新しくvenvを作る前に、既にあるものを探す。**`novel-writer/tools/ai-media/`配下と利用者のhomeに、これらのvenvが既に置かれていることがある。重複して作ると数十GBを無駄にし、`engines.yaml`がどちらを指しているか分からなくなる。
 
-ASRはtransformersの`pipeline`で動かす(`tools/voice-runner/workers/asr_worker.py`)。`openai/whisper-large-v3-turbo`をそのまま読む構成であり、faster-whisperは前提にしない。faster-whisperを使う場合はCTranslate2形式への変換が別途要る。
+```bash
+ls -d ~/qwen-tts/.venv ~/voxcpm/.venv 2>/dev/null
+ls -d <novel-writer>/tools/ai-media/tools/*/.venv 2>/dev/null
+```
 
-CosyVoice3には3点の注意がある。
+用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。**`engines.yaml`を実機へ合わせるのではなく、まず実機が`engines.yaml`の指すpathを満たしているかを確かめる。**値の出典は`ai-media/config/local-tools.yaml`であり、勝手に別の場所へ作ると出典から外れる。
 
-- `openai-whisper==20231117`は`pkg_resources`が無い環境でビルドに失敗する。`uv pip install --no-build-isolation`で入れる。
-- `deepspeed`は学習用であり、`voice-runner`が行う推論には要らない。CUDAツールキット(nvcc)が無い環境ではimport時に`CUDA_HOME does not exist`でtransformersごと落ちるため、除去する。
-- 実行時に`PYTHONPATH=third_party/Matcha-TTS`が要る(upstreamの仕様)。
+ASRは専用のvenvを作らない。`engines.yaml`の`asr.python`はQwen3-TTSのvenvを指す。`ai-media/tools/asr/transcribe.py`が、HFキャッシュ済みの`openai/whisper-large-v3-turbo`をtransformersの`pipeline`で読む設計であり、既存環境へ書き込まない。faster-whisperは使わない。
 
-venvを作ったら、起動せずにimportだけを確かめる。
+CosyVoice3の実行には`PYTHONPATH`が要る。`engines.yaml`の`home`からの相対で次を指定する。
+
+```
+PYTHONPATH=CosyVoice:CosyVoice/third_party/Matcha-TTS
+```
+
+用意できたら、起動せずにimportだけを確かめる。pathは`engines.yaml`の値に合わせる。
 
 ```bash
 ~/qwen-tts/.venv/bin/python -c "import qwen_tts"
 ~/voxcpm/.venv/bin/python -c "import voxcpm"
-~/whisper/.venv/bin/python -c "import transformers, torch; print(torch.cuda.is_available())"
-PYTHONPATH=third_party/Matcha-TTS ~/cosyvoice/.venv/bin/python -c "from cosyvoice.cli.cosyvoice import CosyVoice2"
+~/qwen-tts/.venv/bin/python -c "import transformers, torch; print(torch.cuda.is_available())"
+cd <cosyvoice-home> && PYTHONPATH=CosyVoice:CosyVoice/third_party/Matcha-TTS .venv/bin/python -c "from cosyvoice.cli.cosyvoice import CosyVoice2"
 ```
 
 ## 7. 手元PCの接続先を変える
