@@ -36,6 +36,8 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [snapshots, setSnapshots] = useState<Artifact[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Workflowが無いのが「未登録」なのか「取得に失敗した」のかを区別する。
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -46,6 +48,7 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
           api.listRecipes(),
         ]);
         if (!active) return;
+        setFailed(false);
         setWorkflows(workflowList);
         setRecipes(recipeList);
         setWorkflowId(workflowList[0]?.id ?? null);
@@ -55,6 +58,7 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
         setWorkflows([]);
         setRecipes([]);
         setWorkflowId(null);
+        setFailed(true);
         setError(describe(cause));
       }
     })();
@@ -148,6 +152,11 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
             "Workflowは生成の実行本体。Recipeは版の宣言変数へ値を与えるプリセットで、Workflow自体とは別の情報として扱う。"
           }
         </p>
+        {failed && (
+          <p className="muted">
+            Workflowを取得できませんでした。画面を開き直してください。
+          </p>
+        )}
         <label htmlFor="workflow-select">登録済みWorkflow</label>
         <select
           id="workflow-select"

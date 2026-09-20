@@ -40,6 +40,8 @@ export function IntegrityList({ sceneId, shotId }: Props) {
   const [includeCanon, setIncludeCanon] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // 判定結果が無いのが「問題なし」なのか「取得に失敗した」のかを区別する。
+  const [failed, setFailed] = useState(false);
   const [token, setToken] = useState(0);
 
   useEffect(() => {
@@ -54,11 +56,14 @@ export function IntegrityList({ sceneId, shotId }: Props) {
           includeCanon,
           limit: CHECK_LIMIT,
         });
-        if (active) setResult(found);
+        if (!active) return;
+        setFailed(false);
+        setResult(found);
       } catch (cause) {
         if (!active) return;
         // 失敗した条件の判定結果を残すと、現在の絞込みの結果と見分けが付かない。
         setResult(null);
+        setFailed(true);
         setError(describe(cause));
       } finally {
         if (active) setLoading(false);
@@ -119,6 +124,12 @@ export function IntegrityList({ sceneId, shotId }: Props) {
       </div>
 
       {loading && <p className="muted">判定中。</p>}
+
+      {failed && !loading && (
+        <p className="muted">
+          判定結果を取得できませんでした。再判定してください。
+        </p>
+      )}
 
       {result && (
         <div className="stack">

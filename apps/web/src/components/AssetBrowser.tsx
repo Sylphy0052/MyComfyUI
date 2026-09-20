@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -28,8 +28,13 @@ const AVAILABILITY_OPTIONS = [
 /** 一度に取る件数。資産ブラウザは全件走査ではなく新しい順の窓で見る。 */
 const PAGE_SIZE = 60;
 
+/**
+ * 選択したArtifactの出自。Artifact自体は持たず、一覧側の最新の値を使う。
+ *
+ * タグを付け外しすると一覧を取り直すため、Artifactの参照は毎回変わる。ここへ
+ * 抱え込むと、変わっていないJob・Manifest・lineageまで取り直すことになる。
+ */
 interface Detail {
-  artifact: Artifact;
   job: GenerationJob;
   manifest: GenerationManifest;
   lineage: JobLineage;
@@ -141,17 +146,10 @@ export function AssetBrowser({
     [artifacts, selectedArtifactId],
   );
 
-  const loadDetail = useCallback(async (artifact: Artifact) => {
-    const job = await api.getJob(artifact.job_id);
-    const [manifest, lineage] = await Promise.all([
-      api.getManifest(job.manifest_id),
-      api.getLineage(job.id),
-    ]);
-    return { artifact, job, manifest, lineage };
-  }, []);
+  const selectedJobId = selected?.job_id ?? null;
 
   useEffect(() => {
-    if (!selected) {
+    if (!selectedJobId) {
       setDetail(null);
       return;
     }
@@ -160,8 +158,12 @@ export function AssetBrowser({
     setDetail(null);
     (async () => {
       try {
-        const loaded = await loadDetail(selected);
-        if (active) setDetail(loaded);
+        const job = await api.getJob(selectedJobId);
+        const [manifest, lineage] = await Promise.all([
+          api.getManifest(job.manifest_id),
+          api.getLineage(job.id),
+        ]);
+        if (active) setDetail({ job, manifest, lineage });
       } catch (cause) {
         if (!active) return;
         setDetail(null);
@@ -171,7 +173,7 @@ export function AssetBrowser({
     return () => {
       active = false;
     };
-  }, [selected, loadDetail]);
+  }, [selectedJobId]);
 
   const addTagFilter = () => {
     const value = tagDraft.trim();
@@ -191,8 +193,10 @@ export function AssetBrowser({
     try {
       await api.addArtifactTag(artifact.id, tag);
       setReloadToken((current) => current + 1);
+      return true;
     } catch (cause) {
       setError(describe(cause));
+      return false;
     } finally {
       setBusyArtifactId(null);
     }
@@ -214,8 +218,10 @@ export function AssetBrowser({
   const assignTag = async (artifact: Artifact) => {
     const value = assignDraft.trim();
     if (!value) return;
-    await applyTag(artifact, value);
-    setAssignDraft("");
+    // 失敗したときは入力を残す。打ち直さずに再送できる。
+    if (await applyTag(artifact, value)) {
+      setAssignDraft("");
+    }
   };
 
   const clearFilters = () => {
@@ -436,7 +442,7 @@ export function AssetBrowser({
         </div>
 
         <div className="stack">
-          {detail ? (
+          {selected && detail ? (
             <>
               <div className="row">
                 <button
@@ -453,19 +459,19 @@ export function AssetBrowser({
               <div className="stack">
                 <label htmlFor="asset-detail-tag">タグ</label>
                 <div className="row">
-                  {(detail.artifact.tags ?? []).map((tag) => (
+                  {(selected.tags ?? []).map((tag) => (
                     <button
                       key={tag}
                       type="button"
                       className="badge"
-                      disabled={busyArtifactId === detail.artifact.id}
-                      onClick={() => void dropTag(detail.artifact, tag)}
+                      disabled={busyArtifactId === selected.id}
+                      onClick={() => void dropTag(selected, tag)}
                       title="クリックでタグを外す"
                     >
                       {tag} ×
                     </button>
                   ))}
-                  {(detail.artifact.tags ?? []).length === 0 && (
+                  {(selected.tags ?? []).length === 0 && (
                     <span className="muted">タグなし</span>
                   )}
                 </div>
@@ -477,23 +483,23 @@ export function AssetBrowser({
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
-                        void assignTag(detail.artifact);
+                        void assignTag(selected);
                       }
                     }}
                     placeholder="付けるタグ"
                   />
                   <button
                     type="button"
-                    disabled={busyArtifactId === detail.artifact.id}
-                    onClick={() => void assignTag(detail.artifact)}
+                    disabled={busyArtifactId === selected.id}
+                    onClick={() => void assignTag(selected)}
                   >
                     付与
                   </button>
                 </div>
               </div>
-              <ArtifactPreview artifact={detail.artifact} />
+              <ArtifactPreview artifact={selected} />
               <ArtifactDetail
-                artifact={detail.artifact}
+                artifact={selected}
                 job={detail.job}
                 manifest={detail.manifest}
                 lineage={detail.lineage}
