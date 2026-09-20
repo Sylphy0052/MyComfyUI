@@ -553,9 +553,23 @@ def _execution_error_message(data: dict[str, Any], prompt_id: str) -> str:
 
 
 def _kind_for(filename: str, fallback: str) -> str:
-    """ファイル名からArtifact種別を決める。拡張子が未知なら出力キーの既定に従う。"""
+    """ファイル名からArtifact種別を決める。拡張子が未知なら出力キーの既定に従う。
+
+    既定へ落ちたことはログへ残す。出力キーと中身が食い違うノード(素の`SaveVideo`が
+    その例)では既定が誤るため、誤った種別で記録し続けていることに後から気付けるよう
+    にする。
+    """
     suffix = PurePosixPath(filename).suffix.lower()
-    return EXTENSION_KINDS.get(suffix, fallback)
+    kind = EXTENSION_KINDS.get(suffix)
+    if kind is None:
+        logger.info(
+            "拡張子から種別を決められないため出力キーの既定を使います。"
+            "filename=%s kind=%s",
+            filename,
+            fallback,
+        )
+        return fallback
+    return kind
 
 
 def _extract_outputs(entry: dict[str, Any]) -> tuple[OutputRef, ...]:
