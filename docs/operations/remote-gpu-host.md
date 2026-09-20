@@ -222,6 +222,11 @@ firewalldの場合は8188と同じ`--add-rich-rule`をポート番号だけ変�
 
 提案Providerに`qwen`を使う場合は、OpenAI互換の推論サーバー(既定8000)も同じ扱いにする。このサーバーも認証機構を持たず、手元PCのApplication APIから接続する。使わないなら広げない。
 
+```powershell
+# WSL2の場合。8188と同じVMCreatorIdを使う
+New-NetFirewallHyperVRule -Name "qwen-8000" -DisplayName "Qwen inference server (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '<VMCreatorId>' -Protocol TCP -LocalPorts 8000 -RemoteAddresses <手元PCのIP> -Action Allow
+```
+
 ```bash
 sudo ufw allow from <手元PCのIP> to any port 8000 proto tcp
 ```

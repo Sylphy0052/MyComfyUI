@@ -164,6 +164,9 @@ class QwenProvider:
         4xxは要求の作り方かモデル名の設定違いであり、再試行しても直らない。5xxは
         推論サーバー側の一時的な失敗で、再試行で通ることがある。利用者が次に何を
         すべきかを分けられるよう、同じ`AgentUnavailable`でも文言を変える。
+
+        `follow_redirects`は既定のFalseのため3xxもここへ来る。想定するEndpointは
+        リダイレクトを返さないため、サーバー側の設定を見る5xxと同じ扱いにする。
         """
         if 400 <= status_code < 500:
             return (
