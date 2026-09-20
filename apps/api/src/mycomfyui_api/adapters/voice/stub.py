@@ -94,14 +94,23 @@ class StubVoiceBackend:
         """保持する接続は無い。Protocolを満たすために用意する。"""
 
     async def health(self) -> RunnerHealth:
-        available = not self._settings.voice_stub_failure
-        detail = None if available else "スタブは失敗するよう設定されています。"
+        """疎通は`voice_stub_failure`の影響を受けない。
+
+        障害注入を疎通にも効かせると、Jobが投入前の確認で止まり、生成の失敗を
+        扱う経路まで届かない。runnerへ接続できない場合は接続先を実在しないURLへ
+        向ければ再現できるため、この切り替えは生成の失敗だけに当てる。
+        """
+        detail = (
+            "生成は失敗するよう設定されています。"
+            if self._settings.voice_stub_failure
+            else None
+        )
         return RunnerHealth(
             base_url=STUB_BASE_URL,
             engines=tuple(
                 EngineInfo(
                     id=engine,
-                    available=available,
+                    available=True,
                     model=STUB_MODEL,
                     revision=STUB_REVISION,
                     sample_rate=SAMPLE_RATES.get(engine),

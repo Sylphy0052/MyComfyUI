@@ -27,7 +27,7 @@ cp .env.example .env
 |`MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS`|`300`|音声 1 台詞あたりの実行上限(秒)|
 |`MYCOMFYUI_VOICE_MAX_AUDIO_BYTES`|`33554432`|取り込む参照音声と受け取る生成音声の上限バイト数|
 |`MYCOMFYUI_VOICE_STUB`|`false`|voice-runner の代わりに内蔵 stub で実行する。Backend なしで経路を確かめるときに使う|
-|`MYCOMFYUI_VOICE_STUB_FAILURE`|`false`|stub を必ず失敗させる。失敗記録の経路を確かめるときに使う|
+|`MYCOMFYUI_VOICE_STUB_FAILURE`|`false`|stub の生成を必ず失敗させる。失敗記録の経路を確かめるときに使う|
 
 開発環境の保護設定が `.env*` への読み書きを拒否するため、`MYCOMFYUI_COMFYUI_BASE_URL`、
 `MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、`MYCOMFYUI_AIMEDIA_BASE_URL`、`MYCOMFYUI_VOICE_*` を
@@ -392,7 +392,10 @@ Voice Canon の YAML から読むことはできない。Voice Canon の YAML �
 `MYCOMFYUI_VOICE_STUB=true` にすると、voice-runner の代わりに内蔵 stub が応答する。stub は
 seed と本文から決まる正弦波の wav を返し、ASR では既知の誤認識(女子 → 温座子、放課後 → 降下後)を
 混ぜた書き起こしを返す。GPU の無い環境で、投入から読み検証までの経路と不一致の表示を確かめるために使う。
-`MYCOMFYUI_VOICE_STUB_FAILURE=true` を足すと必ず失敗させ、失敗記録の経路を確かめられる。
+`MYCOMFYUI_VOICE_STUB_FAILURE=true` を足すと生成だけを必ず失敗させ、`EXECUTION_FAILED` の
+記録を確かめられる。疎通には効かせない。疎通まで落とすと Job が投入前の確認で止まり、生成の
+失敗を扱う経路まで届かないためである。voice-runner へ接続できない場合は、接続先を実在しない
+URL へ向ければ再現できる。
 
 #### 失敗理由
 
