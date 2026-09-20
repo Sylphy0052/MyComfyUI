@@ -328,6 +328,8 @@ nssm set voice-runner AppStderr C:\MyComfyUI\logs\voice-runner.err
 nssm start voice-runner
 ```
 
+runnerのログには、Backendが失敗したときの標準エラーが末尾2000文字まで残る。合成するテキストや参照音声の一時pathが混じりうる。ComfyUIのログと同じく、Remote PCを他の利用者と共有する場合は出力先ディレクトリを本人だけが読める権限にする。Linuxの手順に入れた`chmod 700`はこのためであり、Windowsでも同じく出力先のACLを本人だけへ絞る。
+
 起動したら、Remote PC上で待受とhealthを確かめる。
 
 ```bash
@@ -420,7 +422,7 @@ MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://<remote>:8770
 
 ComfyUIのタイムアウトはネットワーク往復と生成物の転送分の余裕を見る。既定は600秒。
 
-`MYCOMFYUI_VOICE_RUNNER_BASE_URL`の既定値は`http://127.0.0.1:8770`であり、手元完結構成ではそのままでよい。Remote構成でこの行を落とすと、手元PCの8770へ繋ぎにいって接続を拒否される。ComfyUI経由の画像・動画・音楽は動くのに音声Jobだけが`BACKEND_UNAVAILABLE`で失敗する場合、まずこの値を疑う。
+`MYCOMFYUI_VOICE_RUNNER_BASE_URL`の既定値は`http://127.0.0.1:8770`であり、手元完結構成ではそのままでよい。Remote構成でこの行を落とすと、手元PCの8770へ繋ぎにいって接続を拒否される。冒頭に挙げた症状が出たときは、手順3のrunner常駐と併せてこの値を確かめる。
 
 `MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS`は1台詞あたりの実行上限であり、既定は300秒。Backendのプロセス起動とモデルロードを含む値のため、Remote構成にしたことだけを理由に変えない。実測で足りなければ上げる。
 
@@ -431,7 +433,7 @@ ComfyUIのタイムアウトはネットワーク往復と生成物の転送分�
 |症状|失敗コード|確認|
 |---|---|---|
 |Jobがすぐ失敗する|`BACKEND_UNAVAILABLE`|手順1と手順2のFirewallと待受、Remote PCの電源、アドレスの変化|
-|音声Jobだけが失敗する|`BACKEND_UNAVAILABLE`|手順3の`voice-runner`常駐、手順7の`MYCOMFYUI_VOICE_RUNNER_BASE_URL`、「ComfyUI以外のポートも同じ扱いにする」の8770。この順で見る|
+|音声Jobだけが失敗する|`BACKEND_UNAVAILABLE`|手順3の`voice-runner`常駐、手順7の`MYCOMFYUI_VOICE_RUNNER_BASE_URL`、「ComfyUI以外のポートも同じ扱いにする」の8770|
 |実行中に失敗する|`BACKEND_DISCONNECTED`|ネットワークの切断、ComfyUIプロセスの落ち、手順3のログ|
 |モデルが見つからない|`MODEL_NOT_FOUND`|手順4のファイル名とRecipeの指す名前|
 |完了検知が遅い|—|手順5のWebSocket。ポーリングへ落ちていないか|
