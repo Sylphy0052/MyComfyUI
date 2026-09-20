@@ -17,7 +17,7 @@ ComfyUIの待受は`--listen 0.0.0.0`でLANへ直接公開し、ルーターで�
 
 ADR 0001はBackendが手元PCのloopbackにいることを前提に書かれている。`docs/PLAN.md`も同じ前提で、ComfyUIを「起動→1コマンド→停止」で運用すると記述していた。
 
-2026-09-20に手元PCを実測した結果、この前提が成立しないことがわかった(#11)。手元PCのGPUはRTX 4050 Laptop、VRAM 6141 MiB(空き約4.9 GB)である。`ai-media/docs/tts-backends.md`に記録されたVRAM実測値は、Qwen3-TTSが生成peak 5.5 GB、VoxCPM2が7.6 GB、CosyVoice3が5.8 GBであり、いずれも手元PCの空きVRAMを超える。画像生成についても、モデルによっては同じ制約に当たる。
+2026-09-20に手元PCを実測した結果、この前提が成立しないことがわかった(#11)。手元PCのGPUはRTX 4050 Laptop、VRAM 6141 MiB(空き約4.9 GB)である。`novel-writer/tools/ai-media/docs/tts-backends.md`(以降`ai-media`)に記録されたVRAM実測値は、Qwen3-TTSが生成peak 5.5 GB、VoxCPM2が7.6 GB、CosyVoice3が5.8 GBであり、いずれも手元PCの空きVRAMを超える。画像生成についても、モデルによっては同じ制約に当たる。
 
 #11では音声Backendに限って「UIとApplication APIを手元PCで動かし、実行は別マシンのGPUへ委ねる」方針を決めた。本ADRはこれをComfyUIを含む生成Backend全体の構成として確定し、文書間の前提を揃える。
 
@@ -39,7 +39,6 @@ ADR 0001は制約として「ローカル利用を前提とし、外部ネット
 |---|---|
 |Web UI|利用者が操作する画面であり、GPUを使わない|
 |Application API、SQLite、Artifactストア|生成履歴の正本を1箇所に集める|
-|`ai-media`参照API|Canonの正本が`novel-writer`のある手元PCにある|
 |Claude Code CLIによる提案Provider|`adapters/agent/claude_code.py`がsubprocessで起動するため、Application APIと同一マシンが必要|
 |ffmpeg|CPU処理であり、入力となるArtifactが手元PCにある|
 
@@ -51,6 +50,11 @@ Remote PCに置くもの。
 |checkpoint、LoRA、VAE|—|ComfyUIが読む先はRemote PCのファイルシステムに限られる|
 |TTSとWhisperのvenv|しない|VRAM実測値がComfyUIとの同時常駐に耐えない。要求時に起動し、終了後にVRAMを返す|
 |`voice-runner`(#11)|する|TTSとWhisperを要求時起動する口。runner自身はFastAPIとUvicornだけを持ち、GPUを使わない|
+|`ai-media`参照API|する|Canonの正本である`novel-writer`がRemote PCにある。GPUは使わない|
+
+`ai-media`参照APIの配置は、`novel-writer`の作業ディレクトリがどちらのマシンにあるかで決まる。2026-09-20に構築したRemote PCでは`novel-writer`と`agentic-imagegen`がRemote PC側にあったため、参照APIもRemote PCへ置く。`ai-media`は独立したリポジトリではなく`novel-writer/tools/ai-media/`にあり、TTSとASRのvenv、`config/local-tools.yaml`、`docs/tts-backends.md`もこの配下に揃っている。Application APIからは`MYCOMFYUI_AIMEDIA_BASE_URL`でそのホストを指す。この接続先は既に環境変数で切り替えられるため、配置が変わってもコードは変更しない。
+
+参照APIはCanon本文を返さずdescriptorだけを返す。Remote PCへ置いてもCanon本文がネットワークへ出ることはない。
 
 ## 接続と生成物の受け渡し
 
@@ -76,8 +80,9 @@ ComfyUIには認証機構がない。待受方式として次の2案を比較し
 次を条件とする。
 
 - ルーターでのポート開放(WAN公開)を行わない。Remote PCのComfyUIはLAN内からのみ到達できる。
-- Remote PCのFirewallで8188への到達元を手元PCのアドレスへ限定する。
+- Remote PCのFirewallで8188への到達元を手元PCのアドレスへ限定する。Remote PCがWSL2の場合、WSL宛の受信はHyper-V Firewallが司るため、WSL内のFirewallと2層で設定する。片方だけでは限定にならない。
 - ComfyUI本体とカスタムノードのバージョンを把握し、更新を適用する。
+- 同じ扱いを`voice-runner`(既定8770)と`ai-media`参照API(既定8765)へも適用する。いずれも認証機構を持たない。手元PCから接続しないサービスは`127.0.0.1`へbindしたままにし、広げたポートはFirewallで到達元を限定する。
 
 ### テンプレート制限が及ばない範囲
 
@@ -104,7 +109,7 @@ Remote PCの準備手順は[Remote GPUホストの準備](../operations/remote-g
 ## 影響
 
 - Remote PCが落ちている、またはネットワークが切れている場合、Jobは既存の失敗分類のまま`BACKEND_UNAVAILABLE`(`backend_start`、再試行可)または`BACKEND_DISCONNECTED`(`response_disconnect`、再試行可)になる。新しい失敗コードを追加しない。
-- モデル資産はRemote PCに集約する。Recipeが指すモデル名がRemote PC上の実ファイル名と一致しない場合、`MODEL_NOT_FOUND`で失敗する。在庫確認は`/object_info`で行う。
+- モデル資産はRemote PCから読める場所へ置く。1つのディレクトリへ物理的に集める必要はなく、`extra_model_paths.yaml`で参照を足す構成でもよい。Recipeが指すモデル名がRemote PC上の実ファイル名と一致しない場合、`MODEL_NOT_FOUND`で失敗する。在庫確認は`/object_info`で行う。
 - Phase 3(#12)のi2v/ref2vでは参照画像をComfyUIへ渡す必要がある。手元構成ならファイルパスで渡せたが、Remote構成では`POST /upload/image`による送信経路が要る。現在のComfyUI Adapterはこの経路を持たない。
 - Phase 6(#15)のTauri版でも、Application APIはsidecarとして手元PCで動く。Backendの接続先設定だけがデスクトップ設定へ加わる。
 

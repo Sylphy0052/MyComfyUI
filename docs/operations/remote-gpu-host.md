@@ -8,7 +8,31 @@
 
 - Remote PCと手元PCが同じLANにいる。
 - Remote PCのアドレスが変わらない。DHCP予約か固定IPで固定する。hostnameで引く場合は、手元PCから名前解決できることを確かめる。
+  - 固定IPにする場合、そのアドレスがルーターのDHCP配布範囲の外にあることを確かめる。範囲内だと他の端末が同じアドレスを受け取って競合し、Jobが不定期に`BACKEND_UNAVAILABLE`で落ちる。
+  - 設定直後の疎通テストは`AddressState`が`Preferred`になってから行う。`Tentative`(重複アドレス検出中)の間は失敗する。
+  - Remote PCがWSL2 mirroredモードなら、ホスト側のIP変更に再起動なしで追従する。`wsl --shutdown`は通常要らない。追従しないときだけ行う。
 - Remote PCにComfyUIが導入済みで、単体で起動できる。
+
+## Remote PCの種別を先に決める
+
+手順1、手順2、および「ComfyUI以外のポートも同じ扱いにする」の内容は、Remote PCが次のどれかで変わる。先に確かめてから進む。
+
+|種別|判定|Firewallの層|
+|---|---|---|
+|Linux単体|`uname -r`に`microsoft`を含まない|ufwまたはfirewalld|
+|Windows単体|—|Windows Firewall|
+|WSL2|`uname -r`に`microsoft`を含む|Hyper-V FirewallとWSL内Firewallの2層|
+
+WSL2の場合、さらにネットワークモードを確かめる。
+
+```bash
+uname -r                      # microsoft-standard-WSL2 を含むか
+ip -4 addr show eth0 | grep inet   # LANと同じセグメントのIPを持つか
+```
+
+`eth0`がLANと同じセグメントのIP(例: `192.168.1.2/24`)を持つならmirroredモードである。この場合、WSLはWindowsホストのLAN IPを直接持つため、`netsh interface portproxy`は要らない。`172.x.x.x`のような別セグメントならNATモードであり、本手順書の範囲外とする。
+
+mirroredモードには、以降の手順に効く落とし穴が3つある。手順1の修正、手順2のFirewall、手順2の`loopback0`である。いずれも見落とすとLAN全体への無認証公開か、`127.0.0.1`の不通を招く。
 
 ## 1. Firewallが効いていることを確かめる
 
@@ -29,6 +53,22 @@ sudo firewall-cmd --state      # firewalld
 ```
 
 どちらも動いていない場合、この手順書の前提が崩れる。Firewallを有効にしてから先へ進む。
+
+### WSL2の場合に追加で確認すること
+
+WSL2 mirroredモードでは、WSL宛の受信を**Hyper-V Firewall**が司る。上の`Get-NetFirewallProfile`はこの層を映さないため、2コマンドだけでは「WSL宛の受信が既定Allow」を見逃す。その状態で手順2を実行すると、LAN全体へ無認証で公開される。
+
+管理者権限のPowerShellで次を実行する。
+
+```powershell
+Get-NetFirewallHyperVVMSetting -PolicyStore ActiveStore | Select-Object Name, Enabled, DefaultInboundAction
+```
+
+`DefaultInboundAction`が`Allow`なら、手順2でBlockへ変えるまで待受を広げない。
+
+`Get-NetFirewallProfile`が`DefaultInboundAction: NotConfigured`を返すこともある。これは既定値(Block)で動いていることを意味するが、Hyper-V Firewallの既定とは別物である。両方を確かめる。
+
+2026-09-20に構築したRemote PCでは、`Get-NetFirewallProfile`が3プロファイルとも`Enabled=True`かつ`NotConfigured`である一方、Hyper-V Firewallは`DefaultInboundAction=Allow`だった。手順書の2コマンドだけでは検出できない状態である。
 
 ## 2. ComfyUIをLAN待受で起動する
 
@@ -59,11 +99,94 @@ sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address
 sudo firewall-cmd --reload
 ```
 
-設定後、手元PC以外の端末から`curl http://<remote>:8188/system_stats`が失敗することを確かめる。
+### WSL2の場合
+
+2層とも設定する。片方だけでは足りない。
+
+`New-NetFirewallRule`はmirroredモードのWSL宛トラフィックを制御しない。`New-NetFirewallHyperVRule`とVMCreatorIdを使う。VMCreatorIdはWSLに割り当てられた識別子であり、次で確認してから使う。
+
+```powershell
+Get-NetFirewallHyperVVMCreator
+```
+
+返ってきたWSLのVMCreatorIdを、以下の`<VMCreatorId>`へ入れる。
+
+```powershell
+Set-NetFirewallHyperVVMSetting -Name '<VMCreatorId>' -DefaultInboundAction Block
+New-NetFirewallHyperVRule -Name "ComfyUI-8188" -DisplayName "ComfyUI LAN (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '<VMCreatorId>' -Protocol TCP -LocalPorts 8188 -RemoteAddresses <手元PCのIP> -Action Allow
+```
+
+作成後、`EnforcementStatus`が`OK`で`RemoteAddresses`が意図したアドレスであることを確かめる。
+
+WSL内のufwは、上のLinux向けレシピに次の1行を足す。
+
+```bash
+sudo ufw allow in on loopback0
+```
+
+この行を落とすと`127.0.0.1`が不通になる。mirroredモードには`lo`とは別に`loopback0`があり、`127.0.0.1`宛はそちらを通る。ufwの既定の受信許可は`-i lo`しか対象にしないため、`ufw default deny incoming`だけを入れるとloopbackが落ちる。
+
+この失敗は気付きにくい。プロセスもポートも正常に見え、LAN IP経由(`http://<remote>:8188`)では200が返る一方、`http://127.0.0.1:8188`だけがタイムアウトする。ComfyUIに限らず、Remote PC上で`127.0.0.1`へ繋ぐ既存のスクリプトもすべて止まる。
+
+設定後、手元PC以外の端末から8188へ到達できないことを確かめる。
+
+```bash
+curl --max-time 5 -sS http://<remote>:8188/system_stats; echo "exit=$?"
+```
+
+到達元制限が効いていれば接続が張れず、`exit=28`(タイムアウト)または`exit=7`(接続拒否)になる。**HTTPステータスが返ってきたら到達できている。**`curl`は4xxや5xxを受け取っても既定では非0で終わらないため、本文が返ったかどうかで判断する。
+
+**Remote PC自身からこのテストを行っても意味がない。**自ホスト宛のパケットは送信元アドレスに関わらず`lo`を通り、Firewallの層まで届かない。送信元をdocker0などへ変えても結果は同じで、応答が返ってくる。通ったことを制限の失敗と読み違えないよう、必ず別の端末から実行する。
+
+WSL2 mirroredモードでも同じであることを2026-09-20に実測した。送信元を`172.18.0.1`(docker0)にして`192.168.1.2:8188`へ繋ぐとJSONが返るが、`ip route get 192.168.1.2 from 172.18.0.1`は`local ... dev lo`を返しており、Hyper-V Firewallの層には届いていない。
+
+Remote PC上で`curl http://127.0.0.1:8188/system_stats`が200を返すことも併せて確かめる。
 
 ルーターでのポート開放(WAN公開)は行わない。
 
 この送信元制限はネットワークアドレスに基づくものであり、認証ではない。同一セグメント内でのIP偽装には耐えられない。判断の前提は[ADR 0002](../adr/0002-remote-gpu-host.md)に記録する。
+
+## ComfyUI以外のポートも同じ扱いにする
+
+手順2と対になる作業である。ComfyUI以外のサービスをRemote PCで動かすなら必ず行う。動かさないなら飛ばしてよい。
+
+Remote PCへ置くサービスは8188だけではない。`voice-runner`(既定8770)と、`novel-writer`側の`ai-media`参照API(既定8765)も同じマシンで動く。いずれも認証機構を持たない。
+
+この2つは手元PCのApplication APIから接続する([ADR 0002](../adr/0002-remote-gpu-host.md)の配置表)。つまり8188と同じく待受を広げる必要があり、同じく到達元を限定する必要がある。「手元PCから接続しないから`127.0.0.1`のままでよい」が当てはまるのは、Remote PC内だけで完結する別のサービスである。
+
+8188のレシピをポート番号だけ変えて同じように適用する。
+
+```powershell
+# WSL2の場合。8188と同じVMCreatorIdを使う
+New-NetFirewallHyperVRule -Name "voice-runner-8770" -DisplayName "voice-runner LAN (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '<VMCreatorId>' -Protocol TCP -LocalPorts 8770 -RemoteAddresses <手元PCのIP> -Action Allow
+New-NetFirewallHyperVRule -Name "ai-media-8765" -DisplayName "ai-media reference API (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '<VMCreatorId>' -Protocol TCP -LocalPorts 8765 -RemoteAddresses <手元PCのIP> -Action Allow
+```
+
+```bash
+# ufw。`ufw allow 8770/tcp` のように送信元を書かないルールは作らない
+sudo ufw allow from <手元PCのIP> to any port 8770 proto tcp
+sudo ufw allow from <手元PCのIP> to any port 8765 proto tcp
+```
+
+firewalldの場合は8188と同じ`--add-rich-rule`をポート番号だけ変えて足す。
+
+設定後、待受と到達元制限を別々に確かめる。
+
+まずRemote PCで待受を棚卸しする。これはbindアドレスしか見ないため、送信元制限が効いているかは分からない。広げたポートだけが`0.0.0.0`で待っていることを見る。`127.0.0.1`や`::1`で待っているものは外から到達しない。
+
+```bash
+ss -tlnp | grep -E ':(8188|8765|8770)\b'
+```
+
+次に、手元PC以外の端末から到達できないことを確かめる。Firewallの到達元制限はこれでしか検証できない。
+
+```bash
+for port in 8765 8770; do
+  curl --max-time 5 -sS "http://<remote>:$port/"; echo "port=$port exit=$?"
+done
+```
+
+8188と同じく、`exit=28`または`exit=7`なら到達できていない。応答本文が返ったら到達できている。
 
 ## 3. 常駐させる
 
@@ -80,7 +203,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/<user>/ComfyUI
-ExecStart=/home/<user>/ComfyUI/venv/bin/python main.py --listen 0.0.0.0 --port 8188
+ExecStart=/home/<user>/ComfyUI/.venv/bin/python main.py --listen 0.0.0.0 --port 8188
 Restart=on-failure
 RestartSec=10
 StandardOutput=append:/home/<user>/ComfyUI/logs/comfyui.log
@@ -118,15 +241,29 @@ nssm start ComfyUI
 
 いずれの場合も、標準出力と標準エラーをファイルへ残す。Jobが`BACKEND_UNAVAILABLE`や`EXECUTION_FAILED`で失敗したとき、原因はComfyUI側のログにしか出ない。
 
+ComfyUIはINFOを標準エラーへ出す。障害調査で見るのは`comfyui.err`であり、`comfyui.log`はほぼ空になる。
+
 ログにはプロンプトと生成物のpathが残る。Remote PCを他の利用者と共有する場合、ログの出力先ディレクトリを本人だけが読める権限にする。
 
 常駐させる以上、ComfyUI本体とカスタムノードは更新せずに放置しない。LANへ待受を広げた分だけ、これらの脆弱性がそのまま攻撃面になる([ADR 0002](../adr/0002-remote-gpu-host.md))。
 
-## 4. モデル資産を集約する
+カスタムノードにはgit管理下にないものが混じる。HuggingFaceなどからファイルを取得して配置したものがこれにあたり、`git log`では版が分からない。配布元URLと取得時のrevisionを別途記録しておく。ComfyUI Managerの管理対象外になるため、更新確認は手動で行う。
 
-checkpoint、LoRA、VAEはRemote PCの`models/`配下へ置く。手元PCには置かない。
+## 4. モデル資産を配置する
 
-Recipeが指すモデル名(`apps/api/src/mycomfyui_api/bootstrap.py`)とRemote PC上の実ファイル名が一致している必要がある。一致しない場合、Jobは`MODEL_NOT_FOUND`で失敗する。
+checkpoint、LoRA、VAEはRemote PCから読める場所へ置く。手元PCには置かない。
+
+満たすべきことは、ComfyUIがRemote PCのファイルシステムからモデルを読めることであり、1つのディレクトリへ物理的に集めることではない。既に別の場所にモデルがある場合、`extra_model_paths.yaml`で参照を足してよい。Windows側のportable ComfyUIと共有しているモデル群がある構成では、`models/`配下へコピーすると数百GB規模の重複と既存ワークフローの破壊になる。
+
+参照を足す場合、そのディレクトリに置かれたモデルファイルの入手元を確認する。checkpointの読み込みはpickleを経由するものがあり、由来の分からないファイルを読ませない([ADR 0002](../adr/0002-remote-gpu-host.md))。
+
+どちらの方法でも、`/object_info`が目的のモデル名を列挙できていれば足りる。
+
+```bash
+curl http://127.0.0.1:8188/object_info/UNETLoader
+```
+
+Recipeが指すモデル名(`apps/api/src/mycomfyui_api/bootstrap.py`の`DEFAULT_VALUES`)とRemote PC上の実ファイル名が一致している必要がある。一致しない場合、Jobは`MODEL_NOT_FOUND`で失敗する。突き合わせるのは`unet_name`(UNETLoader)、`clip_name`(CLIPLoader)、`vae_name`(VAELoader)の3件である。
 
 ## 5. 疎通を確認する
 
@@ -149,7 +286,35 @@ WebSocketが通らない場合、Adapterは`/history/{prompt_id}`のポーリン
 
 Qwen3-TTS、VoxCPM2、CosyVoice3、WhisperのvenvをRemote PCへ用意する。起動はしない。`voice-runner`(#11)が要求時に起動し、終了後にプロセスを落としてVRAMを返す。
 
-ComfyUIと同時に常駐させない。VRAMの実測値は`ai-media/docs/tts-backends.md`に記録がある。
+ComfyUIと同時に常駐させない。VRAMの実測値は`<novel-writer>/tools/ai-media/docs/tts-backends.md`に記録がある。以降、この配下を`ai-media`と呼ぶ。独立したリポジトリではなく、`novel-writer`の作業ディレクトリの中にある。
+
+**新しくvenvを作る前に、既にあるものを探す。**`novel-writer/tools/ai-media/`配下と利用者のhomeに、これらのvenvが既に置かれていることがある。重複して作ると数十GBを無駄にし、`engines.yaml`がどちらを指しているか分からなくなる。
+
+```bash
+ls -d ~/qwen-tts/.venv ~/voxcpm/.venv 2>/dev/null
+ls -d <novel-writer>/tools/ai-media/tools/*/.venv 2>/dev/null
+```
+
+用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。**`engines.yaml`を実機へ合わせるのではなく、まず実機が`engines.yaml`の指すpathを満たしているかを確かめる。**値の出典は`<novel-writer>/tools/ai-media/config/local-tools.yaml`であり、勝手に別の場所へ作ると出典から外れる。
+
+ASRは専用のvenvを作らない。`engines.yaml`の`asr.python`はQwen3-TTSのvenvを指す。`<novel-writer>/tools/ai-media/tools/asr/transcribe.py`が、HFキャッシュ済みの`openai/whisper-large-v3-turbo`をtransformersの`pipeline`で読む設計であり、既存環境へ書き込まない。faster-whisperは使わない。
+
+venvには推論に使わない依存を入れない。既に入っているものも、推論経路で使わないなら除く。常駐ホストでは使わない依存がそのまま攻撃面になる。学習用の`deepspeed`がその例で、CUDAツールキット(nvcc)が無い環境ではimport時に`CUDA_HOME does not exist`で落ちるため、機能面でも残す理由がない。
+
+CosyVoice3の実行には`PYTHONPATH`が要る。`engines.yaml`の`home`からの相対で次を指定する。
+
+```
+PYTHONPATH=CosyVoice:CosyVoice/third_party/Matcha-TTS
+```
+
+用意できたら、起動せずにimportだけを確かめる。pathは`engines.yaml`の値に合わせる。
+
+```bash
+~/qwen-tts/.venv/bin/python -c "import qwen_tts"
+~/voxcpm/.venv/bin/python -c "import voxcpm"
+~/qwen-tts/.venv/bin/python -c "import transformers, torch; print(torch.cuda.is_available())"
+cd <cosyvoice-home> && PYTHONPATH=CosyVoice:CosyVoice/third_party/Matcha-TTS .venv/bin/python -c "from cosyvoice.cli.cosyvoice import CosyVoice2"
+```
 
 ## 7. 手元PCの接続先を変える
 
@@ -167,6 +332,7 @@ MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=900
 |症状|失敗コード|確認|
 |---|---|---|
 |Jobがすぐ失敗する|`BACKEND_UNAVAILABLE`|手順1と手順2のFirewallと待受、Remote PCの電源、アドレスの変化|
+|音声Jobだけが失敗する|`BACKEND_UNAVAILABLE`|「ComfyUI以外のポートも同じ扱いにする」の8770。`voice-runner`の待受とFirewall|
 |実行中に失敗する|`BACKEND_DISCONNECTED`|ネットワークの切断、ComfyUIプロセスの落ち、手順3のログ|
 |モデルが見つからない|`MODEL_NOT_FOUND`|手順4のファイル名とRecipeの指す名前|
 |完了検知が遅い|—|手順5のWebSocket。ポーリングへ落ちていないか|
