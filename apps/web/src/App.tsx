@@ -18,21 +18,32 @@ import type {
 } from "./api/aimedia";
 import { AgentPanel } from "./components/AgentPanel";
 import { ArtifactHistory } from "./components/ArtifactHistory";
+import { AssetBrowser } from "./components/AssetBrowser";
 import { CandidateGallery } from "./components/CandidateGallery";
 import type { Candidate } from "./components/CandidateGallery";
 import { ComposePanel } from "./components/ComposePanel";
 import { GenerationForm } from "./components/GenerationForm";
+import { IntegrityList } from "./components/IntegrityList";
 import { JobQueue } from "./components/JobQueue";
 import { MusicPanel } from "./components/MusicPanel";
 import { SceneBrowser } from "./components/SceneBrowser";
 import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
+import { WorkflowRegistry } from "./components/WorkflowRegistry";
 
 /**
  * 進捗は REST の定期取得で追う。WebSocket 通知は #9 以降で追加する。
  * REST で得られる状態を正本とする方針は ADR 0001 のとおり。
  */
 const POLL_INTERVAL_MS = 2000;
+
+type View = "generate" | "assets" | "workflows";
+
+const VIEWS: { value: View; label: string }[] = [
+  { value: "generate", label: "生成" },
+  { value: "assets", label: "資産ブラウザ" },
+  { value: "workflows", label: "Workflow" },
+];
 
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
@@ -45,6 +56,7 @@ function describe(error: unknown): string {
 
 export function App() {
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<View>("generate");
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -242,9 +254,7 @@ export function App() {
       try {
         const ids = succeededIds.split(",");
         const entries = await Promise.all(
-          ids.map(
-            async (id) => [id, await api.listJobArtifacts(id)] as const,
-          ),
+          ids.map(async (id) => [id, await api.listJobArtifacts(id)] as const),
         );
         if (active) setArtifactsByJob(Object.fromEntries(entries));
       } catch (cause) {
@@ -366,120 +376,164 @@ export function App() {
         <span className="muted">
           Scene/Shotから画像・音声・動画・音楽・合成の生成を投入し、進捗と候補を確認する。
         </span>
+        <nav className="row">
+          {VIEWS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              aria-pressed={view === item.value}
+              className={view === item.value ? "primary" : undefined}
+              onClick={() => setView(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
       </header>
 
-      <div>
-        <SceneBrowser
-          projects={projects}
-          projectId={projectId}
-          onSelectProject={setProjectId}
-          scenes={scenes}
-          sceneId={sceneId}
-          onSelectScene={setSceneId}
-          scene={scene}
-          shots={shots}
-          shotId={shotId}
-          onSelectShot={setShotId}
-          shot={shot}
-        />
-      </div>
-
-      <div>
-        {error && (
+      {error && (
+        <div className="full">
           <div className="panel">
             <p className="error">{error}</p>
             <button type="button" onClick={() => setError(null)}>
               閉じる
             </button>
           </div>
-        )}
-        <GenerationForm
-          recipes={recipes}
-          disabled={!shotId}
-          submitting={submitting}
-          onSubmit={submit}
-          onPreview={preview}
-          previewing={previewing}
-          preview={previewResult}
-          previewError={previewError}
-        />
-        <CandidateGallery
-          candidates={candidates}
-          busyArtifactId={busyArtifactId}
-          onDecide={decide}
-        />
-      </div>
+        </div>
+      )}
 
-      <div>
-        <JobQueue
-          jobs={jobs}
-          selectedJobId={selectedJobId}
-          manifest={manifest}
-          onSelect={setSelectedJobId}
-          onCancel={cancel}
-        />
-      </div>
+      {view === "generate" && (
+        <>
+          <div>
+            <SceneBrowser
+              projects={projects}
+              projectId={projectId}
+              onSelectProject={setProjectId}
+              scenes={scenes}
+              sceneId={sceneId}
+              onSelectScene={setSceneId}
+              scene={scene}
+              shots={shots}
+              shotId={shotId}
+              onSelectShot={setShotId}
+              shot={shot}
+            />
+          </div>
 
-      <div className="full">
-        <VoicePanel
-          projectId={projectId}
-          sceneId={sceneId}
-          shotId={shotId}
-          shot={shot}
-          jobs={jobs}
-          onSubmittedJob={handleDerivedJob}
-        />
-      </div>
+          <div>
+            <GenerationForm
+              recipes={recipes}
+              disabled={!shotId}
+              submitting={submitting}
+              onSubmit={submit}
+              onPreview={preview}
+              previewing={previewing}
+              preview={previewResult}
+              previewError={previewError}
+            />
+            <CandidateGallery
+              candidates={candidates}
+              busyArtifactId={busyArtifactId}
+              onDecide={decide}
+            />
+          </div>
 
-      <div className="full">
-        <VideoPanel
-          projectId={projectId}
-          sceneId={sceneId}
-          shotId={shotId}
-          shot={shot}
-          jobs={jobs}
-          onSubmittedJob={handleDerivedJob}
-        />
-      </div>
+          <div>
+            <JobQueue
+              jobs={jobs}
+              selectedJobId={selectedJobId}
+              manifest={manifest}
+              onSelect={setSelectedJobId}
+              onCancel={cancel}
+            />
+          </div>
 
-      <div className="full">
-        <MusicPanel
-          projectId={projectId}
-          sceneId={sceneId}
-          shotId={shotId}
-          scene={scene}
-          jobs={jobs}
-          onSubmittedJob={handleDerivedJob}
-        />
-      </div>
+          <div className="full">
+            <VoicePanel
+              projectId={projectId}
+              sceneId={sceneId}
+              shotId={shotId}
+              shot={shot}
+              jobs={jobs}
+              onSubmittedJob={handleDerivedJob}
+            />
+          </div>
 
-      <div className="full">
-        <ComposePanel
-          projectId={projectId}
-          sceneId={sceneId}
-          shotId={shotId}
-          jobs={jobs}
-          onSubmittedJob={handleDerivedJob}
-        />
-      </div>
+          <div className="full">
+            <VideoPanel
+              projectId={projectId}
+              sceneId={sceneId}
+              shotId={shotId}
+              shot={shot}
+              jobs={jobs}
+              onSubmittedJob={handleDerivedJob}
+            />
+          </div>
 
-      <div className="full">
-        <AgentPanel
-          projectId={projectId}
-          sceneId={sceneId}
-          shotId={shotId}
-          recipes={recipes}
-          onAppliedJob={handleDerivedJob}
-        />
-      </div>
+          <div className="full">
+            <MusicPanel
+              projectId={projectId}
+              sceneId={sceneId}
+              shotId={shotId}
+              scene={scene}
+              jobs={jobs}
+              onSubmittedJob={handleDerivedJob}
+            />
+          </div>
 
-      <div className="full">
-        <ArtifactHistory
-          shotId={shotId}
-          refreshToken={historyToken}
-          onDerivedJob={handleDerivedJob}
-        />
-      </div>
+          <div className="full">
+            <ComposePanel
+              projectId={projectId}
+              sceneId={sceneId}
+              shotId={shotId}
+              jobs={jobs}
+              onSubmittedJob={handleDerivedJob}
+            />
+          </div>
+
+          <div className="full">
+            <AgentPanel
+              projectId={projectId}
+              sceneId={sceneId}
+              shotId={shotId}
+              recipes={recipes}
+              onAppliedJob={handleDerivedJob}
+            />
+          </div>
+
+          <div className="full">
+            <ArtifactHistory
+              shotId={shotId}
+              refreshToken={historyToken}
+              onDerivedJob={handleDerivedJob}
+            />
+          </div>
+        </>
+      )}
+
+      {view === "assets" && (
+        <>
+          <div className="full">
+            <AssetBrowser
+              scenes={scenes}
+              sceneId={sceneId}
+              onSelectScene={setSceneId}
+              shots={shots}
+              shotId={shotId}
+              onSelectShot={setShotId}
+            />
+          </div>
+          <div className="full">
+            <IntegrityList sceneId={sceneId} shotId={shotId} />
+          </div>
+        </>
+      )}
+
+      {view === "workflows" && (
+        <div className="full">
+          <WorkflowRegistry sceneId={sceneId} shotId={shotId} />
+        </div>
+      )}
     </div>
   );
 }

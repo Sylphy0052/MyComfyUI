@@ -8,10 +8,7 @@
   --accent: #6ea8fe;
   --danger: #ff7b72;
   --ok: #67d98a;
-  font-family:
-    system-ui,
-    "Noto Sans JP",
-    sans-serif;
+  font-family: system-ui, "Noto Sans JP", sans-serif;
 }
 
 * {
@@ -293,4 +290,63 @@ ul.list.plain li.current {
 details summary {
   cursor: pointer;
   font-size: 12px;
+}
+
+.app > header nav {
+  margin-left: auto;
+}
+
+.gallery video,
+.gallery audio {
+  width: 100%;
+  display: block;
+  background: #0d0f13;
+}
+
+.gallery figure.current {
+  border-color: var(--accent);
+}
+
+.preview.compact {
+  max-height: 200px;
+  object-fit: contain;
+}
+
+.preview-missing,
+.preview-link {
+  margin: 0;
+  padding: 8px;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.asset-body {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 12px;
+  align-items: start;
+  margin-top: 8px;
+}
+
+.asset-browser h3 {
+  font-size: 13px;
+  margin: 8px 0 4px;
+  color: var(--muted);
+}
+
+button.badge {
+  width: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 11px;
+}
+
+button[aria-pressed="true"] {
+  border-color: var(--accent);
 }
