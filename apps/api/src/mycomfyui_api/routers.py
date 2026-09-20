@@ -1310,8 +1310,9 @@ async def create_voice_reference(payload: schemas.VoiceReferenceCreate):
     `source_sha256`と突き合わせられるようにする。
     """
     settings = get_settings()
-    # 復号の前に文字数で弾く。復号してから測ると、上限の数倍のメモリを確保した後で
-    # 断ることになる。base64は3バイトを4文字で表すため、文字数から上限を逆算する。
+    # 復号の前に文字数で弾く。要求本文そのものは受信した時点でメモリに載っているが、
+    # 復号を通すと上限を超える分の複製がもう1つ増える。base64は3バイトを4文字で表す
+    # ため、文字数から上限を逆算する。
     encoded_limit = (settings.voice_max_audio_bytes + 2) // 3 * 4
     if len(payload.content_base64) > encoded_limit:
         raise _validation_error(

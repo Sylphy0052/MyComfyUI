@@ -15,7 +15,8 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette import status
 
@@ -86,8 +87,9 @@ class HealthResponse(RunnerModel):
 
 
 def _decode(raw: str, label: str) -> bytes:
-    # 復号の前に文字数で弾く。復号してから測ると、上限の数倍のメモリを確保した後で
-    # 断ることになる。base64は3バイトを4文字で表すため、文字数から上限を逆算する。
+    # 復号の前に文字数で弾く。要求本文そのものは受信した時点でメモリに載っているが、
+    # 復号を通すと上限を超える分の複製がもう1つ増える。base64は3バイトを4文字で表す
+    # ため、文字数から上限を逆算する。
     if len(raw) > (MAX_AUDIO_BYTES + 2) // 3 * 4:
         raise HTTPException(
             status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -115,8 +117,29 @@ def _audio_seconds(path: Path) -> tuple[float, int]:
     return (frames / rate if rate else 0.0), rate
 
 
+#: 受け付ける要求本文の上限。base64の膨らみと、他の項目ぶんの余裕を足す。
+MAX_REQUEST_BYTES = (MAX_AUDIO_BYTES + 2) // 3 * 4 + 64 * 1024
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="MyComfyUI voice-runner", version="0.1.0")
+
+    @app.middleware("http")
+    async def limit_request_body(request: Request, call_next):
+        """`Content-Length`が上限を超える要求は本文を読まずに断る。
+
+        ここを通すと、上限を超える本文でも丸ごとメモリへ載ってからでないと
+        断れない。長さを申告しない要求(chunked)は測れないため、`_decode`の
+        長さ判定に委ねる。
+        """
+        declared = request.headers.get("Content-Length")
+        if declared is not None and declared.isdigit():
+            if int(declared) > MAX_REQUEST_BYTES:
+                return JSONResponse(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    content={"detail": "要求本文が大きすぎます。"},
+                )
+        return await call_next(request)
 
     @app.get("/v1/health", response_model=HealthResponse)
     async def health() -> HealthResponse:

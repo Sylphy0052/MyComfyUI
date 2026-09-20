@@ -151,6 +151,10 @@ class VoiceExecutor:
 
         produced: list[_Produced] = []
         try:
+            # 取消は台詞と台詞の合間でしか見ない。1台詞の生成中に届いた要求は、その
+            # 生成が終わるまで反映されず、最長で`voice_runner_timeout_seconds`
+            # (既定300秒)待たされる。生成中に割り込むにはrunner側のプロセスを落とす
+            # 必要があり、Backendの後始末まで抱えることになるため、ここでは待つ。
             for line in context.dialogue:
                 if cancel_event.is_set():
                     # 途中まで生成した音声はShotの一部でしかない。中途半端な履歴を
