@@ -13,9 +13,9 @@
   - Remote PCがWSL2 mirroredモードなら、ホスト側のIP変更に再起動なしで追従する。`wsl --shutdown`は通常要らない。追従しないときだけ行う。
 - Remote PCにComfyUIが導入済みで、単体で起動できる。
 
-## Remote PCの種別を先に決める
+## 0. Remote PCの種別を先に決める
 
-手順1、手順2、および「ComfyUI以外のポートも同じ扱いにする」の内容は、Remote PCが次のどれかで変わる。先に確かめてから進む。
+手順1と手順2の内容は、Remote PCが次のどれかで変わる。先に確かめてから進む。
 
 |種別|判定|Firewallの層|
 |---|---|---|
@@ -32,7 +32,7 @@ ip -4 addr show eth0 | grep inet   # LANと同じセグメントのIPを持つ�
 
 `eth0`がLANと同じセグメントのIP(例: `192.168.1.2/24`)を持つならmirroredモードである。この場合、WSLはWindowsホストのLAN IPを直接持つため、`netsh interface portproxy`は要らない。`172.x.x.x`のような別セグメントならNATモードであり、本手順書の範囲外とする。
 
-mirroredモードには、以降の手順に効く落とし穴が3つある。手順1の修正、手順2のFirewall、手順2の`loopback0`である。いずれも見落とすとLAN全体への無認証公開か、`127.0.0.1`の不通を招く。
+mirroredモードには、以降の手順に効く落とし穴が3つある。手順1の「WSL2の場合に追加で確認すること」、手順2の「WSL2の場合」のHyper-V Firewall、同じく手順2の`loopback0`である。いずれも見落とすとLAN全体への無認証公開か、`127.0.0.1`の不通を招く。
 
 ## 1. Firewallが効いていることを確かめる
 
@@ -74,11 +74,9 @@ Get-NetFirewallHyperVVMSetting -PolicyStore ActiveStore | Select-Object Name, En
 
 ComfyUIは既定で`127.0.0.1`へbindするため、そのままでは手元PCから到達できない。
 
-```bash
-python main.py --listen 0.0.0.0 --port 8188
-```
+**Firewallを入れてから待受を広げる。**順序を逆にすると、その間はLAN全体へ無認証で公開される。手順1に記録したとおり、Hyper-V Firewallの既定が`Allow`のまま待受を広げる事故は実機で起きている。本節は上から順に実行すればこの順序になる。待受を広げるコマンドは末尾に置いた。
 
-Firewallで8188への受信を許可する。到達元は必ず手元PCのアドレスへ限定する。送信元を指定せずにポートを開けると、LAN上の全ホストから到達できる。`<手元PCのIP>`は実際のアドレスへ置き換える。
+まずFirewallで8188への受信を許可する。到達元は必ず手元PCのアドレスへ限定する。送信元を指定せずにポートを開けると、LAN上の全ホストから到達できる。`<手元PCのIP>`は実際のアドレスへ置き換える。
 
 Windowsの場合、管理者権限のPowerShellで次を実行する。
 
@@ -92,7 +90,16 @@ Linuxでufwを使う場合。`ufw allow 8188/tcp`は送信元を限定しない�
 sudo ufw allow from <手元PCのIP> to any port 8188 proto tcp
 ```
 
-firewalldを使う場合。
+ufwを使う場合、IPv6の扱いも確かめる。`/etc/default/ufw`の`IPV6`が`no`だと、ufwはip6tablesを管理しない。この状態では`ufw status verbose`が`Default: deny (incoming)`を返してもIPv4にしか効かず、IPv6経路はカーネルの既定(通常は許可)のまま素通りする。上のルールもIPv4アドレスの指定であり、IPv6には効かない。
+
+```bash
+grep IPV6 /etc/default/ufw
+ip -6 addr show scope global
+```
+
+`IPV6=yes`なら、既定のdenyもルールもIPv6へ適用される。`no`のままにするなら、Remote PCがグローバルスコープのIPv6アドレスを持たないことを確かめる。どちらも満たさない場合、デュアルスタックのLANではIPv6経由で8188へ到達できる。
+
+firewalldを使う場合。`--add-rich-rule`は`family="ipv4"`を指定しており、IPv6には効かない。同じ懸念があるため、IPv6アドレスを持つ場合は`family="ipv6"`のルールを別に足すか、IPv6を無効にする。
 
 ```bash
 sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<手元PCのIP>" port port="8188" protocol="tcp" accept'
@@ -118,7 +125,7 @@ New-NetFirewallHyperVRule -Name "ComfyUI-8188" -DisplayName "ComfyUI LAN (from <
 
 作成後、`EnforcementStatus`が`OK`で`RemoteAddresses`が意図したアドレスであることを確かめる。
 
-WSL内のufwは、上のLinux向けレシピに次の1行を足す。
+WSL内のufwは、上のLinux向けの手順に次の1行を足す。
 
 ```bash
 sudo ufw allow in on loopback0
@@ -127,6 +134,18 @@ sudo ufw allow in on loopback0
 この行を落とすと`127.0.0.1`が不通になる。mirroredモードには`lo`とは別に`loopback0`があり、`127.0.0.1`宛はそちらを通る。ufwの既定の受信許可は`-i lo`しか対象にしないため、`ufw default deny incoming`だけを入れるとloopbackが落ちる。
 
 この失敗は気付きにくい。プロセスもポートも正常に見え、LAN IP経由(`http://<remote>:8188`)では200が返る一方、`http://127.0.0.1:8188`だけがタイムアウトする。ComfyUIに限らず、Remote PC上で`127.0.0.1`へ繋ぐ既存のスクリプトもすべて止まる。
+
+この1行はプロトコルもポートも限定せず、`loopback0`経由の受信をすべて通す。前提は`loopback0`がループバック専用でLANから到達しないことであり、`ip addr show loopback0`でホストスコープのアドレスだけを持つことを確かめてから入れる。
+
+### Firewallを入れたら待受を広げる
+
+上のFirewall設定(WSL2なら2層とも)を終えてから、次を実行する。
+
+```bash
+python main.py --listen 0.0.0.0 --port 8188
+```
+
+常駐させる場合は、手順3のservice定義へ同じ引数を入れる。
 
 設定後、手元PC以外の端末から8188へ到達できないことを確かめる。
 
@@ -138,7 +157,7 @@ curl --max-time 5 -sS http://<remote>:8188/system_stats; echo "exit=$?"
 
 **Remote PC自身からこのテストを行っても意味がない。**自ホスト宛のパケットは送信元アドレスに関わらず`lo`を通り、Firewallの層まで届かない。送信元をdocker0などへ変えても結果は同じで、応答が返ってくる。通ったことを制限の失敗と読み違えないよう、必ず別の端末から実行する。
 
-WSL2 mirroredモードでも同じであることを2026-09-20に実測した。送信元を`172.18.0.1`(docker0)にして`192.168.1.2:8188`へ繋ぐとJSONが返るが、`ip route get 192.168.1.2 from 172.18.0.1`は`local ... dev lo`を返しており、Hyper-V Firewallの層には届いていない。
+WSL2 mirroredモードでも同じであることを2026-09-20に実測した。送信元をdocker0のアドレスにしてRemote PC自身のLAN IPへ繋ぐとJSONが返るが、`ip route get <remote> from <docker0のIP>`は`local ... dev lo`を返しており、Hyper-V Firewallの層には届いていない。
 
 Remote PC上で`curl http://127.0.0.1:8188/system_stats`が200を返すことも併せて確かめる。
 
@@ -146,7 +165,7 @@ Remote PC上で`curl http://127.0.0.1:8188/system_stats`が200を返すことも
 
 この送信元制限はネットワークアドレスに基づくものであり、認証ではない。同一セグメント内でのIP偽装には耐えられない。判断の前提は[ADR 0002](../adr/0002-remote-gpu-host.md)に記録する。
 
-## ComfyUI以外のポートも同じ扱いにする
+### ComfyUI以外のポートも同じ扱いにする
 
 手順2と対になる作業である。ComfyUI以外のサービスをRemote PCで動かすなら必ず行う。動かさないなら飛ばしてよい。
 
@@ -154,7 +173,7 @@ Remote PCへ置くサービスは8188だけではない。`voice-runner`(既定8
 
 この2つは手元PCのApplication APIから接続する([ADR 0002](../adr/0002-remote-gpu-host.md)の配置表)。つまり8188と同じく待受を広げる必要があり、同じく到達元を限定する必要がある。「手元PCから接続しないから`127.0.0.1`のままでよい」が当てはまるのは、Remote PC内だけで完結する別のサービスである。
 
-8188のレシピをポート番号だけ変えて同じように適用する。
+8188の手順をポート番号だけ変えて同じように適用する。
 
 ```powershell
 # WSL2の場合。8188と同じVMCreatorIdを使う
@@ -299,7 +318,7 @@ ls -d <novel-writer>/tools/ai-media/tools/*/.venv 2>/dev/null
 
 ASRは専用のvenvを作らない。`engines.yaml`の`asr.python`はQwen3-TTSのvenvを指す。`<novel-writer>/tools/ai-media/tools/asr/transcribe.py`が、HFキャッシュ済みの`openai/whisper-large-v3-turbo`をtransformersの`pipeline`で読む設計であり、既存環境へ書き込まない。faster-whisperは使わない。
 
-venvには推論に使わない依存を入れない。既に入っているものも、推論経路で使わないなら除く。常駐ホストでは使わない依存がそのまま攻撃面になる。学習用の`deepspeed`がその例で、CUDAツールキット(nvcc)が無い環境ではimport時に`CUDA_HOME does not exist`で落ちるため、機能面でも残す理由がない。
+venvには推論に使わない依存を入れない。既に入っているものも、推論経路で使わないなら除く。常駐ホストでは使わない依存がそのまま攻撃面になる。ただし`engines.yaml`が指す正本のvenvは既に要件を満たしているため、動いているvenvから依存を外して回る必要はない。自分で新しく作るvenvに対して適用する。
 
 CosyVoice3の実行には`PYTHONPATH`が要る。`engines.yaml`の`home`からの相対で次を指定する。
 
