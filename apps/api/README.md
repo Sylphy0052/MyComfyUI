@@ -35,28 +35,9 @@ cp .env.example .env
 |`MYCOMFYUI_COMPOSE_TIMEOUT_SECONDS`|`600`|合成 1 件の実行上限(秒)|
 |`MYCOMFYUI_MAX_IMAGE_BYTES`|`33554432`|取り込む参照画像とガイド音声の上限バイト数|
 
-開発環境の保護設定が `.env*` への読み書きを拒否するため、`MYCOMFYUI_COMFYUI_BASE_URL`、
-`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、`MYCOMFYUI_AIMEDIA_BASE_URL`、`MYCOMFYUI_VOICE_*` を
-`.env.example` へ反映できていない。手元で次を追記してから `.env` へコピーする。既定値のままで
-よい項目は書かなくても動く。
-
-```dotenv
-MYCOMFYUI_COMFYUI_BASE_URL=http://127.0.0.1:8188
-MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=600
-# 未設定なら同梱 fixture を参照する
-MYCOMFYUI_AIMEDIA_BASE_URL=
-# 別 PC の voice-runner を使う場合はここだけを差し替える
-MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://127.0.0.1:8770
-MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS=300
-# Backend を立てずに経路だけ確かめる場合は true
-MYCOMFYUI_VOICE_STUB=false
-MYCOMFYUI_COMFYUI_STUB=false
-# 合成は手元 PC の ffmpeg で実行する
-MYCOMFYUI_FFMPEG_PATH=ffmpeg
-MYCOMFYUI_FFPROBE_PATH=ffprobe
-MYCOMFYUI_COMPOSE_TIMEOUT_SECONDS=600
-MYCOMFYUI_MAX_IMAGE_BYTES=33554432
-```
+`.env.example` には上の変数を既定値で載せている。コピーしただけでも起動するため、
+環境に合わせて必要な値だけを書き換える。`MYCOMFYUI_DATA_ROOT` はコメントアウトしており、
+未設定のまま OS 標準の利用者データ領域を使う。
 
 SQLite は `<data_root>/db/mycomfyui.sqlite3` へ作成する。接続時に WAL、外部キー、busy timeout を有効にする。
 設定値に API キーなどの秘密情報を置かない。データベース、ログ、API 応答にも保存しない。
@@ -75,6 +56,12 @@ Remote 構成で変えるのは接続先だけとする。`MYCOMFYUI_COMFYUI_BAS
 ```dotenv
 MYCOMFYUI_COMFYUI_BASE_URL=http://<remote>:8188
 MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=900
+```
+
+voice-runner も同じ Remote PC で動かすため、使う場合は接続先だけを同様に差し替える。
+
+```dotenv
+MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://<remote>:8770
 ```
 
 構成と判断の根拠は [ADR 0002](../../docs/adr/0002-remote-gpu-host.md)、Remote PC 側の手順は
