@@ -254,7 +254,9 @@ export function App() {
       try {
         const ids = succeededIds.split(",");
         const entries = await Promise.all(
-          ids.map(async (id) => [id, await api.listJobArtifacts(id)] as const),
+          ids.map(
+            async (id) => [id, await api.listJobArtifacts(id)] as const,
+          ),
         );
         if (active) setArtifactsByJob(Object.fromEntries(entries));
       } catch (cause) {

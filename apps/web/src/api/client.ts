@@ -1,4 +1,4 @@
-import type { components, operations } from "./schema";
+import type { components } from "./schema";
 import type {
   CanonList,
   ProjectList,
@@ -36,26 +36,15 @@ export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
 export type ComfyUIBackendHealth =
   components["schemas"]["ComfyUIBackendHealthRead"];
 export type ImageReference = components["schemas"]["ImageReferenceRead"];
-export type GenerationPreview = components["schemas"]["GenerationPreviewRead"];
+export type GenerationPreview =
+  components["schemas"]["GenerationPreviewRead"];
 export type GenerationPreviewDiff =
   components["schemas"]["GenerationPreviewDiff"];
 export type Workflow = components["schemas"]["WorkflowRead"];
 export type WorkflowVersion = components["schemas"]["WorkflowVersionRead"];
 export type ArtifactIntegrity = components["schemas"]["ArtifactIntegrityRead"];
-export type ArtifactIntegrityEntry =
-  components["schemas"]["ArtifactIntegrityEntry"];
 export type ArtifactIntegrityReason =
   components["schemas"]["ArtifactIntegrityFinding"]["reason"];
-export type ArtifactKind = NonNullable<
-  NonNullable<
-    operations["list_artifacts_api_v1_artifacts_get"]["parameters"]["query"]
-  >["kind"]
->;
-export type ArtifactAvailability = NonNullable<
-  NonNullable<
-    operations["list_artifacts_api_v1_artifacts_get"]["parameters"]["query"]
-  >["availability"]
->;
 
 const BASE = "/api/v1";
 
@@ -114,8 +103,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         code = typeof body.code === "string" ? body.code : code;
         message = typeof body.message === "string" ? body.message : message;
         details = body.details ?? null;
-        requestId =
-          typeof body.request_id === "string" ? body.request_id : null;
+        requestId = typeof body.request_id === "string" ? body.request_id : null;
       }
     } catch {
       // Envelope を取れない応答もそのまま扱う。status だけで種別を判断する。
@@ -210,10 +198,10 @@ export const api = {
     ),
 
   updateDecision: (artifactId: string, decision: ArtifactDecision) =>
-    request<Artifact>(`/artifacts/${encodeURIComponent(artifactId)}/decision`, {
-      method: "PATCH",
-      body: JSON.stringify({ decision }),
-    }),
+    request<Artifact>(
+      `/artifacts/${encodeURIComponent(artifactId)}/decision`,
+      { method: "PATCH", body: JSON.stringify({ decision }) },
+    ),
 
   // tag は複数指定でき、すべてのタグが付いた Artifact だけが返る (AND)。
   // lineage_* は祖先と子孫の両方向を辿った結果へ絞る。
@@ -315,9 +303,7 @@ export const api = {
     ),
 
   getLineage: (jobId: string) =>
-    request<JobLineage>(
-      `/generation-jobs/${encodeURIComponent(jobId)}/lineage`,
-    ),
+    request<JobLineage>(`/generation-jobs/${encodeURIComponent(jobId)}/lineage`),
 
   // 当時の条件での再実行。現在 Canon へ暗黙に置き換えられることはない。
   replayJob: (jobId: string) =>
@@ -361,9 +347,7 @@ export const api = {
   },
 
   getAgentProposal: (proposalId: string) =>
-    request<AgentProposal>(
-      `/agent-proposals/${encodeURIComponent(proposalId)}`,
-    ),
+    request<AgentProposal>(`/agent-proposals/${encodeURIComponent(proposalId)}`),
 
   // 承認・却下の記録。承認しただけでは何も実行しない。
   decideAgentProposal: (proposalId: string, decision: AgentDecision) =>
