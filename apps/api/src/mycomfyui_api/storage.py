@@ -133,7 +133,10 @@ def move_artifact(
         if _is_same_file(source, target):
             # hard linkを張った後、移動元を消す前に中断した。残りの手順だけ進める。
             # 同じ実体を指しているため、ここで移動元を消しても内容は失われない。
-            source.unlink()
+            try:
+                source.unlink()
+            except OSError as error:
+                raise StorageError(f"移動元を消せません: {relative_path}") from error
             return _artifact_relative_path(target, root)
         raise StorageError(f"移動先に同名のファイルがあります: {target.name}")
     try:
