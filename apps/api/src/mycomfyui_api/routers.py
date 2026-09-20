@@ -46,6 +46,8 @@ from mycomfyui_api.models import (
     GenerationManifest,
     Recipe,
     VoiceVerification,
+    Workflow,
+    WorkflowVersion,
 )
 from mycomfyui_api.queue import JobQueueWorker
 from mycomfyui_api.references import get_reference_source
@@ -124,14 +126,112 @@ async def _get_or_404(
     return entity
 
 
+@router.get("/workflows", response_model=list[schemas.WorkflowRead])
+async def list_workflows(
+    session: SessionDep,
+    kind: schemas.GenerationKind | None = None,
+    engine: str | None = None,
+):
+    """登録済みWorkflowの一覧。Recipeが指す実行本体を画面で選ぶために使う。
+
+    `engines`は複数Backendを持てる。音声のように同じ形のスナップショットを複数の
+    Backendが使うためである。`engine`での絞込みはその配列に含まれるかで判定する。
+    """
+    query = select(Workflow).order_by(Workflow.name.asc())
+    if kind is not None:
+        query = query.where(Workflow.kind == kind)
+    result = await session.execute(query)
+    workflows = list(result.scalars().all())
+    if engine is not None:
+        # enginesはJSON配列のため、SQLiteで含有を判定せずPython側で絞る。登録数が
+        # テンプレートの本数に限られ、全件読んでも負荷にならない。
+        workflows = [
+            workflow
+            for workflow in workflows
+            if engine
+            in (workflow.engines if isinstance(workflow.engines, list) else [])
+        ]
+    return workflows
+
+
+@router.get("/workflows/{workflow_id}", response_model=schemas.WorkflowRead)
+async def get_workflow(workflow_id: str, session: SessionDep):
+    return await _get_or_404(session, Workflow, "Workflow", workflow_id)
+
+
+@router.get(
+    "/workflows/{workflow_id}/versions",
+    response_model=list[schemas.WorkflowVersionRead],
+)
+async def list_workflow_versions(workflow_id: str, session: SessionDep):
+    """Workflowの版を新しい順に返す。変数定義と対応モデルは版ごとに異なる。"""
+    await _get_or_404(session, Workflow, "Workflow", workflow_id)
+    result = await session.execute(
+        select(WorkflowVersion)
+        .where(WorkflowVersion.workflow_id == workflow_id)
+        .order_by(WorkflowVersion.created_at.desc(), WorkflowVersion.id.asc())
+    )
+    return result.scalars().all()
+
+
+@router.get(
+    "/workflow-versions/{workflow_version_id}",
+    response_model=schemas.WorkflowVersionRead,
+)
+async def get_workflow_version(workflow_version_id: str, session: SessionDep):
+    return await _get_or_404(
+        session, WorkflowVersion, "WorkflowVersion", workflow_version_id
+    )
+
+
+async def _resolve_workflow_version_id(
+    session: AsyncSession, template_ref: Any
+) -> str | None:
+    """`workflow_template_ref`が指す登録済みWorkflow版のIDを返す。
+
+    レジストリ導入前の形で作られたRecipeも受け付けるため、解決できなければNoneを
+    返して作成は止めない。`sha256`と`version`のどちらで版を表すかはWorkflowにより
+    異なるため、両方を版の候補として突き合わせる。
+    """
+    if not isinstance(template_ref, dict):
+        return None
+    name = template_ref.get("name")
+    if not isinstance(name, str):
+        return None
+    result = await session.execute(select(Workflow).where(Workflow.name == name))
+    workflow = result.scalar_one_or_none()
+    if workflow is None:
+        return None
+    candidates = [
+        str(value)
+        for key in ("sha256", "version")
+        if (value := template_ref.get(key)) is not None
+    ]
+    if not candidates:
+        return None
+    result = await session.execute(
+        select(WorkflowVersion).where(
+            WorkflowVersion.workflow_id == workflow.id,
+            WorkflowVersion.version.in_(candidates),
+        )
+    )
+    version = result.scalars().first()
+    return None if version is None else version.id
+
+
 @router.post(
     "/recipes", response_model=schemas.RecipeRead, status_code=status.HTTP_201_CREATED
 )
 async def create_recipe(payload: schemas.RecipeCreate, session: SessionDep):
+    values = payload.model_dump()
+    if values.get("workflow_version_id") is None:
+        values["workflow_version_id"] = await _resolve_workflow_version_id(
+            session, values["workflow_template_ref"]
+        )
     recipe = Recipe(
         id=schemas.new_id(),
         created_at=schemas.now_iso(),
-        **payload.model_dump(),
+        **values,
     )
     session.add(recipe)
     await _commit(session)
