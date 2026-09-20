@@ -39,7 +39,6 @@ ADR 0001は制約として「ローカル利用を前提とし、外部ネット
 |---|---|
 |Web UI|利用者が操作する画面であり、GPUを使わない|
 |Application API、SQLite、Artifactストア|生成履歴の正本を1箇所に集める|
-|`ai-media`参照API|Canonの正本が`novel-writer`のある手元PCにある|
 |Claude Code CLIによる提案Provider|`adapters/agent/claude_code.py`がsubprocessで起動するため、Application APIと同一マシンが必要|
 |ffmpeg|CPU処理であり、入力となるArtifactが手元PCにある|
 
@@ -51,6 +50,11 @@ Remote PCに置くもの。
 |checkpoint、LoRA、VAE|—|ComfyUIが読む先はRemote PCのファイルシステムに限られる|
 |TTSとWhisperのvenv|しない|VRAM実測値がComfyUIとの同時常駐に耐えない。要求時に起動し、終了後にVRAMを返す|
 |`voice-runner`(#11)|する|TTSとWhisperを要求時起動する口。runner自身はFastAPIとUvicornだけを持ち、GPUを使わない|
+|`ai-media`参照API|する|Canonの正本である`novel-writer`がRemote PCにある。GPUは使わない|
+
+`ai-media`参照APIの配置は、`novel-writer`の作業ディレクトリがどちらのマシンにあるかで決まる。2026-09-20に構築したRemote PCでは`novel-writer`と`agentic-imagegen`がRemote PC側にあったため、参照APIもRemote PCへ置く。Application APIからは`MYCOMFYUI_AIMEDIA_BASE_URL`でそのホストを指す。この接続先は既に環境変数で切り替えられるため、配置が変わってもコードは変更しない。
+
+参照APIはCanon本文を返さずdescriptorだけを返す。Remote PCへ置いてもCanon本文がネットワークへ出ることはない。
 
 ## 接続と生成物の受け渡し
 
@@ -76,7 +80,7 @@ ComfyUIには認証機構がない。待受方式として次の2案を比較し
 次を条件とする。
 
 - ルーターでのポート開放(WAN公開)を行わない。Remote PCのComfyUIはLAN内からのみ到達できる。
-- Remote PCのFirewallで8188への到達元を手元PCのアドレスへ限定する。
+- Remote PCのFirewallで8188への到達元を手元PCのアドレスへ限定する。Remote PCがWSL2の場合、WSL宛の受信はHyper-V Firewallが司るため、WSL内のFirewallと2層で設定する。片方だけでは限定にならない。
 - ComfyUI本体とカスタムノードのバージョンを把握し、更新を適用する。
 
 ### テンプレート制限が及ばない範囲

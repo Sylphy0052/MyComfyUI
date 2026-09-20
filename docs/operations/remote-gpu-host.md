@@ -10,6 +10,27 @@
 - Remote PCのアドレスが変わらない。DHCP予約か固定IPで固定する。hostnameで引く場合は、手元PCから名前解決できることを確かめる。
 - Remote PCにComfyUIが導入済みで、単体で起動できる。
 
+## Remote PCの種別を先に決める
+
+手順1と手順2の内容は、Remote PCが次のどれかで変わる。先に確かめてから進む。
+
+|種別|判定|Firewallの層|
+|---|---|---|
+|Linux単体|`uname -r`に`microsoft`を含まない|ufwまたはfirewalld|
+|Windows単体|—|Windows Firewall|
+|WSL2|`uname -r`に`microsoft`を含む|Hyper-V FirewallとWSL内Firewallの2層|
+
+WSL2の場合、さらにネットワークモードを確かめる。
+
+```bash
+uname -r                      # microsoft-standard-WSL2 を含むか
+ip -4 addr show eth0 | grep inet   # LANと同じセグメントのIPを持つか
+```
+
+`eth0`がLANと同じセグメントのIP(例: `192.168.1.2/24`)を持つならmirroredモードである。この場合、WSLはWindowsホストのLAN IPを直接持つため、`netsh interface portproxy`は要らない。`172.x.x.x`のような別セグメントならNATモードであり、本手順書の範囲外とする。
+
+mirroredモードには、以降の手順に効く落とし穴が3つある。手順1の修正、手順2のFirewall、手順2の`loopback0`である。いずれも見落とすとLAN全体への無認証公開か、`127.0.0.1`の不通を招く。
+
 ## 1. Firewallが効いていることを確かめる
 
 ComfyUIには認証機構がない。到達できる範囲がそのまま実行できる範囲になるため、待受を広げる前にFirewallの状態を確認する。無効になっているPCで手順2を先に実行すると、意図した「手元PCだけが到達できる」状態ではなく、LAN全体へ無認証で公開される。
@@ -29,6 +50,22 @@ sudo firewall-cmd --state      # firewalld
 ```
 
 どちらも動いていない場合、この手順書の前提が崩れる。Firewallを有効にしてから先へ進む。
+
+### WSL2の場合に追加で確認すること
+
+WSL2 mirroredモードでは、WSL宛の受信を**Hyper-V Firewall**が司る。上の`Get-NetFirewallProfile`はこの層を映さないため、2コマンドだけでは「WSL宛の受信が既定Allow」を見逃す。その状態で手順2を実行すると、LAN全体へ無認証で公開される。
+
+管理者権限のPowerShellで次を実行する。
+
+```powershell
+Get-NetFirewallHyperVVMSetting -PolicyStore ActiveStore | Select-Object Name, Enabled, DefaultInboundAction
+```
+
+`DefaultInboundAction`が`Allow`なら、手順2でBlockへ変えるまで待受を広げない。
+
+`Get-NetFirewallProfile`が`DefaultInboundAction: NotConfigured`を返すこともある。これは既定値(Block)で動いていることを意味するが、Hyper-V Firewallの既定とは別物である。両方を確かめる。
+
+2026-09-20に構築したRemote PCでは、`Get-NetFirewallProfile`が3プロファイルとも`Enabled=True`かつ`NotConfigured`である一方、Hyper-V Firewallは`DefaultInboundAction=Allow`だった。手順書の2コマンドだけでは検出できない状態である。
 
 ## 2. ComfyUIをLAN待受で起動する
 
@@ -59,7 +96,30 @@ sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address
 sudo firewall-cmd --reload
 ```
 
-設定後、手元PC以外の端末から`curl http://<remote>:8188/system_stats`が失敗することを確かめる。
+### WSL2の場合
+
+2層とも設定する。片方だけでは足りない。
+
+`New-NetFirewallRule`はmirroredモードのWSL宛トラフィックを制御しない。`New-NetFirewallHyperVRule`とVMCreatorIdを使う。VMCreatorIdはWSLで固定値である。
+
+```powershell
+Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Block
+New-NetFirewallHyperVRule -Name "ComfyUI-8188" -DisplayName "ComfyUI LAN (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 8188 -RemoteAddresses <手元PCのIP> -Action Allow
+```
+
+作成後、`EnforcementStatus`が`OK`で`RemoteAddresses`が意図したアドレスであることを確かめる。
+
+WSL内のufwは、上のLinux向けレシピに次の1行を足す。
+
+```bash
+sudo ufw allow in on loopback0
+```
+
+この行を落とすと`127.0.0.1`が不通になる。mirroredモードには`lo`とは別に`loopback0`があり、`127.0.0.1`宛はそちらを通る。ufwの既定の受信許可は`-i lo`しか対象にしないため、`ufw default deny incoming`だけを入れるとloopbackが落ちる。
+
+この失敗は気付きにくい。プロセスもポートも正常に見え、LAN IP経由(`http://<remote>:8188`)では200が返る一方、`http://127.0.0.1:8188`だけがタイムアウトする。ComfyUIに限らず、Remote PC上で`127.0.0.1`へ繋ぐ既存のスクリプトもすべて止まる。
+
+設定後、手元PC以外の端末から`curl http://<remote>:8188/system_stats`が失敗することを確かめる。Remote PC上で`curl http://127.0.0.1:8188/system_stats`が200を返すことも併せて確かめる。
 
 ルーターでのポート開放(WAN公開)は行わない。
 
@@ -80,7 +140,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/<user>/ComfyUI
-ExecStart=/home/<user>/ComfyUI/venv/bin/python main.py --listen 0.0.0.0 --port 8188
+ExecStart=/home/<user>/ComfyUI/.venv/bin/python main.py --listen 0.0.0.0 --port 8188
 Restart=on-failure
 RestartSec=10
 StandardOutput=append:/home/<user>/ComfyUI/logs/comfyui.log
@@ -118,15 +178,25 @@ nssm start ComfyUI
 
 いずれの場合も、標準出力と標準エラーをファイルへ残す。Jobが`BACKEND_UNAVAILABLE`や`EXECUTION_FAILED`で失敗したとき、原因はComfyUI側のログにしか出ない。
 
+ComfyUIはINFOを標準エラーへ出す。障害調査で見るのは`comfyui.err`であり、`comfyui.log`はほぼ空になる。
+
 ログにはプロンプトと生成物のpathが残る。Remote PCを他の利用者と共有する場合、ログの出力先ディレクトリを本人だけが読める権限にする。
 
 常駐させる以上、ComfyUI本体とカスタムノードは更新せずに放置しない。LANへ待受を広げた分だけ、これらの脆弱性がそのまま攻撃面になる([ADR 0002](../adr/0002-remote-gpu-host.md))。
 
 ## 4. モデル資産を集約する
 
-checkpoint、LoRA、VAEはRemote PCの`models/`配下へ置く。手元PCには置かない。
+checkpoint、LoRA、VAEはRemote PCから読める場所へ置く。手元PCには置かない。
 
-Recipeが指すモデル名(`apps/api/src/mycomfyui_api/bootstrap.py`)とRemote PC上の実ファイル名が一致している必要がある。一致しない場合、Jobは`MODEL_NOT_FOUND`で失敗する。
+満たすべきことは、ComfyUIがRemote PCのファイルシステムからモデルを読めることであり、1つのディレクトリへ物理的に集めることではない。既に別の場所にモデルがある場合、`extra_model_paths.yaml`で参照を足してよい。Windows側のportable ComfyUIと共有しているモデル群がある構成では、`models/`配下へコピーすると数百GB規模の重複と既存ワークフローの破壊になる。
+
+どちらの方法でも、`/object_info`が目的のモデル名を列挙できていれば足りる。
+
+```bash
+curl http://127.0.0.1:8188/object_info/UNETLoader
+```
+
+Recipeが指すモデル名(`apps/api/src/mycomfyui_api/bootstrap.py`の`DEFAULT_VALUES`)とRemote PC上の実ファイル名が一致している必要がある。一致しない場合、Jobは`MODEL_NOT_FOUND`で失敗する。突き合わせるのは`unet_name`(UNETLoader)、`clip_name`(CLIPLoader)、`vae_name`(VAELoader)の3件である。
 
 ## 5. 疎通を確認する
 
@@ -150,6 +220,25 @@ WebSocketが通らない場合、Adapterは`/history/{prompt_id}`のポーリン
 Qwen3-TTS、VoxCPM2、CosyVoice3、WhisperのvenvをRemote PCへ用意する。起動はしない。`voice-runner`(#11)が要求時に起動し、終了後にプロセスを落としてVRAMを返す。
 
 ComfyUIと同時に常駐させない。VRAMの実測値は`ai-media/docs/tts-backends.md`に記録がある。
+
+用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。venvを置いてから、このファイルの`engines.python`と`asr.python`を実機のpathへ合わせる。
+
+ASRはtransformersの`pipeline`で動かす(`tools/voice-runner/workers/asr_worker.py`)。`openai/whisper-large-v3-turbo`をそのまま読む構成であり、faster-whisperは前提にしない。faster-whisperを使う場合はCTranslate2形式への変換が別途要る。
+
+CosyVoice3には3点の注意がある。
+
+- `openai-whisper==20231117`は`pkg_resources`が無い環境でビルドに失敗する。`uv pip install --no-build-isolation`で入れる。
+- `deepspeed`は学習用であり、`voice-runner`が行う推論には要らない。CUDAツールキット(nvcc)が無い環境ではimport時に`CUDA_HOME does not exist`でtransformersごと落ちるため、除去する。
+- 実行時に`PYTHONPATH=third_party/Matcha-TTS`が要る(upstreamの仕様)。
+
+venvを作ったら、起動せずにimportだけを確かめる。
+
+```bash
+~/qwen-tts/.venv/bin/python -c "import qwen_tts"
+~/voxcpm/.venv/bin/python -c "import voxcpm"
+~/whisper/.venv/bin/python -c "import transformers, torch; print(torch.cuda.is_available())"
+PYTHONPATH=third_party/Matcha-TTS ~/cosyvoice/.venv/bin/python -c "from cosyvoice.cli.cosyvoice import CosyVoice2"
+```
 
 ## 7. 手元PCの接続先を変える
 
