@@ -10,6 +10,7 @@
 """
 
 import asyncio
+import contextlib
 import logging
 import shutil
 import tempfile
@@ -37,6 +38,10 @@ STUB_VERSION = "stub"
 
 #: 生成にかける見かけの時間。取消要求が実行中に届く経路を確かめられる長さにする。
 STUB_RUNTIME_SECONDS = 2.0
+
+#: 1本の生成にかけてよい時間。単色の動画と正弦波しか作らないため、これを超えるのは
+#: ffmpegが応答しなくなった場合とみなす。放置すると直列キューが止まったままになる。
+STUB_RENDER_TIMEOUT_SECONDS = 120.0
 
 #: 生成物を作るときの既定値。Workflowが値を持たない場合だけ使う。
 DEFAULT_WIDTH = 512
@@ -306,7 +311,20 @@ async def _run_ffmpeg(ffmpeg: str, arguments: list[str]) -> None:
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await process.communicate()
+    communicate = asyncio.create_task(process.communicate())
+    try:
+        _, stderr = await asyncio.wait_for(
+            asyncio.shield(communicate), timeout=STUB_RENDER_TIMEOUT_SECONDS
+        )
+    except TimeoutError as error:
+        with contextlib.suppress(ProcessLookupError):
+            process.kill()
+        with contextlib.suppress(Exception):
+            await communicate
+        raise ExecutionTimeout(
+            f"スタブの生成が制限時間{STUB_RENDER_TIMEOUT_SECONDS}秒以内に"
+            "完了しませんでした。"
+        ) from error
     if process.returncode != 0:
         raise ExecutionFailed(
             "スタブの生成に失敗しました: "

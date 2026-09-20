@@ -41,6 +41,10 @@ DURATION_TOLERANCE_SEC = 0.05
 #: ffmpegの標準エラーから記録する長さ。失敗理由の特定に足りる範囲へ切る。
 STDERR_EXCERPT_LENGTH = 400
 
+#: 補助コマンドの制限時間。合成本体とは別に、短時間で終わる前提の呼び出しへ当てる。
+PROBE_TIMEOUT_SEC = 60.0
+VERSION_TIMEOUT_SEC = 10.0
+
 
 class _PreflightError(Exception):
     """投入前の検証で失敗した。`failure_code`まで決まっている。"""
@@ -78,7 +82,6 @@ class _JobContext:
     audio_codec: str
     voices: tuple[_Track, ...] = ()
     bgm: _Track | None = None
-    bgm_truncate: bool = True
 
 
 class ComposeExecutor:
@@ -250,8 +253,7 @@ class ComposeExecutor:
         `parent_artifact_id`には入力の動画Artifactを入れる。台詞音声とBGMは単一の親
         では表せないため、Manifestの`input_refs`から辿る。
         """
-        session = self._session_factory()
-        try:
+        async with self._session_factory() as session:
             session.add(
                 Artifact(
                     id=schemas.new_id(),
@@ -269,15 +271,6 @@ class ComposeExecutor:
                 )
             )
             await session.commit()
-        finally:
-            try:
-                await session.close()
-            except Exception:
-                logger.warning(
-                    "Artifact記録後のsessionを閉じられませんでした。job_id=%s",
-                    context.job_id,
-                    exc_info=True,
-                )
 
     async def _load_context(self, job: GenerationJob) -> _JobContext:
         async with self._session_factory() as session:
@@ -349,11 +342,6 @@ def _build_context(
             )
             if isinstance(bgm_raw, dict)
             else None
-        ),
-        bgm_truncate=(
-            bool(bgm_raw.get("truncate_to_video", True))
-            if isinstance(bgm_raw, dict)
-            else True
         ),
     )
 
@@ -510,6 +498,31 @@ async def _terminate(process: Any, communicate: asyncio.Task[Any]) -> None:
         logger.debug("ffmpegの終了待ちで例外が発生しました。", exc_info=True)
 
 
+async def _capture(
+    executable: str, arguments: list[str], *, timeout: float
+) -> tuple[int, bytes, bytes]:
+    """短時間で終わる補助コマンドを実行し、終了コードと出力を返す。
+
+    制限時間を過ぎたらプロセスを止めてから送出する。放置すると、応答しない入力を
+    投げるたびにffmpegやffprobeが残り、直列キューの裏でホストのリソースを食い続ける。
+    """
+    process = await asyncio.create_subprocess_exec(
+        executable,
+        *arguments,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    communicate = asyncio.create_task(process.communicate())
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            asyncio.shield(communicate), timeout=timeout
+        )
+    except TimeoutError:
+        await _terminate(process, communicate)
+        raise
+    return process.returncode or 0, stdout, stderr
+
+
 def _resolve_executable(configured: str, label: str) -> str | None:
     found = shutil.which(configured)
     if found:
@@ -523,14 +536,12 @@ def _resolve_executable(configured: str, label: str) -> str | None:
 
 async def _ffmpeg_version(ffmpeg: str) -> str | None:
     try:
-        process = await asyncio.create_subprocess_exec(
-            ffmpeg,
-            "-version",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+        returncode, stdout, _ = await _capture(
+            ffmpeg, ["-version"], timeout=VERSION_TIMEOUT_SEC
         )
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=10.0)
     except (OSError, TimeoutError):
+        return None
+    if returncode != 0:
         return None
     first = stdout.decode("utf-8", "replace").splitlines()
     return first[0].strip()[:200] if first else None
@@ -548,20 +559,16 @@ async def _duration(ffprobe: str, path: Path) -> float:
         str(path),
     ]
     try:
-        process = await asyncio.create_subprocess_exec(
-            ffprobe,
-            *arguments,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        returncode, stdout, stderr = await _capture(
+            ffprobe, arguments, timeout=PROBE_TIMEOUT_SEC
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60.0)
     except (OSError, TimeoutError) as error:
         raise _PreflightError(
             FAILURE_CODE_BACKEND_UNAVAILABLE,
             f"ffprobeを実行できませんでした: {path.name}",
             retryable=True,
         ) from error
-    if process.returncode != 0:
+    if returncode != 0:
         raise _PreflightError(
             FAILURE_CODE_INPUT_UNRESOLVED,
             f"入力の尺を取得できません: {path.name} "

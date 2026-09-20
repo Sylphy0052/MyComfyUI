@@ -542,7 +542,13 @@ def _extract_outputs(entry: dict[str, Any]) -> tuple[OutputRef, ...]:
         if not isinstance(node_output, dict):
             continue
         for key, kind in OUTPUT_KINDS.items():
-            for item in node_output.get(key, []):
+            items = node_output.get(key, [])
+            if not isinstance(items, list):
+                # ComfyUIの応答は外部由来のため、想定した形でなければ読み飛ばす。
+                # そのまま列挙すると、失敗理由がTypeErrorに化けて特定しにくくなる。
+                logger.warning("履歴の%sが配列ではありません。読み飛ばします。", key)
+                continue
+            for item in items:
                 if not isinstance(item, dict):
                     continue
                 filename = item.get("filename")

@@ -273,12 +273,11 @@ class ComfyUIExecutor:
         if not context.uploads:
             return context.workflow
         workflow = copy.deepcopy(context.workflow)
+        # 差し込み先は1件でも欠けていれば投入できない。1件目を置いた後に気付くと、
+        # ComfyUI側のinputに使われないファイルだけが残るため、先にまとめて確かめる。
+        targets: list[tuple[dict[str, object], str]] = []
         for upload in context.uploads:
-            data = _read_source(upload, self._settings)
-            file_name = str(upload.get("file_name") or "input")
-            uploaded = await client.upload_input(file_name, data)
             node_id = str(upload.get("node_id"))
-            input_key = str(upload.get("input_key"))
             node = workflow.get(node_id)
             if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
                 raise _PreflightError(
@@ -286,7 +285,11 @@ class ComfyUIExecutor:
                     f"素材の差し込み先ノードがありません: {node_id}",
                     retryable=False,
                 )
-            node["inputs"][input_key] = uploaded
+            targets.append((node["inputs"], str(upload.get("input_key"))))
+        for upload, (inputs, input_key) in zip(context.uploads, targets, strict=True):
+            data = _read_source(upload, self._settings)
+            file_name = str(upload.get("file_name") or "input")
+            inputs[input_key] = await client.upload_input(file_name, data)
         return workflow
 
     async def _store_outputs(

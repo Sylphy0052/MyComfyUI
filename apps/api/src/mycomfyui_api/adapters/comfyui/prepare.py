@@ -188,6 +188,7 @@ async def _video_plan(
         )
 
     drop_roles: set[str] = set()
+    reference_count = 0
     uploads: list[dict[str, Any]] = []
     input_refs: list[dict[str, Any]] = []
     slots = workflow_module.upload_slots(template_name)
@@ -229,6 +230,7 @@ async def _video_plan(
             await take(
                 f"reference_{index}", raw, f"参照画像{index + 1}枚目", ("image",)
             )
+        reference_count = len(references)
         drop_roles.update(
             f"reference_{index}"
             for index in range(len(references), MAX_REFERENCE_IMAGES)
@@ -271,7 +273,11 @@ async def _video_plan(
         drop_roles=frozenset(drop_roles),
         uploads=uploads,
         input_refs=input_refs,
-        parameters={"audio_mode": audio_mode, "reference_count": len(uploads)},
+        parameters={
+            "audio_mode": audio_mode,
+            # 参照画像の枚数だけを数える。開始フレームとガイド音声はここに含めない。
+            "reference_count": reference_count,
+        },
     )
 
 
