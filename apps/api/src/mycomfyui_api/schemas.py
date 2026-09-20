@@ -47,6 +47,9 @@ ALLOWED_MEDIA_TYPES = frozenset({"application/json", "text/plain"})
 #: 画像だがスクリプトを埋め込める形式。生成物として扱わない。
 REJECTED_MEDIA_TYPES = frozenset({"image/svg+xml", "image/svg"})
 
+#: タグの最大長。表示と絞り込みに使う短いラベルだけを想定する。
+MAX_TAG_LENGTH = 64
+
 
 def new_id() -> str:
     return str(uuid4())
@@ -75,6 +78,35 @@ def _reject_unsafe_path(value: str) -> str:
     if any(part in ("", ".") for part in parts):
         raise ValueError("relative_pathを正規化した形で指定してください。")
     return candidate
+
+
+def normalize_tag(value: str) -> str:
+    """タグとして受け付ける値だけを通す。
+
+    前後の空白だけを落とし、大文字小文字と表記の揺れはそのまま残す。正規化は同義語の
+    管理にあたり、Issue #42の対象外である。
+
+    制御文字と`/`は拒否する。タグはパスセグメント(`DELETE /artifacts/{id}/tags/{tag}`)
+    としてURLに載るため、区切り文字を値に許すと削除対象を一意に指せない。
+    """
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("タグを空にできません。")
+    if len(candidate) > MAX_TAG_LENGTH:
+        raise ValueError(f"タグは{MAX_TAG_LENGTH}文字以内で指定してください。")
+    if "/" in candidate:
+        raise ValueError("タグに/を含められません。")
+    if any(character.isspace() and character != " " for character in candidate):
+        raise ValueError("タグに改行とタブを含められません。")
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in candidate):
+        raise ValueError("タグに制御文字を含められません。")
+    return candidate
+
+
+#: Artifactへ付けるタグ。前後の空白を落とした値を保存し、完全一致で絞り込む。
+ArtifactTagValue = Annotated[
+    str, Field(min_length=1, max_length=MAX_TAG_LENGTH), AfterValidator(normalize_tag)
+]
 
 
 class ApiModel(BaseModel):
@@ -251,6 +283,12 @@ class ArtifactCreate(ApiModel):
 
 
 class ArtifactRead(ApiModel):
+    """Artifact 1件。`tags`は付けた順ではなくタグの昇順で返す。
+
+    `tags`はArtifactを返すすべての経路で埋める。経路によって入ったり入らなかったり
+    すると、空配列が「タグ無し」なのか「この経路では返していない」のか区別できない。
+    """
+
     id: str
     job_id: str
     kind: str
@@ -263,12 +301,58 @@ class ArtifactRead(ApiModel):
     created_at: str
     decision: str
     decision_at: str | None
+    tags: list[str] = Field(default_factory=list)
 
 
 class ArtifactDecisionUpdate(ApiModel):
     """候補比較での採否。`undecided`へ戻すこともできる。"""
 
     decision: ArtifactDecision
+
+
+class ArtifactTagCreate(ApiModel):
+    """Artifactへ付けるタグ。"""
+
+    tag: ArtifactTagValue
+
+
+#: 整合性一覧が返す理由。1件のArtifactへ複数付きうる。
+ArtifactIntegrityReason = Literal[
+    "file_missing", "hash_mismatch", "reference_broken", "canon_updated"
+]
+
+
+class ArtifactIntegrityFinding(ApiModel):
+    """1件の理由と、その根拠。"""
+
+    reason: ArtifactIntegrityReason
+    message: str
+
+
+class ArtifactIntegrityEntry(ApiModel):
+    """整合性を欠いたArtifact 1件。理由が1つも無いArtifactは一覧へ出さない。"""
+
+    artifact: ArtifactRead
+    findings: list[ArtifactIntegrityFinding]
+
+
+class ArtifactIntegrityRead(ApiModel):
+    """整合性一覧。判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。
+
+    `checked`は判定したArtifactの件数、`truncated`は上限で打ち切ったかどうかを表す。
+    `items`の件数だけでは全件を見たのか途中で止めたのかが判らないため応答へ出す。
+
+    `canon_available`が`False`のとき、`canon_updated`の判定ができていない。参照APIを
+    引けなかった場合と、`include_canon=false`で判定を求められなかった場合の両方が
+    あり、理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、`items`は
+    `canon_updated`以外の理由だけを含む。
+    """
+
+    items: list[ArtifactIntegrityEntry]
+    checked: int
+    truncated: bool
+    canon_available: bool
+    canon_reason: str | None
 
 
 class ApprovalLogCreate(ApiModel):

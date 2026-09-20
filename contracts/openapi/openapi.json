@@ -506,8 +506,102 @@
         "title": "ArtifactDecisionUpdate",
         "type": "object"
       },
+      "ArtifactIntegrityEntry": {
+        "additionalProperties": false,
+        "description": "整合性を欠いたArtifact 1件。理由が1つも無いArtifactは一覧へ出さない。",
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactRead"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactIntegrityFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifact",
+          "findings"
+        ],
+        "title": "ArtifactIntegrityEntry",
+        "type": "object"
+      },
+      "ArtifactIntegrityFinding": {
+        "additionalProperties": false,
+        "description": "1件の理由と、その根拠。",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "file_missing",
+              "hash_mismatch",
+              "reference_broken",
+              "canon_updated"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "message"
+        ],
+        "title": "ArtifactIntegrityFinding",
+        "type": "object"
+      },
+      "ArtifactIntegrityRead": {
+        "additionalProperties": false,
+        "description": "整合性一覧。判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。\n\n`checked`は判定したArtifactの件数、`truncated`は上限で打ち切ったかどうかを表す。\n`items`の件数だけでは全件を見たのか途中で止めたのかが判らないため応答へ出す。\n\n`canon_available`が`False`のとき、`canon_updated`の判定ができていない。参照APIを\n引けなかった場合と、`include_canon=false`で判定を求められなかった場合の両方が\nあり、理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、`items`は\n`canon_updated`以外の理由だけを含む。",
+        "properties": {
+          "canon_available": {
+            "title": "Canon Available",
+            "type": "boolean"
+          },
+          "canon_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canon Reason"
+          },
+          "checked": {
+            "title": "Checked",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactIntegrityEntry"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "checked",
+          "truncated",
+          "canon_available",
+          "canon_reason"
+        ],
+        "title": "ArtifactIntegrityRead",
+        "type": "object"
+      },
       "ArtifactRead": {
         "additionalProperties": false,
+        "description": "Artifact 1件。`tags`は付けた順ではなくタグの昇順で返す。\n\n`tags`はArtifactを返すすべての経路で埋める。経路によって入ったり入らなかったり\nすると、空配列が「タグ無し」なのか「この経路では返していない」のか区別できない。",
         "properties": {
           "availability": {
             "title": "Availability",
@@ -570,6 +664,13 @@
           "sha256": {
             "title": "Sha256",
             "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
           }
         },
         "required": [
@@ -587,6 +688,23 @@
           "decision_at"
         ],
         "title": "ArtifactRead",
+        "type": "object"
+      },
+      "ArtifactTagCreate": {
+        "additionalProperties": false,
+        "description": "Artifactへ付けるタグ。",
+        "properties": {
+          "tag": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "title": "ArtifactTagCreate",
         "type": "object"
       },
       "CanonStatusRead": {
@@ -2368,7 +2486,7 @@
     },
     "/api/v1/artifacts": {
       "get": {
-        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\n`scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。",
+        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\n`scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
         "operationId": "list_artifacts_api_v1_artifacts_get",
         "parameters": [
           {
@@ -2485,6 +2603,60 @@
           },
           {
             "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lineage_artifact_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lineage Artifact Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lineage_job_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lineage Job Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -2520,7 +2692,19 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "X-Lineage-Truncated": {
+                "description": "派生関係の探索を上限で打ち切ったかどうか。`true`のとき、絞り込みの対象は全件ではない。",
+                "schema": {
+                  "enum": [
+                    "true",
+                    "false"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -2570,6 +2754,188 @@
           }
         },
         "summary": "Create Artifact"
+      }
+    },
+    "/api/v1/artifacts/integrity": {
+      "get": {
+        "description": "整合性を欠いたArtifactを理由付きで一覧する。\n\n`limit`と`offset`は判定する対象の範囲であり、返す件数ではない。実ファイルを読んで\nhashを取り直すため、対象を絞らずに走らせると重い。作成の新しい順に`limit`件だけを\n判定し、まだ対象が残っている場合は`truncated`を`true`にする。\n\n`reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。\n`include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。\nこのとき`canon_available`は`false`になる。判定した結果として更新が無かったのか、\nそもそも見ていないのかを取り違えさせない。\n\n判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。",
+        "operationId": "list_artifact_integrity_api_v1_artifacts_integrity_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scene_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shot_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shot Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "image",
+                    "video",
+                    "audio",
+                    "workflow",
+                    "log"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "file_missing",
+                      "hash_mismatch",
+                      "reference_broken",
+                      "canon_updated"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_canon",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Canon",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactIntegrityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Artifact Integrity"
       }
     },
     "/api/v1/artifacts/{artifact_id}": {
@@ -2697,6 +3063,98 @@
           }
         },
         "summary": "Update Artifact Decision"
+      }
+    },
+    "/api/v1/artifacts/{artifact_id}/tags": {
+      "post": {
+        "description": "Artifactへタグを付ける。既に付いている場合も現在の状態を返す。\n\n同じタグを二度送るのは、画面の再送や操作の重複で普通に起こる。既に狙いどおりの\n状態になっているものをエラーにしても、呼び出し側は結局現在の状態を引き直すため、\n付け直しは成功として扱う。",
+        "operationId": "add_artifact_tag_api_v1_artifacts__artifact_id__tags_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactTagCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Artifact Tag"
+      }
+    },
+    "/api/v1/artifacts/{artifact_id}/tags/{tag}": {
+      "delete": {
+        "description": "Artifactからタグを外す。付いていないタグの指定は404とする。\n\n付与と違い、外す操作は対象が存在しないことを伝える価値がある。画面のタグ一覧が\n古いまま操作された場合に、成功として返すと消えたことになってしまう。\n\nパスから受け取る値も付与時と同じ書式で検証する。検証せずに落とすと、付与では\n受け付けない値がエラー応答の`details`へそのまま載る。",
+        "operationId": "remove_artifact_tag_api_v1_artifacts__artifact_id__tags__tag__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tag",
+            "required": true,
+            "schema": {
+              "title": "Tag",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Artifact Tag"
       }
     },
     "/api/v1/backends/comfyui/health": {
