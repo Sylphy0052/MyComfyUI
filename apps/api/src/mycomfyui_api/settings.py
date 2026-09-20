@@ -6,9 +6,9 @@ from platformdirs import user_data_path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-#: 提案Providerの識別子。`claude_code`と`codex`はCLIをsubprocessで呼び、`stub`は同梱
-#: fixtureを返す。
-AgentProviderId = Literal["claude_code", "codex", "stub"]
+#: 提案Providerの識別子。`claude_code`と`codex`はCLIをsubprocessで呼び、`qwen`は
+#: OpenAI互換HTTPで常駐する推論サーバーへ問い合わせ、`stub`は同梱fixtureを返す。
+AgentProviderId = Literal["claude_code", "codex", "qwen", "stub"]
 
 
 class Settings(BaseSettings):
@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     agent_codex_cli_path: str = "codex"
     #: 未指定ならCodex CLIの既定モデルを使う。
     agent_codex_model: str | None = None
+    #: Qwenを動かすOpenAI互換推論サーバーの接続先。Remote GPU Hostで動かす場合も
+    #: ComfyUIとvoice-runnerと同じく、この値だけをRemote PCのURLへ変える。
+    agent_qwen_base_url: str = "http://127.0.0.1:8000/v1"
+    #: 推論サーバーへ渡すモデル名。載せているモデルの名前に合わせる。
+    agent_qwen_model: str = "qwen3"
+    #: 提案1件あたりの実行上限。ローカル推論はCLI経由より遅くなりうるため別に持つ。
+    agent_qwen_timeout_seconds: float = Field(default=180.0, gt=0)
     #: 承認の有効期限。超過した承認では副作用のある操作を実行しない。
     agent_approval_ttl_seconds: int = Field(default=1800, gt=0)
     #: stub Providerを常に失敗させる。Provider障害が他機能を止めないことの確認に使う。

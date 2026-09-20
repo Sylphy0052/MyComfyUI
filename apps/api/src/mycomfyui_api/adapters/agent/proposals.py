@@ -115,6 +115,35 @@ def json_schema(kind: AgentProposalKind) -> dict[str, Any]:
     return OUTPUT_MODELS[kind].model_json_schema()
 
 
+def strict_json_schema(kind: AgentProposalKind) -> dict[str, Any]:
+    """OpenAI互換のstrict JSON Schemaを要求するProvider向けの出力Schema。
+
+    strictな検証では`properties`にある項目を全て`required`へ含めないと要求ごと
+    拒否される(Codex CLIで400、実測で確認)。`json_schema`はPydanticの`default`を
+    持つ項目を`required`から外すため、ここで全項目を`required`へ足す。応答の検証は
+    `validate_output`を通すため、Providerが`default`と同じ値を明示的に返しても扱いは
+    変わらない。
+    """
+    return _require_all_properties(json_schema(kind))
+
+
+def _require_all_properties(node: Any) -> Any:
+    """dict/listを再帰的に辿り、object nodeの`required`を`properties`全体へ揃える。
+
+    `$defs`配下のitem型定義にも同じ変換をかけるため、`properties`という名前に
+    決め打ちせず全nodeを見て回る。
+    """
+    if isinstance(node, dict):
+        result = {key: _require_all_properties(value) for key, value in node.items()}
+        properties = result.get("properties")
+        if isinstance(properties, dict):
+            result["required"] = list(properties.keys())
+        return result
+    if isinstance(node, list):
+        return [_require_all_properties(item) for item in node]
+    return node
+
+
 def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
     """Providerの応答を期待する形へ検証する。
 

@@ -220,23 +220,34 @@ sudo ufw allow from <手元PCのIP> to any port 8765 proto tcp
 
 firewalldの場合は8188と同じ`--add-rich-rule`をポート番号だけ変えて足す。
 
+提案Providerに`qwen`を使う場合は、OpenAI互換の推論サーバー(既定8000)も同じ扱いにする。このサーバーも認証機構を持たず、手元PCのApplication APIから接続する。使わないなら広げない。
+
+```powershell
+# WSL2の場合。8188と同じVMCreatorIdを使う
+New-NetFirewallHyperVRule -Name "qwen-8000" -DisplayName "Qwen inference server (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '<VMCreatorId>' -Protocol TCP -LocalPorts 8000 -RemoteAddresses <手元PCのIP> -Action Allow
+```
+
+```bash
+sudo ufw allow from <手元PCのIP> to any port 8000 proto tcp
+```
+
 設定後、待受と到達元制限を別々に確かめる。
 
 まずRemote PCで待受を棚卸しする。これはbindアドレスしか見ないため、送信元制限が効いているかは分からない。広げたポートだけが`0.0.0.0`で待っていることを見る。`127.0.0.1`や`::1`で待っているものは外から到達しない。
 
 ```bash
-ss -tlnp | grep -E ':(8188|8765|8770)\b'
+ss -tlnp | grep -E ':(8000|8188|8765|8770)\b'
 ```
 
 次に、手元PC以外の端末から到達できないことを確かめる。Firewallの到達元制限はこれでしか検証できない。
 
 ```bash
-for port in 8765 8770; do
+for port in 8000 8765 8770; do
   curl --max-time 5 -sS "http://<remote>:$port/"; echo "port=$port exit=$?"
 done
 ```
 
-8188と同じく、`exit=28`または`exit=7`なら到達できていない。応答本文が返ったら到達できている。
+8188と同じく、`exit=28`または`exit=7`なら到達できていない。応答本文が返ったら到達できている。動かしていないサービスのポートは`exit=7`になるため、待受の棚卸しと併せて読む。
 
 ## 3. 常駐させる
 
@@ -448,11 +459,20 @@ MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=900
 MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://<remote>:8770
 ```
 
+提案Providerに`qwen`を使う場合は、推論サーバーの接続先も同じように向ける。
+
+```dotenv
+MYCOMFYUI_AGENT_QWEN_BASE_URL=http://<remote>:8000/v1
+MYCOMFYUI_AGENT_QWEN_MODEL=<推論サーバーへ載せたモデル名>
+```
+
 ComfyUIのタイムアウトはネットワーク往復と生成物の転送分の余裕を見る。既定は600秒。
 
 `MYCOMFYUI_VOICE_RUNNER_BASE_URL`の既定値は`http://127.0.0.1:8770`であり、手元完結構成ではそのままでよい。Remote構成でこの行を落とすと、手元PCの8770へ繋ぎにいって接続を拒否される。冒頭に挙げた症状が出たときは、手順3のrunner常駐と併せてこの値を確かめる。
 
 `MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS`は1台詞あたりの実行上限であり、既定は300秒。Backendのプロセス起動とモデルロードを含む値のため、Remote構成にしたことだけを理由に変えない。実測で足りなければ上げる。
+
+`MYCOMFYUI_AGENT_QWEN_BASE_URL`の既定値は`http://127.0.0.1:8000/v1`である。パス末尾の`/v1`まで含めて指定する。Providerはこの値へ`/chat/completions`と`/models`だけを足して呼ぶ。推論サーバーが起きていない間は提案Provider一覧で`qwen`が`available: false`になり、他のProviderと生成Jobには影響しない。
 
 設定の詳細は[Application APIのREADME](../../apps/api/README.md)を参照する。
 
@@ -462,6 +482,7 @@ ComfyUIのタイムアウトはネットワーク往復と生成物の転送分�
 |---|---|---|
 |Jobがすぐ失敗する|`BACKEND_UNAVAILABLE`|手順1と手順2のFirewallと待受、Remote PCの電源、アドレスの変化|
 |音声Jobだけが失敗する|`BACKEND_UNAVAILABLE`|手順3の`voice-runner`常駐、手順7の`MYCOMFYUI_VOICE_RUNNER_BASE_URL`、「ComfyUI以外のポートも同じ扱いにする」の8770|
+|`qwen`の提案だけが失敗する|`AGENT_UNAVAILABLE`|推論サーバーの起動、手順7の`MYCOMFYUI_AGENT_QWEN_BASE_URL`と`MYCOMFYUI_AGENT_QWEN_MODEL`、「ComfyUI以外のポートも同じ扱いにする」の8000|
 |実行中に失敗する|`BACKEND_DISCONNECTED`|ネットワークの切断、ComfyUIプロセスの落ち、手順3のログ|
 |モデルが見つからない|`MODEL_NOT_FOUND`|手順4のファイル名とRecipeの指す名前|
 |完了検知が遅い|—|手順5のWebSocket。ポーリングへ落ちていないか|
