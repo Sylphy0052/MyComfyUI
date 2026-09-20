@@ -14,6 +14,9 @@ dependencies = [
   "platformdirs>=4.3,<5",
   "pydantic-settings>=2.6,<3",
   "sqlalchemy>=2.0,<3",
+  # 受信バイト数で本文を打ち切るRequestBodyLimitMiddlewareを使う。FastAPI経由の
+  # 推移的依存に任せると、版が下がったときに保護が消える。
+  "starlette>=1.6",
   "unidic-lite>=1.0.8,<2",
   "uvicorn[standard]>=0.30,<1",
   "websockets>=13,<16",

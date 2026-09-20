@@ -127,7 +127,7 @@ def create_app() -> FastAPI:
                         "VALIDATION_ERROR",
                         "要求本文が大きすぎます。",
                         details={"limit": limit},
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                     ),
                 )
         return await call_next(request)

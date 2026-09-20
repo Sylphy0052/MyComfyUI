@@ -93,7 +93,7 @@ def _decode(raw: str, label: str) -> bytes:
     # ため、文字数から上限を逆算する。
     if len(raw) > (MAX_AUDIO_BYTES + 2) // 3 * 4:
         raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status.HTTP_413_CONTENT_TOO_LARGE,
             f"{label}が上限({MAX_AUDIO_BYTES}バイト)を超えています。",
         )
     try:
@@ -104,7 +104,7 @@ def _decode(raw: str, label: str) -> bytes:
         ) from error
     if len(data) > MAX_AUDIO_BYTES:
         raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status.HTTP_413_CONTENT_TOO_LARGE,
             f"{label}が上限({MAX_AUDIO_BYTES}バイト)を超えています。",
         )
     return data
@@ -143,7 +143,7 @@ def create_app() -> FastAPI:
             and int(declared) > MAX_REQUEST_BYTES
         ):
             return JSONResponse(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 content={"detail": "要求本文が大きすぎます。"},
             )
         return await call_next(request)
