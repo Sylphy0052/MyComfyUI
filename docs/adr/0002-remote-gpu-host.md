@@ -82,6 +82,7 @@ ComfyUIには認証機構がない。待受方式として次の2案を比較し
 - ルーターでのポート開放(WAN公開)を行わない。Remote PCのComfyUIはLAN内からのみ到達できる。
 - Remote PCのFirewallで8188への到達元を手元PCのアドレスへ限定する。Remote PCがWSL2の場合、WSL宛の受信はHyper-V Firewallが司るため、WSL内のFirewallと2層で設定する。片方だけでは限定にならない。
 - ComfyUI本体とカスタムノードのバージョンを把握し、更新を適用する。
+- 同じ扱いを`voice-runner`(既定8770)と`ai-media`参照API(既定8765)へも適用する。いずれも認証機構を持たない。手元PCから接続しないサービスは`127.0.0.1`へbindしたままにし、広げたポートはFirewallで到達元を限定する。
 
 ### テンプレート制限が及ばない範囲
 
@@ -108,7 +109,7 @@ Remote PCの準備手順は[Remote GPUホストの準備](../operations/remote-g
 ## 影響
 
 - Remote PCが落ちている、またはネットワークが切れている場合、Jobは既存の失敗分類のまま`BACKEND_UNAVAILABLE`(`backend_start`、再試行可)または`BACKEND_DISCONNECTED`(`response_disconnect`、再試行可)になる。新しい失敗コードを追加しない。
-- モデル資産はRemote PCに集約する。Recipeが指すモデル名がRemote PC上の実ファイル名と一致しない場合、`MODEL_NOT_FOUND`で失敗する。在庫確認は`/object_info`で行う。
+- モデル資産はRemote PCから読める場所へ置く。1つのディレクトリへ物理的に集める必要はなく、`extra_model_paths.yaml`で参照を足す構成でもよい。Recipeが指すモデル名がRemote PC上の実ファイル名と一致しない場合、`MODEL_NOT_FOUND`で失敗する。在庫確認は`/object_info`で行う。
 - Phase 3(#12)のi2v/ref2vでは参照画像をComfyUIへ渡す必要がある。手元構成ならファイルパスで渡せたが、Remote構成では`POST /upload/image`による送信経路が要る。現在のComfyUI Adapterはこの経路を持たない。
 - Phase 6(#15)のTauri版でも、Application APIはsidecarとして手元PCで動く。Backendの接続先設定だけがデスクトップ設定へ加わる。
 

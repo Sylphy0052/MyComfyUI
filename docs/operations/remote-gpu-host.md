@@ -100,7 +100,11 @@ sudo firewall-cmd --reload
 
 2層とも設定する。片方だけでは足りない。
 
-`New-NetFirewallRule`はmirroredモードのWSL宛トラフィックを制御しない。`New-NetFirewallHyperVRule`とVMCreatorIdを使う。VMCreatorIdはWSLで固定値である。
+`New-NetFirewallRule`はmirroredモードのWSL宛トラフィックを制御しない。`New-NetFirewallHyperVRule`とVMCreatorIdを使う。VMCreatorIdはWSLに割り当てられた識別子であり、次で確認してから使う。
+
+```powershell
+Get-NetFirewallHyperVVMCreator
+```
 
 ```powershell
 Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Block
@@ -122,6 +126,19 @@ sudo ufw allow in on loopback0
 設定後、手元PC以外の端末から`curl http://<remote>:8188/system_stats`が失敗することを確かめる。Remote PC上で`curl http://127.0.0.1:8188/system_stats`が200を返すことも併せて確かめる。
 
 ルーターでのポート開放(WAN公開)は行わない。
+
+### ComfyUI以外のポート
+
+Remote PCへ置くサービスは8188だけではない。`voice-runner`(既定8770)と、`novel-writer`側の`ai-media`参照API(既定8765)も同じマシンで動く。これらにも認証機構はない。
+
+8188と同じ扱いにする。待受を`0.0.0.0`へ広げるのは手元PCから接続する必要があるものだけとし、広げたポートはFirewallで到達元を手元PCのアドレスへ限定する。WSL2なら2層とも設定する。
+
+手元PCから接続しないサービスは`127.0.0.1`へbindしたままにする。Remote PC内だけで完結するなら、待受を広げる理由がない。
+
+```bash
+# 待受を広げたポートの棚卸し。0.0.0.0 で待っているものを確認する
+ss -tlnp | grep -v '127\.0\.0\.1'
+```
 
 この送信元制限はネットワークアドレスに基づくものであり、認証ではない。同一セグメント内でのIP偽装には耐えられない。判断の前提は[ADR 0002](../adr/0002-remote-gpu-host.md)に記録する。
 
@@ -189,6 +206,8 @@ ComfyUIはINFOを標準エラーへ出す。障害調査で見るのは`comfyui.
 checkpoint、LoRA、VAEはRemote PCから読める場所へ置く。手元PCには置かない。
 
 満たすべきことは、ComfyUIがRemote PCのファイルシステムからモデルを読めることであり、1つのディレクトリへ物理的に集めることではない。既に別の場所にモデルがある場合、`extra_model_paths.yaml`で参照を足してよい。Windows側のportable ComfyUIと共有しているモデル群がある構成では、`models/`配下へコピーすると数百GB規模の重複と既存ワークフローの破壊になる。
+
+参照を足す場合、そのディレクトリに置かれたモデルファイルの入手元を確認する。checkpointの読み込みはpickleを経由するものがあり、由来の分からないファイルを読ませない([ADR 0002](../adr/0002-remote-gpu-host.md))。
 
 どちらの方法でも、`/object_info`が目的のモデル名を列挙できていれば足りる。
 
