@@ -15,7 +15,7 @@
 - セキュリティ懸念を発見したら、影響する実装・操作を止めて先に報告する。
 - 破壊的操作（削除、force push、ブランチ削除など）は対象と影響範囲を示し、実行前に明示許可を得る。ただしPRマージ後のworktree削除など影響がない場合は許可を得なくて良い。
 - `git commit --no-verify`と`-n`、squash commitとsquash mergeは禁止。
-- MR/PR自己マージは「MR/PRの自己マージ」の条件を満たす場合に許可を求めずに行う。
+- MR/PR自己マージは「MR/PRの自己マージ」の条件を満たす場合に許可を求めずに行う。マージ後の後片付け（worktree削除、マージ済みbranchのローカル・リモート削除、Issueのクローズ）も同じ扱いとし、許可を求めずに続けて行う。マージ済みの内容はmainに残るため、これらの削除では作業が失われない。
 - メインworking treeは直接編集しない。リポジトリ直下の`.worktree/<name>/`に`git worktree add`で作成する。`/tmp`は使わない。`.worktree/`は`.gitignore`か`.git/info/exclude`で除外する。
 - マージ後はmain worktreeで`git fetch origin --prune`と`git pull --ff-only`を実行し、できなければ理由を報告する。
 
