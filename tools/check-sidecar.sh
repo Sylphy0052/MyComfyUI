@@ -50,13 +50,13 @@ trap 'kill "${PID_A}" 2>/dev/null || true' EXIT
 URL_A="$(wait_for_url "${LOG_A}")"
 echo "listening: ${URL_A}"
 case "${URL_A}" in
-  http://127.0.0.1:*) echo "OK 既定bindはloopback" ;;
-  *) echo "NG 既定bindがloopbackでない: ${URL_A}"; exit 1 ;;
+  http://127.0.0.1:*) echo "OK: 既定bindはloopback" ;;
+  *) echo "NG: 既定bindがloopbackでない: ${URL_A}"; exit 1 ;;
 esac
-wait_for_health "${URL_A}" || { echo "NG healthが応答しない"; cat "${LOG_A}"; exit 1; }
+wait_for_health "${URL_A}" || { echo "NG: healthが応答しない"; cat "${LOG_A}"; exit 1; }
 echo "health: $(curl -fsS "${URL_A}/api/v1/health")"
 echo "recipes: $(curl -fsS "${URL_A}/api/v1/recipes" 2>/dev/null | head -c 120 || echo "(取得せず)")"
-test -f "${DATA_A}/db/mycomfyui.sqlite3" && echo "OK DBが作られた" || { echo "NG DBが無い"; exit 1; }
+test -f "${DATA_A}/db/mycomfyui.sqlite3" && echo "OK: DBが作られた" || { echo "NG: DBが無い"; exit 1; }
 echo "alembic_version: $(sqlite3 "${DATA_A}/db/mycomfyui.sqlite3" 'select version_num from alembic_version' 2>/dev/null || echo '(sqlite3コマンド無し)')"
 
 echo "== 2. 許可originを設定していないときのCORS =="
@@ -65,9 +65,9 @@ CORS_NONE="$(curl -sS -o /dev/null -D - -X OPTIONS \
   -H "Access-Control-Request-Method: GET" \
   "${URL_A}/api/v1/health" | grep -ci "access-control-allow-origin" || true)"
 if [ "${CORS_NONE}" = "0" ]; then
-  echo "OK 許可originが空なら許可headerを返さない"
+  echo "OK: 許可originが空なら許可headerを返さない"
 else
-  echo "NG 許可originが空なのに許可headerを返した"; exit 1
+  echo "NG: 許可originが空なのに許可headerを返した"; exit 1
 fi
 kill "${PID_A}" 2>/dev/null || true
 wait "${PID_A}" 2>/dev/null || true
@@ -78,7 +78,7 @@ LOG_B="${WORK}/b.log"
 PID_B="$(start_api "${DATA_A}" "${LOG_B}" --allow-origin http://tauri.localhost)"
 trap 'kill "${PID_B}" 2>/dev/null || true' EXIT
 URL_B="$(wait_for_url "${LOG_B}")"
-wait_for_health "${URL_B}" || { echo "NG healthが応答しない"; cat "${LOG_B}"; exit 1; }
+wait_for_health "${URL_B}" || { echo "NG: healthが応答しない"; cat "${LOG_B}"; exit 1; }
 ALLOWED="$(curl -sS -o /dev/null -D - -X OPTIONS \
   -H "Origin: http://tauri.localhost" \
   -H "Access-Control-Request-Method: GET" \
@@ -89,9 +89,9 @@ DENIED="$(curl -sS -o /dev/null -D - -X OPTIONS \
   "${URL_B}/api/v1/health" | grep -ci "access-control-allow-origin" || true)"
 echo "allowed: ${ALLOWED:-(なし)}"
 echo "denied header count: ${DENIED}"
-test -n "${ALLOWED}" || { echo "NG 許可originに許可headerが出ない"; exit 1; }
-test "${DENIED}" = "0" || { echo "NG 許可外originに許可headerが出た"; exit 1; }
-echo "OK 許可originだけに許可headerを返す"
+test -n "${ALLOWED}" || { echo "NG: 許可originに許可headerが出ない"; exit 1; }
+test "${DENIED}" = "0" || { echo "NG: 許可外originに許可headerが出た"; exit 1; }
+echo "OK: 許可originだけに許可headerを返す"
 kill "${PID_B}" 2>/dev/null || true
 wait "${PID_B}" 2>/dev/null || true
 trap - EXIT
@@ -101,10 +101,42 @@ LOG_C="${WORK}/c.log"
 PID_C="$(start_api "${DATA_A}" "${LOG_C}")"
 trap 'kill "${PID_C}" 2>/dev/null || true' EXIT
 URL_C="$(wait_for_url "${LOG_C}")"
-wait_for_health "${URL_C}" || { echo "NG 2回目の起動でhealthが応答しない"; cat "${LOG_C}"; exit 1; }
-echo "OK 既存のdata_rootでも起動する"
+wait_for_health "${URL_C}" || { echo "NG: 2回目の起動でhealthが応答しない"; cat "${LOG_C}"; exit 1; }
+echo "OK: 既存のdata_rootでも起動する"
 kill "${PID_C}" 2>/dev/null || true
 wait "${PID_C}" 2>/dev/null || true
+trap - EXIT
+
+echo "== 5. 起動できないときの終了コードとメッセージ =="
+LOG_D="${WORK}/d.log"
+PID_D="$(start_api "${DATA_A}" "${LOG_D}")"
+trap 'kill "${PID_D}" 2>/dev/null || true' EXIT
+URL_D="$(wait_for_url "${LOG_D}")"
+BUSY_PORT="${URL_D##*:}"
+set +e
+MYCOMFYUI_DATA_ROOT="${DATA_A}" uv run --project "${ROOT}/apps/api" \
+  python -m mycomfyui_api --port "${BUSY_PORT}" >"${WORK}/busy.log" 2>&1
+BUSY_CODE=$?
+MYCOMFYUI_DATA_ROOT="${DATA_A}" uv run --project "${ROOT}/apps/api" \
+  python -m mycomfyui_api --port 99999 >"${WORK}/range.log" 2>&1
+RANGE_CODE=$?
+MYCOMFYUI_DATA_ROOT="${DATA_A}" uv run --project "${ROOT}/apps/api" \
+  python -m mycomfyui_api --host "" --port 0 >"${WORK}/host.log" 2>&1
+HOST_CODE=$?
+set -e
+echo "使用中のport: exit=${BUSY_CODE} / $(tail -n 2 "${WORK}/busy.log" | head -n 1)"
+echo "範囲外のport: exit=${RANGE_CODE}"
+echo "空のhost: exit=${HOST_CODE}"
+test "${BUSY_CODE}" = "21" || { echo "NG: 使用中のportでexit 21にならない"; cat "${WORK}/busy.log"; exit 1; }
+test "${RANGE_CODE}" = "20" || { echo "NG: 範囲外のportでexit 20にならない"; cat "${WORK}/range.log"; exit 1; }
+test "${HOST_CODE}" = "20" || { echo "NG: 空のhostでexit 20にならない"; cat "${WORK}/host.log"; exit 1; }
+if grep -q "Traceback" "${WORK}/busy.log"; then
+  echo "NG: tracebackがそのまま出ている"
+  exit 1
+fi
+echo "OK: 原因ごとに終了コードを分けて落ちる"
+kill "${PID_D}" 2>/dev/null || true
+wait "${PID_D}" 2>/dev/null || true
 trap - EXIT
 
 echo "すべて通りました。work dir: ${WORK}"

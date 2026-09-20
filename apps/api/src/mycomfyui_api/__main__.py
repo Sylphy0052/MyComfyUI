@@ -15,12 +15,18 @@ import sys
 from collections.abc import Sequence
 
 import uvicorn
+from pydantic import ValidationError
 
 from mycomfyui_api.settings import get_settings
 
 #: 待ち受け先を親プロセスへ渡すための行頭。portに0を渡したとき、実際に割り当て
 #: られたportはこの行からしか判らない。書式を変えると読む側が壊れる。
 LISTENING_PREFIX = "MYCOMFYUI_API_LISTENING"
+
+#: 設定の値が不正で起動できなかったときの終了コード。
+EXIT_INVALID_SETTINGS = 20
+#: 指定されたhostとportにbindできなかったときの終了コード。
+EXIT_BIND_FAILED = 21
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -78,9 +84,12 @@ def _bind(host: str, port: int) -> socket.socket:
     portに0を渡すと、割り当てられたportはbindするまで判らない。uvicornへ任せると
     起動後まで取り出せず、親プロセスへ知らせる前に要求が来うる。ここで確保して
     から番号を伝える。
+
+    `SO_REUSEADDR`は設定しない。Windowsでは既にlistenしているsocketと同じportへの
+    bindまで許すため、待ち受けを横取りされうる。APIは認証を持たないため、使用中の
+    portでは黙って同居せず、bindに失敗させる。
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((host, port))
     sock.set_inheritable(True)
     return sock
@@ -89,19 +98,41 @@ def _bind(host: str, port: int) -> socket.socket:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     _apply_overrides(args)
-    settings = get_settings()
+    # 起動できない理由は親プロセスが読む。tracebackのまま落とすと、次に何をすれば
+    # よいかが伝わらない。終了コードで原因を分け、要約を標準エラーへ出す。
+    try:
+        settings = get_settings()
+    except ValidationError as error:
+        print(f"設定の値が不正です。\n{error}", file=sys.stderr, flush=True)
+        return EXIT_INVALID_SETTINGS
 
-    sock = _bind(settings.api_host, settings.api_port)
-    bound_host, bound_port = sock.getsockname()[:2]
-    # 設定を読み終えてから読み込む。`create_app`がimport時に設定を参照するため、
-    # 先に読むと引数が効かない。
-    from mycomfyui_api.main import app
+    try:
+        sock = _bind(settings.api_host, settings.api_port)
+    except OSError as error:
+        print(
+            f"{settings.api_host}:{settings.api_port}にbindできません。"
+            f"portの使用状況とbind先を確かめてください。\n{error}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return EXIT_BIND_FAILED
 
-    config = uvicorn.Config(app, log_level=args.log_level)
-    server = uvicorn.Server(config)
-    # 親プロセスはこの行でport確定を知る。bufferingで遅れないよう即座に流す。
-    print(f"{LISTENING_PREFIX} http://{bound_host}:{bound_port}", flush=True)
-    server.run(sockets=[sock])
+    try:
+        bound_host, bound_port = sock.getsockname()[:2]
+        # 設定を読み終えてから読み込む。`create_app`がimport時に設定を参照するため、
+        # 先に読むと引数が効かない。
+        from mycomfyui_api.main import app
+
+        # ログレベルだけはuvicornの起動にしか使わないため、`Settings`へ載せない。
+        config = uvicorn.Config(app, log_level=args.log_level)
+        server = uvicorn.Server(config)
+        # 親プロセスはこの行でport確定を知る。bufferingで遅れないよう即座に流す。
+        print(f"{LISTENING_PREFIX} http://{bound_host}:{bound_port}", flush=True)
+        server.run(sockets=[sock])
+    finally:
+        # 起動に至らず抜けたときもsocketを手放す。同じプロセスから再び起動できる
+        # ようにしておく。uvicornが閉じた後の2度目の呼び出しは何もしない。
+        sock.close()
     return 0
 
 

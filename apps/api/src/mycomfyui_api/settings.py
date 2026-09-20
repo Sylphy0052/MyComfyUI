@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Literal
 
 from platformdirs import user_data_path
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 #: 提案Providerの識別子。`claude_code`と`codex`はCLIをsubprocessで呼び、`qwen`は
@@ -86,6 +86,18 @@ class Settings(BaseSettings):
     #: CORSのheaderを返さず、開発時のViteのproxyのように同一originからの呼び出し
     #: だけが通る。
     allowed_origins: str = ""
+
+    @field_validator("api_host")
+    @classmethod
+    def _reject_blank_host(cls, value: str) -> str:
+        """空文字を弾く。
+
+        `bind(("", port))`は全interfaceで待ち受ける。引数の受け渡しでhostが空に
+        なったときに、loopbackのつもりでLANへ公開されるのを防ぐ。
+        """
+        if not value.strip():
+            raise ValueError("api_hostに空文字は指定できません。")
+        return value
 
     @property
     def allowed_origin_list(self) -> tuple[str, ...]:
