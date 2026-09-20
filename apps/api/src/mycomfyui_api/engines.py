@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mycomfyui_api.adapters.comfyui import prepare as comfyui_prepare
+from mycomfyui_api.adapters.comfyui import workflow as comfyui_workflow
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI, ComfyUIExecutor
 from mycomfyui_api.adapters.compose import plan as compose_plan
 from mycomfyui_api.adapters.compose.executor import ComposeExecutor
@@ -33,6 +34,9 @@ from mycomfyui_api.queue import ExecutionOutcome, JobExecutor
 from mycomfyui_api.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
+
+#: 自動採番を表すseedの値。engineを直接知らない呼び出し元がここから引く。
+AUTO_SEED = comfyui_workflow.AUTO_SEED
 
 FAILURE_CODE_ENGINE_UNSUPPORTED = "ENGINE_UNSUPPORTED"
 FAILURE_CODE_INPUT_UNRESOLVED = "INPUT_UNRESOLVED"
@@ -63,6 +67,23 @@ async def prepare(
             {"engine": recipe.engine, "supported": list(SUPPORTED_ENGINES)},
         )
     return await preparer(recipe, inputs, context)
+
+
+def workflow_defaults(recipe: Any) -> dict[str, Any]:
+    """Recipeが指すWorkflowテンプレートに書かれた既定値を返す。
+
+    投入前プレビューが差分の基準に使う。テンプレートファイルを持たないengine
+    (音声・合成)は既定値の定義を持たないため、空のまま返す。
+    """
+    if recipe.engine != ENGINE_COMFYUI:
+        return {}
+    try:
+        template_name = comfyui_prepare.resolve_template_name(recipe)
+        return comfyui_workflow.template_defaults(template_name)
+    except (PreparationError, comfyui_workflow.WorkflowError):
+        # 既定値を引けないこと自体は準備処理が同じ理由で拒否する。差分の基準が
+        # 無いだけとして扱い、ここでは失敗させない。
+        return {}
 
 
 class ExecutorRegistry:

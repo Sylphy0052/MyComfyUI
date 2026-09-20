@@ -33,8 +33,9 @@ from mycomfyui_api.adapters.voice import audio as voice_audio
 from mycomfyui_api.adapters.voice.base import VoiceError
 from mycomfyui_api.adapters.voice.factory import create_voice_backend
 from mycomfyui_api.db import get_session, get_session_factory
-from mycomfyui_api.engines import SUPPORTED_ENGINES, is_supported
+from mycomfyui_api.engines import AUTO_SEED, SUPPORTED_ENGINES, is_supported
 from mycomfyui_api.engines import prepare as prepare_execution
+from mycomfyui_api.engines import workflow_defaults as engine_workflow_defaults
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.execution import (
     PreparationContext,
@@ -328,6 +329,131 @@ async def create_generation_job(
     return job
 
 
+@router.post("/generation-jobs/preview", response_model=schemas.GenerationPreviewRead)
+async def preview_generation_job(
+    payload: schemas.GenerationPreviewCreate,
+    session: SessionDep,
+    source: ReferenceSourceDep,
+):
+    """投入せずに、解決済みの入力とWorkflow既定値からの差分を返す。
+
+    Jobの作成と同じ経路で参照を解決し実行内容を組み立てるが、スナップショットの
+    書き出し、レコードの作成、キュー順の採番は行わない。解決できない入力は作成時と
+    同じ`VALIDATION_ERROR`で返し、画面が投入時とプレビューで分岐を二重に持たない
+    ようにする。
+    """
+    recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
+    _validate_recipe_matches(recipe, payload)
+    resolved = await _resolve_references(
+        source, payload.project_id, payload.scene_id, payload.shot_id
+    )
+    prepared = await _prepare_execution(recipe, payload, source, resolved, session)
+    defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
+    version = await _load_recipe_version(session, recipe)
+    workflow, workflow_version = version if version is not None else (None, None)
+    return schemas.GenerationPreviewRead(
+        scene_ref=resolved.scene_ref,
+        shot_ref=resolved.shot_ref,
+        canon_refs=resolved.canon_refs,
+        engine=recipe.engine,
+        resolved_prompt=prepared.resolved_prompt,
+        model=dict(prepared.model),
+        seed=prepared.seed,
+        seed_auto=_is_seed_auto(defaults, payload.inputs, prepared),
+        parameters=dict(prepared.parameters),
+        resolved_inputs=dict(prepared.resolved_inputs),
+        input_refs=_merge_input_refs(
+            resolved.input_refs([]), prepared.input_refs, payload.input_refs
+        ),
+        workflow_name=workflow.name if workflow is not None else None,
+        workflow_version_id=(
+            workflow_version.id if workflow_version is not None else None
+        ),
+        version=workflow_version.version if workflow_version is not None else None,
+        template_sha256=(
+            workflow_version.template_sha256 if workflow_version is not None else None
+        ),
+        diff=_build_workflow_diff(recipe, defaults, payload.inputs, prepared),
+        parent_job_id=_resolve_parent_job_id(payload, prepared),
+    )
+
+
+async def _load_recipe_version(
+    session: AsyncSession, recipe: Recipe
+) -> tuple[Workflow, WorkflowVersion] | None:
+    """Recipeが指す登録済みWorkflow版を引く。
+
+    レジストリ導入前の形のRecipeは`workflow_version_id`を持たないため、
+    `workflow_template_ref`から引き直す。解決できなければ版の情報を返さない。
+    """
+    version_id = recipe.workflow_version_id
+    if version_id is None:
+        version_id = await workflow_registry.resolve_version_id(
+            session, recipe.workflow_template_ref
+        )
+    if version_id is None:
+        return None
+    return await workflow_registry.load_version(session, version_id)
+
+
+def _is_seed_auto(
+    defaults: dict[str, Any], inputs: dict[str, Any], prepared: PreparedExecution
+) -> bool:
+    """seedを自動採番したかを返す。
+
+    自動採番したseedは投入時に採り直されるため、プレビューの値と一致しない。画面が
+    その旨を示せるようにする。seedを持たないengineでは常に偽とする。
+    """
+    if "seed" not in prepared.resolved_inputs:
+        return False
+    requested = {**defaults, **inputs}.get("seed")
+    return requested is None or requested == AUTO_SEED
+
+
+def _build_workflow_diff(
+    recipe: Recipe,
+    defaults: dict[str, Any],
+    inputs: dict[str, Any],
+    prepared: PreparedExecution,
+) -> list[schemas.GenerationPreviewDiff]:
+    """Workflowの既定値、Recipeの既定値、今回確定する値を変数ごとに並べる。
+
+    テンプレートファイルを持たないengineは`workflow_default`を持たないため、
+    Recipeの既定値と入力の対比だけになる。
+    """
+    workflow_defaults = engine_workflow_defaults(recipe)
+    names = sorted(
+        set(prepared.resolved_inputs) | set(workflow_defaults) | set(defaults)
+    )
+    entries: list[schemas.GenerationPreviewDiff] = []
+    for name in names:
+        resolved = name in prepared.resolved_inputs
+        value = prepared.resolved_inputs.get(name)
+        workflow_default = workflow_defaults.get(name)
+        if name in inputs:
+            origin = "input"
+        elif name in defaults:
+            origin = "recipe_default"
+        elif resolved:
+            origin = "adapter"
+        else:
+            origin = "workflow_default"
+        entries.append(
+            schemas.GenerationPreviewDiff(
+                name=name,
+                workflow_default=workflow_default,
+                recipe_default=defaults.get(name),
+                value=value,
+                # 値が確定していない変数は、既定値から変わっていないものとして扱う。
+                changed=resolved
+                and name in workflow_defaults
+                and value != workflow_default,
+                origin=origin,
+            )
+        )
+    return entries
+
+
 @dataclass(frozen=True)
 class _ResolvedReferences:
     """参照APIから解決した、Manifestへ固定する不変参照の組。
@@ -425,7 +551,7 @@ class _ArtifactLookup:
 
 async def _prepare_execution(
     recipe: Recipe,
-    payload: schemas.GenerationJobCreate,
+    payload: schemas.GenerationPreviewCreate,
     source: ReferenceSource,
     resolved: _ResolvedReferences,
     session: AsyncSession,
@@ -447,7 +573,7 @@ async def _prepare_execution(
 
 
 def _validate_recipe_matches(
-    recipe: Recipe, payload: schemas.GenerationJobCreate
+    recipe: Recipe, payload: schemas.GenerationPreviewCreate
 ) -> None:
     if not is_supported(recipe.engine):
         raise _validation_error(
@@ -558,7 +684,7 @@ def _build_job_records(
 
 
 def _resolve_parent_job_id(
-    payload: schemas.GenerationJobCreate, prepared: PreparedExecution
+    payload: schemas.GenerationPreviewCreate, prepared: PreparedExecution
 ) -> str | None:
     """親Jobを決める。入力から決まる場合は要求の指定と食い違わせない。
 

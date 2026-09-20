@@ -416,6 +416,8 @@ class PreparedWorkflow:
     resolved_prompt: str
     model: dict[str, str]
     parameters: dict[str, Any]
+    #: 型変換まで済ませた変数ごとの確定値。投入前プレビューが既定値との差分を作る。
+    resolved_values: dict[str, Any] = field(default_factory=dict)
 
 
 @lru_cache
@@ -660,6 +662,7 @@ def build_workflow(
         resolved_prompt=str(resolved[binding.prompt_variable]),
         model=model,
         parameters=parameters,
+        resolved_values=dict(resolved),
     )
 
 
@@ -675,6 +678,35 @@ def _binding_of(template_name: str) -> WorkflowBinding:
 def variable_names(template_name: str) -> frozenset[str]:
     """テンプレートが受け付ける変数名を返す。Recipeの`input_schema`の検証に使う。"""
     return frozenset(_binding_of(template_name).variables)
+
+
+def template_defaults(template_name: str) -> dict[str, Any]:
+    """テンプレートに書かれている変数ごとの既定値を返す。
+
+    投入前プレビューが「Workflowの既定値から何が変わるか」を示すために使う。値の出所は
+    テンプレートJSONのノード入力そのものとし、Recipeの`defaults`は混ぜない。書き込み先の
+    ノードや入力が無い変数は、既定値を持たないものとして落とす。
+    """
+    binding = _binding_of(template_name)
+    raw, _ = _load_template(template_name)
+    workflow = json.loads(raw)
+    defaults: dict[str, Any] = {}
+    for name, variable in binding.variables.items():
+        node = binding.nodes.get(variable.role)
+        if node is None:
+            continue
+        entry = workflow.get(node.node_id)
+        if not isinstance(entry, dict):
+            continue
+        inputs = entry.get("inputs")
+        if not isinstance(inputs, dict) or variable.input_key not in inputs:
+            continue
+        value = inputs[variable.input_key]
+        if isinstance(value, list):
+            # 結線はノード参照の配列で表される。既定値ではないため載せない。
+            continue
+        defaults[name] = value
+    return defaults
 
 
 def optional_roles(template_name: str) -> frozenset[str]:

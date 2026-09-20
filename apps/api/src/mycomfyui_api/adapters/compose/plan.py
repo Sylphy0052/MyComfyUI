@@ -235,6 +235,15 @@ async def prepare(
         input_refs=input_refs,
         # 動画Artifactを作ったJobを親に持たせ、合成結果から生成元を辿れるようにする。
         parent_job_id=video.job_id,
+        resolved_inputs={
+            "video": {
+                "artifact_id": video.artifact_id,
+                "relative_path": video.relative_path,
+                "sha256": video.sha256,
+            },
+            "voices": [dict(track) for track in voices],
+            "bgm": dict(bgm) if bgm else None,
+        },
     )
 
 
