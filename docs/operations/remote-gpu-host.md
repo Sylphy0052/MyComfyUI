@@ -91,7 +91,7 @@ WantedBy=default.target
 ```
 
 ```bash
-mkdir -p ~/ComfyUI/logs
+mkdir -p ~/ComfyUI/logs && chmod 700 ~/ComfyUI/logs
 systemctl --user daemon-reload
 systemctl --user enable --now comfyui
 loginctl enable-linger $USER   # ログアウト後も動かす
@@ -117,6 +117,8 @@ nssm start ComfyUI
 ```
 
 いずれの場合も、標準出力と標準エラーをファイルへ残す。Jobが`BACKEND_UNAVAILABLE`や`EXECUTION_FAILED`で失敗したとき、原因はComfyUI側のログにしか出ない。
+
+ログにはプロンプトと生成物のpathが残る。Remote PCを他の利用者と共有する場合、ログの出力先ディレクトリを本人だけが読める権限にする。
 
 常駐させる以上、ComfyUI本体とカスタムノードは更新せずに放置しない。LANへ待受を広げた分だけ、これらの脆弱性がそのまま攻撃面になる([ADR 0002](../adr/0002-remote-gpu-host.md))。
 
