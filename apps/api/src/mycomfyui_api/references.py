@@ -9,7 +9,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from starlette import status
 
 from mycomfyui_api.adapters.aimedia.client import (
@@ -103,11 +103,37 @@ async def get_shot(
     return await _relay(lambda: source.get_shot(project_id, scene_id, shot_id))
 
 
+#: Canon descriptorの種別。正本は`contracts/ai-media/v1/schema/reference-api.schema.json`。
+CANON_KINDS = ("voice", "character", "location", "story", "preset", "media", "other")
+
+CanonKind = Annotated[str | None, Query(pattern=f"^({'|'.join(CANON_KINDS)})$")]
+
+
 @router.get("/projects/{project_id}/canon")
 async def list_canon(
-    project_id: ReferenceId, source: ReferenceSourceDep
+    project_id: ReferenceId,
+    source: ReferenceSourceDep,
+    kind: CanonKind = None,
 ) -> dict[str, Any]:
-    return await _relay(lambda: source.list_canon(project_id))
+    """Canon descriptorを一覧する。`kind`を指定すると種別で絞り込む。
+
+    上流の契約に`kind`クエリは無いため、絞り込みはMyComfyUI側で行う。参照APIには
+    Voice Canon専用のEndpointが無く、画面は`CanonList`から絞り込む形になる。
+    """
+    payload = await _relay(lambda: source.list_canon(project_id))
+    if kind is None:
+        return payload
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return payload
+    return {
+        **payload,
+        "items": [
+            item
+            for item in items
+            if isinstance(item, dict) and item.get("kind") == kind
+        ],
+    }
 
 
 @router.get("/projects/{project_id}/canon/{canon_id}")

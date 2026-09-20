@@ -21,6 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mycomfyui_api import schemas
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
+from mycomfyui_api.adapters.voice import plan as voice_plan
+from mycomfyui_api.adapters.voice.base import (
+    ENGINE_COSYVOICE3,
+    ENGINE_QWEN3_TTS,
+    ENGINE_VOXCPM2,
+)
 from mycomfyui_api.models import Recipe
 
 logger = logging.getLogger(__name__)
@@ -102,3 +108,95 @@ async def ensure_default_recipes(session: AsyncSession) -> Recipe | None:
     await session.commit()
     logger.info("既定Recipeを登録しました。recipe_id=%s", recipe.id)
     return recipe
+
+
+#: 音声Recipeが指す実行スナップショットの形。ComfyUIのWorkflowテンプレートに当たる。
+VOICE_TEMPLATE_NAME = "voice_runner_request"
+
+#: 画面へ出す入力欄の定義。参照音声の取り込みとVoice Canonの選択は画面が組み立てる。
+VOICE_INPUT_SCHEMA: dict[str, Any] = {
+    "voices": {
+        "type": "object",
+        "required": True,
+        "label": "Voice Canonと参照音声",
+        "control": "voices",
+        "help": "台詞のvoice_idごとに、Voice Canonと取り込んだ参照音声を指定する。",
+    },
+    "profile": {"type": "string", "label": "プロファイル", "control": "text"},
+    "language": {"type": "string", "label": "言語", "control": "text"},
+    "seed": {
+        "type": "integer",
+        "label": "seed",
+        "control": "number",
+        "help": "-1で自動採番する。同じseedなら波形が再現する。",
+    },
+    "verify_with_asr": {
+        "type": "boolean",
+        "label": "ASRで読みを検証する",
+        "control": "checkbox",
+    },
+    "pad_to_duration": {
+        "type": "boolean",
+        "label": "Shotの尺へ無音パディングする",
+        "control": "checkbox",
+    },
+}
+
+VOICE_DEFAULTS: dict[str, Any] = {
+    "profile": "default",
+    "language": "ja",
+    "seed": voice_plan.AUTO_SEED,
+    "verify_with_asr": True,
+    "pad_to_duration": True,
+}
+
+#: 既定で登録する音声Recipe。採否の根拠は`ai-media/検証_tts/05_tts比較/REPORT.md`。
+VOICE_RECIPES: tuple[tuple[str, str], ...] = (
+    ("音声 Qwen3-TTS (Primary)", ENGINE_QWEN3_TTS),
+    ("音声 VoxCPM2 (Secondary)", ENGINE_VOXCPM2),
+    ("音声 CosyVoice3 (比較用)", ENGINE_COSYVOICE3),
+)
+
+
+async def ensure_voice_recipes(session: AsyncSession) -> list[Recipe]:
+    """音声Backendごとの既定Recipeを登録する。
+
+    スナップショットの形が変わったときは既存Recipeを書き換えず、後継Recipeを追加
+    する。判定にはWorkflowテンプレートのSHA-256ではなくスナップショットの版を使う。
+    音声Backendにはテンプレートファイルが無いためである。
+    """
+    created: list[Recipe] = []
+    for name, engine in VOICE_RECIPES:
+        result = await session.execute(
+            select(Recipe)
+            .where(Recipe.name == name)
+            .order_by(Recipe.created_at.desc(), Recipe.id.asc())
+        )
+        existing = result.scalars().all()
+        if any(
+            isinstance(recipe.workflow_template_ref, dict)
+            and recipe.workflow_template_ref.get("version")
+            == voice_plan.SNAPSHOT_VERSION
+            for recipe in existing
+        ):
+            continue
+        recipe = Recipe(
+            id=schemas.new_id(),
+            name=name,
+            kind="voice",
+            engine=engine,
+            workflow_template_ref={
+                "name": VOICE_TEMPLATE_NAME,
+                "version": voice_plan.SNAPSHOT_VERSION,
+            },
+            input_schema=dict(VOICE_INPUT_SCHEMA),
+            defaults=dict(VOICE_DEFAULTS),
+            supersedes_recipe_id=existing[0].id if existing else None,
+            created_at=schemas.now_iso(),
+        )
+        session.add(recipe)
+        created.append(recipe)
+    if created:
+        await session.commit()
+        logger.info("音声Recipeを%d件登録しました。", len(created))
+    return created

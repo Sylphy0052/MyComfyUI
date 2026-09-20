@@ -9,9 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from mycomfyui_api.adapters.agent import create_agent_provider
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
-from mycomfyui_api.adapters.comfyui.executor import ComfyUIExecutor
-from mycomfyui_api.bootstrap import ensure_default_recipes
+from mycomfyui_api.bootstrap import ensure_default_recipes, ensure_voice_recipes
 from mycomfyui_api.db import dispose_engine, get_engine, get_session_factory
+from mycomfyui_api.engines import ExecutorRegistry
 from mycomfyui_api.errors import (
     ApiError,
     api_error_handler,
@@ -45,7 +45,10 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info("中断Jobを%d件failedへ倒しました。", recovered)
         await ensure_default_recipes(session)
-    worker = JobQueueWorker(session_factory, ComfyUIExecutor(session_factory))
+        await ensure_voice_recipes(session)
+    # Executorはengineごとにレジストリから引く。キューは全Jobで1本のまま、
+    # 画像Jobと音声Jobが同じGPU直列キューへ積まれる。
+    worker = JobQueueWorker(session_factory, ExecutorRegistry(session_factory))
     worker.start()
     app.state.queue_worker = worker
     app.state.reference_source = None

@@ -1,7 +1,9 @@
+import base64
+import binascii
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -20,10 +22,19 @@ from mycomfyui_api.adapters.aimedia.client import (
     AiMediaUnavailable,
     ReferenceSource,
 )
-from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
+from mycomfyui_api.adapters.voice import audio as voice_audio
+from mycomfyui_api.adapters.voice.base import VoiceError
+from mycomfyui_api.adapters.voice.factory import create_voice_backend
 from mycomfyui_api.db import get_session, get_session_factory
+from mycomfyui_api.engines import SUPPORTED_ENGINES, is_supported
+from mycomfyui_api.engines import prepare as prepare_execution
 from mycomfyui_api.errors import ApiError
+from mycomfyui_api.execution import (
+    PreparationContext,
+    PreparationError,
+    PreparedExecution,
+)
 from mycomfyui_api.models import (
     AgentProposal,
     ApprovalLog,
@@ -32,6 +43,7 @@ from mycomfyui_api.models import (
     GenerationJob,
     GenerationManifest,
     Recipe,
+    VoiceVerification,
 )
 from mycomfyui_api.queue import JobQueueWorker
 from mycomfyui_api.references import get_reference_source
@@ -155,96 +167,6 @@ async def get_recipe(recipe_id: str, session: SessionDep):
     return await _get_or_404(session, Recipe, "Recipe", recipe_id)
 
 
-def _resolve_template_name(recipe: Recipe) -> str:
-    """Recipeが指すWorkflowテンプレートを許可済み一覧から解決する。
-
-    利用者入力から任意のJSONを実行させないため、参照できるのは同梱テンプレートだけ
-    とする。`sha256`を持つ参照は、指している版が同梱物と一致することまで確かめる。
-    """
-    reference = recipe.workflow_template_ref
-    if not isinstance(reference, dict):
-        raise _validation_error("Recipeのworkflow_template_refが不正です。")
-    name = reference.get("name")
-    if not isinstance(name, str) or name not in workflow_module.ALLOWED_TEMPLATES:
-        raise _validation_error(
-            "許可されていないWorkflowテンプレートです。",
-            {
-                "name": name,
-                "allowed": sorted(workflow_module.ALLOWED_TEMPLATES),
-            },
-        )
-    expected = reference.get("sha256")
-    if isinstance(
-        expected, str
-    ) and expected.lower() != workflow_module.template_digest(name):
-        raise _validation_error(
-            "Workflowテンプレートの内容が参照と一致しません。", {"name": name}
-        )
-    return name
-
-
-def _validate_against_input_schema(
-    recipe: Recipe, template_name: str, inputs: dict[str, Any], values: dict[str, Any]
-) -> None:
-    """Recipeの`input_schema`で、受け取る変数と必須項目を絞る。
-
-    テンプレート側のallowlistより狭い範囲しか許さないRecipeを作れるようにする。
-    `input_schema`は変数名をキーとし、値が`{"required": true}`を持つ項目を必須とする。
-    空のときはテンプレート側の定義だけで判定する。
-    """
-    schema = recipe.input_schema
-    if not isinstance(schema, dict) or not schema:
-        return
-    known = workflow_module.variable_names(template_name)
-    undefined = set(schema) - known
-    if undefined:
-        raise _validation_error(
-            "Recipeのinput_schemaがWorkflowに無い変数を指しています。",
-            {"template": template_name, "unknown": sorted(undefined)},
-        )
-    rejected = set(inputs) - set(schema)
-    if rejected:
-        raise _validation_error(
-            "このRecipeで指定できない変数です。",
-            {"rejected": sorted(rejected), "allowed": sorted(schema)},
-        )
-    malformed = sorted(
-        name for name, spec in schema.items() if not isinstance(spec, dict | str)
-    )
-    if malformed:
-        # 必須指定は`{"required": true}`で書く。`true`のような書き間違いを黙って
-        # 読み飛ばすと、必須チェックが効かないまま動いてしまう。
-        raise _validation_error(
-            "Recipeのinput_schemaの項目は、型名の文字列かobjectで書きます。",
-            {"malformed": malformed},
-        )
-    missing = [
-        name
-        for name, spec in schema.items()
-        if isinstance(spec, dict)
-        and spec.get("required") is True
-        and name not in values
-    ]
-    if missing:
-        raise _validation_error(
-            "Recipeが必須とする変数が不足しています。", {"missing": sorted(missing)}
-        )
-
-
-def _prepare_workflow(
-    recipe: Recipe, inputs: dict[str, Any]
-) -> workflow_module.PreparedWorkflow:
-    """Recipeの既定値と要求の`inputs`をマージし、投入用Workflowを組み立てる。"""
-    template_name = _resolve_template_name(recipe)
-    defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
-    values: dict[str, Any] = {**defaults, **inputs}
-    _validate_against_input_schema(recipe, template_name, inputs, values)
-    try:
-        return workflow_module.build_workflow(template_name, values)
-    except workflow_module.WorkflowError as error:
-        raise _validation_error(str(error), {"template": template_name}) from error
-
-
 @router.post(
     "/generation-jobs",
     response_model=schemas.GenerationJobRead,
@@ -264,14 +186,16 @@ async def create_generation_job(
     """
     recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
     _validate_recipe_matches(recipe, payload)
-    prepared = _prepare_workflow(recipe, payload.inputs)
     resolved = await _resolve_references(
         source, payload.project_id, payload.scene_id, payload.shot_id
     )
+    # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
+    # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
+    prepared = await _prepare_execution(recipe, payload, source, resolved)
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
-    stored = _store_workflow_snapshot(job_id, prepared.workflow)
+    stored = _store_workflow_snapshot(job_id, prepared.snapshot)
     # 書き出した後はどこで失敗してもスナップショットを残さない。レコードの組み立てと
     # 永続化をまとめて囲み、後始末の無い隙間を作らない。
     try:
@@ -289,11 +213,17 @@ async def create_generation_job(
 
 @dataclass(frozen=True)
 class _ResolvedReferences:
-    """参照APIから解決した、Manifestへ固定する不変参照の組。"""
+    """参照APIから解決した、Manifestへ固定する不変参照の組。
+
+    `scene_data`と`shot_data`は参照APIの応答本文そのものとする。Manifestへは保存
+    しない。音声Jobが台詞をスナップショットへ固定するために使う。
+    """
 
     scene_ref: dict[str, Any]
     shot_ref: dict[str, Any]
     canon_refs: list[dict[str, Any]]
+    scene_data: dict[str, Any] = field(default_factory=dict)
+    shot_data: dict[str, Any] = field(default_factory=dict)
 
     def input_refs(self, extra: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Manifestの`input_refs`を組み立てる。`extra`は入力cache参照を想定する。"""
@@ -349,15 +279,47 @@ async def _resolve_references(
         scene_ref={**scene_ref, "project_id": project_id},
         shot_ref={**shot_ref, "project_id": project_id, "scene_id": scene_id},
         canon_refs=provenance.deduplicate([*scene_canon, *shot_canon]),
+        scene_data=_envelope_data(scene_envelope),
+        shot_data=_envelope_data(shot_envelope),
     )
+
+
+def _envelope_data(envelope: Any) -> dict[str, Any]:
+    """参照APIのEnvelopeから本文を取り出す。形が違えば空のまま扱う。"""
+    if not isinstance(envelope, dict):
+        return {}
+    data = envelope.get("data")
+    return dict(data) if isinstance(data, dict) else {}
+
+
+async def _prepare_execution(
+    recipe: Recipe,
+    payload: schemas.GenerationJobCreate,
+    source: ReferenceSource,
+    resolved: _ResolvedReferences,
+):
+    """Recipeのengineに対応するAdapterで実行スナップショットを組み立てる。"""
+    context = PreparationContext(
+        project_id=payload.project_id,
+        scene_id=payload.scene_id,
+        shot_id=payload.shot_id,
+        scene_data=resolved.scene_data,
+        shot_data=resolved.shot_data,
+        canon_lookup=source,
+    )
+    try:
+        return await prepare_execution(recipe, payload.inputs, context)
+    except PreparationError as error:
+        raise _validation_error(error.message, error.details) from error
 
 
 def _validate_recipe_matches(
     recipe: Recipe, payload: schemas.GenerationJobCreate
 ) -> None:
-    if recipe.engine != ENGINE_COMFYUI:
+    if not is_supported(recipe.engine):
         raise _validation_error(
-            f"未対応の実行Backendです: {recipe.engine}", {"engine": recipe.engine}
+            f"未対応の実行Backendです: {recipe.engine}",
+            {"engine": recipe.engine, "supported": list(SUPPORTED_ENGINES)},
         )
     if recipe.kind != payload.kind:
         raise _validation_error(
@@ -409,7 +371,7 @@ def _build_job_records(
     job_id: str,
     payload: schemas.GenerationJobCreate,
     recipe: Recipe,
-    prepared: workflow_module.PreparedWorkflow,
+    prepared: PreparedExecution,
     stored: storage.StoredFile,
     queue_sequence: int | Any,
     resolved: _ResolvedReferences,
@@ -451,17 +413,46 @@ def _build_job_records(
         model=prepared.model,
         seed=prepared.seed,
         resolved_prompt=prepared.resolved_prompt,
-        parameters={
-            **prepared.parameters,
-            "workflow_template": prepared.template_name,
-            "workflow_template_sha256": prepared.template_sha256,
-        },
-        input_refs=resolved.input_refs(payload.input_refs),
+        parameters=dict(prepared.parameters),
+        input_refs=_merge_input_refs(
+            resolved.input_refs([]), prepared.input_refs, payload.input_refs
+        ),
         workflow_artifact_id=workflow_artifact_id,
         replay_of_manifest_id=None,
         created_at=created_at,
     )
     return job, workflow_artifact, manifest
+
+
+def _merge_input_refs(
+    *groups: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Scene/Shot/Canonの参照、準備で判った参照、呼び出し元の入力cache参照を束ねる。
+
+    同じ参照先が複数の経路から届くことがある。Shotが宣言したCanonを利用者が改めて
+    Jobの入力として指定した場合が典型で、重ねて記録しても再実行の検証結果は変わらず、
+    画面の警告だけが重複する。先勝ちで畳む。
+
+    `provenance.deduplicate`は参照APIで解決する種別だけを想定しており、
+    `source_locator`と`path`を持たない入力cache参照は1件へ畳まれてしまう。ここでは
+    参照APIで解決しない種別も扱うため、`relative_path`まで見る鍵を使う。
+    """
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str | None]] = set()
+    for group in groups:
+        for reference in group:
+            anchor = reference.get("anchor")
+            key = (
+                str(reference.get("kind")),
+                str(reference.get("source_locator") or ""),
+                str(reference.get("path") or reference.get("relative_path") or ""),
+                anchor if isinstance(anchor, str) else None,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(dict(reference))
+    return merged
 
 
 async def _persist_job_records(
@@ -800,20 +791,80 @@ def _reference_ids(job: GenerationJob) -> tuple[str, str, str]:
 
 
 async def _current_references(
-    source: ReferenceSource, job: GenerationJob
+    source: ReferenceSource,
+    job: GenerationJob,
+    recorded: list[Any] | None = None,
 ) -> tuple[list[dict[str, Any]] | None, ApiError | None]:
     """現在のScene、Shot、Canon参照を解決する。
 
     引けない場合は送出せず、失敗を表すApiErrorを添えて`None`を返す。Canon更新警告は
     参照APIが使えないときも画面へ状態を出す必要があり、再実行はそのまま失敗として
     返す必要があるため、扱いを呼び出し側で分ける。
+
+    Scene/Shot本文が宣言していないCanon(利用者がJobの入力として選んだVoice Canonなど)
+    は、記録済みの`input_refs`を手がかりに引き直す。引き直さないと、現在側に同じ参照が
+    現れず、更新が無くても常に`missing`として扱われてしまう。
     """
     try:
         project_id, scene_id, shot_id = _reference_ids(job)
         resolved = await _resolve_references(source, project_id, scene_id, shot_id)
+        selected = await _current_selected_canon(source, project_id, recorded or [])
     except ApiError as error:
         return None, error
-    return [resolved.scene_ref, resolved.shot_ref, *resolved.canon_refs], None
+    return [
+        resolved.scene_ref,
+        resolved.shot_ref,
+        *resolved.canon_refs,
+        *selected,
+    ], None
+
+
+async def _current_selected_canon(
+    source: ReferenceSource, project_id: str, recorded: list[Any]
+) -> list[dict[str, Any]]:
+    """記録済みの`input_refs`にある、入力として選んだCanonを現在の参照で引き直す。
+
+    参照元から消えたCanonは現在側に並べない。呼び出し元の突き合わせで`missing`に
+    なり、再実行できないことが利用者へ伝わる。
+    """
+    entries: list[dict[str, Any]] = []
+    for reference in recorded:
+        if not isinstance(reference, dict):
+            continue
+        if reference.get("kind") != provenance.KIND_CANON:
+            continue
+        if reference.get("declared_by") != provenance.DECLARED_BY_INPUT:
+            continue
+        canon_id = reference.get("canon_id")
+        if not isinstance(canon_id, str):
+            continue
+        try:
+            descriptor = await source.get_canon(project_id, canon_id)
+        except AiMediaNotFound:
+            continue
+        except AiMediaUnavailable as error:
+            logger.warning("ai-media参照APIを利用できません。", exc_info=error)
+            raise ApiError(
+                "REFERENCE_UNAVAILABLE",
+                "ai-media参照APIを利用できませんでした。",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            ) from error
+        if not isinstance(descriptor, dict):
+            continue
+        try:
+            entries.append(
+                provenance.canon_entry(
+                    descriptor.get("reference"),
+                    declared_by=provenance.DECLARED_BY_INPUT,
+                )
+            )
+        except provenance.ReferenceError as error:
+            logger.warning(
+                "Canon descriptorから不変参照を取り出せません。canon_id=%s",
+                canon_id,
+                exc_info=error,
+            )
+    return entries
 
 
 def _verify_cached_input(reference: dict[str, Any]) -> dict[str, Any]:
@@ -908,7 +959,7 @@ async def get_job_canon_status(
     """
     job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
     manifest = await _get_manifest(session, job)
-    current, failure = await _current_references(source, job)
+    current, failure = await _current_references(source, job, manifest.input_refs)
     if current is None:
         return schemas.CanonStatusRead(
             job_id=job.id,
@@ -1025,7 +1076,7 @@ async def replay_generation_job(
     workflow_artifact = await _get_workflow_artifact(session, manifest)
     workflow_body = _read_workflow_snapshot(workflow_artifact)
 
-    current, failure = await _current_references(source, job)
+    current, failure = await _current_references(source, job, manifest.input_refs)
     if current is None:
         # 参照IDの欠落と上流の不調では原因が違う。解決を試みたときの分類をそのまま返す。
         raise failure or ApiError(
@@ -1182,6 +1233,109 @@ async def get_job_lineage(job_id: str, session: SessionDep):
         ],
         artifacts=[schemas.ArtifactRead.model_validate(item) for item in artifacts],
         truncated=ancestors_truncated or descendants_truncated,
+    )
+
+
+@router.get(
+    "/generation-jobs/{job_id}/voice-verifications",
+    response_model=list[schemas.VoiceVerificationRead],
+)
+async def list_voice_verifications(job_id: str, session: SessionDep):
+    """音声Jobの読み検証を台詞順で返す。
+
+    ASR結果が期待読みと一致しなかったこと自体はJobの失敗ではない。音声は生成できて
+    いるため、判断は利用者へ委ねる。
+    """
+    await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    result = await session.execute(
+        select(VoiceVerification)
+        .where(VoiceVerification.job_id == job_id)
+        .order_by(VoiceVerification.dialogue_index.asc())
+    )
+    return list(result.scalars().all())
+
+
+@router.get("/backends/voice/health", response_model=schemas.VoiceBackendHealthRead)
+async def get_voice_backend_health():
+    """voice-runnerの疎通とengineの利用可否を中継する。
+
+    接続できないことは障害として応答本文で伝え、HTTPのエラーにしない。画面は音声
+    Backendが使えない状態でも他の機能を出し続ける。
+    """
+    backend = create_voice_backend()
+    try:
+        health = await backend.health()
+    except VoiceError as error:
+        logger.info("voice-runnerの状態を取得できません。", exc_info=error)
+        return schemas.VoiceBackendHealthRead(
+            base_url=backend.base_url, reachable=False, reason=str(error), engines=[]
+        )
+    finally:
+        await backend.aclose()
+    return schemas.VoiceBackendHealthRead(
+        base_url=health.base_url,
+        reachable=True,
+        reason=None,
+        engines=[
+            schemas.VoiceEngineHealthRead(
+                id=engine.id,
+                available=engine.available,
+                model=engine.model,
+                revision=engine.revision,
+                sample_rate=engine.sample_rate,
+                needs_katakana=engine.needs_katakana,
+                detail=engine.detail,
+            )
+            for engine in health.engines
+        ],
+    )
+
+
+@router.post(
+    "/voice-references",
+    response_model=schemas.VoiceReferenceRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_voice_reference(payload: schemas.VoiceReferenceCreate):
+    """参照音声を入力cacheへ取り込む。
+
+    参照APIはVoice Canonの`source_audio`を公開しないため、参照音声そのものを上流から
+    取得する経路は無い。利用者が取り込んだファイルの内容hashを返し、Voice Canonの
+    `source_sha256`と突き合わせられるようにする。
+    """
+    settings = get_settings()
+    try:
+        data = base64.b64decode(payload.content_base64, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise _validation_error("content_base64を復号できません。") from error
+    if len(data) > settings.voice_max_audio_bytes:
+        raise _validation_error(
+            "参照音声が上限を超えています。",
+            {"byte_size": len(data), "limit": settings.voice_max_audio_bytes},
+        )
+    try:
+        info = voice_audio.inspect(data)
+    except voice_audio.AudioError as error:
+        # 取り込めるのはPCM wavだけとする。runnerへそのまま渡す素材のため、扱えない
+        # 符号化を入力cacheへ残さない。
+        raise _validation_error(f"PCM wavとして読み込めません: {error}") from error
+    try:
+        stored = storage.write_input(payload.file_name, data, settings)
+    except storage.StorageError as error:
+        logger.exception("参照音声を取り込めません。")
+        raise ApiError(
+            "STORAGE_ERROR",
+            "参照音声を取り込めませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+    return schemas.VoiceReferenceRead(
+        relative_path=stored.relative_path,
+        sha256=stored.sha256,
+        byte_size=stored.byte_size,
+        media_type="audio/wav",
+        sample_rate=info.sample_rate,
+        channels=info.channels,
+        duration_sec=round(info.duration_sec, 4),
     )
 
 

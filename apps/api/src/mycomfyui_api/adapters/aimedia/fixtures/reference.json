@@ -8,7 +8,7 @@
         "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970"
       },
       "scene_count": 1,
-      "canon_count": 3
+      "canon_count": 5
     }
   ],
   "scenes": {
@@ -502,7 +502,16 @@
             "gaze": "前方"
           }
         ],
-        "dialogue": [],
+        "dialogue": [
+          {
+            "speaker": "hirohito",
+            "text": "放課後の女子は、もう誰も残っていない。",
+            "reading": null,
+            "voice_id": "hirohito-v1",
+            "delivery": "低く",
+            "start_sec": 0.5
+          }
+        ],
         "image": {
           "engine": "comfyui-anima",
           "profile": "default",
@@ -614,6 +623,32 @@
           "sha256": "3144c303c1de9319baa167308630ec25e620f54832768154804ded5ae4bfe04f",
           "anchor": null,
           "note": "暗室の赤色光"
+        }
+      },
+      {
+        "canon_id": "273fe63ead78071b52611efe174c99b364af8840b68ad935f075be4275712d73",
+        "kind": "voice",
+        "display_name": "akari-v1",
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "canon/voices/akari-v1.yaml",
+          "sha256": "a25c3a0865dddd7d53f2f7aa72ccd41fa7cd587d803730344df501e701a5508a",
+          "anchor": null,
+          "note": null
+        }
+      },
+      {
+        "canon_id": "70eff20505bd5ee6868205e3a5339421080fff58c510a2229b5099b80b49fc3f",
+        "kind": "voice",
+        "display_name": "hirohito-v1",
+        "reference": {
+          "source_locator": "https://github.com/Sylphy0052/novel-writer",
+          "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970",
+          "path": "canon/voices/hirohito-v1.yaml",
+          "sha256": "2edfd0652abb02c63f8e6f689d1462d1eec58387edc1b3c90e6eb9400f85d52f",
+          "anchor": null,
+          "note": null
         }
       }
     ]

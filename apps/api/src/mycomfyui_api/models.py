@@ -2,8 +2,10 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
@@ -224,3 +226,52 @@ class AgentProposal(Base):
     )
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     decided_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class VoiceVerification(Base):
+    """音声Artifactの読み検証の結果。Shot内の台詞ごとに1件記録する。
+
+    ArtifactへJSONとして書くのではなく表にするのは、台詞単位での一覧表示と不一致の
+    絞り込みをAPIで返すためである。記録は追記のみとし、後から書き換えない。
+
+    `status`と`target_duration_sec`はIssue #11の項目表に無いが、画面が「一致しなかった」
+    と「そもそも検証していない」を区別し、尺の超過を判定するために必要なため加えた。
+    """
+
+    __tablename__ = "voice_verification"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('verified','skipped','asr_failed','kana_unavailable')",
+            name="ck_voice_verification_status",
+        ),
+        Index("ix_voice_verification_job_id", "job_id"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    job_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=False
+    )
+    artifact_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=False
+    )
+    #: Shot内での台詞の位置。
+    dialogue_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    expected_text: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Shotが読みを指定していない台詞ではNULLになる。
+    expected_reading: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: ASRを実行しなかった、または失敗した場合はNULLになる。
+    asr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    normalized_expected: Mapped[str | None] = mapped_column(Text, nullable=True)
+    normalized_asr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: 正規化後の完全一致可否。検証していない場合はNULLになる。
+    match: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    #: 不一致時の差分率。0.0で完全一致、1.0で共通部分なし。
+    diff_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: 生成された音声の尺。
+    audio_sec: Mapped[float] = mapped_column(Float, nullable=False)
+    #: パディング後の尺。超過時はパディングしないため`audio_sec`と同じ値になる。
+    padded_sec: Mapped[float] = mapped_column(Float, nullable=False)
+    #: Shotが求める尺。超過の判定に使う。
+    target_duration_sec: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)

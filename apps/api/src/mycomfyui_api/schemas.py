@@ -398,3 +398,80 @@ class AgentProposalDecision(ApiModel):
 
     decision: AgentDecision
     actor_id: str = Field(default="local-user", min_length=1, max_length=200)
+
+
+#: 読み検証の実施状況。`verified`以外では`match`がNoneになる。
+VoiceVerificationStatus = Literal[
+    "verified", "skipped", "asr_failed", "kana_unavailable"
+]
+
+
+class VoiceVerificationRead(ApiModel):
+    """1台詞ぶんの読み検証と尺の記録。
+
+    `match`はカタカナへ正規化したうえでの完全一致可否とする。表記のまま比べると、
+    Whisperが返す同音の別表記(朝比奈 → 朝日菜)で、読めているのに不一致になる。
+    """
+
+    id: str
+    job_id: str
+    artifact_id: str
+    dialogue_index: int
+    expected_text: str
+    expected_reading: str | None
+    asr_text: str | None
+    normalized_expected: str | None
+    normalized_asr: str | None
+    match: bool | None
+    diff_ratio: float | None
+    audio_sec: float
+    padded_sec: float
+    target_duration_sec: float
+    status: str
+    created_at: str
+
+
+class VoiceEngineHealthRead(ApiModel):
+    """voice-runnerが公開する1engineの状態。"""
+
+    id: str
+    available: bool
+    model: str | None = None
+    revision: str | None = None
+    sample_rate: int | None = None
+    needs_katakana: bool = False
+    detail: str | None = None
+
+
+class VoiceBackendHealthRead(ApiModel):
+    """voice-runnerの疎通確認。認証情報は扱わないため返さない。"""
+
+    base_url: str
+    reachable: bool
+    reason: str | None = None
+    engines: list[VoiceEngineHealthRead] = Field(default_factory=list)
+
+
+class VoiceReferenceCreate(ApiModel):
+    """参照音声の取り込み要求。
+
+    参照APIはVoice Canonの`source_audio`(作成者環境の絶対path)を公開しないため、
+    参照音声そのものを参照APIから取得する経路は無い。利用者が手元の音源を取り込み、
+    入力cacheとして保持する。
+    """
+
+    file_name: str = Field(min_length=1, max_length=255)
+    #: wavのbase64。JSONで受け取り、multipartの依存を増やさない。
+    content_base64: str = Field(min_length=1)
+
+
+class VoiceReferenceRead(ApiModel):
+    """取り込んだ参照音声。`sha256`をVoice Canonの`source_sha256`と突き合わせる。"""
+
+    relative_path: str
+    sha256: str
+    byte_size: int
+    media_type: str
+    sample_rate: int
+    channels: int
+    duration_sec: float

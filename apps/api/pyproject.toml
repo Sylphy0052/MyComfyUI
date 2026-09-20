@@ -7,10 +7,14 @@ dependencies = [
   "aiosqlite>=0.20,<1",
   "alembic>=1.14,<2",
   "fastapi>=0.115,<1",
+  # 読み比較のカタカナ正規化に使う。torchを必要としないため、生成Backendの
+  # Python環境を統合しない制約には当たらない。
+  "fugashi>=1.3,<2",
   "httpx>=0.27,<1",
   "platformdirs>=4.3,<5",
   "pydantic-settings>=2.6,<3",
   "sqlalchemy>=2.0,<3",
+  "unidic-lite>=1.0.8,<2",
   "uvicorn[standard]>=0.30,<1",
   "websockets>=13,<16",
 ]

@@ -1337,6 +1337,313 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VoiceBackendHealthRead": {
+        "additionalProperties": false,
+        "description": "voice-runnerの疎通確認。認証情報は扱わないため返さない。",
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "engines": {
+            "items": {
+              "$ref": "#/components/schemas/VoiceEngineHealthRead"
+            },
+            "title": "Engines",
+            "type": "array"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "base_url",
+          "reachable"
+        ],
+        "title": "VoiceBackendHealthRead",
+        "type": "object"
+      },
+      "VoiceEngineHealthRead": {
+        "additionalProperties": false,
+        "description": "voice-runnerが公開する1engineの状態。",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "needs_katakana": {
+            "default": false,
+            "title": "Needs Katakana",
+            "type": "boolean"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          }
+        },
+        "required": [
+          "id",
+          "available"
+        ],
+        "title": "VoiceEngineHealthRead",
+        "type": "object"
+      },
+      "VoiceReferenceCreate": {
+        "additionalProperties": false,
+        "description": "参照音声の取り込み要求。\n\n参照APIはVoice Canonの`source_audio`(作成者環境の絶対path)を公開しないため、\n参照音声そのものを参照APIから取得する経路は無い。利用者が手元の音源を取り込み、\n入力cacheとして保持する。",
+        "properties": {
+          "content_base64": {
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name",
+          "content_base64"
+        ],
+        "title": "VoiceReferenceCreate",
+        "type": "object"
+      },
+      "VoiceReferenceRead": {
+        "additionalProperties": false,
+        "description": "取り込んだ参照音声。`sha256`をVoice Canonの`source_sha256`と突き合わせる。",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "channels": {
+            "title": "Channels",
+            "type": "integer"
+          },
+          "duration_sec": {
+            "title": "Duration Sec",
+            "type": "number"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "sample_rate": {
+            "title": "Sample Rate",
+            "type": "integer"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "sha256",
+          "byte_size",
+          "media_type",
+          "sample_rate",
+          "channels",
+          "duration_sec"
+        ],
+        "title": "VoiceReferenceRead",
+        "type": "object"
+      },
+      "VoiceVerificationRead": {
+        "additionalProperties": false,
+        "description": "1台詞ぶんの読み検証と尺の記録。\n\n`match`はカタカナへ正規化したうえでの完全一致可否とする。表記のまま比べると、\nWhisperが返す同音の別表記(朝比奈 → 朝日菜)で、読めているのに不一致になる。",
+        "properties": {
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "asr_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asr Text"
+          },
+          "audio_sec": {
+            "title": "Audio Sec",
+            "type": "number"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dialogue_index": {
+            "title": "Dialogue Index",
+            "type": "integer"
+          },
+          "diff_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Ratio"
+          },
+          "expected_reading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Reading"
+          },
+          "expected_text": {
+            "title": "Expected Text",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
+          },
+          "normalized_asr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Asr"
+          },
+          "normalized_expected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Expected"
+          },
+          "padded_sec": {
+            "title": "Padded Sec",
+            "type": "number"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_duration_sec": {
+            "title": "Target Duration Sec",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "artifact_id",
+          "dialogue_index",
+          "expected_text",
+          "expected_reading",
+          "asr_text",
+          "normalized_expected",
+          "normalized_asr",
+          "match",
+          "diff_ratio",
+          "audio_sec",
+          "padded_sec",
+          "target_duration_sec",
+          "status",
+          "created_at"
+        ],
+        "title": "VoiceVerificationRead",
+        "type": "object"
       }
     }
   },
@@ -2147,6 +2454,25 @@
         "summary": "Update Artifact Decision"
       }
     },
+    "/api/v1/backends/voice/health": {
+      "get": {
+        "description": "voice-runnerの疎通とengineの利用可否を中継する。\n\n接続できないことは障害として応答本文で伝え、HTTPのエラーにしない。画面は音声\nBackendが使えない状態でも他の機能を出し続ける。",
+        "operationId": "get_voice_backend_health_api_v1_backends_voice_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceBackendHealthRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Voice Backend Health"
+      }
+    },
     "/api/v1/generation-jobs": {
       "get": {
         "description": "キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。\n\n`scene_id`と`shot_id`は`scene_ref`/`shot_ref`の`id`と突き合わせる。画面が特定の\nShotの生成履歴だけを見るために使う。",
@@ -2581,6 +2907,50 @@
         "summary": "Replay Generation Job"
       }
     },
+    "/api/v1/generation-jobs/{job_id}/voice-verifications": {
+      "get": {
+        "description": "音声Jobの読み検証を台詞順で返す。\n\nASR結果が期待読みと一致しなかったこと自体はJobの失敗ではない。音声は生成できて\nいるため、判断は利用者へ委ねる。",
+        "operationId": "list_voice_verifications_api_v1_generation_jobs__job_id__voice_verifications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VoiceVerificationRead"
+                  },
+                  "title": "Response List Voice Verifications Api V1 Generation Jobs  Job Id  Voice Verifications Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Voice Verifications"
+      }
+    },
     "/api/v1/generation-manifests/{manifest_id}": {
       "get": {
         "operationId": "get_generation_manifest_api_v1_generation_manifests__manifest_id__get",
@@ -2706,6 +3076,7 @@
     },
     "/api/v1/projects/{project_id}/canon": {
       "get": {
+        "description": "Canon descriptorを一覧する。`kind`を指定すると種別で絞り込む。\n\n上流の契約に`kind`クエリは無いため、絞り込みはMyComfyUI側で行う。参照APIには\nVoice Canon専用のEndpointが無く、画面は`CanonList`から絞り込む形になる。",
         "operationId": "list_canon_api_v1_projects__project_id__canon_get",
         "parameters": [
           {
@@ -2716,6 +3087,23 @@
               "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(voice|character|location|story|preset|media|other)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
             }
           }
         ],
@@ -3163,6 +3551,45 @@
           }
         },
         "summary": "Get Recipe"
+      }
+    },
+    "/api/v1/voice-references": {
+      "post": {
+        "description": "参照音声を入力cacheへ取り込む。\n\n参照APIはVoice Canonの`source_audio`を公開しないため、参照音声そのものを上流から\n取得する経路は無い。利用者が取り込んだファイルの内容hashを返し、Voice Canonの\n`source_sha256`と突き合わせられるようにする。",
+        "operationId": "create_voice_reference_api_v1_voice_references_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceReferenceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceReferenceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Voice Reference"
       }
     }
   }
