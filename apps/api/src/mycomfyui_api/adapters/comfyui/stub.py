@@ -304,6 +304,18 @@ def _arguments(
     ]
 
 
+async def _stop(process: Any, communicate: asyncio.Task[Any]) -> None:
+    """起動したffmpegを止める。
+
+    作るのは単色の動画と正弦波だけで、途中まで書いたファイルを残す意味が無いため、
+    猶予を置かずに落とす。
+    """
+    with contextlib.suppress(ProcessLookupError):
+        process.kill()
+    with contextlib.suppress(Exception):
+        await communicate
+
+
 async def _run_ffmpeg(ffmpeg: str, arguments: list[str]) -> None:
     process = await asyncio.create_subprocess_exec(
         ffmpeg,
@@ -316,11 +328,12 @@ async def _run_ffmpeg(ffmpeg: str, arguments: list[str]) -> None:
         _, stderr = await asyncio.wait_for(
             asyncio.shield(communicate), timeout=STUB_RENDER_TIMEOUT_SECONDS
         )
+    except asyncio.CancelledError:
+        # ワーカーの停止などで外側から止められた場合も、ffmpegを残さない。
+        await _stop(process, communicate)
+        raise
     except TimeoutError as error:
-        with contextlib.suppress(ProcessLookupError):
-            process.kill()
-        with contextlib.suppress(Exception):
-            await communicate
+        await _stop(process, communicate)
         raise ExecutionTimeout(
             f"スタブの生成が制限時間{STUB_RENDER_TIMEOUT_SECONDS}秒以内に"
             "完了しませんでした。"

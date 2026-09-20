@@ -361,6 +361,10 @@ Workflow テンプレートはパッケージ同梱のものだけを実行で�
 どの素材を置いたかは Manifest の `parameters.input_uploads` と `input_refs` に残り、実行前に
 記録済みの SHA-256 と実ファイルを突き合わせる。一致しなければ Job を失敗させる。
 
+素材を複数置く途中で通信が切れると、それまでに置いたファイルが ComfyUI の input に残る。
+ComfyUI に削除の口が無いため回収できない。Job は失敗として記録され、生成物も履歴も残らないが、
+input の掃除は ComfyUI 側の運用で行う。
+
 ### 動画・音楽 (MiniMax H3 / ACE-Step)
 
 動画と音楽も ComfyUI Adapter で実行する。Recipe の `kind` とテンプレート名だけが違う。

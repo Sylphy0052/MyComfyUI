@@ -45,6 +45,9 @@ STDERR_EXCERPT_LENGTH = 400
 PROBE_TIMEOUT_SEC = 60.0
 VERSION_TIMEOUT_SEC = 10.0
 
+#: 停止を要求してから強制終了へ切り替えるまでの猶予。
+TERMINATE_GRACE_SEC = 5.0
+
 
 class _PreflightError(Exception):
     """投入前の検証で失敗した。`failure_code`まで決まっている。"""
@@ -467,6 +470,10 @@ async def _run(
             timeout=timeout,
             return_when=asyncio.FIRST_COMPLETED,
         )
+    except asyncio.CancelledError:
+        # ワーカーの停止などで外側から止められた場合も、ffmpegを残さない。
+        await _terminate(process, communicate)
+        raise
     finally:
         cancel_wait.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -484,11 +491,15 @@ async def _run(
 
 
 async def _terminate(process: Any, communicate: asyncio.Task[Any]) -> None:
-    """起動したffmpegを確実に終わらせる。"""
+    """起動したffmpegを確実に終わらせる。
+
+    外側から取り消された流れで呼ばれることもある。その場合は終了待ちの`await`が
+    すぐに再び取り消されるため、待ってから止めるのではなく、先にシグナルを送る。
+    """
     with contextlib.suppress(ProcessLookupError):
         process.terminate()
     try:
-        await asyncio.wait_for(asyncio.shield(communicate), timeout=5.0)
+        await asyncio.wait_for(asyncio.shield(communicate), timeout=TERMINATE_GRACE_SEC)
     except (TimeoutError, asyncio.CancelledError):
         with contextlib.suppress(ProcessLookupError):
             process.kill()
@@ -517,7 +528,7 @@ async def _capture(
         stdout, stderr = await asyncio.wait_for(
             asyncio.shield(communicate), timeout=timeout
         )
-    except TimeoutError:
+    except (TimeoutError, asyncio.CancelledError):
         await _terminate(process, communicate)
         raise
     return process.returncode or 0, stdout, stderr
