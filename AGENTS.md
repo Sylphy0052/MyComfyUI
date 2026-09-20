@@ -61,7 +61,7 @@
 5. 自己レビューと、独立した別agentによる他者レビューを実施する。
 6. 指摘を修正して両レビューを再実施し、修正事項がなくなるまで繰り返す。
 7. 「MR/PRの自己マージ」の条件を満たしたらマージする。
-8. cleanupとしてIssue、roadmap、main同期、マージ済みbranch・worktreeを整理する。許可は求めない。
+8. cleanupとしてIssue、roadmap、main同期、マージ済みbranch・worktreeを整理する。
 
 マージ可否の条件は「MR/PRの自己マージ」に集約する。branch・worktreeの削除は「安全境界」の規定に従う。
 
