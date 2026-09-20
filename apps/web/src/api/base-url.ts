@@ -15,16 +15,33 @@ export const API_BASE_URL_GLOBAL = "__MYCOMFYUI_API_BASE_URL__";
 
 declare global {
   interface Window {
+    // キーは API_BASE_URL_GLOBAL と同じ文字列にする。型宣言側にリテラルしか書けない。
     __MYCOMFYUI_API_BASE_URL__?: unknown;
   }
 }
 
+/** 接続先として許す host。APIは認証を持たないため loopback だけに限る (ADR 0001)。 */
+function isLoopback(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "[::1]" ||
+    hostname === "::1" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
+}
+
 /**
  * 注入値を検証して origin + path へ正規化する。
- * loopback 以外も受けるが、scheme は http/https だけに限る。
+ * scheme は http/https、host は loopback だけを受ける。
  */
 function normalize(injected: unknown): string | null {
+  if (injected === undefined) {
+    return null;
+  }
   if (typeof injected !== "string" || injected.trim() === "") {
+    console.warn(
+      `${API_BASE_URL_GLOBAL} が文字列の URL ではないため同一 origin を使います`,
+    );
     return null;
   }
   let url: URL;
@@ -39,6 +56,12 @@ function normalize(injected: unknown): string | null {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     console.warn(
       `${API_BASE_URL_GLOBAL} の scheme (${url.protocol}) は使えないため同一 origin を使います`,
+    );
+    return null;
+  }
+  if (!isLoopback(url.hostname)) {
+    console.warn(
+      `${API_BASE_URL_GLOBAL} の host (${url.hostname}) は loopback ではないため同一 origin を使います`,
     );
     return null;
   }
