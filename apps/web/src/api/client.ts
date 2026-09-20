@@ -1,3 +1,4 @@
+import { apiBaseUrl } from "./base-url";
 import type { components } from "./schema";
 import type {
   CanonList,
@@ -48,7 +49,7 @@ export type ArtifactIntegrity = components["schemas"]["ArtifactIntegrityRead"];
 export type ArtifactIntegrityReason =
   components["schemas"]["ArtifactIntegrityFinding"]["reason"];
 
-const BASE = "/api/v1";
+// 接続先は実行時に決まる (Issue #64)。ビルド時定数へは焼き込まない。
 
 /**
  * API が返す共通 Envelope。表示文言ではなく code で種別を判定する (ADR 0001)。
@@ -78,7 +79,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${BASE}${path}`, {
+    response = await fetch(`${apiBaseUrl()}${path}`, {
       ...init,
       headers: {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
@@ -319,7 +320,7 @@ export const api = {
     ),
 
   artifactContentUrl: (artifactId: string) =>
-    `${BASE}/artifacts/${encodeURIComponent(artifactId)}/content`,
+    `${apiBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}/content`,
 
   listAgentProviders: () => request<AgentProvider[]>("/agent-providers"),
 
