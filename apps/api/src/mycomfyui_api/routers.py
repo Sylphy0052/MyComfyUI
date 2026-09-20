@@ -3417,21 +3417,63 @@ async def apply_agent_proposal_steps(
             except SQLAlchemyError:
                 # 記録にも失敗した場合。元の失敗を隠さないよう警告だけ残す。
                 logger.warning(
-                    "適用の失敗を記録できません。application_id=%s", application_id
+                    "適用の失敗を記録できません。proposal_id=%s step_index=%s",
+                    proposal_id,
+                    index,
                 )
             raise
-        await _finalize_application(
-            session,
-            application_id,
-            state="applied",
-            applied_ref_type=ref_type,
-            applied_ref_id=ref_id,
-            failure_code=None,
-            failure_message=None,
-        )
+        try:
+            await _finalize_application(
+                session,
+                application_id,
+                state="applied",
+                applied_ref_type=ref_type,
+                applied_ref_id=ref_id,
+                failure_code=None,
+                failure_message=None,
+            )
+        except SQLAlchemyError:
+            # 操作は成功していて、記録だけが残せなかった。失敗として倒すと、実行済みの
+            # 副作用を辿れないまま再実行を促すことになる。別のセッションで書き直す。
+            logger.exception(
+                "適用したstepを記録できません。proposal_id=%s step_index=%s ref=%s:%s",
+                proposal_id,
+                index,
+                ref_type,
+                ref_id,
+            )
+            await session.rollback()
+            await _relink_application(application_id, ref_type, ref_id)
     applications = await _load_applications(session, proposal_id)
     await _sync_proposal_state(session, proposal_id, applications)
     return applications
+
+
+async def _relink_application(application_id: str, ref_type: str, ref_id: str) -> None:
+    """適用済みのstepへ結果を後から書く。応答を組み立てられなかった経路から使う。
+
+    呼び出し元のセッションは書けない状態のため、別のセッションで書く。ここでも失敗
+    した場合は占有が残り、次回起動時のリカバリが中断として倒す。倒れた行は自動再実行
+    の対象にならないため、実行済みの副作用を重ねて作ることはない。
+    """
+    try:
+        async with get_session_factory()() as session:
+            await _finalize_application(
+                session,
+                application_id,
+                state="applied",
+                applied_ref_type=ref_type,
+                applied_ref_id=ref_id,
+                failure_code=None,
+                failure_message=None,
+            )
+    except SQLAlchemyError:
+        logger.warning(
+            "適用したstepの記録を書き直せません。application_id=%s ref=%s:%s",
+            application_id,
+            ref_type,
+            ref_id,
+        )
 
 
 def _resolve_step_indexes(
