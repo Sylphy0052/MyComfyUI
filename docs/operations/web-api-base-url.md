@@ -16,7 +16,9 @@ window.__MYCOMFYUI_API_BASE_URL__ = "http://127.0.0.1:53421";
 
 ## 注入がない場合
 
-globalが未定義、空文字、URLとして読めない値、`http`と`https`以外のschemeのいずれかなら、同一originの`/api/v1`へ寄せる。読めない値と使えないschemeは`console.warn`を残す。
+globalが未定義、文字列でない値、空文字、URLとして読めない値、`http`と`https`以外のscheme、loopback以外のhostのいずれかなら、同一originの`/api/v1`へ寄せる。未定義以外はいずれも理由を`console.warn`へ残す。
+
+hostは`localhost`、`127.0.0.0/8`、`::1`だけを受ける。APIは認証を持たずloopbackでだけ待ち受ける前提のため([ADR 0001](../adr/0001-application-stack-and-boundaries.md))、注入値が壊れてもプロンプトや生成物の指定が外部ホストへ出ないようにする。利用者が任意のリモートホストを指定する経路はIssue #64の対象外とする。
 
 これにより次の経路は従来と変わらない。
 
