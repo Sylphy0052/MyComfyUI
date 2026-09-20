@@ -43,19 +43,27 @@ async def run_worker(
     """
     request_path = workdir / "request.json"
     response_path = workdir / "response.json"
-    request_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
+    try:
+        request_path.write_text(
+            json.dumps(request, ensure_ascii=False), encoding="utf-8"
+        )
+    except OSError as error:
+        raise WorkerFailed("Backendへの入力を書き出せませんでした。") from error
     worker_path = WORKERS_DIR / script
     if not worker_path.is_file():
         raise WorkerFailed(f"worker scriptがありません: {worker_path}")
-    process = await asyncio.create_subprocess_exec(
-        str(python),
-        str(worker_path),
-        str(request_path),
-        str(response_path),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=str(workdir),
-    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            str(python),
+            str(worker_path),
+            str(request_path),
+            str(response_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(workdir),
+        )
+    except OSError as error:
+        raise WorkerFailed(f"Backendを起動できませんでした: {script}") from error
     try:
         _, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_sec)
     except TimeoutError as error:
