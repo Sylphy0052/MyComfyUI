@@ -337,7 +337,7 @@ class AgentProposalApplication(Base):
     __tablename__ = "agent_proposal_application"
     __table_args__ = (
         CheckConstraint(
-            "state in ('pending','applied','failed')",
+            "state in ('pending','applying','applied','failed')",
             name="ck_agent_proposal_application_state",
         ),
         UniqueConstraint(
@@ -358,6 +358,8 @@ class AgentProposalApplication(Base):
     #: 承認時の操作内容のdigest。適用直前に組み立て直した値と突き合わせる。
     operation_digest: Mapped[str] = mapped_column(Text, nullable=False)
     target: Mapped[dict] = mapped_column(JSON, nullable=False)
+    #: 適用状態。`applying`は実行中の印で、同じstepを2つの要求が同時に実行しない
+    #: ための占有に使う。プロセスが落ちた場合は起動時に`failed`へ倒す。
     state: Mapped[str] = mapped_column(Text, nullable=False)
     #: 適用先の種別。`generation_job`/`recipe`/`artifact_tag`のいずれか。
     applied_ref_type: Mapped[str | None] = mapped_column(Text, nullable=True)

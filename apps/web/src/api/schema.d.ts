@@ -1020,7 +1020,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "pending" | "applied" | "failed";
+            state: "pending" | "applying" | "applied" | "failed";
             /** Step Index */
             step_index: number;
             /** Target */

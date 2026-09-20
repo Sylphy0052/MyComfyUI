@@ -3118,13 +3118,36 @@ async def _ensure_application_rows(
     }
 
 
+async def _claim_application(session: AsyncSession, application_id: str) -> bool:
+    """stepを実行中として占有する。占有できた要求だけが実行へ進む。
+
+    同じstepへ適用要求が同時に届くのは、応答待ちの再送や画面の重複操作で普通に起こる。
+    行を読んでから実行するだけでは、両方が`pending`を見て非冪等な操作を二重に実行
+    できてしまう。`pending`か`failed`からの条件付き更新で占有し、更新できた側だけが
+    実行する。
+    """
+    claimed = await session.execute(
+        update(AgentProposalApplication)
+        .where(AgentProposalApplication.id == application_id)
+        .where(AgentProposalApplication.state.in_(("pending", "failed")))
+        .values(state="applying", updated_at=schemas.now_iso())
+    )
+    await session.commit()
+    return claimed.rowcount == 1
+
+
 async def _finalize_application(
     session: AsyncSession, application_id: str, **values: Any
 ) -> None:
-    """stepの適用結果を残す。実行済みの副作用を辿れる形にしてから次へ進む。"""
+    """stepの適用結果を残す。実行済みの副作用を辿れる形にしてから次へ進む。
+
+    更新は占有した`applying`からに限る。条件を付けずに書くと、先に成功して`applied`
+    で確定した行を、後から来た要求の失敗で`failed`へ塗り替えてしまう。
+    """
     await session.execute(
         update(AgentProposalApplication)
         .where(AgentProposalApplication.id == application_id)
+        .where(AgentProposalApplication.state == "applying")
         .values(updated_at=schemas.now_iso(), **values)
     )
     await session.commit()
@@ -3138,6 +3161,11 @@ async def _apply_recipe_registration(
     Workflowの参照と入力の宣言は基準Recipeから引き継ぎ、提案が決めるのは名前と既定値
     だけとする。既定値も基準Recipeが宣言した入力に限る。提案の内容で実行できる
     Workflowテンプレートを増やさないためである。
+
+    承認のdigestは提案が決める名前と既定値を対象にする。基準Recipeの内容は承認後に
+    変わらない前提に立っている。Recipeは作成後に書き換えず、変更は後継Recipeの作成で
+    表す設計のためである。Recipeへ更新経路を足す場合は、基準Recipeの内容もdigestへ
+    含める必要がある。
     """
     base = await _get_or_404(
         session, Recipe, "Recipe", operation["target"]["base_recipe_id"]
@@ -3295,8 +3323,20 @@ async def apply_agent_proposal_steps(
         for operation in operations:
             approvals.require_executable(operation["type"])
     except approvals.OperationNotAllowed as error:
+        # 拒否の理由はApprovalLogではなくログへ残す。ApprovalLogは判断の追記専用で、
+        # 実行を断った記録の置き場ではない。
+        logger.warning(
+            "許可していない操作種別のため適用しません。proposal_id=%s error=%s",
+            proposal_id,
+            error,
+        )
         raise _operation_not_allowed(error) from error
     if proposal.state != "approved":
+        logger.warning(
+            "承認済みでない提案への適用要求です。proposal_id=%s state=%s",
+            proposal_id,
+            proposal.state,
+        )
         raise ApiError(
             "PROPOSAL_NOT_APPROVED",
             "承認済みの提案ではありません。",
@@ -3322,6 +3362,8 @@ async def apply_agent_proposal_steps(
         operation = operations[index]
         if row.state == "applied":
             continue
+        # 計画全体のdigestを突き合わせた後でも、行を作った時点の内容と食い違う場合が
+        # ある。承認記録を経ずに提案の出力が書き換わった場合が該当する。
         if row.operation_digest != approvals.operation_digest(operation):
             raise ApiError(
                 "APPROVAL_STALE",
@@ -3330,6 +3372,14 @@ async def apply_agent_proposal_steps(
                 details={"step_index": index},
             )
         application_id = row.id
+        if not await _claim_application(session, application_id):
+            # 同じstepを別の要求が処理している。実行も結果の書き換えもしない。
+            logger.info(
+                "適用中のstepのため処理しません。proposal_id=%s step_index=%s",
+                proposal_id,
+                index,
+            )
+            continue
         try:
             ref_type, ref_id = await _execute_application(session, source, operation)
         except (ApiError, approvals.OperationNotAllowed) as error:

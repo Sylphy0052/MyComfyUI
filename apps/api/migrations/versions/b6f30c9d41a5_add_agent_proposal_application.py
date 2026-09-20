@@ -4,6 +4,10 @@ Revision ID: b6f30c9d41a5
 Revises: a4e2c9d51f07
 Create Date: 2026-09-20 12:00:00.000000
 
+downgradeは準備段階の提案(`workflow_registration_draft`/`batch_generation_plan`/
+`asset_organization_plan`)の記録を削除する。戻した先のCHECK制約では扱えない値のため
+であり、適用状態の表ごと失われる。実行前に記録の要否を確認すること。
+
 """
 
 from collections.abc import Sequence
@@ -98,7 +102,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.Text(), nullable=False),
         sa.Column("updated_at", sa.Text(), nullable=False),
         sa.CheckConstraint(
-            "state in ('pending','applied','failed')",
+            "state in ('pending','applying','applied','failed')",
             name="ck_agent_proposal_application_state",
         ),
         sa.ForeignKeyConstraint(

@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mycomfyui_api import schemas
-from mycomfyui_api.models import GenerationJob
+from mycomfyui_api.models import AgentProposalApplication, GenerationJob
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,32 @@ async def recover_interrupted_jobs(session: AsyncSession) -> int:
     if jobs:
         await session.commit()
     return len(jobs)
+
+
+async def recover_interrupted_applications(session: AsyncSession) -> int:
+    """前回プロセスが適用中(`applying`)のまま終了したstepをfailedへ倒す。
+
+    占有したままの行を残すと、同じstepを二度と実行できなくなる。実行済みかどうかは
+    この時点では判定できないため、失敗として残し、利用者が内容を確かめて再実行できる
+    状態にする。
+    """
+    result = await session.execute(
+        select(AgentProposalApplication).where(
+            AgentProposalApplication.state == "applying"
+        )
+    )
+    applications = result.scalars().all()
+    now = schemas.now_iso()
+    for application in applications:
+        application.state = "failed"
+        application.failure_code = FAILURE_CODE_INTERRUPTED
+        application.failure_message = (
+            "プロセス再起動により適用が中断されました。適用先の有無を確かめてください。"
+        )
+        application.updated_at = now
+    if applications:
+        await session.commit()
+    return len(applications)
 
 
 class JobQueueWorker:

@@ -580,8 +580,8 @@ class AgentProposalDecision(ApiModel):
     actor_id: str = Field(default="local-user", min_length=1, max_length=200)
 
 
-#: 計画1stepの適用状態。`applied`のstepは実行し直さない。
-AgentApplicationState = Literal["pending", "applied", "failed"]
+#: 計画1stepの適用状態。`applying`は実行中の占有、`applied`のstepは実行し直さない。
+AgentApplicationState = Literal["pending", "applying", "applied", "failed"]
 
 #: 適用先の種別。どの記録へつながったかを辿るために残す。
 AgentAppliedRefType = Literal["generation_job", "recipe", "artifact_tag"]
