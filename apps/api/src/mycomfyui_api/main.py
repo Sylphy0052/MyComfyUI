@@ -11,7 +11,11 @@ from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from mycomfyui_api.adapters.agent import create_agent_provider
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
-from mycomfyui_api.bootstrap import ensure_default_recipes, ensure_voice_recipes
+from mycomfyui_api.bootstrap import (
+    ensure_default_recipes,
+    ensure_media_recipes,
+    ensure_voice_recipes,
+)
 from mycomfyui_api.db import dispose_engine, get_engine, get_session_factory
 from mycomfyui_api.engines import ExecutorRegistry
 from mycomfyui_api.errors import (
@@ -49,6 +53,7 @@ async def lifespan(app: FastAPI):
             logger.info("中断Jobを%d件failedへ倒しました。", recovered)
         await ensure_default_recipes(session)
         await ensure_voice_recipes(session)
+        await ensure_media_recipes(session)
     # Executorはengineごとにレジストリから引く。キューは全Jobで1本のまま、
     # 画像Jobと音声Jobが同じGPU直列キューへ積まれる。
     worker = JobQueueWorker(session_factory, ExecutorRegistry(session_factory))
@@ -83,11 +88,13 @@ REQUEST_BODY_MARGIN_BYTES = 64 * 1024
 def _max_request_bytes() -> int:
     """受け付ける要求本文の上限。
 
-    一番大きい本文は参照音声のbase64になる。個別のEndpointで長さを見る前に、
-    ASGIの入口で切る。ここを通してしまうと、上限を超える本文でも丸ごとメモリへ
-    載ってからでないと断れない。
+    一番大きい本文は取り込む素材のbase64になる。参照音声と参照画像で上限が違うため、
+    大きいほうへ合わせる。個別のEndpointで長さを見る前に、ASGIの入口で切る。ここを
+    通してしまうと、上限を超える本文でも丸ごとメモリへ載ってからでないと断れない。
     """
-    encoded = (get_settings().voice_max_audio_bytes + 2) // 3 * 4
+    settings = get_settings()
+    largest = max(settings.voice_max_audio_bytes, settings.max_image_bytes)
+    encoded = (largest + 2) // 3 * 4
     return encoded + REQUEST_BODY_MARGIN_BYTES
 
 
@@ -102,9 +109,7 @@ def create_app() -> FastAPI:
     # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
     # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りするため、
     # ASGIの受信側にも関所を置く。
-    app.add_middleware(
-        RequestBodyLimitMiddleware, max_body_size=_max_request_bytes()
-    )
+    app.add_middleware(RequestBodyLimitMiddleware, max_body_size=_max_request_bytes())
 
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):

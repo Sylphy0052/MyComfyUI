@@ -475,3 +475,46 @@ class VoiceReferenceRead(ApiModel):
     sample_rate: int
     channels: int
     duration_sec: float
+
+
+class ComfyUIBackendHealthRead(ApiModel):
+    """ComfyUIの疎通確認。認証情報は扱わないため返さない。"""
+
+    base_url: str
+    reachable: bool
+    reason: str | None = None
+    version: str | None = None
+    devices: list[str] = Field(default_factory=list)
+
+
+class ImageReferenceCreate(ApiModel):
+    """参照画像とガイド音声の取り込み要求。
+
+    H3の`LoadImage`と`LoadAudio`はComfyUI側のinputにあるファイルしか参照できない。
+    手元の素材を入力cacheへ取り込み、Job投入時にその参照を指定する。
+    """
+
+    file_name: str = Field(min_length=1, max_length=255)
+    #: 素材のbase64。JSONで受け取り、multipartの依存を増やさない。
+    content_base64: str = Field(min_length=1)
+    #: 取り込むファイルのmedia_type。画像と音声だけを受け付ける。
+    media_type: str = Field(min_length=1)
+
+    @field_validator("media_type")
+    @classmethod
+    def _validate_media_type(cls, value: str) -> str:
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES:
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        if not media_type.startswith(("image/", "audio/")):
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        return media_type
+
+
+class ImageReferenceRead(ApiModel):
+    """取り込んだ素材。`sha256`はManifestへ記録する参照と同じ値になる。"""
+
+    relative_path: str
+    sha256: str
+    byte_size: int
+    media_type: str

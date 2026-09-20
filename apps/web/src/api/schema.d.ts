@@ -248,6 +248,29 @@ export interface paths {
         patch: operations["update_artifact_decision_api_v1_artifacts__artifact_id__decision_patch"];
         trace?: never;
     };
+    "/api/v1/backends/comfyui/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Comfyui Backend Health
+         * @description ComfyUIの疎通と版を中継する。
+         *
+         *     接続できないことは障害として応答本文で伝え、HTTPのエラーにしない。画面は動画・
+         *     音楽Backendが使えない状態でも他の機能を出し続ける。
+         */
+        get: operations["get_comfyui_backend_health_api_v1_backends_comfyui_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backends/voice/health": {
         parameters: {
             query?: never;
@@ -508,6 +531,30 @@ export interface paths {
         get: operations["health_api_v1_health_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Image Reference
+         * @description 参照画像とガイド音声を入力cacheへ取り込む。
+         *
+         *     ComfyUIの`LoadImage`と`LoadAudio`はComfyUI側のinputにあるファイルしか参照できず、
+         *     手元の素材をそのまま渡せない。取り込んだ内容のSHA-256を返し、Job投入時の参照に
+         *     使えるようにする。実際のアップロードはJobの実行直前にAdapterが行う。
+         */
+        post: operations["create_image_reference_api_v1_image_references_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -961,6 +1008,22 @@ export interface components {
             status: "unchanged" | "changed" | "unavailable";
         };
         /**
+         * ComfyUIBackendHealthRead
+         * @description ComfyUIの疎通確認。認証情報は扱わないため返さない。
+         */
+        ComfyUIBackendHealthRead: {
+            /** Base Url */
+            base_url: string;
+            /** Devices */
+            devices?: string[];
+            /** Reachable */
+            reachable: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Version */
+            version?: string | null;
+        };
+        /**
          * GenerationJobCreate
          * @description Jobと実行時Manifestを同一トランザクションで作成する要求。
          *
@@ -1071,6 +1134,35 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * ImageReferenceCreate
+         * @description 参照画像とガイド音声の取り込み要求。
+         *
+         *     H3の`LoadImage`と`LoadAudio`はComfyUI側のinputにあるファイルしか参照できない。
+         *     手元の素材を入力cacheへ取り込み、Job投入時にその参照を指定する。
+         */
+        ImageReferenceCreate: {
+            /** Content Base64 */
+            content_base64: string;
+            /** File Name */
+            file_name: string;
+            /** Media Type */
+            media_type: string;
+        };
+        /**
+         * ImageReferenceRead
+         * @description 取り込んだ素材。`sha256`はManifestへ記録する参照と同じ値になる。
+         */
+        ImageReferenceRead: {
+            /** Byte Size */
+            byte_size: number;
+            /** Media Type */
+            media_type: string;
+            /** Relative Path */
+            relative_path: string;
+            /** Sha256 */
+            sha256: string;
         };
         /**
          * JobLineageRead
@@ -1786,6 +1878,26 @@ export interface operations {
             };
         };
     };
+    get_comfyui_backend_health_api_v1_backends_comfyui_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComfyUIBackendHealthRead"];
+                };
+            };
+        };
+    };
     get_voice_backend_health_api_v1_backends_voice_health_get: {
         parameters: {
             query?: never;
@@ -2171,6 +2283,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    create_image_reference_api_v1_image_references_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageReferenceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageReferenceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

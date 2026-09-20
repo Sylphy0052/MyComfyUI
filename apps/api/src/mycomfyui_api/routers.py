@@ -22,7 +22,9 @@ from mycomfyui_api.adapters.aimedia.client import (
     AiMediaUnavailable,
     ReferenceSource,
 )
+from mycomfyui_api.adapters.comfyui.client import ComfyUIError
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
+from mycomfyui_api.adapters.comfyui.factory import create_comfyui_client
 from mycomfyui_api.adapters.voice import audio as voice_audio
 from mycomfyui_api.adapters.voice.base import VoiceError
 from mycomfyui_api.adapters.voice.factory import create_voice_backend
@@ -191,7 +193,7 @@ async def create_generation_job(
     )
     # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
-    prepared = await _prepare_execution(recipe, payload, source, resolved)
+    prepared = await _prepare_execution(recipe, payload, source, resolved, session)
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
@@ -292,11 +294,26 @@ def _envelope_data(envelope: Any) -> dict[str, Any]:
     return dict(data) if isinstance(data, dict) else {}
 
 
+@dataclass(frozen=True)
+class _ArtifactLookup:
+    """準備処理へ渡す、Artifactの読取り専用の窓口。
+
+    準備処理にDBセッションをそのまま渡すと、Adapterから書き込みもできてしまう。
+    引けるのはIDによる1件の取得だけにする。
+    """
+
+    session: AsyncSession
+
+    async def get(self, artifact_id: str) -> Artifact | None:
+        return await self.session.get(Artifact, artifact_id)
+
+
 async def _prepare_execution(
     recipe: Recipe,
     payload: schemas.GenerationJobCreate,
     source: ReferenceSource,
     resolved: _ResolvedReferences,
+    session: AsyncSession,
 ):
     """Recipeのengineに対応するAdapterで実行スナップショットを組み立てる。"""
     context = PreparationContext(
@@ -306,6 +323,7 @@ async def _prepare_execution(
         scene_data=resolved.scene_data,
         shot_data=resolved.shot_data,
         canon_lookup=source,
+        artifact_lookup=_ArtifactLookup(session),
     )
     try:
         return await prepare_execution(recipe, payload.inputs, context)
@@ -387,7 +405,7 @@ def _build_job_records(
         shot_ref=resolved.shot_ref,
         recipe_id=payload.recipe_id,
         manifest_id=manifest_id,
-        parent_job_id=payload.parent_job_id,
+        parent_job_id=_resolve_parent_job_id(payload, prepared),
         queue_sequence=queue_sequence,
     )
     workflow_artifact = Artifact(
@@ -422,6 +440,25 @@ def _build_job_records(
         created_at=created_at,
     )
     return job, workflow_artifact, manifest
+
+
+def _resolve_parent_job_id(
+    payload: schemas.GenerationJobCreate, prepared: PreparedExecution
+) -> str | None:
+    """親Jobを決める。入力から決まる場合は要求の指定と食い違わせない。
+
+    合成Jobの親は入力の動画Jobで、準備処理が解決する。要求が別のJobを指していれば
+    どちらが正しいか決められないため、Jobを作らずに拒否する。
+    """
+    derived = prepared.parent_job_id
+    if payload.parent_job_id is None:
+        return derived
+    if derived is not None and derived != payload.parent_job_id:
+        raise _validation_error(
+            "parent_job_idが入力から決まる親Jobと一致しません。",
+            {"parent_job_id": payload.parent_job_id, "expected": derived},
+        )
+    return payload.parent_job_id
 
 
 def _merge_input_refs(
@@ -867,16 +904,19 @@ async def _current_selected_canon(
     return entries
 
 
-def _verify_cached_input(reference: dict[str, Any]) -> dict[str, Any]:
-    """入力cache参照の実ファイルが記録時と同じ内容かを確かめる。
+def _verify_local_input(reference: dict[str, Any]) -> dict[str, Any]:
+    """参照APIで解決しない入力の実ファイルが記録時と同じ内容かを確かめる。
 
-    参照APIで解決できない利用者素材も、当時の入力の一部として再現可否に効く。設計
-    どおり、取得できないか内容が違えばExact Replayを実行しない
-    (docs/design/generation-records.md)。
+    利用者が取り込んだ素材(`cached_input`)と、入力に使った生成物(`artifact`)の
+    どちらも、当時の入力の一部として再現可否に効く。設計どおり、取得できないか内容が
+    違えばExact Replayを実行しない(docs/design/generation-records.md)。保存先が
+    違うため、解決先は種別で分ける。
     """
+    kind = str(reference.get("kind"))
+    label = "生成物" if kind == provenance.KIND_ARTIFACT else "入力cache"
     note = reference.get("note")
     entry: dict[str, Any] = {
-        "kind": str(reference.get("kind")),
+        "kind": kind,
         "change": provenance.CHANGE_UNCHANGED,
         "path": reference.get("relative_path"),
         "anchor": None,
@@ -889,28 +929,33 @@ def _verify_cached_input(reference: dict[str, Any]) -> dict[str, Any]:
     expected = reference.get("sha256")
     if not isinstance(relative_path, str) or not isinstance(expected, str):
         entry["change"] = provenance.CHANGE_MISSING
-        entry["reason"] = "入力cache参照にrelative_pathかsha256がありません。"
+        entry["reason"] = f"{label}の参照にrelative_pathかsha256がありません。"
         return entry
+    resolve = (
+        storage.resolve_artifact
+        if kind == provenance.KIND_ARTIFACT
+        else storage.resolve_input
+    )
     try:
-        raw = storage.resolve_input(relative_path).read_bytes()
+        raw = resolve(relative_path).read_bytes()
     except (storage.StorageError, OSError):
         entry["change"] = provenance.CHANGE_MISSING
-        entry["reason"] = "入力cacheの実ファイルを読み込めません。"
+        entry["reason"] = f"{label}の実ファイルを読み込めません。"
         return entry
     digest = hashlib.sha256(raw).hexdigest()
     if digest != expected.lower():
         entry["change"] = provenance.CHANGE_UPDATED
-        entry["reason"] = "入力cacheの内容が記録済みのhashと一致しません。"
+        entry["reason"] = f"{label}の内容が記録済みのhashと一致しません。"
         entry["current"] = {"relative_path": relative_path, "sha256": digest}
     return entry
 
 
-def _cached_input_entries(input_refs: Any) -> list[dict[str, Any]]:
-    """参照APIで解決しない入力cache参照を、比較結果の形へ揃える。"""
+def _local_input_entries(input_refs: Any) -> list[dict[str, Any]]:
+    """参照APIで解決しない入力の参照を、比較結果の形へ揃える。"""
     if not isinstance(input_refs, list):
         return []
     return [
-        _verify_cached_input(reference)
+        _verify_local_input(reference)
         for reference in input_refs
         if isinstance(reference, dict)
         and reference.get("kind") not in provenance.RESOLVABLE_KINDS
@@ -971,7 +1016,7 @@ async def get_job_canon_status(
             blocking=[],
         )
     entries = provenance.compare(manifest.input_refs or [], current)
-    entries.extend(_cached_input_entries(manifest.input_refs))
+    entries.extend(_local_input_entries(manifest.input_refs))
     blocking = provenance.unreproducible(entries)
     changed = any(entry["change"] != provenance.CHANGE_UNCHANGED for entry in entries)
     return schemas.CanonStatusRead(
@@ -1086,7 +1131,7 @@ async def replay_generation_job(
             details={"job_id": job.id},
         )
     entries = provenance.compare(manifest.input_refs or [], current)
-    entries.extend(_cached_input_entries(manifest.input_refs))
+    entries.extend(_local_input_entries(manifest.input_refs))
     blocking = provenance.unreproducible(entries)
     if blocking:
         raise ApiError(
@@ -1294,6 +1339,80 @@ async def get_voice_backend_health():
             )
             for engine in health.engines
         ],
+    )
+
+
+@router.get("/backends/comfyui/health", response_model=schemas.ComfyUIBackendHealthRead)
+async def get_comfyui_backend_health():
+    """ComfyUIの疎通と版を中継する。
+
+    接続できないことは障害として応答本文で伝え、HTTPのエラーにしない。画面は動画・
+    音楽Backendが使えない状態でも他の機能を出し続ける。
+    """
+    client = create_comfyui_client()
+    try:
+        status_info = await client.status()
+    except ComfyUIError as error:
+        logger.info("ComfyUIの状態を取得できません。", exc_info=error)
+        return schemas.ComfyUIBackendHealthRead(
+            base_url=client.base_url, reachable=False, reason=str(error)
+        )
+    finally:
+        await client.aclose()
+    return schemas.ComfyUIBackendHealthRead(
+        base_url=status_info.base_url,
+        reachable=True,
+        reason=None,
+        version=status_info.version,
+        devices=list(status_info.devices),
+    )
+
+
+@router.post(
+    "/image-references",
+    response_model=schemas.ImageReferenceRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_image_reference(payload: schemas.ImageReferenceCreate):
+    """参照画像とガイド音声を入力cacheへ取り込む。
+
+    ComfyUIの`LoadImage`と`LoadAudio`はComfyUI側のinputにあるファイルしか参照できず、
+    手元の素材をそのまま渡せない。取り込んだ内容のSHA-256を返し、Job投入時の参照に
+    使えるようにする。実際のアップロードはJobの実行直前にAdapterが行う。
+    """
+    settings = get_settings()
+    # 復号の前に文字数で弾く。base64は3バイトを4文字で表すため、文字数から上限を
+    # 逆算する。復号まで通すと、上限を超える分の複製がもう1つメモリへ載る。
+    encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
+    if len(payload.content_base64) > encoded_limit:
+        raise _validation_error(
+            "素材が上限を超えています。", {"limit": settings.max_image_bytes}
+        )
+    try:
+        data = base64.b64decode(payload.content_base64, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise _validation_error("content_base64を復号できません。") from error
+    if not data:
+        raise _validation_error("空のファイルは取り込めません。")
+    if len(data) > settings.max_image_bytes:
+        raise _validation_error(
+            "素材が上限を超えています。",
+            {"byte_size": len(data), "limit": settings.max_image_bytes},
+        )
+    try:
+        stored = storage.write_input(payload.file_name, data, settings)
+    except storage.StorageError as error:
+        logger.exception("素材を取り込めません。")
+        raise ApiError(
+            "STORAGE_ERROR",
+            "素材を取り込めませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+    return schemas.ImageReferenceRead(
+        relative_path=stored.relative_path,
+        sha256=stored.sha256,
+        byte_size=stored.byte_size,
+        media_type=payload.media_type,
     )
 
 

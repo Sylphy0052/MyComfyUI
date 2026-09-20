@@ -19,8 +19,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mycomfyui_api import schemas
+from mycomfyui_api.adapters.comfyui import prepare as comfyui_prepare
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
+from mycomfyui_api.adapters.compose import plan as compose_plan
 from mycomfyui_api.adapters.voice import plan as voice_plan
 from mycomfyui_api.adapters.voice.base import (
     ENGINE_COSYVOICE3,
@@ -203,3 +205,303 @@ async def ensure_voice_recipes(session: AsyncSession) -> list[Recipe]:
         await session.commit()
         logger.info("音声Recipeを%d件登録しました。", len(created))
     return created
+
+
+#: 動画・音楽のモデルファイル名。出典は`ai-media/config/local-tools.yaml`。
+H3_MODELS: dict[str, str] = {
+    "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+    "video_vae_name": "minimax_h3_video_vae_fp16.safetensors",
+    "audio_vae_name": "minimax_h3_audio_vae_fp32.safetensors",
+}
+H3_REF2V_UNET = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+H3_I2V_UNET = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+ACE_STEP_CHECKPOINT = "ace_step_v1_3.5b.safetensors"
+
+#: H3の共通の入力欄。参照画像と開始フレームだけがテンプレートごとに変わる。
+_H3_COMMON_SCHEMA: dict[str, Any] = {
+    "positive_prompt": {
+        "type": "string",
+        "required": True,
+        "label": "プロンプト",
+        "control": "textarea",
+    },
+    "length": {
+        "type": "integer",
+        "label": "フレーム数",
+        "control": "number",
+        "help": (
+            f"{comfyui_prepare.FRAME_GRID_STEP}k+{comfyui_prepare.FRAME_GRID_BASE}の値"
+            f"だけを受け付ける({comfyui_prepare.MIN_FRAMES}〜"
+            f"{comfyui_prepare.MAX_FRAMES})。24fpsでの秒数から逆算する。"
+        ),
+    },
+    "width": {"type": "integer", "label": "幅", "control": "number"},
+    "height": {"type": "integer", "label": "高さ", "control": "number"},
+    "audio_mode": {
+        "type": "string",
+        "label": "音声の扱い",
+        "control": "select",
+        "options": list(comfyui_prepare.AUDIO_MODES),
+        "help": (
+            "nativeはH3が音声も生成する。external_voiceは生成済みの音声をガイドとして"
+            "アンカーする。silentは音声を付けない。"
+        ),
+    },
+    "guide_audio": {
+        "type": "object",
+        "label": "ガイド音声",
+        "control": "artifact",
+        "help": "audio_modeがexternal_voiceのときだけ指定する。",
+    },
+    "guide_frame_idx": {
+        "type": "integer",
+        "label": "ガイド音声の開始フレーム",
+        "control": "number",
+    },
+    "steps": {"type": "integer", "label": "ステップ数", "control": "number"},
+    "seed": {
+        "type": "integer",
+        "label": "seed",
+        "control": "number",
+        "help": "-1で自動採番する。",
+    },
+}
+
+_H3_COMMON_DEFAULTS: dict[str, Any] = {
+    **H3_MODELS,
+    "sampler_name": "res_multistep",
+    "scheduler": "simple",
+    "denoise": 1.0,
+    "fps": 24.0,
+    "filename_prefix": "mycomfyui",
+    "length": 124,
+    "steps": 20,
+    "audio_mode": comfyui_prepare.AUDIO_MODE_NATIVE,
+    "guide_frame_idx": 0,
+    "seed": workflow_module.AUTO_SEED,
+}
+
+VIDEO_REF2V_RECIPE_NAME = "動画 MiniMax H3 (参照画像)"
+VIDEO_I2V_RECIPE_NAME = "動画 MiniMax H3 (開始フレーム)"
+MUSIC_RECIPE_NAME = "音楽 ACE-Step (BGM)"
+COMPOSE_RECIPE_NAME = "合成 ffmpeg (動画+台詞+BGM)"
+
+VIDEO_REF2V_INPUT_SCHEMA: dict[str, Any] = {
+    "references": {
+        "type": "array",
+        "required": True,
+        "label": "参照画像",
+        "control": "artifacts",
+        "help": (
+            f"{comfyui_prepare.MIN_REFERENCE_IMAGES}〜"
+            f"{comfyui_prepare.MAX_REFERENCE_IMAGES}枚を選ぶ。"
+        ),
+    },
+    **_H3_COMMON_SCHEMA,
+}
+
+VIDEO_REF2V_DEFAULTS: dict[str, Any] = {
+    **_H3_COMMON_DEFAULTS,
+    "unet_name": H3_REF2V_UNET,
+    "ref_image_size": "match",
+    "width": 864,
+    "height": 480,
+}
+
+VIDEO_I2V_INPUT_SCHEMA: dict[str, Any] = {
+    "first_frame": {
+        "type": "object",
+        "required": True,
+        "label": "開始フレーム",
+        "control": "artifact",
+    },
+    **_H3_COMMON_SCHEMA,
+}
+
+VIDEO_I2V_DEFAULTS: dict[str, Any] = {
+    **_H3_COMMON_DEFAULTS,
+    "unet_name": H3_I2V_UNET,
+    "width": 512,
+    "height": 768,
+}
+
+MUSIC_INPUT_SCHEMA: dict[str, Any] = {
+    "positive_prompt": {
+        "type": "string",
+        "required": True,
+        "label": "曲の指定(タグ)",
+        "control": "textarea",
+        "help": "mood、genre、楽器、テンポをカンマ区切りで並べる。",
+    },
+    "negative_prompt": {
+        "type": "string",
+        "label": "避けたい要素",
+        "control": "textarea",
+    },
+    "lyrics": {"type": "string", "label": "歌詞", "control": "textarea"},
+    "seconds": {"type": "number", "label": "尺(秒)", "control": "number"},
+    "steps": {"type": "integer", "label": "ステップ数", "control": "number"},
+    "cfg": {"type": "number", "label": "CFG", "control": "number"},
+    "seed": {
+        "type": "integer",
+        "label": "seed",
+        "control": "number",
+        "help": "-1で自動採番する。",
+    },
+}
+
+MUSIC_DEFAULTS: dict[str, Any] = {
+    "ckpt_name": ACE_STEP_CHECKPOINT,
+    "negative_prompt": "vocals, singing, voice, noise, distorted",
+    "lyrics": "",
+    "seconds": 14.0,
+    "steps": 50,
+    "cfg": 5.0,
+    "sampler_name": "euler",
+    "scheduler": "simple",
+    "denoise": 1.0,
+    "filename_prefix": "mycomfyui",
+    "seed": workflow_module.AUTO_SEED,
+}
+
+COMPOSE_INPUT_SCHEMA: dict[str, Any] = {
+    "video": {
+        "type": "object",
+        "required": True,
+        "label": "動画",
+        "control": "artifact",
+    },
+    "voices": {
+        "type": "array",
+        "label": "台詞音声",
+        "control": "audio_tracks",
+        "help": "Artifactごとに開始位置(秒)と音量を指定する。",
+    },
+    "bgm": {
+        "type": "object",
+        "label": "BGM",
+        "control": "audio_track",
+        "help": (
+            f"音量の既定値は台詞の約3分の1({compose_plan.DEFAULT_BGM_VOLUME})とする。"
+        ),
+    },
+}
+
+COMPOSE_DEFAULTS: dict[str, Any] = {"voices": []}
+
+#: 同梱テンプレートを使う既定Recipe。テンプレートのSHA-256で版を判定する。
+TEMPLATE_RECIPES: tuple[tuple[str, str, str, dict[str, Any], dict[str, Any]], ...] = (
+    (
+        VIDEO_REF2V_RECIPE_NAME,
+        "video",
+        "minimax_h3_ref2v",
+        VIDEO_REF2V_INPUT_SCHEMA,
+        VIDEO_REF2V_DEFAULTS,
+    ),
+    (
+        VIDEO_I2V_RECIPE_NAME,
+        "video",
+        "minimax_h3_i2v",
+        VIDEO_I2V_INPUT_SCHEMA,
+        VIDEO_I2V_DEFAULTS,
+    ),
+    (
+        MUSIC_RECIPE_NAME,
+        "music",
+        "ace_step_bgm",
+        MUSIC_INPUT_SCHEMA,
+        MUSIC_DEFAULTS,
+    ),
+)
+
+
+async def _existing_recipes(session: AsyncSession, name: str) -> list[Recipe]:
+    """同じ名前のRecipeを新しい順に返す。後継を結ぶ先の判定に使う。"""
+    result = await session.execute(
+        select(Recipe)
+        .where(Recipe.name == name)
+        .order_by(Recipe.created_at.desc(), Recipe.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def ensure_media_recipes(session: AsyncSession) -> list[Recipe]:
+    """動画・音楽・合成の既定Recipeを登録する。
+
+    テンプレートやスナップショットの形が変わったときは既存Recipeを書き換えず、後継
+    Recipeを追加する。判定はComfyUI系がテンプレートのSHA-256、合成がスナップショット
+    の版による。テンプレートファイルを持たないためである。
+    """
+    created: list[Recipe] = []
+    for name, kind, template_name, schema, defaults in TEMPLATE_RECIPES:
+        digest = workflow_module.template_digest(template_name)
+        existing = await _existing_recipes(session, name)
+        if any(
+            isinstance(recipe.workflow_template_ref, dict)
+            and recipe.workflow_template_ref.get("sha256") == digest
+            for recipe in existing
+        ):
+            continue
+        created.append(
+            _new_recipe(
+                name=name,
+                kind=kind,
+                engine=ENGINE_COMFYUI,
+                template_ref={"name": template_name, "sha256": digest},
+                schema=schema,
+                defaults=defaults,
+                existing=existing,
+            )
+        )
+
+    existing = await _existing_recipes(session, COMPOSE_RECIPE_NAME)
+    if not any(
+        isinstance(recipe.workflow_template_ref, dict)
+        and recipe.workflow_template_ref.get("version") == compose_plan.SNAPSHOT_VERSION
+        for recipe in existing
+    ):
+        created.append(
+            _new_recipe(
+                name=COMPOSE_RECIPE_NAME,
+                kind="compose",
+                engine=compose_plan.ENGINE_FFMPEG,
+                template_ref={
+                    "name": compose_plan.COMPOSE_TEMPLATE_NAME,
+                    "version": compose_plan.SNAPSHOT_VERSION,
+                },
+                schema=COMPOSE_INPUT_SCHEMA,
+                defaults=COMPOSE_DEFAULTS,
+                existing=existing,
+            )
+        )
+
+    if created:
+        for recipe in created:
+            session.add(recipe)
+        await session.commit()
+        logger.info("動画・音楽・合成のRecipeを%d件登録しました。", len(created))
+    return created
+
+
+def _new_recipe(
+    *,
+    name: str,
+    kind: str,
+    engine: str,
+    template_ref: dict[str, Any],
+    schema: dict[str, Any],
+    defaults: dict[str, Any],
+    existing: list[Recipe],
+) -> Recipe:
+    # `existing`は作成日時の降順のため、先頭が直近の版になる。後継はそこへ結ぶ。
+    return Recipe(
+        id=schemas.new_id(),
+        name=name,
+        kind=kind,
+        engine=engine,
+        workflow_template_ref=template_ref,
+        input_schema=dict(schema),
+        defaults=dict(defaults),
+        supersedes_recipe_id=existing[0].id if existing else None,
+        created_at=schemas.now_iso(),
+    )

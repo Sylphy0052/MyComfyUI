@@ -652,6 +652,55 @@
         "title": "CanonStatusRead",
         "type": "object"
       },
+      "ComfyUIBackendHealthRead": {
+        "additionalProperties": false,
+        "description": "ComfyUIの疎通確認。認証情報は扱わないため返さない。",
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "devices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "base_url",
+          "reachable"
+        ],
+        "title": "ComfyUIBackendHealthRead",
+        "type": "object"
+      },
       "GenerationJobCreate": {
         "additionalProperties": false,
         "description": "Jobと実行時Manifestを同一トランザクションで作成する要求。\n\nWorkflow JSONはApplication APIがRecipeと`inputs`から組み立てる。Scene、Shot、\nCanonの不変参照も参照APIから解決して固定する。呼び出し元はManifestの中身も\nComfyUIのノードも参照の中身も組み立てない。",
@@ -984,6 +1033,65 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImageReferenceCreate": {
+        "additionalProperties": false,
+        "description": "参照画像とガイド音声の取り込み要求。\n\nH3の`LoadImage`と`LoadAudio`はComfyUI側のinputにあるファイルしか参照できない。\n手元の素材を入力cacheへ取り込み、Job投入時にその参照を指定する。",
+        "properties": {
+          "content_base64": {
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          },
+          "media_type": {
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name",
+          "content_base64",
+          "media_type"
+        ],
+        "title": "ImageReferenceCreate",
+        "type": "object"
+      },
+      "ImageReferenceRead": {
+        "additionalProperties": false,
+        "description": "取り込んだ素材。`sha256`はManifestへ記録する参照と同じ値になる。",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relative_path",
+          "sha256",
+          "byte_size",
+          "media_type"
+        ],
+        "title": "ImageReferenceRead",
         "type": "object"
       },
       "JobLineageRead": {
@@ -2454,6 +2562,25 @@
         "summary": "Update Artifact Decision"
       }
     },
+    "/api/v1/backends/comfyui/health": {
+      "get": {
+        "description": "ComfyUIの疎通と版を中継する。\n\n接続できないことは障害として応答本文で伝え、HTTPのエラーにしない。画面は動画・\n音楽Backendが使えない状態でも他の機能を出し続ける。",
+        "operationId": "get_comfyui_backend_health_api_v1_backends_comfyui_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComfyUIBackendHealthRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Comfyui Backend Health"
+      }
+    },
     "/api/v1/backends/voice/health": {
       "get": {
         "description": "voice-runnerの疎通とengineの利用可否を中継する。\n\n接続できないことは障害として応答本文で伝え、HTTPのエラーにしない。画面は音声\nBackendが使えない状態でも他の機能を出し続ける。",
@@ -3010,6 +3137,45 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/v1/image-references": {
+      "post": {
+        "description": "参照画像とガイド音声を入力cacheへ取り込む。\n\nComfyUIの`LoadImage`と`LoadAudio`はComfyUI側のinputにあるファイルしか参照できず、\n手元の素材をそのまま渡せない。取り込んだ内容のSHA-256を返し、Job投入時の参照に\n使えるようにする。実際のアップロードはJobの実行直前にAdapterが行う。",
+        "operationId": "create_image_reference_api_v1_image_references_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageReferenceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageReferenceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Image Reference"
       }
     },
     "/api/v1/projects": {
