@@ -186,7 +186,12 @@ def create_app() -> FastAPI:
         with tempfile.TemporaryDirectory(prefix="voice-runner-") as raw_dir:
             workdir = Path(raw_dir)
             reference_path = workdir / "reference.wav"
-            reference_path.write_bytes(reference)
+            try:
+                reference_path.write_bytes(reference)
+            except OSError as error:
+                raise HTTPException(
+                    status.HTTP_502_BAD_GATEWAY, "参照音声を書き出せませんでした。"
+                ) from error
             output_path = workdir / "out.wav"
             request: dict[str, Any] = {
                 "engine": engine.id,
@@ -209,7 +214,13 @@ def create_app() -> FastAPI:
                 raise HTTPException(
                     status.HTTP_502_BAD_GATEWAY, "Backendがwavを出力しませんでした。"
                 )
-            wav = output_path.read_bytes()
+            try:
+                wav = output_path.read_bytes()
+            except OSError as error:
+                raise HTTPException(
+                    status.HTTP_502_BAD_GATEWAY,
+                    "Backendが出力したwavを読み出せませんでした。",
+                ) from error
             try:
                 audio_sec, sample_rate = _audio_seconds(output_path)
             except (wave.Error, OSError) as error:
@@ -239,7 +250,12 @@ def create_app() -> FastAPI:
         with tempfile.TemporaryDirectory(prefix="voice-runner-") as raw_dir:
             workdir = Path(raw_dir)
             audio_path = workdir / "input.wav"
-            audio_path.write_bytes(wav)
+            try:
+                audio_path.write_bytes(wav)
+            except OSError as error:
+                raise HTTPException(
+                    status.HTTP_502_BAD_GATEWAY, "音声を書き出せませんでした。"
+                ) from error
             request = {
                 "model_id": settings.asr.model_id,
                 "language": payload.language or settings.asr.language,
