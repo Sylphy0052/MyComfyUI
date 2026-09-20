@@ -22,6 +22,7 @@ import type { Candidate } from "./components/CandidateGallery";
 import { GenerationForm } from "./components/GenerationForm";
 import { JobQueue } from "./components/JobQueue";
 import { SceneBrowser } from "./components/SceneBrowser";
+import { VoicePanel } from "./components/VoicePanel";
 
 /**
  * 進捗は REST の定期取得で追う。WebSocket 通知は #9 以降で追加する。
@@ -326,7 +327,7 @@ export function App() {
       <header>
         <h1>MyComfyUI</h1>
         <span className="muted">
-          Scene/Shotから画像生成を投入し、進捗と候補を確認する。
+          Scene/Shotから画像と音声の生成を投入し、進捗と候補を確認する。
         </span>
       </header>
 
@@ -375,6 +376,17 @@ export function App() {
           manifest={manifest}
           onSelect={setSelectedJobId}
           onCancel={cancel}
+        />
+      </div>
+
+      <div className="full">
+        <VoicePanel
+          projectId={projectId}
+          sceneId={sceneId}
+          shotId={shotId}
+          shot={shot}
+          jobs={jobs}
+          onSubmittedJob={handleDerivedJob}
         />
       </div>
 

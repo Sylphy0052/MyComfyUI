@@ -103,6 +103,8 @@ export interface ShotData {
     text: string;
     reading?: string | null;
     voice_id: string;
+    delivery?: string | null;
+    start_sec?: number | null;
   }[];
 }
 
@@ -110,4 +112,18 @@ export interface ShotEnvelope {
   kind: "shot";
   data: ShotData;
   provenance: Provenance;
+}
+
+/**
+ * Canon descriptor。本文は返らず、`canon_id`、種別、表示名、不変参照だけを持つ。
+ */
+export interface CanonDescriptor {
+  canon_id: string;
+  kind: string;
+  display_name: string | null;
+  reference: ImmutableReference;
+}
+
+export interface CanonList {
+  items: CanonDescriptor[];
 }
