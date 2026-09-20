@@ -1,8 +1,8 @@
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from alembic import context
 from mycomfyui_api.models import Base
 from mycomfyui_api.settings import get_settings
 
@@ -65,6 +65,11 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # 起動のたびにmigrationを適用するため、前のプロセスがDBを掴んだままの
+        # 再起動で衝突しうる。アプリ側のengine(db.py)のbusy_timeoutと同じだけ待つ。
+        # PRAGMAをconnectionへ流すとtransactionが先に開き、migrationがcommitされ
+        # ないまま終わるため、DBAPIの接続引数で渡す。
+        connect_args={"timeout": 5},
     )
 
     with connectable.connect() as connection:

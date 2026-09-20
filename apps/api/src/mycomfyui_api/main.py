@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from contextlib import asynccontextmanager
@@ -5,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 from starlette import status
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
@@ -26,6 +28,7 @@ from mycomfyui_api.errors import (
     unhandled_error_handler,
     validation_error_handler,
 )
+from mycomfyui_api.migrator import upgrade_to_head
 from mycomfyui_api.queue import (
     JobQueueWorker,
     recover_interrupted_applications,
@@ -50,6 +53,9 @@ def _resolve_request_id(raw: str | None) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 空の`data_root`を渡されても起動できるよう、engineを作る前にschemaを揃える。
+    # Alembicは同期APIのため、event loopを止めないよう別threadで走らせる。
+    await asyncio.to_thread(upgrade_to_head)
     get_engine()
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -161,6 +167,22 @@ def create_app() -> FastAPI:
     @app.get("/api/v1/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # 許可originはミドルウェアの最も外側に置く。preflightを本文の関所より手前で
+    # 返し、エラー応答にも許可headerが付くようにする。既定は空で、設定した
+    # originが無い間はCORSのheaderを一切返さない。開発時はViteのproxyが同一
+    # originへ寄せるため、設定は要らない。
+    allowed_origins = get_settings().allowed_origin_list
+    if allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(allowed_origins),
+            # 認証を持たないAPIのため、cookieと認証headerの送出は許さない。
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["X-Request-ID"],
+        )
 
     return app
 
