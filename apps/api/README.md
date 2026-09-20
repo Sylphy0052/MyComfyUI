@@ -58,6 +58,12 @@ MYCOMFYUI_COMFYUI_BASE_URL=http://<remote>:8188
 MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=900
 ```
 
+voice-runner も同じ Remote PC で動かすため、使う場合は接続先だけを同様に差し替える。
+
+```dotenv
+MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://<remote>:8770
+```
+
 構成と判断の根拠は [ADR 0002](../../docs/adr/0002-remote-gpu-host.md)、Remote PC 側の手順は
 [Remote GPU ホストの準備](../../docs/operations/remote-gpu-host.md) を参照する。
 
