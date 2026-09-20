@@ -133,12 +133,15 @@ def create_app() -> FastAPI:
         長さ判定に委ねる。
         """
         declared = request.headers.get("Content-Length")
-        if declared is not None and declared.isdigit():
-            if int(declared) > MAX_REQUEST_BYTES:
-                return JSONResponse(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    content={"detail": "要求本文が大きすぎます。"},
-                )
+        if (
+            declared is not None
+            and declared.isdigit()
+            and int(declared) > MAX_REQUEST_BYTES
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                content={"detail": "要求本文が大きすぎます。"},
+            )
         return await call_next(request)
 
     @app.get("/v1/health", response_model=HealthResponse)
