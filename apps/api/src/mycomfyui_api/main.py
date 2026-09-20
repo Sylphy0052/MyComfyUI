@@ -6,15 +6,18 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
+from starlette import status
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from mycomfyui_api.adapters.agent import create_agent_provider
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
-from mycomfyui_api.adapters.comfyui.executor import ComfyUIExecutor
-from mycomfyui_api.bootstrap import ensure_default_recipes
+from mycomfyui_api.bootstrap import ensure_default_recipes, ensure_voice_recipes
 from mycomfyui_api.db import dispose_engine, get_engine, get_session_factory
+from mycomfyui_api.engines import ExecutorRegistry
 from mycomfyui_api.errors import (
     ApiError,
     api_error_handler,
+    error_response,
     storage_error_handler,
     unhandled_error_handler,
     validation_error_handler,
@@ -45,7 +48,10 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info("中断Jobを%d件failedへ倒しました。", recovered)
         await ensure_default_recipes(session)
-    worker = JobQueueWorker(session_factory, ComfyUIExecutor(session_factory))
+        await ensure_voice_recipes(session)
+    # Executorはengineごとにレジストリから引く。キューは全Jobで1本のまま、
+    # 画像Jobと音声Jobが同じGPU直列キューへ積まれる。
+    worker = JobQueueWorker(session_factory, ExecutorRegistry(session_factory))
     worker.start()
     app.state.queue_worker = worker
     app.state.reference_source = None
@@ -70,6 +76,21 @@ async def lifespan(app: FastAPI):
         await dispose_engine()
 
 
+#: 本文の上限に足す余裕。JSONの他の項目とheaderのぶん。
+REQUEST_BODY_MARGIN_BYTES = 64 * 1024
+
+
+def _max_request_bytes() -> int:
+    """受け付ける要求本文の上限。
+
+    一番大きい本文は参照音声のbase64になる。個別のEndpointで長さを見る前に、
+    ASGIの入口で切る。ここを通してしまうと、上限を超える本文でも丸ごとメモリへ
+    載ってからでないと断れない。
+    """
+    encoded = (get_settings().voice_max_audio_bytes + 2) // 3 * 4
+    return encoded + REQUEST_BODY_MARGIN_BYTES
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="MyComfyUI Application API", version="0.1.0", lifespan=lifespan)
     app.add_exception_handler(ApiError, api_error_handler)
@@ -78,6 +99,38 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_error_handler)
     app.include_router(router)
     app.include_router(reference_router)
+    # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
+    # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りするため、
+    # ASGIの受信側にも関所を置く。
+    app.add_middleware(
+        RequestBodyLimitMiddleware, max_body_size=_max_request_bytes()
+    )
+
+    @app.middleware("http")
+    async def limit_request_body(request: Request, call_next):
+        """`Content-Length`が上限を超える要求は本文を読まずに断る。
+
+        `RequestBodyLimitMiddleware`だけでも本文は止まるが、そちらは
+        `{"detail": ...}`の形で返り、共通Envelopeにならない。長さを申告する
+        要求はここで先に断る。申告しない要求(chunked)は測れないため、内側の
+        関所が受信バイト数で止める。
+        """
+        declared = request.headers.get("Content-Length")
+        if declared is not None and declared.isdigit():
+            limit = _max_request_bytes()
+            if int(declared) > limit:
+                # 例外ハンドラはこのミドルウェアの内側にあり、ここで送出しても
+                # 共通Envelopeにならない。応答を直接組み立てて返す。
+                return error_response(
+                    request,
+                    ApiError(
+                        "VALIDATION_ERROR",
+                        "要求本文が大きすぎます。",
+                        details={"limit": limit},
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    ),
+                )
+        return await call_next(request)
 
     @app.middleware("http")
     async def set_request_id(request: Request, call_next):

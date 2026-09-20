@@ -1,5 +1,6 @@
 import type { components } from "./schema";
 import type {
+  CanonList,
   ProjectList,
   SceneEnvelope,
   SceneList,
@@ -28,6 +29,10 @@ export type PlannedOperation = components["schemas"]["PlannedOperation"];
 export type ApprovalLog = components["schemas"]["ApprovalLogRead"];
 export type AgentDecision =
   components["schemas"]["AgentProposalDecision"]["decision"];
+export type VoiceVerification = components["schemas"]["VoiceVerificationRead"];
+export type VoiceBackendHealth =
+  components["schemas"]["VoiceBackendHealthRead"];
+export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
 
 const BASE = "/api/v1";
 
@@ -255,6 +260,32 @@ export const api = {
       `/agent-proposals/${encodeURIComponent(proposalId)}/apply`,
       { method: "POST" },
     ),
+
+  listCanon: (projectId: string, kind?: string) => {
+    const query = kind ? `?kind=${encodeURIComponent(kind)}` : "";
+    return request<CanonList>(
+      `/projects/${encodeURIComponent(projectId)}/canon${query}`,
+    );
+  },
+
+  // 音声 Job の読み検証。一致しなかったことは Job の失敗ではない。
+  listVoiceVerifications: (jobId: string) =>
+    request<VoiceVerification[]>(
+      `/generation-jobs/${encodeURIComponent(jobId)}/voice-verifications`,
+    ),
+
+  getVoiceBackendHealth: () =>
+    request<VoiceBackendHealth>("/backends/voice/health"),
+
+  // 参照音声を入力 cache へ取り込む。Voice Canon の source_sha256 と突き合わせる。
+  createVoiceReference: (fileName: string, contentBase64: string) =>
+    request<VoiceReference>("/voice-references", {
+      method: "POST",
+      body: JSON.stringify({
+        file_name: fileName,
+        content_base64: contentBase64,
+      }),
+    }),
 
   listApprovalLogs: (params: { subjectId?: string; limit?: number }) => {
     const query = new URLSearchParams();

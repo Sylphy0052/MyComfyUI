@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     agent_approval_ttl_seconds: int = Field(default=1800, gt=0)
     #: stub Providerを常に失敗させる。Provider障害が他機能を止めないことの確認に使う。
     agent_stub_failure: bool = False
+    #: 音声とASRのBackendを束ねるvoice-runnerの接続先。ローカル構成でもリモート構成でも
+    #: この値だけが変わり、実行経路は分岐しない。
+    voice_runner_base_url: str = "http://127.0.0.1:8770"
+    #: voice-runnerへの1リクエストの上限。`ai-media/docs/tts-backends.md`の既定に合わせる。
+    voice_runner_timeout_seconds: float = Field(default=300.0, gt=0)
+    #: base64で受け渡すwavのサイズ上限。参照音声と生成音声の両方に適用する。
+    voice_max_audio_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
+    #: 実GPU Backendの代わりにスタブを使う。UIと履歴の経路を手元で確かめるために使う。
+    voice_stub: bool = False
+    #: スタブBackendを常に失敗させる。Backend障害時にJobがfailedへ落ちることの確認に使う。
+    voice_stub_failure: bool = False
 
     @property
     def database_path(self) -> Path:

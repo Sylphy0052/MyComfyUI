@@ -108,6 +108,33 @@ def write_artifact(
     )
 
 
+def write_input(
+    file_name: str, data: bytes, settings: Settings | None = None
+) -> StoredFile:
+    """`inputs/<sha256>/<file_name>`へ利用者素材を取り込む。
+
+    内容のSHA-256をディレクトリ名にする。同じ内容を何度取り込んでも同じ場所を指し、
+    Manifestへ記録した参照が別の内容を指すことがない。既に同じ内容が置かれている
+    場合は書き直さない。
+    """
+    settings = settings or get_settings()
+    digest = hashlib.sha256(data).hexdigest()
+    name = _safe_name(file_name)
+    directory = settings.data_root / INPUTS_DIR_NAME / digest
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / name
+        if not path.exists():
+            path.write_bytes(data)
+    except OSError as error:
+        raise StorageError(f"入力cacheへ保存できません: {file_name}") from error
+    return StoredFile(
+        relative_path=f"{INPUTS_DIR_NAME}/{digest}/{name}",
+        sha256=digest,
+        byte_size=len(data),
+    )
+
+
 def discard_artifacts(
     relative_paths: list[str], settings: Settings | None = None
 ) -> None:

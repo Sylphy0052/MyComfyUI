@@ -18,6 +18,10 @@ KIND_SHOT = "shot"
 KIND_CANON = "canon"
 KIND_CACHED_INPUT = "cached_input"
 
+#: Canon参照の出どころ。Scene/Shot本文が宣言したものと、Jobの入力として利用者が
+#: 選んだものを区別する。後者は本文から辿れないため、引き直すときの手がかりになる。
+DECLARED_BY_INPUT = "input"
+
 #: 参照APIから解決し直せる種別。Canon更新警告と再実行の検証はこれだけを対象にする。
 RESOLVABLE_KINDS = frozenset({KIND_SCENE, KIND_SHOT, KIND_CANON})
 
@@ -133,6 +137,15 @@ def _entry(kind: str, reference: Mapping[str, Any], **extra: Any) -> dict[str, A
     entry.update(dict(reference))
     entry.update(extra)
     return entry
+
+
+def canon_entry(raw: Any, **extra: Any) -> dict[str, Any]:
+    """Canon descriptorの不変参照を`input_refs`の形へ整える。
+
+    Scene/Shot本文が宣言していないCanon(利用者がJobの入力として選んだVoice Canonなど)
+    を来歴へ残すために使う。`canon_id`の算出規則は本文経由の参照と同じとする。
+    """
+    return _entry(KIND_CANON, immutable_reference(raw), **extra)
 
 
 def identity(entry: Mapping[str, Any]) -> tuple[str, str, str, str | None]:

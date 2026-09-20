@@ -248,6 +248,29 @@ export interface paths {
         patch: operations["update_artifact_decision_api_v1_artifacts__artifact_id__decision_patch"];
         trace?: never;
     };
+    "/api/v1/backends/voice/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Voice Backend Health
+         * @description voice-runnerの疎通とengineの利用可否を中継する。
+         *
+         *     接続できないことは障害として応答本文で伝え、HTTPのエラーにしない。画面は音声
+         *     Backendが使えない状態でも他の機能を出し続ける。
+         */
+        get: operations["get_voice_backend_health_api_v1_backends_voice_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generation-jobs": {
         parameters: {
             query?: never;
@@ -434,6 +457,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/generation-jobs/{job_id}/voice-verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Voice Verifications
+         * @description 音声Jobの読み検証を台詞順で返す。
+         *
+         *     ASR結果が期待読みと一致しなかったこと自体はJobの失敗ではない。音声は生成できて
+         *     いるため、判断は利用者へ委ねる。
+         */
+        get: operations["list_voice_verifications_api_v1_generation_jobs__job_id__voice_verifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generation-manifests/{manifest_id}": {
         parameters: {
             query?: never;
@@ -509,7 +555,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Canon */
+        /**
+         * List Canon
+         * @description Canon descriptorを一覧する。`kind`を指定すると種別で絞り込む。
+         *
+         *     上流の契約に`kind`クエリは無いため、絞り込みはMyComfyUI側で行う。参照APIには
+         *     Voice Canon専用のEndpointが無く、画面は`CanonList`から絞り込む形になる。
+         */
         get: operations["list_canon_api_v1_projects__project_id__canon_get"];
         put?: never;
         post?: never;
@@ -639,6 +691,30 @@ export interface paths {
         get: operations["get_recipe_api_v1_recipes__recipe_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/voice-references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Voice Reference
+         * @description 参照音声を入力cacheへ取り込む。
+         *
+         *     参照APIはVoice Canonの`source_audio`を公開しないため、参照音声そのものを上流から
+         *     取得する経路は無い。利用者が取り込んだファイルの内容hashを返し、Voice Canonの
+         *     `source_sha256`と突き合わせられるようにする。
+         */
+        post: operations["create_voice_reference_api_v1_voice_references_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1138,6 +1214,118 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /**
+         * VoiceBackendHealthRead
+         * @description voice-runnerの疎通確認。認証情報は扱わないため返さない。
+         */
+        VoiceBackendHealthRead: {
+            /** Base Url */
+            base_url: string;
+            /** Engines */
+            engines?: components["schemas"]["VoiceEngineHealthRead"][];
+            /** Reachable */
+            reachable: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * VoiceEngineHealthRead
+         * @description voice-runnerが公開する1engineの状態。
+         */
+        VoiceEngineHealthRead: {
+            /** Available */
+            available: boolean;
+            /** Detail */
+            detail?: string | null;
+            /** Id */
+            id: string;
+            /** Model */
+            model?: string | null;
+            /**
+             * Needs Katakana
+             * @default false
+             */
+            needs_katakana: boolean;
+            /** Revision */
+            revision?: string | null;
+            /** Sample Rate */
+            sample_rate?: number | null;
+        };
+        /**
+         * VoiceReferenceCreate
+         * @description 参照音声の取り込み要求。
+         *
+         *     参照APIはVoice Canonの`source_audio`(作成者環境の絶対path)を公開しないため、
+         *     参照音声そのものを参照APIから取得する経路は無い。利用者が手元の音源を取り込み、
+         *     入力cacheとして保持する。
+         */
+        VoiceReferenceCreate: {
+            /** Content Base64 */
+            content_base64: string;
+            /** File Name */
+            file_name: string;
+        };
+        /**
+         * VoiceReferenceRead
+         * @description 取り込んだ参照音声。`sha256`をVoice Canonの`source_sha256`と突き合わせる。
+         */
+        VoiceReferenceRead: {
+            /** Byte Size */
+            byte_size: number;
+            /** Channels */
+            channels: number;
+            /** Duration Sec */
+            duration_sec: number;
+            /** Media Type */
+            media_type: string;
+            /** Relative Path */
+            relative_path: string;
+            /** Sample Rate */
+            sample_rate: number;
+            /** Sha256 */
+            sha256: string;
+        };
+        /**
+         * VoiceVerificationRead
+         * @description 1台詞ぶんの読み検証と尺の記録。
+         *
+         *     `match`はカタカナへ正規化したうえでの完全一致可否とする。表記のまま比べると、
+         *     Whisperが返す同音の別表記(朝比奈 → 朝日菜)で、読めているのに不一致になる。
+         */
+        VoiceVerificationRead: {
+            /** Artifact Id */
+            artifact_id: string;
+            /** Asr Text */
+            asr_text: string | null;
+            /** Audio Sec */
+            audio_sec: number;
+            /** Created At */
+            created_at: string;
+            /** Dialogue Index */
+            dialogue_index: number;
+            /** Diff Ratio */
+            diff_ratio: number | null;
+            /** Expected Reading */
+            expected_reading: string | null;
+            /** Expected Text */
+            expected_text: string;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string;
+            /** Match */
+            match: boolean | null;
+            /** Normalized Asr */
+            normalized_asr: string | null;
+            /** Normalized Expected */
+            normalized_expected: string | null;
+            /** Padded Sec */
+            padded_sec: number;
+            /** Status */
+            status: string;
+            /** Target Duration Sec */
+            target_duration_sec: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -1598,6 +1786,26 @@ export interface operations {
             };
         };
     };
+    get_voice_backend_health_api_v1_backends_voice_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceBackendHealthRead"];
+                };
+            };
+        };
+    };
     list_generation_jobs_api_v1_generation_jobs_get: {
         parameters: {
             query?: {
@@ -1883,6 +2091,37 @@ export interface operations {
             };
         };
     };
+    list_voice_verifications_api_v1_generation_jobs__job_id__voice_verifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceVerificationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_generation_manifest_api_v1_generation_manifests__manifest_id__get: {
         parameters: {
             query?: never;
@@ -1993,7 +2232,9 @@ export interface operations {
     };
     list_canon_api_v1_projects__project_id__canon_get: {
         parameters: {
-            query?: never;
+            query?: {
+                kind?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -2278,6 +2519,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecipeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_voice_reference_api_v1_voice_references_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceReferenceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceReferenceRead"];
                 };
             };
             /** @description Validation Error */
