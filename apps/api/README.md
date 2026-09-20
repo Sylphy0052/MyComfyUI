@@ -472,6 +472,12 @@ Recipe の変更は新しい Recipe として作成し、必要なら `supersede
 
 `STORAGE_ERROR` と `INTERNAL_ERROR` は原因を応答へ含めず、`logging` へ出力する。
 
+要求本文の大きさは、参照音声の base64 を基準に上限を決める
+(`MYCOMFYUI_VOICE_MAX_AUDIO_BYTES` から逆算した値に余裕を足したもの)。超えた要求は本文を
+読み切る前に 413 で断る。`Content-Length` を申告する要求は共通 Envelope
+(`VALIDATION_ERROR`) で返し、申告しない要求 (chunked) は受信バイト数で打ち切るため
+`{"detail": ...}` の形になる。
+
 要求 header の `X-Request-ID` は `[A-Za-z0-9._-]` の 1〜64 文字だけ引き継ぐ。
 書式を満たさない値は破棄し、サーバ側で採番する。
 
