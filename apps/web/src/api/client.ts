@@ -40,6 +40,11 @@ export type GenerationPreview =
   components["schemas"]["GenerationPreviewRead"];
 export type GenerationPreviewDiff =
   components["schemas"]["GenerationPreviewDiff"];
+export type Workflow = components["schemas"]["WorkflowRead"];
+export type WorkflowVersion = components["schemas"]["WorkflowVersionRead"];
+export type ArtifactIntegrity = components["schemas"]["ArtifactIntegrityRead"];
+export type ArtifactIntegrityReason =
+  components["schemas"]["ArtifactIntegrityFinding"]["reason"];
 
 const BASE = "/api/v1";
 
@@ -112,8 +117,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listRecipes: (kind: string) =>
-    request<Recipe[]>(`/recipes?kind=${encodeURIComponent(kind)}`),
+  listRecipes: (kind?: string) => {
+    const query = kind ? `?kind=${encodeURIComponent(kind)}` : "";
+    return request<Recipe[]>(`/recipes${query}`);
+  },
 
   listProjects: () => request<ProjectList>("/projects"),
 
@@ -196,22 +203,93 @@ export const api = {
       { method: "PATCH", body: JSON.stringify({ decision }) },
     ),
 
+  // tag は複数指定でき、すべてのタグが付いた Artifact だけが返る (AND)。
+  // lineage_* は祖先と子孫の両方向を辿った結果へ絞る。
   listArtifacts: (params: {
     sceneId?: string;
     shotId?: string;
     jobId?: string;
     kind?: string;
+    decision?: string;
+    availability?: string;
+    tags?: string[];
+    lineageArtifactId?: string;
+    lineageJobId?: string;
     limit?: number;
+    offset?: number;
   }) => {
     const query = new URLSearchParams();
     if (params.sceneId) query.set("scene_id", params.sceneId);
     if (params.shotId) query.set("shot_id", params.shotId);
     if (params.jobId) query.set("job_id", params.jobId);
     if (params.kind) query.set("kind", params.kind);
+    if (params.decision) query.set("decision", params.decision);
+    if (params.availability) query.set("availability", params.availability);
+    for (const tag of params.tags ?? []) query.append("tag", tag);
+    if (params.lineageArtifactId)
+      query.set("lineage_artifact_id", params.lineageArtifactId);
+    if (params.lineageJobId) query.set("lineage_job_id", params.lineageJobId);
     if (params.limit) query.set("limit", String(params.limit));
+    if (params.offset) query.set("offset", String(params.offset));
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request<Artifact[]>(`/artifacts${suffix}`);
   },
+
+  // limit/offset は判定する対象の範囲であり、返る件数ではない。対象が残っている
+  // ときは truncated が true になる。include_canon を false にすると参照 API を
+  // 引かず、canon_available も false になる。
+  listArtifactIntegrity: (params: {
+    sceneId?: string;
+    shotId?: string;
+    jobId?: string;
+    kind?: string;
+    tags?: string[];
+    reasons?: ArtifactIntegrityReason[];
+    includeCanon?: boolean;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.sceneId) query.set("scene_id", params.sceneId);
+    if (params.shotId) query.set("shot_id", params.shotId);
+    if (params.jobId) query.set("job_id", params.jobId);
+    if (params.kind) query.set("kind", params.kind);
+    for (const tag of params.tags ?? []) query.append("tag", tag);
+    for (const reason of params.reasons ?? []) query.append("reason", reason);
+    if (params.includeCanon !== undefined)
+      query.set("include_canon", String(params.includeCanon));
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.offset) query.set("offset", String(params.offset));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<ArtifactIntegrity>(`/artifacts/integrity${suffix}`);
+  },
+
+  // 付け直しは成功として扱われる。外すときは付いていないタグの指定が 404 になる。
+  addArtifactTag: (artifactId: string, tag: string) =>
+    request<Artifact>(`/artifacts/${encodeURIComponent(artifactId)}/tags`, {
+      method: "POST",
+      body: JSON.stringify({ tag }),
+    }),
+
+  // 削除は 204 を返す。更新後の Artifact は呼び出し側で引き直す。
+  removeArtifactTag: (artifactId: string, tag: string) =>
+    request<void>(
+      `/artifacts/${encodeURIComponent(artifactId)}/tags/${encodeURIComponent(tag)}`,
+      { method: "DELETE" },
+    ),
+
+  listWorkflows: (params?: { kind?: string; engine?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.kind) query.set("kind", params.kind);
+    if (params?.engine) query.set("engine", params.engine);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<Workflow[]>(`/workflows${suffix}`);
+  },
+
+  listWorkflowVersions: (workflowId: string) =>
+    request<WorkflowVersion[]>(
+      `/workflows/${encodeURIComponent(workflowId)}/versions`,
+    ),
 
   getJob: (jobId: string) =>
     request<GenerationJob>(`/generation-jobs/${encodeURIComponent(jobId)}`),

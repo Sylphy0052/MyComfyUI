@@ -1,13 +1,16 @@
-import { useState } from "react";
-
-import { api } from "../api/client";
 import type { Artifact, ArtifactDecision } from "../api/client";
+import { ArtifactPreview } from "./ArtifactPreview";
 
-const DECISION_LABEL: Record<string, string> = {
-  undecided: "未判断",
-  accepted: "採用",
-  rejected: "却下",
-};
+/** 採否の値と表示名。候補比較と資産ブラウザで同じ文言を使う。 */
+export const DECISION_OPTIONS: { value: string; label: string }[] = [
+  { value: "undecided", label: "未判断" },
+  { value: "accepted", label: "採用" },
+  { value: "rejected", label: "却下" },
+];
+
+export const DECISION_LABEL: Record<string, string> = Object.fromEntries(
+  DECISION_OPTIONS.map((option) => [option.value, option.label]),
+);
 
 export interface Candidate {
   artifact: Artifact;
@@ -25,9 +28,6 @@ export function CandidateGallery({
   busyArtifactId,
   onDecide,
 }: Props) {
-  // 実ファイルを失った Artifact も記録としては残る。壊れた画像ではなく理由を出す。
-  const [missing, setMissing] = useState<Set<string>>(new Set());
-
   return (
     <section className="panel">
       <h2>候補比較</h2>
@@ -37,20 +37,7 @@ export function CandidateGallery({
         <div className="gallery">
           {candidates.map(({ artifact }) => (
             <figure key={artifact.id} className={artifact.decision}>
-              {missing.has(artifact.id) ? (
-                <p className="muted" style={{ padding: 8 }}>
-                  画像ファイルを取得できません。
-                </p>
-              ) : (
-                <img
-                  src={api.artifactContentUrl(artifact.id)}
-                  alt={`Artifact ${artifact.id}`}
-                  loading="lazy"
-                  onError={() =>
-                    setMissing((current) => new Set(current).add(artifact.id))
-                  }
-                />
-              )}
+              <ArtifactPreview artifact={artifact} />
               <figcaption>
                 <span className="muted">
                   {DECISION_LABEL[artifact.decision] ?? artifact.decision}
