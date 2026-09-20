@@ -1293,6 +1293,18 @@ async def update_artifact_decision(
     return await _artifact_read(session, artifact)
 
 
+async def _find_artifact_tag(
+    session: AsyncSession, artifact_id: str, tag: str
+) -> ArtifactTag | None:
+    result = await session.execute(
+        select(ArtifactTag).where(
+            ArtifactTag.artifact_id == artifact_id,
+            ArtifactTag.tag == tag,
+        )
+    )
+    return result.scalars().first()
+
+
 @router.post(
     "/artifacts/{artifact_id}/tags",
     response_model=schemas.ArtifactRead,
@@ -1308,22 +1320,23 @@ async def add_artifact_tag(
     付け直しは成功として扱う。
     """
     await _get_or_404(session, Artifact, "Artifact", artifact_id)
-    existing = await session.execute(
-        select(ArtifactTag).where(
-            ArtifactTag.artifact_id == artifact_id,
-            ArtifactTag.tag == payload.tag,
+    session.add(
+        ArtifactTag(
+            id=schemas.new_id(),
+            artifact_id=artifact_id,
+            tag=payload.tag,
+            created_at=schemas.now_iso(),
         )
     )
-    if existing.scalars().first() is None:
-        session.add(
-            ArtifactTag(
-                id=schemas.new_id(),
-                artifact_id=artifact_id,
-                tag=payload.tag,
-                created_at=schemas.now_iso(),
-            )
-        )
-        await _commit(session)
+    try:
+        await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+        # 付いているかを先に確かめてから足すと、同じタグを同時に送られたときに両方が
+        # 「まだ無い」と判定して衝突する。先に足し、ユニーク制約の違反だけを付け直し
+        # として握る。付け直しでないIntegrityErrorは外部キー違反として返す。
+        if await _find_artifact_tag(session, artifact_id, payload.tag) is None:
+            raise _integrity_error(error) from error
     artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
     return await _artifact_read(session, artifact)
 
@@ -1346,13 +1359,7 @@ async def remove_artifact_tag(artifact_id: str, tag: str, session: SessionDep):
     except ValueError as error:
         raise _validation_error(str(error)) from error
     await _get_or_404(session, Artifact, "Artifact", artifact_id)
-    result = await session.execute(
-        select(ArtifactTag).where(
-            ArtifactTag.artifact_id == artifact_id,
-            ArtifactTag.tag == tag,
-        )
-    )
-    entry = result.scalars().first()
+    entry = await _find_artifact_tag(session, artifact_id, tag)
     if entry is None:
         raise _not_found("ArtifactTag", tag)
     await session.delete(entry)
