@@ -50,6 +50,17 @@
 
 `job_id`は生成前に作成済みのJobを指すため、Workflow Artifactは`queued`になる前に、出力Artifactは`running`中に保存できる。`succeeded`のJobに属するArtifactはすべて`complete`とし、`failed`または`cancelled`のJobに残す診断用の部分Artifactは`incomplete`とする。`incomplete`は通常の生成結果として表示・採否判定しない。`parent_artifact_id`は同一Project内の既存Artifactを指し、循環参照は禁止する。`undecided`では`decision_at`をNULLとし、採否を設定するときは両項目を同一更新で確定する。保存済みファイルを置換しない。再出力は別Artifactとして記録する。
 
+### ArtifactTag
+
+|項目|必須|内容|更新可否|
+|---|---|---|---|
+|`id`|必須|タグ ID|不可|
+|`artifact_id`|必須|対象Artifact ID|不可|
+|`tag`|必須|タグ文字列|不可|
+|`created_at`|必須|付与時刻|不可|
+
+タグはArtifactの列ではなく別レコードとする。1件のArtifactへ複数付き、タグ側からの絞り込みが主経路になるため、JSON列に持たせると検索のたびに全行を走査することになる。`artifact_id`と`tag`の組は一意とし、同じタグの二重付与を許さない。値は前後の空白を除いた1〜64文字とし、制御文字と`/`を含められない。タグは`DELETE /artifacts/{artifact_id}/tags/{tag}`のパスセグメントへそのまま載るため、区切り文字を値に許すと削除対象を一意に指せない。大文字小文字と表記の揺れは吸収せず、完全一致で検索する。正規化は同義語管理にあたり、扱わない。
+
 ### GenerationManifest
 
 |項目|必須|内容|更新可否|
@@ -269,6 +280,21 @@ Regenerate with Current Canonは元Jobの派生Jobを作り、Scene、Shot、Can
 ## Canon更新警告
 
 Artifact一覧と再実行画面は、Manifestの各Canon参照と現在の参照APIから解決した参照を比較する。`source_locator`、`revision`、`path`、`sha256`、`anchor`を含む完全な不変参照、またはこの組から参照契約どおり算出した`canon_id`が異なる場合、Canon更新ありと表示する。警告は記録済みManifestやArtifactを変更せず、Exact Replayの入力を現在値へ切り替えない。
+
+## 整合性一覧
+
+資産の横断確認のため、`GET /api/v1/artifacts/integrity`は整合性を欠いたArtifactを理由付きで返す。理由は次の4種とし、1件のArtifactへ複数付きうる。
+
+|理由|判定|
+|---|---|
+|`file_missing`|`relative_path`が`data_root`配下のArtifact storeへ解決できない、または実ファイルを読めない|
+|`hash_mismatch`|実ファイルのSHA-256が記録済みの`sha256`と一致しない|
+|`reference_broken`|作成元JobのManifestが持つ`input_refs`のうち、参照APIで解決しない参照（`cached_input`、`artifact`）を再現できない|
+|`canon_updated`|作成元Jobの記録済み参照と現在の参照が一致しない（「Canon更新警告」と同じ判定）|
+
+判定は読み取りだけで行い、`Artifact.availability`、`sha256`、Manifestのいずれも更新しない。記録を現在の状態へ寄せると、いつ何が失われたのかが履歴から消える。
+
+実ファイルを読み直すため、対象は`limit`件（既定50、上限200）で区切る。まだ対象が残っている場合は`truncated`を`true`で返し、全件を見た結果と取り違えさせない。Canon判定は作成元Job単位で1回だけ行い、同じJobのArtifactへ使い回す。参照APIを引けない場合、またはCanon判定を要求されなかった場合は`canon_available`を`false`とし、`canon_updated`を一覧へ混ぜない。判定できた結果と判定していない結果が混ざると、一覧全体を誤解させる。
 
 ## 保存先と保持方針
 
