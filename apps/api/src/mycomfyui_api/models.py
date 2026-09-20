@@ -9,6 +9,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -24,6 +25,67 @@ def _uuid_column(*, primary_key: bool = False):
     return mapped_column(String(UUID_LENGTH), primary_key=primary_key)
 
 
+class Workflow(Base):
+    """登録済みWorkflow。Recipeが参照する実行本体の識別単位。
+
+    Workflow本体はリポジトリ同梱のテンプレートとAdapterの実装であり、この表はその
+    登録簿にあたる。利用者入力から任意のWorkflowを実行させないため、行を足しても
+    実行できるWorkflowは増えない。
+    """
+
+    __tablename__ = "workflow"
+    __table_args__ = (
+        CheckConstraint(
+            "kind in ('image','video','voice','music','compose')",
+            name="ck_workflow_kind",
+        ),
+        UniqueConstraint("name", name="uq_workflow_name"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    #: 同梱テンプレート名、またはAdapterのスナップショット名。
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    #: このWorkflowを実行できるBackend。音声のように複数Backendが同じ形を使う。
+    engines: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class WorkflowVersion(Base):
+    """Workflowの1版。変数定義、対応モデル、入出力を保持する。
+
+    版の内容は作成後に書き換えない。テンプレートやスナップショットの形が変われば
+    新しい版を足す。Recipeは版を指し、指した版の宣言の範囲でだけ値を差し替える。
+    """
+
+    __tablename__ = "workflow_version"
+    __table_args__ = (
+        UniqueConstraint("workflow_id", "version", name="uq_workflow_version_version"),
+        Index("ix_workflow_version_workflow_id", "workflow_id"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("workflow.id"), nullable=False
+    )
+    #: ComfyUI系はテンプレートのSHA-256、テンプレートファイルを持たないAdapterは
+    #: スナップショットの版番号を文字列にしたもの。
+    version: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 同梱テンプレートのSHA-256。テンプレートファイルを持たない版ではNULL。
+    template_sha256: Mapped[str | None] = mapped_column(
+        String(SHA256_LENGTH), nullable=True
+    )
+    #: 差し替えを許す変数。キーが変数名、値が型・必須・書き込み先。
+    variables: Mapped[dict] = mapped_column(JSON, nullable=False)
+    #: モデルファイル名を受け取る変数と、在庫確認に使うノード定義。
+    model_slots: Mapped[list] = mapped_column(JSON, nullable=False)
+    #: 素材の取り込みが要る入力。
+    inputs: Mapped[list] = mapped_column(JSON, nullable=False)
+    #: この版が生むArtifactの種別。
+    outputs: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class Recipe(Base):
     """Reusable generation template. Immutable once created; superseded by a new row."""
 
@@ -36,6 +98,10 @@ class Recipe(Base):
     workflow_template_ref: Mapped[dict] = mapped_column(JSON, nullable=False)
     input_schema: Mapped[dict] = mapped_column(JSON, nullable=False)
     defaults: Mapped[dict] = mapped_column(JSON, nullable=False)
+    #: 参照するWorkflowの版。レジストリ導入前に作られたRecipeではNULLになる。
+    workflow_version_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("workflow_version.id"), nullable=True
+    )
     supersedes_recipe_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("recipe.id"), nullable=True
     )

@@ -30,6 +30,7 @@ from mycomfyui_api.queue import JobQueueWorker, recover_interrupted_jobs
 from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
 from mycomfyui_api.settings import get_settings
+from mycomfyui_api.workflows import ensure_workflows
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,11 @@ async def lifespan(app: FastAPI):
         recovered = await recover_interrupted_jobs(session)
         if recovered:
             logger.info("中断Jobを%d件failedへ倒しました。", recovered)
-        await ensure_default_recipes(session)
-        await ensure_voice_recipes(session)
-        await ensure_media_recipes(session)
+        # RecipeはWorkflowの版を指すため、レジストリの登録を先に済ませる。
+        versions = await ensure_workflows(session)
+        await ensure_default_recipes(session, versions)
+        await ensure_voice_recipes(session, versions)
+        await ensure_media_recipes(session, versions)
     # Executorはengineごとにレジストリから引く。キューは全Jobで1本のまま、
     # 画像Jobと音声Jobが同じGPU直列キューへ積まれる。
     worker = JobQueueWorker(session_factory, ExecutorRegistry(session_factory))

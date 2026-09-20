@@ -42,17 +42,18 @@ LEADING_SILENCE_TRIM_THRESHOLD_SEC = 0.5
 MIN_DURATION_SEC = 1.0
 MAX_DURATION_SEC = 15.0
 
+#: 画面から受け取れる入力と、その型・必須。Workflowレジストリの変数定義にも使う。
+VOICE_VARIABLES: dict[str, dict[str, Any]] = {
+    "profile": {"value_type": "str", "required": False},
+    "language": {"value_type": "str", "required": False},
+    "seed": {"value_type": "seed", "required": False},
+    "verify_with_asr": {"value_type": "bool", "required": False},
+    "pad_to_duration": {"value_type": "bool", "required": False},
+    "voices": {"value_type": "voice_bindings", "required": True},
+}
+
 #: 画面から受け取れる入力。Recipeの`input_schema`はこの範囲より狭くできる。
-VOICE_INPUT_NAMES = frozenset(
-    {
-        "profile",
-        "language",
-        "seed",
-        "verify_with_asr",
-        "pad_to_duration",
-        "voices",
-    }
-)
+VOICE_INPUT_NAMES = frozenset(VOICE_VARIABLES)
 
 #: 1台詞のvoice bindingが持てる項目。
 VOICE_BINDING_NAMES = frozenset(

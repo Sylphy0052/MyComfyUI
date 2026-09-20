@@ -27,8 +27,15 @@ SNAPSHOT_VERSION = 1
 #: 合成Recipeが指す実行スナップショットの形。ComfyUIのテンプレートに当たる。
 COMPOSE_TEMPLATE_NAME = "ffmpeg_compose"
 
+#: 画面から受け取れる入力と、その型・必須。Workflowレジストリの変数定義にも使う。
+COMPOSE_VARIABLES: dict[str, dict[str, Any]] = {
+    "video": {"value_type": "artifact_ref", "required": True},
+    "voices": {"value_type": "voice_tracks", "required": False},
+    "bgm": {"value_type": "bgm_track", "required": False},
+}
+
 #: 画面から受け取れる入力。
-COMPOSE_INPUT_NAMES = frozenset({"video", "voices", "bgm"})
+COMPOSE_INPUT_NAMES = frozenset(COMPOSE_VARIABLES)
 
 #: 1トラックが持てる項目。
 VOICE_TRACK_NAMES = frozenset({"artifact_id", "start_sec", "volume"})
