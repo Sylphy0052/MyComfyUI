@@ -4,6 +4,7 @@
 `failure_code`へ翻訳し、出力をArtifactとして保存するところまでを担う。
 """
 
+import copy
 import hashlib
 import json
 import logging
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from mycomfyui_api import schemas, storage
+from mycomfyui_api import provenance, schemas, storage
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.client import (
     BackendDisconnected,
@@ -21,12 +22,14 @@ from mycomfyui_api.adapters.comfyui.client import (
     ComfyUIUnavailable,
     ExecutionFailed,
     ExecutionTimeout,
-    ImageRef,
     InterruptFailed,
     OutputNotFound,
+    OutputRef,
+    UploadFailed,
     WaitResult,
     WorkflowRejected,
 )
+from mycomfyui_api.adapters.comfyui.factory import create_comfyui_client
 from mycomfyui_api.models import Artifact, GenerationJob, GenerationManifest, Recipe
 from mycomfyui_api.queue import ExecutionOutcome
 from mycomfyui_api.settings import Settings, get_settings
@@ -45,6 +48,14 @@ FAILURE_CODE_ARTIFACT_WRITE_FAILED = "ARTIFACT_WRITE_FAILED"
 FAILURE_CODE_BACKEND_DISCONNECTED = "BACKEND_DISCONNECTED"
 FAILURE_CODE_EXECUTION_TIMEOUT = "EXECUTION_TIMEOUT"
 FAILURE_CODE_INTERRUPT_FAILED = "INTERRUPT_FAILED"
+FAILURE_CODE_INPUT_UPLOAD_FAILED = "INPUT_UPLOAD_FAILED"
+
+#: 生成物の種別ごとの既定のmedia_type。拡張子から判定できない場合に使う。
+DEFAULT_MEDIA_TYPES = {
+    "image": "image/png",
+    "video": "video/mp4",
+    "audio": "audio/wav",
+}
 
 
 class _PreflightError(Exception):
@@ -66,6 +77,8 @@ class _JobContext:
     template_name: str
     model: dict[str, str]
     workflow: dict[str, object]
+    #: 投入直前にComfyUIのinputへ置き、Workflowへ差し込む素材。
+    uploads: tuple[dict[str, object], ...] = ()
 
 
 class ComfyUIExecutor:
@@ -76,7 +89,7 @@ class ComfyUIExecutor:
         session_factory: async_sessionmaker[AsyncSession],
         *,
         settings: Settings | None = None,
-        client_factory=ComfyUIClient,
+        client_factory=create_comfyui_client,
     ) -> None:
         self._session_factory = session_factory
         self._settings = settings or get_settings()
@@ -127,7 +140,27 @@ class ComfyUIExecutor:
             return ExecutionOutcome(succeeded=False, stop_confirmed=True)
 
         try:
-            prompt_id = await client.submit(context.workflow)
+            workflow = await self._upload_inputs(client, context)
+        except _PreflightError as error:
+            return _failed(error.code, "backend_start", error.message, error.retryable)
+        except UploadFailed as error:
+            return _failed(
+                FAILURE_CODE_INPUT_UPLOAD_FAILED,
+                "backend_start",
+                str(error),
+                retryable=False,
+            )
+        except ComfyUIUnavailable as error:
+            return _failed(
+                FAILURE_CODE_BACKEND_UNAVAILABLE,
+                "backend_start",
+                f"ComfyUIへ接続できません: {client.base_url}",
+                retryable=True,
+                error=error,
+            )
+
+        try:
+            prompt_id = await client.submit(workflow)
         except WorkflowRejected as error:
             return _failed(
                 FAILURE_CODE_WORKFLOW_REJECTED,
@@ -228,19 +261,50 @@ class ComfyUIExecutor:
             )
         return await self._store_outputs(client, context, refs)
 
+    async def _upload_inputs(
+        self, client: ComfyUIClient, context: _JobContext
+    ) -> dict[str, object]:
+        """参照画像とガイド音声をComfyUIのinputへ置き、Workflowへ名前を差し込む。
+
+        `LoadImage`と`LoadAudio`はComfyUI側のinputにあるファイル名しか受け取れず、
+        手元のArtifactをそのまま渡せない。投入する内容が記録済みのスナップショットと
+        変わるのはこの差し替えだけで、どのファイルを置いたかはManifestへ残っている。
+        """
+        if not context.uploads:
+            return context.workflow
+        workflow = copy.deepcopy(context.workflow)
+        for upload in context.uploads:
+            data = _read_source(upload, self._settings)
+            file_name = str(upload.get("file_name") or "input")
+            uploaded = await client.upload_input(file_name, data)
+            node_id = str(upload.get("node_id"))
+            input_key = str(upload.get("input_key"))
+            node = workflow.get(node_id)
+            if not isinstance(node, dict) or not isinstance(node.get("inputs"), dict):
+                raise _PreflightError(
+                    FAILURE_CODE_INPUT_UNRESOLVED,
+                    f"素材の差し込み先ノードがありません: {node_id}",
+                    retryable=False,
+                )
+            node["inputs"][input_key] = uploaded
+        return workflow
+
     async def _store_outputs(
-        self, client: ComfyUIClient, context: _JobContext, refs: tuple[ImageRef, ...]
+        self, client: ComfyUIClient, context: _JobContext, refs: tuple[OutputRef, ...]
     ) -> ExecutionOutcome:
-        stored: list[storage.StoredFile] = []
+        stored: list[tuple[OutputRef, storage.StoredFile]] = []
         try:
             for ref in refs:
                 data = await client.download(ref)
                 stored.append(
-                    storage.write_artifact(
-                        context.job_id, ref.filename, data, self._settings
+                    (
+                        ref,
+                        storage.write_artifact(
+                            context.job_id, ref.filename, data, self._settings
+                        ),
                     )
                 )
-            await self._create_image_artifacts(context.job_id, stored)
+            await self._create_artifacts(context.job_id, stored)
         except OutputNotFound as error:
             return self._discard(
                 stored,
@@ -280,7 +344,7 @@ class ComfyUIExecutor:
 
     def _discard(
         self,
-        stored: list[storage.StoredFile],
+        stored: list[tuple[OutputRef, storage.StoredFile]],
         code: str,
         stage: str,
         message: str,
@@ -295,7 +359,7 @@ class ComfyUIExecutor:
         """
         if stored:
             storage.discard_artifacts(
-                [item.relative_path for item in stored], self._settings
+                [item.relative_path for _, item in stored], self._settings
             )
         return _failed(code, stage, message, retryable, error=error)
 
@@ -330,12 +394,19 @@ class ComfyUIExecutor:
                 if isinstance(value, str)
             }
             workflow = _read_workflow(artifact, self._settings)
+            raw_uploads = (manifest.parameters or {}).get("input_uploads")
+            uploads = (
+                tuple(item for item in raw_uploads if isinstance(item, dict))
+                if isinstance(raw_uploads, list)
+                else ()
+            )
             return _JobContext(
                 job_id=job.id,
                 manifest_id=manifest.id,
                 template_name=template_name,
                 model=model,
                 workflow=workflow,
+                uploads=uploads,
             )
 
     async def _record_engine_version(
@@ -391,8 +462,8 @@ class ComfyUIExecutor:
                 retryable=False,
             )
 
-    async def _create_image_artifacts(
-        self, job_id: str, stored: list[storage.StoredFile]
+    async def _create_artifacts(
+        self, job_id: str, stored: list[tuple[OutputRef, storage.StoredFile]]
     ) -> None:
         """保存済みファイルをArtifactとして記録する。
 
@@ -402,16 +473,16 @@ class ComfyUIExecutor:
         session = self._session_factory()
         try:
             created_at = schemas.now_iso()
-            for item in stored:
+            for ref, item in stored:
                 session.add(
                     Artifact(
                         id=schemas.new_id(),
                         job_id=job_id,
-                        kind="image",
+                        kind=ref.kind,
                         relative_path=item.relative_path,
                         sha256=item.sha256,
                         byte_size=item.byte_size,
-                        media_type=_media_type(item.relative_path),
+                        media_type=_media_type(item.relative_path, ref.kind),
                         availability="complete",
                         parent_artifact_id=None,
                         created_at=created_at,
@@ -481,8 +552,41 @@ def _read_workflow(artifact: Artifact, settings: Settings) -> dict[str, object]:
     return workflow
 
 
-def _media_type(relative_path: str) -> str:
-    return mimetypes.guess_type(relative_path)[0] or "application/octet-stream"
+def _media_type(relative_path: str, kind: str) -> str:
+    guessed = mimetypes.guess_type(relative_path)[0]
+    if guessed:
+        return guessed
+    return DEFAULT_MEDIA_TYPES.get(kind, "application/octet-stream")
+
+
+def _read_source(upload: dict[str, object], settings: Settings) -> bytes:
+    """アップロードする素材を`data_root`配下から読み、記録済みのhashと突き合わせる。
+
+    記録時と違う内容を置くと、Manifestが指す素材と実際に使った素材がずれる。中身が
+    変わっていればJobを失敗させ、取り違えたまま履歴へ残さない。
+    """
+    relative_path = str(upload.get("relative_path") or "")
+    expected = str(upload.get("sha256") or "").lower()
+    source = str(upload.get("source") or "")
+    try:
+        if source == provenance.KIND_CACHED_INPUT:
+            path = storage.resolve_input(relative_path, settings)
+        else:
+            path = storage.resolve_artifact(relative_path, settings)
+        data = path.read_bytes()
+    except (storage.StorageError, OSError) as error:
+        raise _PreflightError(
+            FAILURE_CODE_INPUT_UNRESOLVED,
+            f"入力素材を読み込めません: {relative_path}",
+            retryable=False,
+        ) from error
+    if hashlib.sha256(data).hexdigest() != expected:
+        raise _PreflightError(
+            FAILURE_CODE_INPUT_UNRESOLVED,
+            f"入力素材の内容が記録と一致しません: {relative_path}",
+            retryable=False,
+        )
+    return data
 
 
 def _failed(
