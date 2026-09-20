@@ -19,8 +19,8 @@ cp .env.example .env
 |変数|既定値|意味|
 |---|---|---|
 |`MYCOMFYUI_DATA_ROOT`|OS 標準の利用者データ領域|生成履歴とデータベースの保存先|
-|`MYCOMFYUI_COMFYUI_BASE_URL`|`http://127.0.0.1:8188`|ComfyUI のエンドポイント|
-|`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`|`600`|1 Job の実行上限(秒)|
+|`MYCOMFYUI_COMFYUI_BASE_URL`|`http://127.0.0.1:8188`|ComfyUI のエンドポイント。Remote 構成では Remote PC の URL を指す|
+|`MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`|`600`|1 Job の実行上限(秒)。Remote 構成では転送分の余裕を見る|
 |`MYCOMFYUI_AIMEDIA_BASE_URL`|未設定|ai-media 参照 API の接続先。未設定の間は同梱 fixture を返す|
 |`MYCOMFYUI_AIMEDIA_FIXTURE_PATH`|未設定|参照 fixture の差し替え先。Canon が更新された状態を手元で再現するときに使う|
 
@@ -39,6 +39,24 @@ MYCOMFYUI_AIMEDIA_BASE_URL=
 SQLite は `<data_root>/db/mycomfyui.sqlite3` へ作成する。接続時に WAL、外部キー、busy timeout を有効にする。
 設定値に API キーなどの秘密情報を置かない。データベース、ログ、API 応答にも保存しない。
 ComfyUI 呼び出しのログへ残すのは操作名、結果、`prompt_id` だけとする。
+
+### Remote 構成
+
+GPU を使う生成 Backend は LAN 上の別マシン(Remote PC)へ置く。Application API と Web UI は
+手元 PC で動かし、`127.0.0.1` へだけ bind する(ADR 0001)。この Application API 自体の公開範囲は
+Remote 構成でも変えない。
+
+Remote 構成で変えるのは接続先だけとする。`MYCOMFYUI_COMFYUI_BASE_URL` を Remote PC の URL へ向ける。
+生成物は `GET /view` で HTTP 取得するため、共有フォルダの設定は要らない。進捗監視の WebSocket が
+通らない場合はポーリングへ切り替わるが、完了検知が遅れる。
+
+```dotenv
+MYCOMFYUI_COMFYUI_BASE_URL=http://<remote>:8188
+MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=900
+```
+
+構成と判断の根拠は [ADR 0002](../../docs/adr/0002-remote-gpu-host.md)、Remote PC 側の手順は
+[Remote GPU ホストの準備](../../docs/operations/remote-gpu-host.md) を参照する。
 
 ## データベースの初期化
 
