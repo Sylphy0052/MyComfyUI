@@ -177,11 +177,47 @@ export interface paths {
          *
          *     `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
          *     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
+         *
+         *     `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
+         *     は`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の
+         *     両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。
+         *
+         *     派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の
+         *     件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。
          */
         get: operations["list_artifacts_api_v1_artifacts_get"];
         put?: never;
         /** Create Artifact */
         post: operations["create_artifact_api_v1_artifacts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/artifacts/integrity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Artifact Integrity
+         * @description 整合性を欠いたArtifactを理由付きで一覧する。
+         *
+         *     `limit`と`offset`は判定する対象の範囲であり、返す件数ではない。実ファイルを読んで
+         *     hashを取り直すため、対象を絞らずに走らせると重い。作成の新しい順に`limit`件だけを
+         *     判定し、まだ対象が残っている場合は`truncated`を`true`にする。
+         *
+         *     `reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。
+         *     `include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。
+         *
+         *     判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。
+         */
+        get: operations["list_artifact_integrity_api_v1_artifacts_integrity_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -246,6 +282,53 @@ export interface paths {
          * @description 生成候補の採否を記録する。`undecided`へ戻すと判断時刻も消す。
          */
         patch: operations["update_artifact_decision_api_v1_artifacts__artifact_id__decision_patch"];
+        trace?: never;
+    };
+    "/api/v1/artifacts/{artifact_id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Artifact Tag
+         * @description Artifactへタグを付ける。既に付いている場合も現在の状態を返す。
+         *
+         *     同じタグを二度送るのは、画面の再送や操作の重複で普通に起こる。既に狙いどおりの
+         *     状態になっているものをエラーにしても、呼び出し側は結局現在の状態を引き直すため、
+         *     付け直しは成功として扱う。
+         */
+        post: operations["add_artifact_tag_api_v1_artifacts__artifact_id__tags_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/artifacts/{artifact_id}/tags/{tag}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Artifact Tag
+         * @description Artifactからタグを外す。付いていないタグの指定は404とする。
+         *
+         *     付与と違い、外す操作は対象が存在しないことを伝える価値がある。画面のタグ一覧が
+         *     古いまま操作された場合に、成功として返すと消えたことになってしまう。
+         */
+        delete: operations["remove_artifact_tag_api_v1_artifacts__artifact_id__tags__tag__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/backends/comfyui/health": {
@@ -1031,7 +1114,58 @@ export interface components {
              */
             decision: "undecided" | "accepted" | "rejected";
         };
-        /** ArtifactRead */
+        /**
+         * ArtifactIntegrityEntry
+         * @description 整合性を欠いたArtifact 1件。理由が1つも無いArtifactは一覧へ出さない。
+         */
+        ArtifactIntegrityEntry: {
+            artifact: components["schemas"]["ArtifactRead"];
+            /** Findings */
+            findings: components["schemas"]["ArtifactIntegrityFinding"][];
+        };
+        /**
+         * ArtifactIntegrityFinding
+         * @description 1件の理由と、その根拠。
+         */
+        ArtifactIntegrityFinding: {
+            /** Message */
+            message: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "file_missing" | "hash_mismatch" | "reference_broken" | "canon_updated";
+        };
+        /**
+         * ArtifactIntegrityRead
+         * @description 整合性一覧。判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。
+         *
+         *     `checked`は判定したArtifactの件数、`truncated`は上限で打ち切ったかどうかを表す。
+         *     `items`の件数だけでは全件を見たのか途中で止めたのかが判らないため応答へ出す。
+         *
+         *     `canon_available`が`False`のとき、参照APIを引けず`canon_updated`の判定ができて
+         *     いない。理由は`canon_reason`に入る。ファイル側の判定はそのまま続けるため、
+         *     `items`は`canon_updated`以外の理由だけを含む。
+         */
+        ArtifactIntegrityRead: {
+            /** Canon Available */
+            canon_available: boolean;
+            /** Canon Reason */
+            canon_reason: string | null;
+            /** Checked */
+            checked: number;
+            /** Items */
+            items: components["schemas"]["ArtifactIntegrityEntry"][];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * ArtifactRead
+         * @description Artifact 1件。`tags`は付けた順ではなくタグの昇順で返す。
+         *
+         *     `tags`はArtifactを返すすべての経路で埋める。経路によって入ったり入らなかったり
+         *     すると、空配列が「タグ無し」なのか「この経路では返していない」のか区別できない。
+         */
         ArtifactRead: {
             /** Availability */
             availability: string;
@@ -1057,6 +1191,16 @@ export interface components {
             relative_path: string;
             /** Sha256 */
             sha256: string;
+            /** Tags */
+            tags?: string[];
+        };
+        /**
+         * ArtifactTagCreate
+         * @description Artifactへ付けるタグ。
+         */
+        ArtifactTagCreate: {
+            /** Tag */
+            tag: string;
         };
         /**
          * CanonStatusRead
@@ -1845,6 +1989,9 @@ export interface operations {
                 kind?: ("image" | "video" | "audio" | "workflow" | "log") | null;
                 decision?: ("undecided" | "accepted" | "rejected") | null;
                 availability?: ("complete" | "incomplete") | null;
+                tag?: string[] | null;
+                lineage_artifact_id?: string | null;
+                lineage_job_id?: string | null;
                 limit?: number;
                 offset?: number;
             };
@@ -1894,6 +2041,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArtifactRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_artifact_integrity_api_v1_artifacts_integrity_get: {
+        parameters: {
+            query?: {
+                scene_id?: string | null;
+                shot_id?: string | null;
+                job_id?: string | null;
+                kind?: ("image" | "video" | "audio" | "workflow" | "log") | null;
+                tag?: string[] | null;
+                reason?: ("file_missing" | "hash_mismatch" | "reference_broken" | "canon_updated")[] | null;
+                include_canon?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactIntegrityRead"];
                 };
             };
             /** @description Validation Error */
@@ -1992,6 +2178,71 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ArtifactRead"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_artifact_tag_api_v1_artifacts__artifact_id__tags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactTagCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_artifact_tag_api_v1_artifacts__artifact_id__tags__tag__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+                tag: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

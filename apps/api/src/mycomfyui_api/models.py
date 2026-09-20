@@ -226,6 +226,30 @@ class Artifact(Base):
     decision_at: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ArtifactTag(Base):
+    """Artifactへ付けた1件のタグ。
+
+    タグはArtifactの列ではなく別表にする。1件のArtifactへ複数付き、タグ側からの
+    絞り込みが主経路になるため、JSON列に持たせると検索のたびに全行を走査することに
+    なる。値は付けられたまま保存し、大文字小文字や表記の違いは吸収しない。同義語の
+    管理はIssue #42の対象外である。
+    """
+
+    __tablename__ = "artifact_tag"
+    __table_args__ = (
+        UniqueConstraint("artifact_id", "tag", name="uq_artifact_tag_artifact_id_tag"),
+        Index("ix_artifact_tag_artifact_id", "artifact_id"),
+        Index("ix_artifact_tag_tag", "tag"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=False
+    )
+    tag: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class ApprovalLog(Base):
     """Append-only record of a proposed operation and its decision."""
 

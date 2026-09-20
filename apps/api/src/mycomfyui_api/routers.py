@@ -3,10 +3,12 @@ import binascii
 import hashlib
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Annotated, Any, TypeVar
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -42,6 +44,7 @@ from mycomfyui_api.models import (
     AgentProposal,
     ApprovalLog,
     Artifact,
+    ArtifactTag,
     Base,
     GenerationJob,
     GenerationManifest,
@@ -79,6 +82,17 @@ ReferenceSourceDep = Annotated[ReferenceSource, Depends(get_reference_source)]
 MAX_LINEAGE_DEPTH = 50
 #: lineageで返す子孫Jobの上限。
 MAX_LINEAGE_NODES = 200
+
+#: タグをまとめて引くときに、1回のIN句へ渡すArtifact IDの上限。SQLiteのbind
+#: parameter上限に当たらない範囲へ収める。
+TAG_LOOKUP_CHUNK = 200
+
+#: 整合性一覧でhashを取り直すときの読み込み単位。
+DIGEST_CHUNK_SIZE = 1024 * 1024
+
+#: 派生関係の探索を上限で打ち切ったことを伝える応答ヘッダ。一覧の応答本体は
+#: Artifactの配列のままにし、打ち切りの有無だけをヘッダで返す。
+LINEAGE_TRUNCATED_HEADER = "X-Lineage-Truncated"
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -683,7 +697,7 @@ async def list_job_artifacts(job_id: str, session: SessionDep):
         .where(Artifact.job_id == job_id)
         .order_by(Artifact.created_at.asc(), Artifact.id.asc())
     )
-    return result.scalars().all()
+    return await _artifact_reads(session, result.scalars().all())
 
 
 @router.post(
@@ -747,6 +761,114 @@ async def get_generation_manifest(manifest_id: str, session: SessionDep):
     )
 
 
+async def _artifact_tag_map(
+    session: AsyncSession, artifact_ids: Sequence[str]
+) -> dict[str, list[str]]:
+    """Artifact IDごとのタグをまとめて引く。
+
+    一覧とlineageは複数件を返すため、1件ずつ引くとArtifactの数だけ問い合わせが増える。
+    IN句をまとめて発行し、呼び出し側は結果の辞書から取り出す。SQLiteのbind parameter
+    上限に当たらないよう、IDは分割して渡す。
+    """
+    tags: dict[str, list[str]] = {}
+    unique_ids = list(dict.fromkeys(artifact_ids))
+    for start in range(0, len(unique_ids), TAG_LOOKUP_CHUNK):
+        chunk = unique_ids[start : start + TAG_LOOKUP_CHUNK]
+        result = await session.execute(
+            select(ArtifactTag.artifact_id, ArtifactTag.tag)
+            .where(ArtifactTag.artifact_id.in_(chunk))
+            .order_by(ArtifactTag.tag.asc())
+        )
+        for artifact_id, tag in result.all():
+            tags.setdefault(artifact_id, []).append(tag)
+    return tags
+
+
+async def _artifact_reads(
+    session: AsyncSession, artifacts: Sequence[Artifact]
+) -> list[schemas.ArtifactRead]:
+    """Artifactへタグを添えて応答の形へ揃える。
+
+    Artifactを返すすべての経路でこれを通す。経路によってタグが入らないと、空配列が
+    「タグ無し」なのか「この経路では返していない」のかを画面側で区別できない。
+    """
+    tags = await _artifact_tag_map(session, [artifact.id for artifact in artifacts])
+    return [
+        schemas.ArtifactRead.model_validate(artifact).model_copy(
+            update={"tags": tags.get(artifact.id, [])}
+        )
+        for artifact in artifacts
+    ]
+
+
+async def _artifact_read(
+    session: AsyncSession, artifact: Artifact
+) -> schemas.ArtifactRead:
+    reads = await _artifact_reads(session, [artifact])
+    return reads[0]
+
+
+async def _collect_artifact_lineage(
+    session: AsyncSession, artifact: Artifact
+) -> tuple[list[str], bool]:
+    """指定Artifactと、その祖先・子孫のIDを集める。上限で打ち切ったかどうかも返す。
+
+    Jobのlineageと同じく、DB上は循環を作らない設計だが、壊れたデータで無限に辿らない
+    よう既訪問のIDと上限で打ち切る。
+    """
+    collected = [artifact.id]
+    seen = {artifact.id}
+    truncated = False
+    cursor = artifact.parent_artifact_id
+    depth = 0
+    while cursor is not None and cursor not in seen:
+        if depth >= MAX_LINEAGE_DEPTH:
+            truncated = True
+            break
+        parent = await session.get(Artifact, cursor)
+        if parent is None:
+            break
+        collected.append(parent.id)
+        seen.add(parent.id)
+        cursor = parent.parent_artifact_id
+        depth += 1
+    frontier = [artifact.id]
+    descendants = 0
+    while frontier and not truncated:
+        result = await session.execute(
+            select(Artifact.id)
+            .where(Artifact.parent_artifact_id.in_(frontier))
+            .order_by(Artifact.created_at.asc(), Artifact.id.asc())
+        )
+        children = [child for child in result.scalars().all() if child not in seen]
+        if not children:
+            break
+        remaining = MAX_LINEAGE_NODES - descendants
+        if len(children) > remaining:
+            children = children[:remaining]
+            truncated = True
+        for child in children:
+            seen.add(child)
+        collected.extend(children)
+        descendants += len(children)
+        frontier = children
+    return collected, truncated
+
+
+async def _collect_job_lineage(
+    session: AsyncSession, job: GenerationJob
+) -> tuple[list[str], bool]:
+    """指定Jobと、その祖先・子孫JobのIDを集める。上限で打ち切ったかどうかも返す。"""
+    ancestors, ancestors_truncated = await _collect_ancestors(session, job)
+    descendants, descendants_truncated = await _collect_descendants(session, job)
+    job_ids = [
+        job.id,
+        *(item.id for item in ancestors),
+        *(item.id for item in descendants),
+    ]
+    return job_ids, ancestors_truncated or descendants_truncated
+
+
 @router.post(
     "/artifacts",
     response_model=schemas.ArtifactRead,
@@ -762,27 +884,26 @@ async def create_artifact(payload: schemas.ArtifactCreate, session: SessionDep):
     )
     session.add(artifact)
     await _commit(session)
-    return artifact
+    return await _artifact_read(session, artifact)
 
 
-@router.get("/artifacts", response_model=list[schemas.ArtifactRead])
-async def list_artifacts(
-    session: SessionDep,
-    scene_id: str | None = None,
-    shot_id: str | None = None,
-    job_id: str | None = None,
-    kind: schemas.ArtifactKind | None = None,
-    decision: schemas.ArtifactDecision | None = None,
-    availability: schemas.Availability | None = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 100,
-    offset: Annotated[int, Query(ge=0)] = 0,
-):
-    """Artifact履歴の一覧。既定は作成の新しい順に返す。
+def _artifact_filters(
+    query: Any,
+    *,
+    scene_id: str | None,
+    shot_id: str | None,
+    job_id: str | None,
+    kind: str | None,
+    decision: str | None = None,
+    availability: str | None = None,
+    tags: list[str] | None = None,
+) -> Any:
+    """Artifactの絞り込み条件を組み立てる。条件はすべてANDで重ねる。
 
     `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
-    Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
+    `tags`を複数指定したときは、すべてのタグが付いたArtifactだけを返す。資産を絞り
+    込む用途では和集合より積集合が要る。
     """
-    query = select(Artifact).order_by(Artifact.created_at.desc(), Artifact.id.asc())
     if job_id is not None:
         query = query.where(Artifact.job_id == job_id)
     if scene_id is not None or shot_id is not None:
@@ -798,13 +919,308 @@ async def list_artifacts(
         query = query.where(Artifact.decision == decision)
     if availability is not None:
         query = query.where(Artifact.availability == availability)
+    for value in tags or []:
+        query = query.where(
+            select(ArtifactTag.id)
+            .where(
+                ArtifactTag.artifact_id == Artifact.id,
+                ArtifactTag.tag == value,
+            )
+            .exists()
+        )
+    return query
+
+
+async def _apply_lineage_filters(
+    session: AsyncSession,
+    query: Any,
+    *,
+    lineage_artifact_id: str | None,
+    lineage_job_id: str | None,
+) -> tuple[Any, bool]:
+    """派生関係の絞り込みを重ねる。探索を上限で打ち切ったかどうかも返す。"""
+    truncated = False
+    if lineage_artifact_id is not None:
+        artifact = await _get_or_404(session, Artifact, "Artifact", lineage_artifact_id)
+        artifact_ids, artifact_truncated = await _collect_artifact_lineage(
+            session, artifact
+        )
+        truncated = truncated or artifact_truncated
+        query = query.where(Artifact.id.in_(artifact_ids))
+    if lineage_job_id is not None:
+        job = await _get_or_404(session, GenerationJob, "GenerationJob", lineage_job_id)
+        job_ids, job_truncated = await _collect_job_lineage(session, job)
+        truncated = truncated or job_truncated
+        query = query.where(Artifact.job_id.in_(job_ids))
+    return query, truncated
+
+
+@router.get("/artifacts", response_model=list[schemas.ArtifactRead])
+async def list_artifacts(
+    session: SessionDep,
+    response: Response,
+    scene_id: str | None = None,
+    shot_id: str | None = None,
+    job_id: str | None = None,
+    kind: schemas.ArtifactKind | None = None,
+    decision: schemas.ArtifactDecision | None = None,
+    availability: schemas.Availability | None = None,
+    tag: Annotated[list[schemas.ArtifactTagValue] | None, Query()] = None,
+    lineage_artifact_id: str | None = None,
+    lineage_job_id: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    """Artifact履歴の一覧。既定は作成の新しい順に返す。
+
+    `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
+    Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
+
+    `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
+    は`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の
+    両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。
+
+    派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の
+    件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。
+    """
+    query = select(Artifact).order_by(Artifact.created_at.desc(), Artifact.id.asc())
+    query = _artifact_filters(
+        query,
+        scene_id=scene_id,
+        shot_id=shot_id,
+        job_id=job_id,
+        kind=kind,
+        decision=decision,
+        availability=availability,
+        tags=tag,
+    )
+    query, truncated = await _apply_lineage_filters(
+        session,
+        query,
+        lineage_artifact_id=lineage_artifact_id,
+        lineage_job_id=lineage_job_id,
+    )
+    response.headers[LINEAGE_TRUNCATED_HEADER] = "true" if truncated else "false"
     result = await session.execute(query.limit(limit).offset(offset))
-    return result.scalars().all()
+    return await _artifact_reads(session, result.scalars().all())
+
+
+def _integrity_finding(
+    reason: schemas.ArtifactIntegrityReason, message: str
+) -> schemas.ArtifactIntegrityFinding:
+    return schemas.ArtifactIntegrityFinding(reason=reason, message=message)
+
+
+def _file_digest(path: Path) -> str:
+    """実ファイルのSHA-256を求める。
+
+    動画のように大きいArtifactも対象になるため、全体をメモリへ載せずに読み進める。
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(DIGEST_CHUNK_SIZE), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _artifact_file_findings(
+    artifact: Artifact,
+) -> list[schemas.ArtifactIntegrityFinding]:
+    """Artifactの実ファイルが記録どおり残っているかを確かめる。
+
+    読むだけで、`availability`も`sha256`も書き換えない。記録を現在の状態へ寄せると、
+    いつ何が失われたのかが履歴から消える。
+    """
+    try:
+        path = storage.resolve_artifact(artifact.relative_path)
+    except storage.StorageError:
+        return [
+            _integrity_finding("file_missing", "Artifactの実ファイルがありません。")
+        ]
+    try:
+        digest = _file_digest(path)
+    except OSError:
+        return [
+            _integrity_finding("file_missing", "Artifactの実ファイルを読み込めません。")
+        ]
+    if digest != artifact.sha256.lower():
+        return [
+            _integrity_finding(
+                "hash_mismatch",
+                "実ファイルの内容が記録済みのhashと一致しません。",
+            )
+        ]
+    return []
+
+
+@dataclass
+class _CanonState:
+    """整合性一覧の実行中に、参照APIを引けたかどうかを持ち回る。
+
+    引けなくなった時点で以降のCanon判定を止める。Jobごとに引き直すと、参照APIが落ちて
+    いる間は対象の数だけ待たされる。
+    """
+
+    available: bool = True
+    reason: str | None = None
+
+
+async def _job_integrity_findings(
+    session: AsyncSession,
+    source: ReferenceSource,
+    job_id: str,
+    *,
+    canon_state: _CanonState,
+    check_canon: bool,
+) -> list[schemas.ArtifactIntegrityFinding]:
+    """作成元Jobの記録から、参照切れとCanon更新を判定する。
+
+    判定は読み取りだけで行い、ManifestとArtifactの記録値を更新しない。参照APIを引け
+    なかった場合はCanon判定を諦め、`canon_state`へ理由を残して他の判定を続ける。
+    Jobごとに事情が違う失敗(参照IDが記録されていないなど)は、そのJobの参照切れとして
+    扱い、一覧全体のCanon判定は止めない。
+    """
+    job = await session.get(GenerationJob, job_id)
+    if job is None:
+        return [_integrity_finding("reference_broken", "作成元のJobが見つかりません。")]
+    manifest = await session.get(GenerationManifest, job.manifest_id)
+    if manifest is None:
+        return [
+            _integrity_finding(
+                "reference_broken", "作成元JobのGeneration Manifestが見つかりません。"
+            )
+        ]
+    findings = [
+        _integrity_finding(
+            "reference_broken",
+            entry.get("reason") or "記録済みの入力を再現できません。",
+        )
+        for entry in _local_input_entries(manifest.input_refs)
+        if entry["change"] != provenance.CHANGE_UNCHANGED
+    ]
+    if not check_canon or not canon_state.available:
+        return findings
+    current, failure = await _current_references(source, job, manifest.input_refs)
+    if current is None:
+        message = failure.message if failure is not None else "参照を解決できません。"
+        if failure is not None and failure.code == "REFERENCE_UNAVAILABLE":
+            canon_state.available = False
+            canon_state.reason = message
+        else:
+            findings.append(_integrity_finding("reference_broken", message))
+        return findings
+    entries = provenance.compare(manifest.input_refs or [], current)
+    if any(entry["change"] != provenance.CHANGE_UNCHANGED for entry in entries):
+        findings.append(
+            _integrity_finding(
+                "canon_updated", "記録済みの参照と現在の参照が一致しません。"
+            )
+        )
+    return findings
+
+
+@router.get("/artifacts/integrity", response_model=schemas.ArtifactIntegrityRead)
+async def list_artifact_integrity(
+    session: SessionDep,
+    source: ReferenceSourceDep,
+    scene_id: str | None = None,
+    shot_id: str | None = None,
+    job_id: str | None = None,
+    kind: schemas.ArtifactKind | None = None,
+    tag: Annotated[list[schemas.ArtifactTagValue] | None, Query()] = None,
+    reason: Annotated[list[schemas.ArtifactIntegrityReason] | None, Query()] = None,
+    include_canon: bool = True,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    """整合性を欠いたArtifactを理由付きで一覧する。
+
+    `limit`と`offset`は判定する対象の範囲であり、返す件数ではない。実ファイルを読んで
+    hashを取り直すため、対象を絞らずに走らせると重い。作成の新しい順に`limit`件だけを
+    判定し、まだ対象が残っている場合は`truncated`を`true`にする。
+
+    `reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。
+    `include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。
+
+    判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。
+    """
+    query = select(Artifact).order_by(Artifact.created_at.desc(), Artifact.id.asc())
+    query = _artifact_filters(
+        query,
+        scene_id=scene_id,
+        shot_id=shot_id,
+        job_id=job_id,
+        kind=kind,
+        tags=tag,
+    )
+    result = await session.execute(query.limit(limit + 1).offset(offset))
+    candidates = list(result.scalars().all())
+    truncated = len(candidates) > limit
+    candidates = candidates[:limit]
+
+    # 判定を頼まれていない場合も「Canon更新は判定できていない」状態として返す。
+    # 判定した結果として更新が無かったのか、そもそも見ていないのかを取り違えさせない。
+    canon_state = (
+        _CanonState()
+        if include_canon
+        else _CanonState(
+            available=False,
+            reason="include_canonがfalseのため、Canon更新は判定していません。",
+        )
+    )
+    job_findings: dict[str, list[schemas.ArtifactIntegrityFinding]] = {}
+    found: list[tuple[Artifact, list[schemas.ArtifactIntegrityFinding]]] = []
+    for artifact in candidates:
+        if artifact.job_id not in job_findings:
+            job_findings[artifact.job_id] = await _job_integrity_findings(
+                session,
+                source,
+                artifact.job_id,
+                canon_state=canon_state,
+                check_canon=include_canon,
+            )
+        found.append(
+            (
+                artifact,
+                [*_artifact_file_findings(artifact), *job_findings[artifact.job_id]],
+            )
+        )
+
+    # 途中で参照APIを引けなくなった場合、先に判定したJobにだけCanon更新が付いた一覧に
+    # なる。判定できたものとできなかったものが混ざると読み手が全体を誤解するため、
+    # Canon判定そのものを外す。
+    keep: set[str] = set(reason or []) or {
+        "file_missing",
+        "hash_mismatch",
+        "reference_broken",
+        "canon_updated",
+    }
+    if not canon_state.available:
+        keep.discard("canon_updated")
+    items_source = [
+        (artifact, [finding for finding in findings if finding.reason in keep])
+        for artifact, findings in found
+    ]
+    items_source = [
+        (artifact, findings) for artifact, findings in items_source if findings
+    ]
+    reads = await _artifact_reads(session, [artifact for artifact, _ in items_source])
+    return schemas.ArtifactIntegrityRead(
+        items=[
+            schemas.ArtifactIntegrityEntry(artifact=read, findings=findings)
+            for read, (_, findings) in zip(reads, items_source, strict=True)
+        ],
+        checked=len(candidates),
+        truncated=truncated,
+        canon_available=canon_state.available,
+        canon_reason=canon_state.reason,
+    )
 
 
 @router.get("/artifacts/{artifact_id}", response_model=schemas.ArtifactRead)
 async def get_artifact(artifact_id: str, session: SessionDep):
-    return await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    return await _artifact_read(session, artifact)
 
 
 @router.get("/artifacts/{artifact_id}/content")
@@ -846,7 +1262,67 @@ async def update_artifact_decision(
         None if payload.decision == "undecided" else schemas.now_iso()
     )
     await _commit(session)
-    return artifact
+    return await _artifact_read(session, artifact)
+
+
+@router.post(
+    "/artifacts/{artifact_id}/tags",
+    response_model=schemas.ArtifactRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_artifact_tag(
+    artifact_id: str, payload: schemas.ArtifactTagCreate, session: SessionDep
+):
+    """Artifactへタグを付ける。既に付いている場合も現在の状態を返す。
+
+    同じタグを二度送るのは、画面の再送や操作の重複で普通に起こる。既に狙いどおりの
+    状態になっているものをエラーにしても、呼び出し側は結局現在の状態を引き直すため、
+    付け直しは成功として扱う。
+    """
+    await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    existing = await session.execute(
+        select(ArtifactTag).where(
+            ArtifactTag.artifact_id == artifact_id,
+            ArtifactTag.tag == payload.tag,
+        )
+    )
+    if existing.scalars().first() is None:
+        session.add(
+            ArtifactTag(
+                id=schemas.new_id(),
+                artifact_id=artifact_id,
+                tag=payload.tag,
+                created_at=schemas.now_iso(),
+            )
+        )
+        await _commit(session)
+    artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    return await _artifact_read(session, artifact)
+
+
+@router.delete(
+    "/artifacts/{artifact_id}/tags/{tag}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_artifact_tag(artifact_id: str, tag: str, session: SessionDep):
+    """Artifactからタグを外す。付いていないタグの指定は404とする。
+
+    付与と違い、外す操作は対象が存在しないことを伝える価値がある。画面のタグ一覧が
+    古いまま操作された場合に、成功として返すと消えたことになってしまう。
+    """
+    await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    result = await session.execute(
+        select(ArtifactTag).where(
+            ArtifactTag.artifact_id == artifact_id,
+            ArtifactTag.tag == tag,
+        )
+    )
+    entry = result.scalars().first()
+    if entry is None:
+        raise _not_found("ArtifactTag", tag)
+    await session.delete(entry)
+    await _commit(session)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -1369,7 +1845,7 @@ async def get_job_lineage(job_id: str, session: SessionDep):
         .where(Artifact.job_id.in_(job_ids))
         .order_by(Artifact.created_at.asc(), Artifact.id.asc())
     )
-    artifacts = result.scalars().all()
+    artifacts = await _artifact_reads(session, result.scalars().all())
     return schemas.JobLineageRead(
         job=schemas.GenerationJobRead.model_validate(job),
         ancestors=[
@@ -1378,7 +1854,7 @@ async def get_job_lineage(job_id: str, session: SessionDep):
         descendants=[
             schemas.GenerationJobRead.model_validate(item) for item in descendants
         ],
-        artifacts=[schemas.ArtifactRead.model_validate(item) for item in artifacts],
+        artifacts=artifacts,
         truncated=ancestors_truncated or descendants_truncated,
     )
 
