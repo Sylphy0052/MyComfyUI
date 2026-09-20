@@ -24,7 +24,11 @@ APIキーをMyComfyUI側へ持たず、CLIの既存認証(`codex login`)をそ�
 更新したときは同じ確認をやり直す。
 
 プロンプトを起動引数ではなく標準入力へ渡すと、CLIが追加入力を標準入力から読もうとして
-終了しない。そのため本文は起動引数として渡し、標準入力は明示的に閉じる。
+終了しない。そのため本文は起動引数として渡し、標準入力は明示的に閉じる。この結果、
+プロンプト本文(利用者指示文とScene/Shot本文)は起動中のプロセスのコマンドライン引数として
+残り、同じホスト上の他ユーザーやプロセス監視ツールから`/proc/<pid>/cmdline`等で読める
+状態になる。単一利用者のローカル実行を前提とする間はこの経路を許容するが、共有ホストや
+複数利用者環境では使わない。
 """
 
 import asyncio
@@ -56,15 +60,16 @@ USAGE_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens")
 
 
 def _strict_schema(kind: AgentProposalKind) -> dict[str, Any]:
-    """CodexへそのままJSON Schemaを渡すと、`default`を持つ項目が`required`から
-    外れて`invalid_json_schema`で拒否される。Codexへ渡す形だけ`required`を
-    `properties`の全項目へ揃える。ネストしたobject(`$defs`経由のitem型を含む)
-    にも同じ制約がかかるため、schema全体を再帰的に補う。
-    """
+    """理由はモジュールdocstringを参照。`required`を`properties`の全項目へ揃える。"""
     return _require_all_properties(proposals.json_schema(kind))
 
 
 def _require_all_properties(node: Any) -> Any:
+    """dict/listを再帰的に辿り、object nodeの`required`を`properties`全体へ揃える。
+
+    `$defs`配下のitem型定義にも同じ変換をかけるため、`properties`という名前に
+    決め打ちせず全nodeを見て回る。
+    """
     if isinstance(node, dict):
         result = {key: _require_all_properties(value) for key, value in node.items()}
         properties = result.get("properties")
@@ -149,7 +154,9 @@ class CodexProvider:
             )
         workspace = self._settings.agent_workspace_root / str(uuid4())
         try:
-            workspace.mkdir(parents=True, exist_ok=True)
+            # 0o700で作る。schema/promptの中身にScene/Shot本文が載るため、同じホスト上の
+            # 他利用者から読めるパーミッションにしない。
+            workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
         except OSError as error:
             raise AgentUnavailable("提案用の作業ディレクトリを作れません。") from error
         try:
