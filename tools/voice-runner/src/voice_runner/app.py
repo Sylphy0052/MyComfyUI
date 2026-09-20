@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette import status
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from voice_runner import config as config_module
 from voice_runner.process import WorkerFailed, WorkerTimeout, run_worker
@@ -123,14 +124,17 @@ MAX_REQUEST_BYTES = (MAX_AUDIO_BYTES + 2) // 3 * 4 + 64 * 1024
 
 def create_app() -> FastAPI:
     app = FastAPI(title="MyComfyUI voice-runner", version="0.1.0")
+    # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
+    # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りする。
+    app.add_middleware(RequestBodyLimitMiddleware, max_body_size=MAX_REQUEST_BYTES)
 
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):
         """`Content-Length`が上限を超える要求は本文を読まずに断る。
 
         ここを通すと、上限を超える本文でも丸ごとメモリへ載ってからでないと
-        断れない。長さを申告しない要求(chunked)は測れないため、`_decode`の
-        長さ判定に委ねる。
+        断れない。長さを申告しない要求(chunked)は測れないため、内側の
+        `RequestBodyLimitMiddleware`が受信バイト数で止める。
         """
         declared = request.headers.get("Content-Length")
         if (

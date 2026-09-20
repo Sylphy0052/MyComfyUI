@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from starlette import status
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from mycomfyui_api.adapters.agent import create_agent_provider
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
@@ -98,13 +99,21 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_error_handler)
     app.include_router(router)
     app.include_router(reference_router)
+    # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
+    # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りするため、
+    # ASGIの受信側にも関所を置く。
+    app.add_middleware(
+        RequestBodyLimitMiddleware, max_body_size=_max_request_bytes()
+    )
 
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):
         """`Content-Length`が上限を超える要求は本文を読まずに断る。
 
-        長さを申告しない要求(chunked)はここで測れない。その場合は各Endpointの
-        長さ判定に委ねる。
+        `RequestBodyLimitMiddleware`だけでも本文は止まるが、そちらは
+        `{"detail": ...}`の形で返り、共通Envelopeにならない。長さを申告する
+        要求はここで先に断る。申告しない要求(chunked)は測れないため、内側の
+        関所が受信バイト数で止める。
         """
         declared = request.headers.get("Content-Length")
         if declared is not None and declared.isdigit():

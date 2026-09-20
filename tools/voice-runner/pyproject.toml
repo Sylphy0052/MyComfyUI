@@ -8,6 +8,8 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115,<1",
   "pyyaml>=6,<7",
+  # 受信バイト数で本文を打ち切るRequestBodyLimitMiddlewareを使う。
+  "starlette>=1.6",
   "uvicorn[standard]>=0.30,<1",
 ]
 
