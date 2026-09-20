@@ -13,9 +13,10 @@
 ## 安全境界
 
 - セキュリティ懸念を発見したら、影響する実装・操作を止めて先に報告する。
-- 破壊的操作（削除、force push、ブランチ削除など）は対象と影響範囲を示し、実行前に明示許可を得る。ただしPRマージ後のworktree削除など影響がない場合は許可を得なくて良い。
+- 破壊的操作（削除、force push、ブランチ削除など）は対象と影響範囲を示し、実行前に明示許可を得る。例外は後述のマージ後の後片付けに列挙した3つだけとする。
 - `git commit --no-verify`と`-n`、squash commitとsquash mergeは禁止。
 - MR/PR自己マージは「MR/PRの自己マージ」の条件を満たす場合に許可を求めずに行う。
+- マージ後の後片付けは、マージ経路を問わず許可を求めずに続けて行う。対象は**マージ済みPRのworktree削除、マージ済みbranchのローカル・リモート削除、Issueのクローズの3つに限る**。前2つは個人開発規約の「破壊的操作（`rm -rf`、force push、ブランチ削除など）は実行前に対象と影響範囲を確認し、ユーザーの明示許可を得る」を、マージ済みPRの後片付けに限って上書きする。マージ済みの内容はmainに残るため、これらの削除では作業が失われないからである。Issueのクローズは破壊的操作に当たらず、上書きではなく運用として許可を求めない。未マージbranchの削除、force push、`rm -rf`は上書きの対象外とし、引き続き明示許可を得る。
 - メインworking treeは直接編集しない。リポジトリ直下の`.worktree/<name>/`に`git worktree add`で作成する。`/tmp`は使わない。`.worktree/`は`.gitignore`か`.git/info/exclude`で除外する。
 - マージ後はmain worktreeで`git fetch origin --prune`と`git pull --ff-only`を実行し、できなければ理由を報告する。
 
@@ -37,7 +38,7 @@
 
 - squash commitとsquash mergeを行わない。マージはmerge commitで行う。
 - `git commit --no-verify`と`-n`を使わない。
-- 破壊的操作（`rm -rf`、force push、ブランチ削除など）の扱いは「安全境界」の規定に従う。
+- 破壊的操作（`rm -rf`、force push、未マージbranchの削除など）の扱いは「安全境界」の規定に従う。マージ済みPRの後片付けだけは「安全境界」で許可不要へ上書きしてある。
 - セキュリティ懸念を発見したら実装を止めて先に報告する。
 
 ## 応答
@@ -60,7 +61,7 @@
 5. 自己レビューと、独立した別agentによる他者レビューを実施する。
 6. 指摘を修正して両レビューを再実施し、修正事項がなくなるまで繰り返す。
 7. 「MR/PRの自己マージ」の条件を満たしたらマージする。
-8. cleanupとしてIssue、roadmap、main同期、許可済みbranch・worktreeを整理する。
+8. cleanupとしてIssue、roadmap、main同期、マージ済みbranch・worktreeを整理する。
 
 マージ可否の条件は「MR/PRの自己マージ」に集約する。branch・worktreeの削除は「安全境界」の規定に従う。
 
