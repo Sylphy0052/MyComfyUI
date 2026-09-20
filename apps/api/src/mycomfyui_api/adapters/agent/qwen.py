@@ -145,7 +145,7 @@ class QwenProvider:
                 PROVIDER_ID,
                 response.status_code,
             )
-            raise AgentUnavailable("提案Providerがエラーを返しました。")
+            raise AgentUnavailable(self._failure_reason(response.status_code))
         try:
             envelope = response.json()
         except ValueError as error:
@@ -157,6 +157,24 @@ class QwenProvider:
                 "提案Providerの応答がJSON objectではありません。"
             )
         return self._payload(envelope), self._extract_usage(envelope)
+
+    def _failure_reason(self, status_code: int) -> str:
+        """非2xx応答の理由。statusの種別だけを載せ、応答本文は載せない。
+
+        4xxは要求の作り方かモデル名の設定違いであり、再試行しても直らない。5xxは
+        推論サーバー側の一時的な失敗で、再試行で通ることがある。利用者が次に何を
+        すべきかを分けられるよう、同じ`AgentUnavailable`でも文言を変える。
+        """
+        if 400 <= status_code < 500:
+            return (
+                f"提案Providerが要求を拒否しました(HTTP {status_code})。"
+                "モデル名と、推論サーバーがJSON Schema指定に対応しているかを"
+                "確認してください。"
+            )
+        return (
+            f"提案Providerがエラーを返しました(HTTP {status_code})。"
+            "推論サーバーの状態を確認してください。"
+        )
 
     def _payload(self, envelope: dict[str, Any]) -> dict[str, Any]:
         """`choices[0].message.content`のJSONを取り出す。"""
