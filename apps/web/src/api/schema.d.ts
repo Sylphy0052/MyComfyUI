@@ -1001,7 +1001,7 @@ export interface components {
             /** Applied Ref Id */
             applied_ref_id: string | null;
             /** Applied Ref Type */
-            applied_ref_type: ("generation_job" | "recipe" | "artifact_tag") | null;
+            applied_ref_type: ("generation_job" | "recipe" | "artifact_tag" | "artifact_file") | null;
             /** Created At */
             created_at: string;
             /** Failure Code */
@@ -1016,6 +1016,10 @@ export interface components {
             operation_type: string;
             /** Proposal Id */
             proposal_id: string;
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
             /**
              * State
              * @enum {string}
