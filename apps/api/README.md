@@ -28,6 +28,12 @@ cp .env.example .env
 |`MYCOMFYUI_VOICE_MAX_AUDIO_BYTES`|`33554432`|取り込む参照音声と受け取る生成音声の上限バイト数|
 |`MYCOMFYUI_VOICE_STUB`|`false`|voice-runner の代わりに内蔵 stub で実行する。Backend なしで経路を確かめるときに使う|
 |`MYCOMFYUI_VOICE_STUB_FAILURE`|`false`|stub の生成を必ず失敗させる。失敗記録の経路を確かめるときに使う|
+|`MYCOMFYUI_COMFYUI_STUB`|`false`|ComfyUI の代わりに内蔵 stub で実行する。到達できる ComfyUI が無い環境で経路を確かめるときに使う|
+|`MYCOMFYUI_COMFYUI_STUB_FAILURE`|`false`|ComfyUI stub の生成を必ず失敗させる。疎通確認には効かせない|
+|`MYCOMFYUI_FFMPEG_PATH`|`ffmpeg`|合成に使う ffmpeg の実行ファイル。PATH 上の名前でも絶対パスでもよい|
+|`MYCOMFYUI_FFPROBE_PATH`|`ffprobe`|尺の確認に使う ffprobe の実行ファイル|
+|`MYCOMFYUI_COMPOSE_TIMEOUT_SECONDS`|`600`|合成 1 件の実行上限(秒)|
+|`MYCOMFYUI_MAX_IMAGE_BYTES`|`33554432`|取り込む参照画像とガイド音声の上限バイト数|
 
 開発環境の保護設定が `.env*` への読み書きを拒否するため、`MYCOMFYUI_COMFYUI_BASE_URL`、
 `MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS`、`MYCOMFYUI_AIMEDIA_BASE_URL`、`MYCOMFYUI_VOICE_*` を
@@ -44,6 +50,12 @@ MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://127.0.0.1:8770
 MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS=300
 # Backend を立てずに経路だけ確かめる場合は true
 MYCOMFYUI_VOICE_STUB=false
+MYCOMFYUI_COMFYUI_STUB=false
+# 合成は手元 PC の ffmpeg で実行する
+MYCOMFYUI_FFMPEG_PATH=ffmpeg
+MYCOMFYUI_FFPROBE_PATH=ffprobe
+MYCOMFYUI_COMPOSE_TIMEOUT_SECONDS=600
+MYCOMFYUI_MAX_IMAGE_BYTES=33554432
 ```
 
 SQLite は `<data_root>/db/mycomfyui.sqlite3` へ作成する。接続時に WAL、外部キー、busy timeout を有効にする。
@@ -105,6 +117,8 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |音声 Job の読み検証結果|`GET /api/v1/generation-jobs/{job_id}/voice-verifications`|
 |voice-runner の疎通確認|`GET /api/v1/backends/voice/health`|
 |参照音声の取り込み|`POST /api/v1/voice-references`|
+|ComfyUI の疎通確認|`GET /api/v1/backends/comfyui/health`|
+|参照画像とガイド音声の取り込み|`POST /api/v1/image-references`|
 |Manifest の取得|`GET /api/v1/generation-manifests/{manifest_id}`|
 |Artifact の一覧|`GET /api/v1/artifacts`(`scene_id`、`shot_id`、`job_id`、`kind`、`decision`、`availability` で絞り込む)|
 |Artifact の作成・取得|`POST /api/v1/artifacts` / `GET /api/v1/artifacts/{artifact_id}`|
@@ -154,6 +168,19 @@ Canon が更新された状態や参照が失われた状態を手元で再現�
 音声側も同じ仕組みで、`kind: "voice"` の Recipe を engine ごとに 1 件ずつ登録する
 (`qwen3-tts-clone` / `voxcpm2-prompt` / `cosyvoice3`)。model ID と sample rate は voice-runner
 側の設定が正本のため Recipe には持たせず、`defaults` には `profile` と検証の既定値だけを置く。
+
+動画・音楽・合成も同じ仕組みで登録する。
+
+|Recipe|kind|engine|テンプレート|
+|---|---|---|---|
+|動画 MiniMax H3 (参照画像)|`video`|`comfyui`|`minimax_h3_ref2v`|
+|動画 MiniMax H3 (開始フレーム)|`video`|`comfyui`|`minimax_h3_i2v`|
+|音楽 ACE-Step (BGM)|`music`|`comfyui`|`ace_step_bgm`|
+|合成 ffmpeg (動画+台詞+BGM)|`compose`|`ffmpeg`|`ffmpeg_compose`|
+
+動画と音楽の engine を `comfyui` のままにしているのは、どちらも ComfyUI の同じプロセスで
+動くためである。Recipe の `kind` とテンプレート名で区別し、Adapter は 1 つに保つ。合成だけは
+GPU を使わず実行基盤も別のため、engine を `ffmpeg` として分ける。
 
 ### Artifact の配信と採否
 
@@ -297,10 +324,14 @@ Workflow テンプレートはパッケージ同梱のものだけを実行で�
 
 1. `/system_stats` で疎通と `engine_version` を確認し、Manifest へ 1 回だけ記録する。
 2. `/object_info/{UNETLoader|CLIPLoader|VAELoader}` で、Manifest が指すモデルの在庫を確認する。
-3. 保存済みの `artifacts/<job-id>/workflow.json` を読み、記録済みの SHA-256 と突き合わせてから `/prompt` へ投入する。
-4. `/ws` で完了を監視する。WebSocket を使えない場合は `/history/{prompt_id}` のポーリングへ切り替える。
-5. `/history/{prompt_id}` から出力画像の参照を取得し、`/view` でダウンロードする。
-6. `artifacts/<job-id>/` へ保存し、SHA-256 とバイト数を付けて Artifact を作成する。
+3. 保存済みの `artifacts/<job-id>/workflow.json` を読み、記録済みの SHA-256 と突き合わせる。
+4. 参照画像とガイド音声を使う Job では、`/upload/image` で素材を ComfyUI の input へ置き、
+   返ったファイル名を `LoadImage` と `LoadAudio` へ差し込む。素材を使わない Job では何もしない。
+5. `/prompt` へ投入する。
+6. `/ws` で完了を監視する。WebSocket を使えない場合は `/history/{prompt_id}` のポーリングへ切り替える。
+7. `/history/{prompt_id}` から出力の参照を取得し、`/view` でダウンロードする。`images` だけでなく
+   `videos`、`gifs`、`audio` も読み、出力の種別から Artifact の `kind` と `media_type` を決める。
+8. `artifacts/<job-id>/` へ保存し、SHA-256 とバイト数を付けて Artifact を作成する。
 
 取消要求を受けたら `/interrupt` に `prompt_id` を付けて送り、`/queue` の `delete` で順番待ちからも外す。
 停止後に出力が揃っていれば `succeeded`、無ければ `cancelled` とする。停止要求自体の失敗は `failed` とする。
@@ -316,13 +347,98 @@ Workflow テンプレートはパッケージ同梱のものだけを実行で�
 |モデルファイルが見つからない|`backend_start`|`MODEL_NOT_FOUND`|false|
 |モデルの在庫を確認できない|`backend_start`|`MODEL_NOT_FOUND`|true|
 |Manifest、Recipe、スナップショットを解決できない|`backend_start`|`INPUT_UNRESOLVED`|false|
+|素材を ComfyUI の input へ置けない|`backend_start`|`INPUT_UPLOAD_FAILED`|false|
 |ComfyUI が Workflow を拒否した|`backend_start`|`WORKFLOW_REJECTED`|false|
 |実行中にノードが失敗した|`execution`|`EXECUTION_FAILED`|false|
-|出力画像を取得できない|`execution`|`OUTPUT_NOT_FOUND`|false|
+|出力を取得できない|`execution`|`OUTPUT_NOT_FOUND`|false|
 |生成物を保存・記録できない|`execution`|`ARTIFACT_WRITE_FAILED`|false|
 |監視接続が切れ、履歴も取得できない|`response_disconnect`|`BACKEND_DISCONNECTED`|true|
 |制限時間内に完了しない|`timeout`|`EXECUTION_TIMEOUT`|true|
 |停止要求が失敗した|`execution`|`INTERRUPT_FAILED`|false|
+
+投入する Workflow は、記録済みスナップショットのうち `LoadImage` と `LoadAudio` のファイル名だけが
+実行直前に差し替わる。ComfyUI 側のファイル名は実行ごとに変わりうるため、同一性の判定には使わない。
+どの素材を置いたかは Manifest の `parameters.input_uploads` と `input_refs` に残り、実行前に
+記録済みの SHA-256 と実ファイルを突き合わせる。一致しなければ Job を失敗させる。
+
+素材を複数置く途中で通信が切れると、それまでに置いたファイルが ComfyUI の input に残る。
+ComfyUI に削除の口が無いため回収できない。Job は失敗として記録され、生成物も履歴も残らないが、
+input の掃除は ComfyUI 側の運用で行う。
+
+### 動画・音楽 (MiniMax H3 / ACE-Step)
+
+動画と音楽も ComfyUI Adapter で実行する。Recipe の `kind` とテンプレート名だけが違う。
+
+投入前に次を確かめ、違反は Job を作らずに 422 で返す。
+
+|項目|条件|
+|---|---|
+|フレーム数|`17k+5`(5, 22, 39, ...)のいずれかに一致する|
+|フレーム数の範囲|124 以上 362 以下(24fps で 5.2〜15.1 秒)|
+|参照画像の枚数|参照画像モードでは 1 枚以上 9 枚以下|
+|開始フレーム|開始フレームモードでは `first_frame` が必須|
+|ガイド音声|`audio_mode` が `external_voice` のときは `guide_audio` が必須|
+|BGM の尺|0 より大きい|
+
+条件の出どころは Issue #12 の Spec とする。フレーム数の刻みと範囲、参照画像の上限は
+上流(ai-media)の MiniMax H3 検証結果に基づく。値を変えるときは上流の記述を先に確認する。
+
+参照画像の枚数は要求ごとに変わる。テンプレートは `LoadImage` を 9 スロット持つ最大構成で同梱し、
+使わないスロットを投入前に取り除く。取り除いたノードを参照している結線は、付け替え先があれば
+そちらへ結び直し、無ければ結線ごと外す。`audio_mode` もこの仕組みで切り替える。
+
+|`audio_mode`|Workflow の扱い|
+|---|---|
+|`native`|`MiniMaxH3AddGuide` と `LoadAudio` を外し、条件付けを生成ノードの出力へ戻す|
+|`external_voice`|生成済みの音声を `MiniMaxH3AddGuide` で指定フレームへアンカーする|
+|`silent`|`native` に加えて `VAEDecodeAudio` を外し、`CreateVideo` の音声入力を落とす|
+
+### 合成 Adapter (ffmpeg)
+
+合成は GPU を使わず入力も手元の Artifact だけのため、Remote PC ではなく手元 PC で実行する
+([ADR 0002](../../docs/adr/0002-remote-gpu-host.md))。engine は `ffmpeg` とし、Job 1 件で
+Shot の最終動画を 1 本作る。
+
+入力は動画 Artifact 1 件(必須)、台詞音声 Artifact 0 件以上(開始位置と音量を指定)、
+BGM Artifact 0 件または 1 件(音量を指定)とする。BGM の音量の既定値は台詞の約 3 分の 1 とする
+(上流の検証で台詞 0.08 に対し BGM 0.030 が使われていたことによる)。
+
+ffmpeg へ渡す引数は Adapter が固定の形で組み立て、利用者から受け取るのは Artifact ID と数値だけとする。
+文字列をそのまま引数へ渡さず、`shell=True` も使わない。音声は `adelay` で開始位置を合わせ、`volume`
+で音量を決めてから `amix` で重ね、`apad` と `-shortest` で出力の長さを動画に合わせる。動画より長い
+BGM はここで切り詰められ、短い音声の後ろは無音のまま残る。出力は H.264 + AAC の mp4 とする。
+
+台詞音声が動画の尺を超える入力は、切り落とさずに Job を失敗させる。末尾を黙って削ると、成功した
+Job として履歴に残るのに内容が欠けた動画ができるためである。
+
+lineage は次のように残す。新しいテーブルは追加しない。
+
+- 合成 Job の `parent_job_id` に入力の動画 Job を入れる。要求が別の Job を指していれば 422 で拒否する。
+- 合成結果の `parent_artifact_id` に入力の動画 Artifact を入れる。
+- 台詞音声と BGM は Manifest の `input_refs` へ Artifact 参照として並べる。`parent_artifact_id` は
+  単一の親しか持てず、複数入力を表現できないためである。
+
+|事象|`failure_stage`|`failure_code`|`retryable`|
+|---|---|---|---|
+|ffmpeg または ffprobe が見つからない|`backend_start`|`BACKEND_UNAVAILABLE`|false|
+|入力 Artifact を解決できない、内容が記録と違う|`backend_start`|`INPUT_UNRESOLVED`|false|
+|台詞音声が動画の尺を超える|`execution`|`COMPOSE_DURATION_EXCEEDED`|false|
+|ffmpeg が非 0 で終了した|`execution`|`EXECUTION_FAILED`|false|
+|制限時間内に終わらない|`timeout`|`EXECUTION_TIMEOUT`|true|
+|生成物を保存・記録できない|`execution`|`ARTIFACT_WRITE_FAILED`|false|
+
+### ComfyUI の stub
+
+`MYCOMFYUI_COMFYUI_STUB=true` にすると、ComfyUI の代わりに内蔵 stub が応答する。到達できる
+ComfyUI が無く、手元の GPU では MiniMax H3 も ACE-Step も動かせないため、投入から履歴・再実行までの
+経路をこれで確かめる。外部へは一切送信しない。
+
+生成物は手元の ffmpeg で作る。中身は単色の動画とサイン波の音声だが、尺・フレーム数・解像度は投入した
+Workflow の指定に従う。ffmpeg が無い環境では明示的に失敗させ、黙って空ファイルを残さない。
+
+`MYCOMFYUI_COMFYUI_STUB_FAILURE=true` を足すと生成だけを必ず失敗させ、`EXECUTION_FAILED` の
+記録を確かめられる。疎通確認には効かせない。効かせると Job が投入前の確認で止まり、生成の失敗を扱う
+経路まで届かないためである。接続できない場合は接続先を実在しない URL へ向ければ再現できる。
 
 ### 音声 Adapter (voice-runner)
 

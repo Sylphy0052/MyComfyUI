@@ -17,6 +17,8 @@ KIND_SCENE = "scene"
 KIND_SHOT = "shot"
 KIND_CANON = "canon"
 KIND_CACHED_INPUT = "cached_input"
+#: 生成済みArtifactを入力に使ったときの参照。参照APIでは解決しない。
+KIND_ARTIFACT = "artifact"
 
 #: Canon参照の出どころ。Scene/Shot本文が宣言したものと、Jobの入力として利用者が
 #: 選んだものを区別する。後者は本文から辿れないため、引き直すときの手がかりになる。

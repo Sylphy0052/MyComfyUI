@@ -51,6 +51,19 @@ class Settings(BaseSettings):
     voice_stub: bool = False
     #: スタブBackendを常に失敗させる。Backend障害時にJobがfailedへ落ちることの確認に使う。
     voice_stub_failure: bool = False
+    #: 実ComfyUIの代わりに内蔵stubで実行する。到達できる実機が無い間、画像・動画・音楽の
+    #: 投入から保存までの経路を手元で確かめるために使う。
+    comfyui_stub: bool = False
+    #: ComfyUI stubの生成を常に失敗させる。疎通(`/system_stats`相当)には効かせない。
+    comfyui_stub_failure: bool = False
+    #: 合成に使うffmpegの実行ファイル。PATH上の名前でも絶対パスでもよい。
+    ffmpeg_path: str = "ffmpeg"
+    #: 尺の確認に使うffprobeの実行ファイル。
+    ffprobe_path: str = "ffprobe"
+    #: 合成1件の実行上限。
+    compose_timeout_seconds: float = Field(default=600.0, gt=0)
+    #: 取り込む参照画像とガイド音声の上限バイト数。
+    max_image_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
 
     @property
     def database_path(self) -> Path:

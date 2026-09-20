@@ -19,9 +19,12 @@ import { AgentPanel } from "./components/AgentPanel";
 import { ArtifactHistory } from "./components/ArtifactHistory";
 import { CandidateGallery } from "./components/CandidateGallery";
 import type { Candidate } from "./components/CandidateGallery";
+import { ComposePanel } from "./components/ComposePanel";
 import { GenerationForm } from "./components/GenerationForm";
 import { JobQueue } from "./components/JobQueue";
+import { MusicPanel } from "./components/MusicPanel";
 import { SceneBrowser } from "./components/SceneBrowser";
+import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 
 /**
@@ -327,7 +330,7 @@ export function App() {
       <header>
         <h1>MyComfyUI</h1>
         <span className="muted">
-          Scene/Shotから画像と音声の生成を投入し、進捗と候補を確認する。
+          Scene/Shotから画像・音声・動画・音楽・合成の生成を投入し、進捗と候補を確認する。
         </span>
       </header>
 
@@ -385,6 +388,38 @@ export function App() {
           sceneId={sceneId}
           shotId={shotId}
           shot={shot}
+          jobs={jobs}
+          onSubmittedJob={handleDerivedJob}
+        />
+      </div>
+
+      <div className="full">
+        <VideoPanel
+          projectId={projectId}
+          sceneId={sceneId}
+          shotId={shotId}
+          shot={shot}
+          jobs={jobs}
+          onSubmittedJob={handleDerivedJob}
+        />
+      </div>
+
+      <div className="full">
+        <MusicPanel
+          projectId={projectId}
+          sceneId={sceneId}
+          shotId={shotId}
+          scene={scene}
+          jobs={jobs}
+          onSubmittedJob={handleDerivedJob}
+        />
+      </div>
+
+      <div className="full">
+        <ComposePanel
+          projectId={projectId}
+          sceneId={sceneId}
+          shotId={shotId}
           jobs={jobs}
           onSubmittedJob={handleDerivedJob}
         />

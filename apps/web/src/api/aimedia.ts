@@ -63,6 +63,18 @@ export interface Provenance {
   }[];
 }
 
+/** SceneのBGM。Shot単位では作らない。 */
+export interface MusicGenerationSpec {
+  engine?: string;
+  profile?: string;
+  required?: boolean;
+  mood: string;
+  genre?: string | null;
+  instrumental?: boolean;
+  duration_sec?: number | null;
+  seed?: number | null;
+}
+
 export interface SceneData {
   id: string;
   project_id: string;
@@ -72,12 +84,33 @@ export interface SceneData {
   season?: string | null;
   characters?: { id: string; display_name?: string | null }[];
   goal?: string | null;
+  music?: MusicGenerationSpec | null;
 }
 
 export interface SceneEnvelope {
   kind: "scene";
   data: SceneData;
   provenance: Provenance;
+}
+
+/** 動画生成が参照する画像。`path`はai-media側のファイルで、ComfyUIの入力ではない。 */
+export interface ShotReference {
+  path: string;
+  role: "background" | "standing" | "detail" | "expression" | "action";
+  character_id?: string | null;
+  note?: string | null;
+}
+
+/** Shot本文が持つ動画生成の想定。実際の投入値はVideoPanelで別途指定する。 */
+export interface VideoGenerationSpec {
+  engine?: string;
+  mode: "t2v" | "i2v" | "ref2v";
+  audio_mode?: "native" | "external_voice" | "silent";
+  profile?: string;
+  seed?: number | null;
+  references?: ShotReference[];
+  first_frame?: string | null;
+  last_frame?: string | null;
 }
 
 export interface ShotData {
@@ -106,6 +139,7 @@ export interface ShotData {
     delivery?: string | null;
     start_sec?: number | null;
   }[];
+  video?: VideoGenerationSpec;
 }
 
 export interface ShotEnvelope {

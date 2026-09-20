@@ -13,7 +13,7 @@ import hashlib
 import json
 import random
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,12 @@ FILE_PREFIX_ALLOWED_CHARS = frozenset(
 
 #: 出力ファイル名の接頭辞の長さ上限。
 FILE_PREFIX_MAX_LENGTH = 64
+
+#: ComfyUIのinputへ置くファイル名の長さ上限。
+INPUT_FILE_NAME_MAX_LENGTH = 200
+
+#: アップロードした素材を差し込む変数の種別。
+UPLOAD_VALUE_TYPES = ("image_name", "audio_name")
 
 
 class WorkflowError(ValueError):
@@ -85,6 +91,20 @@ class ModelSlot:
 
 
 @dataclass(frozen=True)
+class OptionalNode:
+    """投入前に取り除けるノード。
+
+    参照画像の枚数や音声の扱いは要求ごとに変わる。テンプレートは最大構成で持ち、
+    使わないノードを投入前に削る。削ったノードを参照している結線は、`fallback_role`
+    があればそちらへ付け替え、無ければ結線ごと取り除く。
+    """
+
+    role: str
+    fallback_role: str | None = None
+    fallback_output: int = 0
+
+
+@dataclass(frozen=True)
 class WorkflowBinding:
     """WorkflowテンプレートとMyComfyUIの変数の対応関係。"""
 
@@ -94,6 +114,8 @@ class WorkflowBinding:
     variables: Mapping[str, VariableRef]
     model_slots: tuple[ModelSlot, ...]
     prompt_variable: str
+    #: role名をキーにした、取り除けるノードの定義。
+    optional_nodes: Mapping[str, OptionalNode] = field(default_factory=dict)
 
 
 ANIMA_TXT2IMG = WorkflowBinding(
@@ -149,8 +171,238 @@ ANIMA_TXT2IMG = WorkflowBinding(
     prompt_variable="positive_prompt",
 )
 
+
+def _h3_common_nodes() -> dict[str, NodeRef]:
+    """H3のサンプリング以降。R2VとI2Vで同じ構成を使う。"""
+    return {
+        "noise": NodeRef("6", "RandomNoise", ("noise_seed",)),
+        "sampler": NodeRef("7", "KSamplerSelect", ("sampler_name",)),
+        "scheduler": NodeRef("8", "BasicScheduler", ("scheduler", "steps", "denoise")),
+        "guider": NodeRef("9", "BasicGuider", ()),
+        "sampling": NodeRef("10", "SamplerCustomAdvanced", ()),
+        "video_decode": NodeRef("11", "VAEDecode", ()),
+        "audio_decode": NodeRef("12", "VAEDecodeAudio", ()),
+        "create_video": NodeRef("13", "CreateVideo", ("fps",)),
+        "save_video": NodeRef(
+            "14", "SaveVideo", ("filename_prefix", "format", "codec")
+        ),
+        "guide_audio": NodeRef("40", "LoadAudio", ("audio",)),
+        "add_guide": NodeRef("41", "MiniMaxH3AddGuide", ("frame_idx",)),
+    }
+
+
+def _h3_loader_nodes() -> dict[str, NodeRef]:
+    return {
+        "unet_loader": NodeRef("1", "UNETLoader", ("unet_name", "weight_dtype")),
+        "clip_loader": NodeRef("2", "CLIPLoader", ("clip_name", "type")),
+        "video_vae": NodeRef("3", "VAELoader", ("vae_name",)),
+        "audio_vae": NodeRef("4", "VAELoader", ("vae_name",)),
+    }
+
+
+#: H3のサンプリング以降で共通の結線。
+_H3_COMMON_LINKS: tuple[LinkRef, ...] = (
+    LinkRef("scheduler", "model", "unet_loader"),
+    LinkRef("guider", "model", "unet_loader"),
+    # 既定はガイド音声ありの構成にしておき、使わないときに`add_guide`を取り除いて
+    # 条件付けを`h3`へ戻す。
+    LinkRef("guider", "conditioning", "add_guide"),
+    LinkRef("sampling", "noise", "noise"),
+    LinkRef("sampling", "guider", "guider"),
+    LinkRef("sampling", "sampler", "sampler"),
+    LinkRef("sampling", "sigmas", "scheduler"),
+    LinkRef("sampling", "latent_image", "h3"),
+    LinkRef("video_decode", "samples", "sampling"),
+    LinkRef("video_decode", "vae", "video_vae"),
+    LinkRef("audio_decode", "samples", "sampling"),
+    LinkRef("audio_decode", "vae", "audio_vae"),
+    LinkRef("create_video", "images", "video_decode"),
+    LinkRef("create_video", "audio", "audio_decode"),
+    LinkRef("save_video", "video", "create_video"),
+    LinkRef("add_guide", "positive", "h3"),
+    LinkRef("add_guide", "audio_vae", "audio_vae"),
+    LinkRef("add_guide", "latent", "h3"),
+    LinkRef("add_guide", "audio", "guide_audio"),
+)
+
+#: H3のサンプリング以降で共通の変数。
+_H3_COMMON_VARIABLES: dict[str, VariableRef] = {
+    "seed": VariableRef("noise", "noise_seed", "seed"),
+    "steps": VariableRef("scheduler", "steps", "positive_int"),
+    "denoise": VariableRef("scheduler", "denoise", "positive_float"),
+    "sampler_name": VariableRef("sampler", "sampler_name", "str"),
+    "scheduler": VariableRef("scheduler", "scheduler", "str"),
+    "fps": VariableRef("create_video", "fps", "positive_float"),
+    "filename_prefix": VariableRef("save_video", "filename_prefix", "file_prefix"),
+    "unet_name": VariableRef("unet_loader", "unet_name", "str", required=True),
+    "clip_name": VariableRef("clip_loader", "clip_name", "str", required=True),
+    "video_vae_name": VariableRef("video_vae", "vae_name", "str", required=True),
+    "audio_vae_name": VariableRef("audio_vae", "vae_name", "str", required=True),
+    "guide_audio": VariableRef("guide_audio", "audio", "audio_name"),
+    "guide_frame_idx": VariableRef("add_guide", "frame_idx", "non_negative_int"),
+}
+
+#: H3のモデルスロット。R2VとI2Vで同じ。
+_H3_MODEL_SLOTS: tuple[ModelSlot, ...] = (
+    ModelSlot("unet_name", "UNETLoader", "unet_name"),
+    ModelSlot("clip_name", "CLIPLoader", "clip_name"),
+    ModelSlot("video_vae_name", "VAELoader", "vae_name"),
+    ModelSlot("audio_vae_name", "VAELoader", "vae_name"),
+)
+
+#: ガイド音声と無音の切り替えで取り除くノード。R2VとI2Vで同じ。
+_H3_COMMON_OPTIONAL: dict[str, OptionalNode] = {
+    # ガイド音声を使わないときは条件付けを`h3`の出力へ戻す。
+    "add_guide": OptionalNode("add_guide", fallback_role="h3"),
+    "guide_audio": OptionalNode("guide_audio"),
+    # 無音にするときは音声の復号ごと外し、`CreateVideo`の音声入力を落とす。
+    "audio_decode": OptionalNode("audio_decode"),
+}
+
+#: R2Vが持つ参照画像スロットの上限。テンプレートは最大構成で持ち、使わない分を削る。
+MAX_REFERENCE_IMAGES = 9
+
+#: 参照画像スロットの変数名。`reference_0`は必須で、残りは任意ノードとして削れる。
+REFERENCE_VARIABLES: tuple[str, ...] = tuple(
+    f"reference_{index}" for index in range(MAX_REFERENCE_IMAGES)
+)
+
+
+MINIMAX_H3_REF2V = WorkflowBinding(
+    name="minimax_h3_ref2v",
+    nodes={
+        **_h3_loader_nodes(),
+        **{
+            f"reference_{index}": NodeRef(str(20 + index), "LoadImage", ("image",))
+            for index in range(MAX_REFERENCE_IMAGES)
+        },
+        "h3": NodeRef(
+            "5",
+            "MiniMaxH3ReferenceToVideo",
+            ("prompt", "width", "height", "length", "ref_image_size"),
+        ),
+        **_h3_common_nodes(),
+    },
+    links=(
+        LinkRef("h3", "clip", "clip_loader"),
+        LinkRef("h3", "vae", "video_vae"),
+        LinkRef("h3", "audio_vae", "audio_vae"),
+        *(
+            LinkRef("h3", f"ref_images.ref_image_{index}", f"reference_{index}")
+            for index in range(MAX_REFERENCE_IMAGES)
+        ),
+        *_H3_COMMON_LINKS,
+    ),
+    variables={
+        "positive_prompt": VariableRef("h3", "prompt", "str", required=True),
+        "width": VariableRef("h3", "width", "positive_int"),
+        "height": VariableRef("h3", "height", "positive_int"),
+        "length": VariableRef("h3", "length", "positive_int"),
+        "ref_image_size": VariableRef("h3", "ref_image_size", "str"),
+        **{
+            f"reference_{index}": VariableRef(
+                f"reference_{index}", "image", "image_name"
+            )
+            for index in range(MAX_REFERENCE_IMAGES)
+        },
+        **_H3_COMMON_VARIABLES,
+    },
+    model_slots=_H3_MODEL_SLOTS,
+    prompt_variable="positive_prompt",
+    optional_nodes={
+        **{
+            f"reference_{index}": OptionalNode(f"reference_{index}")
+            for index in range(1, MAX_REFERENCE_IMAGES)
+        },
+        **_H3_COMMON_OPTIONAL,
+    },
+)
+
+
+MINIMAX_H3_I2V = WorkflowBinding(
+    name="minimax_h3_i2v",
+    nodes={
+        **_h3_loader_nodes(),
+        "first_frame": NodeRef("20", "LoadImage", ("image",)),
+        "h3": NodeRef(
+            "5", "MiniMaxH3ImageToVideo", ("prompt", "width", "height", "length")
+        ),
+        **_h3_common_nodes(),
+    },
+    links=(
+        LinkRef("h3", "clip", "clip_loader"),
+        LinkRef("h3", "vae", "video_vae"),
+        LinkRef("h3", "first_frame", "first_frame"),
+        *_H3_COMMON_LINKS,
+    ),
+    variables={
+        "positive_prompt": VariableRef("h3", "prompt", "str", required=True),
+        "width": VariableRef("h3", "width", "positive_int"),
+        "height": VariableRef("h3", "height", "positive_int"),
+        "length": VariableRef("h3", "length", "positive_int"),
+        "first_frame": VariableRef("first_frame", "image", "image_name"),
+        **_H3_COMMON_VARIABLES,
+    },
+    model_slots=_H3_MODEL_SLOTS,
+    prompt_variable="positive_prompt",
+    optional_nodes=dict(_H3_COMMON_OPTIONAL),
+)
+
+
+ACE_STEP_BGM = WorkflowBinding(
+    name="ace_step_bgm",
+    nodes={
+        "checkpoint": NodeRef("1", "CheckpointLoaderSimple", ("ckpt_name",)),
+        "positive_tags": NodeRef(
+            "2", "TextEncodeAceStepAudio", ("tags", "lyrics", "lyrics_strength")
+        ),
+        "negative_tags": NodeRef(
+            "3", "TextEncodeAceStepAudio", ("tags", "lyrics", "lyrics_strength")
+        ),
+        "latent": NodeRef("4", "EmptyAceStepLatentAudio", ("seconds", "batch_size")),
+        "ksampler": NodeRef(
+            "5",
+            "KSampler",
+            ("seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"),
+        ),
+        "decode": NodeRef("6", "VAEDecodeAudio", ()),
+        "save_audio": NodeRef("7", "SaveAudio", ("filename_prefix",)),
+    },
+    links=(
+        LinkRef("positive_tags", "clip", "checkpoint"),
+        LinkRef("negative_tags", "clip", "checkpoint"),
+        LinkRef("ksampler", "model", "checkpoint"),
+        LinkRef("ksampler", "positive", "positive_tags"),
+        LinkRef("ksampler", "negative", "negative_tags"),
+        LinkRef("ksampler", "latent_image", "latent"),
+        LinkRef("decode", "samples", "ksampler"),
+        LinkRef("decode", "vae", "checkpoint"),
+        LinkRef("save_audio", "audio", "decode"),
+    ),
+    variables={
+        "positive_prompt": VariableRef("positive_tags", "tags", "str", required=True),
+        "negative_prompt": VariableRef("negative_tags", "tags", "str"),
+        "lyrics": VariableRef("positive_tags", "lyrics", "str"),
+        "seconds": VariableRef("latent", "seconds", "positive_float"),
+        "seed": VariableRef("ksampler", "seed", "seed"),
+        "steps": VariableRef("ksampler", "steps", "positive_int"),
+        "cfg": VariableRef("ksampler", "cfg", "positive_float"),
+        "sampler_name": VariableRef("ksampler", "sampler_name", "str"),
+        "scheduler": VariableRef("ksampler", "scheduler", "str"),
+        "denoise": VariableRef("ksampler", "denoise", "positive_float"),
+        "filename_prefix": VariableRef("save_audio", "filename_prefix", "file_prefix"),
+        "ckpt_name": VariableRef("checkpoint", "ckpt_name", "str", required=True),
+    },
+    model_slots=(ModelSlot("ckpt_name", "CheckpointLoaderSimple", "ckpt_name"),),
+    prompt_variable="positive_prompt",
+)
+
+
 #: 実行を許可するテンプレート。利用者入力から任意のJSONを実行させないためのallowlist。
-ALLOWED_TEMPLATES: dict[str, WorkflowBinding] = {ANIMA_TXT2IMG.name: ANIMA_TXT2IMG}
+ALLOWED_TEMPLATES: dict[str, WorkflowBinding] = {
+    binding.name: binding
+    for binding in (ANIMA_TXT2IMG, MINIMAX_H3_REF2V, MINIMAX_H3_I2V, ACE_STEP_BGM)
+}
 
 
 @dataclass(frozen=True)
@@ -253,6 +505,24 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
                 "親ディレクトリ参照は使えません。"
             )
         return value
+    if value_type in ("image_name", "audio_name"):
+        # ComfyUIのinputディレクトリ上のファイル名。投入直前にアップロード結果で
+        # 置き換わるが、テンプレートへ書き込む時点でも区切り文字を通さない。
+        if not isinstance(value, str) or not value:
+            raise WorkflowError(f"{name}は空でない文字列で指定します。")
+        if len(value) > INPUT_FILE_NAME_MAX_LENGTH:
+            raise WorkflowError(
+                f"{name}は{INPUT_FILE_NAME_MAX_LENGTH}文字以内で指定します。"
+            )
+        if "/" in value or "\\" in value or value in (".", ".."):
+            raise WorkflowError(f"{name}にディレクトリ区切りを含められません。")
+        return value
+    if value_type == "non_negative_int":
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise WorkflowError(f"{name}は整数で指定します。")
+        if value < 0:
+            raise WorkflowError(f"{name}は0以上で指定します。")
+        return value
     if value_type == "seed":
         if isinstance(value, bool) or not isinstance(value, int):
             raise WorkflowError(f"{name}は整数で指定します。")
@@ -281,17 +551,65 @@ def resolve_seed(value: int | None) -> int:
     return value
 
 
-def build_workflow(template_name: str, values: Mapping[str, Any]) -> PreparedWorkflow:
+def _apply_drops(
+    workflow: dict[str, Any], binding: WorkflowBinding, drop_roles: frozenset[str]
+) -> None:
+    """使わない任意ノードを取り除き、参照していた結線を付け替えるか外す。
+
+    構造検証は最大構成のテンプレートに対して先に済ませる。ここでは、その構成から
+    削るだけとし、テンプレートに無いノードを足すことはしない。
+    """
+    for role in drop_roles:
+        workflow.pop(binding.nodes[role].node_id, None)
+    for link in binding.links:
+        if link.expected_role not in drop_roles:
+            continue
+        source_id = binding.nodes[link.source_role].node_id
+        entry = workflow.get(source_id)
+        if not isinstance(entry, dict):
+            # 送り元ごと削られている。付け替える相手がいない。
+            continue
+        optional = binding.optional_nodes[link.expected_role]
+        fallback = optional.fallback_role
+        if fallback is not None and fallback not in drop_roles:
+            entry["inputs"][link.input_key] = [
+                binding.nodes[fallback].node_id,
+                optional.fallback_output,
+            ]
+        else:
+            entry["inputs"].pop(link.input_key, None)
+
+
+def build_workflow(
+    template_name: str,
+    values: Mapping[str, Any],
+    *,
+    drop_roles: frozenset[str] = frozenset(),
+) -> PreparedWorkflow:
     """テンプレートへ許可された変数だけを注入し、投入用のWorkflowを組み立てる。
 
     `values`はRecipeの`defaults`と要求の`inputs`をマージ済みの値を受け取る。未知の
-    変数と必須変数の不足はここで拒否する。
+    変数と必須変数の不足はここで拒否する。`drop_roles`には、要求では使わない任意
+    ノードのrole名を渡す。
     """
     binding = ALLOWED_TEMPLATES.get(template_name)
     if binding is None:
         raise WorkflowError(
             f"許可されていないWorkflowテンプレートです: {template_name}"
         )
+
+    undroppable = sorted(drop_roles - set(binding.optional_nodes))
+    if undroppable:
+        raise WorkflowError(f"取り除けないノードです: {', '.join(undroppable)}")
+    dropped_values = sorted(
+        name
+        for name, variable in binding.variables.items()
+        if variable.role in drop_roles and name in values
+    )
+    if dropped_values:
+        # 取り除いたノードへ値を書こうとしている。指定が黙って捨てられる状態のまま
+        # 実行させない。
+        raise WorkflowError(f"使わないノードへの指定です: {', '.join(dropped_values)}")
 
     unknown = set(values) - set(binding.variables)
     if unknown:
@@ -301,7 +619,7 @@ def build_workflow(template_name: str, values: Mapping[str, Any]) -> PreparedWor
     missing = [
         name
         for name, variable in binding.variables.items()
-        if variable.required and name not in values
+        if variable.required and variable.role not in drop_roles and name not in values
     ]
     if missing:
         raise WorkflowError(f"必須の変数が不足しています: {', '.join(sorted(missing))}")
@@ -318,6 +636,7 @@ def build_workflow(template_name: str, values: Mapping[str, Any]) -> PreparedWor
         resolved["seed"] = resolve_seed(resolved.get("seed"))
 
     workflow = copy.deepcopy(workflow)
+    _apply_drops(workflow, binding, drop_roles)
     for name, value in resolved.items():
         variable = binding.variables[name]
         node_id = binding.nodes[variable.role].node_id
@@ -344,21 +663,57 @@ def build_workflow(template_name: str, values: Mapping[str, Any]) -> PreparedWor
     )
 
 
-def variable_names(template_name: str) -> frozenset[str]:
-    """テンプレートが受け付ける変数名を返す。Recipeの`input_schema`の検証に使う。"""
+def _binding_of(template_name: str) -> WorkflowBinding:
     binding = ALLOWED_TEMPLATES.get(template_name)
     if binding is None:
         raise WorkflowError(
             f"許可されていないWorkflowテンプレートです: {template_name}"
         )
-    return frozenset(binding.variables)
+    return binding
+
+
+def variable_names(template_name: str) -> frozenset[str]:
+    """テンプレートが受け付ける変数名を返す。Recipeの`input_schema`の検証に使う。"""
+    return frozenset(_binding_of(template_name).variables)
+
+
+def optional_roles(template_name: str) -> frozenset[str]:
+    """取り除ける任意ノードのrole名を返す。"""
+    binding = _binding_of(template_name)
+    return frozenset(binding.optional_nodes)
+
+
+def upload_slots(template_name: str) -> dict[str, tuple[str, str]]:
+    """アップロードした素材を差し込む変数と、その書き込み先を返す。
+
+    実行直前に差し替えるのはAdapterの仕事だが、どのノードのどの入力を差し替えるかは
+    テンプレートの知識のため、ここから引けるようにする。
+    """
+    binding = _binding_of(template_name)
+    return {
+        name: (binding.nodes[variable.role].node_id, variable.input_key)
+        for name, variable in binding.variables.items()
+        if variable.value_type in UPLOAD_VALUE_TYPES
+    }
+
+
+def template_option_values(node_class: str, field_name: str) -> tuple[str, ...]:
+    """同梱テンプレートが宣言しているモデルファイル名を集める。
+
+    在庫を持たないスタブBackendが、同梱Recipeで実行できる選択肢を返すために使う。
+    """
+    names: list[str] = []
+    for name in ALLOWED_TEMPLATES:
+        raw, _ = _load_template(name)
+        for entry in json.loads(raw).values():
+            if not isinstance(entry, dict) or entry.get("class_type") != node_class:
+                continue
+            value = entry.get("inputs", {}).get(field_name)
+            if isinstance(value, str) and value not in names:
+                names.append(value)
+    return tuple(names)
 
 
 def model_slots(template_name: str) -> tuple[ModelSlot, ...]:
     """在庫確認に使うモデル変数の定義を返す。"""
-    binding = ALLOWED_TEMPLATES.get(template_name)
-    if binding is None:
-        raise WorkflowError(
-            f"許可されていないWorkflowテンプレートです: {template_name}"
-        )
-    return binding.model_slots
+    return _binding_of(template_name).model_slots

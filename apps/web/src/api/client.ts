@@ -33,6 +33,9 @@ export type VoiceVerification = components["schemas"]["VoiceVerificationRead"];
 export type VoiceBackendHealth =
   components["schemas"]["VoiceBackendHealthRead"];
 export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
+export type ComfyUIBackendHealth =
+  components["schemas"]["ComfyUIBackendHealthRead"];
+export type ImageReference = components["schemas"]["ImageReferenceRead"];
 
 const BASE = "/api/v1";
 
@@ -284,6 +287,24 @@ export const api = {
       body: JSON.stringify({
         file_name: fileName,
         content_base64: contentBase64,
+      }),
+    }),
+
+  getComfyUIBackendHealth: () =>
+    request<ComfyUIBackendHealth>("/backends/comfyui/health"),
+
+  // 参照画像とガイド音声を入力 cache へ取り込む。Job 投入時はこの参照を指定する。
+  createImageReference: (
+    fileName: string,
+    contentBase64: string,
+    mediaType: string,
+  ) =>
+    request<ImageReference>("/image-references", {
+      method: "POST",
+      body: JSON.stringify({
+        file_name: fileName,
+        content_base64: contentBase64,
+        media_type: mediaType,
       }),
     }),
 

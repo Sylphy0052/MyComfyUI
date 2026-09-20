@@ -76,13 +76,29 @@ class WaitResult(Enum):
     CANCEL_REQUESTED = "cancel_requested"
 
 
+#: ComfyUIが履歴の`outputs`へ書く出力キーと、MyComfyUIのArtifact種別の対応。
+#: `SaveVideo`と`SaveAudio`がどのキーを使うかは実機で確認するまで確定できないため、
+#: 画像以外の候補も横断して読む。
+OUTPUT_KINDS: dict[str, str] = {
+    "images": "image",
+    "videos": "video",
+    "gifs": "video",
+    "audio": "audio",
+}
+
+
+class UploadFailed(ComfyUIError):
+    """ComfyUIのinputへ素材を置けなかった。"""
+
+
 @dataclass(frozen=True)
-class ImageRef:
-    """ComfyUIのoutput上の画像への参照。"""
+class OutputRef:
+    """ComfyUIのoutput上の生成物への参照。"""
 
     filename: str
     subfolder: str
     type: str
+    kind: str
 
 
 @dataclass(frozen=True)
@@ -155,6 +171,42 @@ class ComfyUIClient:
         """あるノードの選択肢一覧を取得する。モデルファイルの在庫確認に使う。"""
         payload = await self._get_json(f"/object_info/{node_class}")
         return _extract_option_names(payload, node=node_class, field=field)
+
+    async def upload_input(self, file_name: str, data: bytes) -> str:
+        """素材をComfyUIのinputへ置き、Workflowから参照できる名前を返す。
+
+        `LoadImage`と`LoadAudio`はComfyUI側のinputディレクトリにあるファイル名しか
+        受け取らないため、手元のArtifactをそのまま渡すことはできない。投入直前に
+        ここでアップロードし、返った名前をWorkflowへ差し込む。
+
+        同名ファイルは上書きしない。ComfyUIが採番した名前をそのまま使う。
+        """
+        try:
+            response = await self._client.post(
+                "/upload/image",
+                files={"image": (file_name, data, "application/octet-stream")},
+                data={"type": "input", "overwrite": "false"},
+            )
+        except httpx.HTTPError as error:
+            raise ComfyUIUnavailable(
+                f"ComfyUIへ接続できません: {self._base_url}"
+            ) from error
+        if response.status_code >= httpx.codes.BAD_REQUEST:
+            raise UploadFailed(
+                f"ComfyUIが素材を受け付けませんでした"
+                f"(HTTP {response.status_code}): {file_name}"
+            )
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise UploadFailed("ComfyUIの応答を解釈できません。") from error
+        name = payload.get("name") if isinstance(payload, dict) else None
+        if not isinstance(name, str) or not name:
+            raise UploadFailed("ComfyUIの応答にファイル名が含まれていません。")
+        subfolder = payload.get("subfolder") if isinstance(payload, dict) else ""
+        if isinstance(subfolder, str) and subfolder:
+            return f"{subfolder}/{name}"
+        return name
 
     async def submit(self, workflow: dict[str, Any]) -> str:
         """Workflowを投入し、`prompt_id`を返す。"""
@@ -269,21 +321,21 @@ class ComfyUIClient:
         entry = payload.get(prompt_id)
         return entry if isinstance(entry, dict) else None
 
-    async def fetch_outputs(self, prompt_id: str) -> tuple[ImageRef, ...]:
-        """生成された画像への参照を取得する。"""
+    async def fetch_outputs(self, prompt_id: str) -> tuple[OutputRef, ...]:
+        """生成物への参照を取得する。画像、動画、音声を同じ形で返す。"""
         entry = await self.history_entry(prompt_id)
         if entry is None:
             raise OutputNotFound(f"履歴にprompt_id={prompt_id}の記録がありません。")
         _raise_if_failed(entry, prompt_id)
-        images = _extract_images(entry)
-        if not images:
+        outputs = _extract_outputs(entry)
+        if not outputs:
             raise OutputNotFound(
-                f"生成結果に画像が含まれていません。prompt_id={prompt_id}"
+                f"生成結果に取得できる出力がありません。prompt_id={prompt_id}"
             )
-        return images
+        return outputs
 
-    async def download(self, ref: ImageRef) -> bytes:
-        """ComfyUIのoutputから画像データを取得する。"""
+    async def download(self, ref: OutputRef) -> bytes:
+        """ComfyUIのoutputから生成物のデータを取得する。"""
         params = {
             "filename": ref.filename,
             "subfolder": ref.subfolder,
@@ -297,7 +349,7 @@ class ComfyUIClient:
             ) from error
         if response.status_code >= httpx.codes.BAD_REQUEST:
             raise OutputNotFound(
-                f"画像を取得できません(HTTP {response.status_code}): {ref.filename}"
+                f"生成物を取得できません(HTTP {response.status_code}): {ref.filename}"
             )
         return response.content
 
@@ -476,28 +528,41 @@ def _execution_error_message(data: dict[str, Any], prompt_id: str) -> str:
     return f"実行エラー (prompt_id={prompt_id})"
 
 
-def _extract_images(entry: dict[str, Any]) -> tuple[ImageRef, ...]:
+def _extract_outputs(entry: dict[str, Any]) -> tuple[OutputRef, ...]:
+    """履歴の`outputs`から、取得できる生成物の参照を集める。
+
+    ノードごとの出力は種別ごとに別のキーへ入る。どのキーに入るかはノード側の実装で
+    決まるため、扱える種別を横断して読む。
+    """
     outputs = entry.get("outputs")
     if not isinstance(outputs, dict):
         return ()
-    images: list[ImageRef] = []
+    refs: list[OutputRef] = []
     for node_output in outputs.values():
         if not isinstance(node_output, dict):
             continue
-        for image in node_output.get("images", []):
-            if not isinstance(image, dict):
+        for key, kind in OUTPUT_KINDS.items():
+            items = node_output.get(key, [])
+            if not isinstance(items, list):
+                # ComfyUIの応答は外部由来のため、想定した形でなければ読み飛ばす。
+                # そのまま列挙すると、失敗理由がTypeErrorに化けて特定しにくくなる。
+                logger.warning("履歴の%sが配列ではありません。読み飛ばします。", key)
                 continue
-            filename = image.get("filename")
-            if not isinstance(filename, str):
-                continue
-            images.append(
-                ImageRef(
-                    filename=filename,
-                    subfolder=str(image.get("subfolder", "")),
-                    type=str(image.get("type", "output")),
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                filename = item.get("filename")
+                if not isinstance(filename, str):
+                    continue
+                refs.append(
+                    OutputRef(
+                        filename=filename,
+                        subfolder=str(item.get("subfolder", "")),
+                        type=str(item.get("type", "output")),
+                        kind=kind,
+                    )
                 )
-            )
-    return tuple(images)
+    return tuple(refs)
 
 
 def _format_submission_error(response: httpx.Response) -> str:
