@@ -2375,23 +2375,6 @@ async def _agent_context(
     return context
 
 
-def _context_artifact_tags(context: dict[str, Any]) -> dict[str, list[str]]:
-    """入力コンテキストへ載せたArtifactごとの現在のタグ。"""
-    entries = context.get("artifacts")
-    if not isinstance(entries, list):
-        return {}
-    tags: dict[str, list[str]] = {}
-    for entry in entries:
-        if not isinstance(entry, dict) or not entry.get("artifact_id"):
-            continue
-        current = entry.get("tags")
-        values = current if isinstance(current, list) else []
-        tags[str(entry["artifact_id"])] = [
-            value for value in values if isinstance(value, str)
-        ]
-    return tags
-
-
 def _context_shot_ids(context: dict[str, Any]) -> set[str]:
     """入力コンテキストへ載せたShot IDの集合。計画の対象を突き合わせるのに使う。"""
     entries = context.get("shots")
