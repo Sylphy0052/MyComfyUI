@@ -109,7 +109,9 @@ Workflow本体はリポジトリ同梱のテンプレートとAdapterの実装�
 |`supersedes_recipe_id`|任意|置換したRecipe ID|不可|
 |`created_at`|必須|作成時刻|不可|
 
-RecipeはWorkflow本体を書き換えず、指した版が宣言した変数の範囲でだけ値を差し替える。`input_schema`は版の宣言より狭くはできるが広くはできない。版の宣言と同じ定義から組み立てた許可リストで投入前に検証し、宣言に無い変数を指すRecipeではJobを作らずに失敗させる。`workflow_version_id`を指定せずにRecipeを作った場合は、`workflow_template_ref`から登録済みの版を解決する。解決できなければNULLのままとし、作成は止めない。
+RecipeはWorkflow本体を書き換えず、指した版が宣言した変数の範囲でだけ値を差し替える。`input_schema`は版の宣言より狭くはできるが広くはできない。版の宣言と同じ定義から組み立てた許可リストで投入前に検証し、宣言に無い変数を指すRecipeではJobを作らずに失敗させる。`workflow_version_id`を指定せずにRecipeを作った場合は、`workflow_template_ref`から登録済みの版を解決する。解決できなければNULLのままとし、作成は止めない。明示指定した場合は、その版が属するWorkflowの名前と生成種別が`workflow_template_ref`およびRecipeの`kind`と一致することを作成時に確かめる。
+
+レジストリ導入前に作られたRecipeの`workflow_version_id`は、起動時のWorkflow登録に続けて`workflow_template_ref`から解決し、解決できたものだけを後から結ぶ。結ぶのは`workflow_version_id`だけで、Recipeの他の項目は書き換えない。
 
 Recipeの変更は更新ではなく新規Recipeで表し、必要なら`supersedes_recipe_id`で後継を結ぶ。Jobは実行時に使用したRecipe IDを保持する。
 
