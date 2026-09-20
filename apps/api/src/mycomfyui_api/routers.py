@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from mycomfyui_api import approvals, provenance, schemas, storage
+from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import proposals
 from mycomfyui_api.adapters.agent.base import AgentProvider
@@ -46,6 +47,8 @@ from mycomfyui_api.models import (
     GenerationManifest,
     Recipe,
     VoiceVerification,
+    Workflow,
+    WorkflowVersion,
 )
 from mycomfyui_api.queue import JobQueueWorker
 from mycomfyui_api.references import get_reference_source
@@ -124,14 +127,107 @@ async def _get_or_404(
     return entity
 
 
+@router.get("/workflows", response_model=list[schemas.WorkflowRead])
+async def list_workflows(
+    session: SessionDep,
+    kind: schemas.GenerationKind | None = None,
+    engine: str | None = None,
+):
+    """登録済みWorkflowの一覧。Recipeが指す実行本体を画面で選ぶために使う。
+
+    `engines`は複数Backendを持てる。音声のように同じ形のスナップショットを複数の
+    Backendが使うためである。`engine`での絞込みはその配列に含まれるかで判定する。
+    """
+    query = select(Workflow).order_by(Workflow.name.asc())
+    if kind is not None:
+        query = query.where(Workflow.kind == kind)
+    result = await session.execute(query)
+    workflows = list(result.scalars().all())
+    if engine is not None:
+        # enginesはJSON配列のため、SQLiteで含有を判定せずPython側で絞る。登録数が
+        # テンプレートの本数に限られ、全件読んでも負荷にならない。
+        workflows = [
+            workflow
+            for workflow in workflows
+            if engine
+            in (workflow.engines if isinstance(workflow.engines, list) else [])
+        ]
+    return workflows
+
+
+@router.get("/workflows/{workflow_id}", response_model=schemas.WorkflowRead)
+async def get_workflow(workflow_id: str, session: SessionDep):
+    return await _get_or_404(session, Workflow, "Workflow", workflow_id)
+
+
+@router.get(
+    "/workflows/{workflow_id}/versions",
+    response_model=list[schemas.WorkflowVersionRead],
+)
+async def list_workflow_versions(workflow_id: str, session: SessionDep):
+    """Workflowの版を新しい順に返す。変数定義と対応モデルは版ごとに異なる。"""
+    await _get_or_404(session, Workflow, "Workflow", workflow_id)
+    result = await session.execute(
+        select(WorkflowVersion)
+        .where(WorkflowVersion.workflow_id == workflow_id)
+        .order_by(WorkflowVersion.created_at.desc(), WorkflowVersion.id.asc())
+    )
+    return result.scalars().all()
+
+
+@router.get(
+    "/workflow-versions/{workflow_version_id}",
+    response_model=schemas.WorkflowVersionRead,
+)
+async def get_workflow_version(workflow_version_id: str, session: SessionDep):
+    return await _get_or_404(
+        session, WorkflowVersion, "WorkflowVersion", workflow_version_id
+    )
+
+
+async def _validate_workflow_version(
+    session: AsyncSession, values: dict[str, Any]
+) -> None:
+    """明示指定されたWorkflow版が、Recipeの参照と生成種別に合うかを確かめる。
+
+    版が宣言した変数は投入値の許可リストになるため、`workflow_template_ref`と別の
+    Workflowを指す版を結べると、参照とは違う宣言を通して値を流し込む余地が残る。
+    存在確認を外部キー制約だけに任せず、作成の時点で組み合わせを弾く。
+    """
+    workflow_version_id = values["workflow_version_id"]
+    loaded = await workflow_registry.load_version(session, workflow_version_id)
+    if loaded is None:
+        raise _not_found("WorkflowVersion", workflow_version_id)
+    workflow, _version = loaded
+    template_ref = values["workflow_template_ref"]
+    name = template_ref.get("name") if isinstance(template_ref, dict) else None
+    if name != workflow.name:
+        raise _validation_error(
+            "workflow_version_idとworkflow_template_refが別のWorkflowを指しています。",
+            {"template_ref_name": name, "workflow_name": workflow.name},
+        )
+    if workflow.kind != values["kind"]:
+        raise _validation_error(
+            "workflow_version_idのWorkflowと生成種別が一致しません。",
+            {"workflow_kind": workflow.kind, "recipe_kind": values["kind"]},
+        )
+
+
 @router.post(
     "/recipes", response_model=schemas.RecipeRead, status_code=status.HTTP_201_CREATED
 )
 async def create_recipe(payload: schemas.RecipeCreate, session: SessionDep):
+    values = payload.model_dump()
+    if values.get("workflow_version_id") is None:
+        values["workflow_version_id"] = await workflow_registry.resolve_version_id(
+            session, values["workflow_template_ref"]
+        )
+    else:
+        await _validate_workflow_version(session, values)
     recipe = Recipe(
         id=schemas.new_id(),
         created_at=schemas.now_iso(),
-        **payload.model_dump(),
+        **values,
     )
     session.add(recipe)
     await _commit(session)

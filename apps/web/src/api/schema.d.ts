@@ -768,6 +768,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-versions/{workflow_version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Version */
+        get: operations["get_workflow_version_api_v1_workflow_versions__workflow_version_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workflows
+         * @description 登録済みWorkflowの一覧。Recipeが指す実行本体を画面で選ぶために使う。
+         *
+         *     `engines`は複数Backendを持てる。音声のように同じ形のスナップショットを複数の
+         *     Backendが使うためである。`engine`での絞込みはその配列に含まれるかで判定する。
+         */
+        get: operations["list_workflows_api_v1_workflows_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{workflow_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow */
+        get: operations["get_workflow_api_v1_workflows__workflow_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{workflow_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workflow Versions
+         * @description Workflowの版を新しい順に返す。変数定義と対応モデルは版ごとに異なる。
+         */
+        get: operations["list_workflow_versions_api_v1_workflows__workflow_id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1234,6 +1311,8 @@ export interface components {
             workflow_template_ref: {
                 [key: string]: unknown;
             };
+            /** Workflow Version Id */
+            workflow_version_id?: string | null;
         };
         /** RecipeRead */
         RecipeRead: {
@@ -1261,6 +1340,8 @@ export interface components {
             workflow_template_ref: {
                 [key: string]: unknown;
             };
+            /** Workflow Version Id */
+            workflow_version_id: string | null;
         };
         /**
          * ReferenceChangeEntry
@@ -1417,6 +1498,51 @@ export interface components {
             status: string;
             /** Target Duration Sec */
             target_duration_sec: number;
+        };
+        /** WorkflowRead */
+        WorkflowRead: {
+            /** Created At */
+            created_at: string;
+            /** Engines */
+            engines: string[];
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * WorkflowVersionRead
+         * @description Workflowの1版。変数定義、対応モデル、入出力をそのまま返す。
+         */
+        WorkflowVersionRead: {
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Inputs */
+            inputs: {
+                [key: string]: unknown;
+            }[];
+            /** Model Slots */
+            model_slots: {
+                [key: string]: unknown;
+            }[];
+            /** Outputs */
+            outputs: {
+                [key: string]: unknown;
+            }[];
+            /** Template Sha256 */
+            template_sha256: string | null;
+            /** Variables */
+            variables: {
+                [key: string]: unknown;
+            };
+            /** Version */
+            version: string;
+            /** Workflow Id */
+            workflow_id: string;
         };
     };
     responses: never;
@@ -2697,6 +2823,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VoiceReferenceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_version_api_v1_workflow_versions__workflow_version_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowVersionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workflows_api_v1_workflows_get: {
+        parameters: {
+            query?: {
+                kind?: ("image" | "video" | "voice" | "music" | "compose") | null;
+                engine?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_api_v1_workflows__workflow_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workflow_versions_api_v1_workflows__workflow_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowVersionRead"][];
                 };
             };
             /** @description Validation Error */

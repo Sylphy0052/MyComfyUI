@@ -81,6 +81,28 @@ class ApiModel(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
 
+class WorkflowVersionRead(ApiModel):
+    """Workflowの1版。変数定義、対応モデル、入出力をそのまま返す。"""
+
+    id: str
+    workflow_id: str
+    version: str
+    template_sha256: str | None
+    variables: dict[str, Any]
+    model_slots: list[dict[str, Any]]
+    inputs: list[dict[str, Any]]
+    outputs: list[dict[str, Any]]
+    created_at: str
+
+
+class WorkflowRead(ApiModel):
+    id: str
+    name: str
+    kind: str
+    engines: list[str]
+    created_at: str
+
+
 class RecipeCreate(ApiModel):
     name: str = Field(min_length=1)
     kind: GenerationKind
@@ -88,6 +110,8 @@ class RecipeCreate(ApiModel):
     workflow_template_ref: dict[str, Any]
     input_schema: dict[str, Any]
     defaults: dict[str, Any]
+    #: 参照するWorkflow版。省略した場合は`workflow_template_ref`から解決する。
+    workflow_version_id: ResourceId | None = None
     supersedes_recipe_id: ResourceId | None = None
 
 
@@ -99,6 +123,7 @@ class RecipeRead(ApiModel):
     workflow_template_ref: dict[str, Any]
     input_schema: dict[str, Any]
     defaults: dict[str, Any]
+    workflow_version_id: str | None
     supersedes_recipe_id: str | None
     created_at: str
 

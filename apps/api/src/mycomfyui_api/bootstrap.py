@@ -13,6 +13,7 @@ JobQueueWorkerを内包しており、もともと複数プロセス・複数wor
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy import select
@@ -29,7 +30,8 @@ from mycomfyui_api.adapters.voice.base import (
     ENGINE_QWEN3_TTS,
     ENGINE_VOXCPM2,
 )
-from mycomfyui_api.models import Recipe
+from mycomfyui_api.models import Recipe, WorkflowVersion
+from mycomfyui_api.workflows import VOICE_TEMPLATE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,9 @@ DEFAULT_VALUES: dict[str, Any] = {
 }
 
 
-async def ensure_default_recipes(session: AsyncSession) -> Recipe | None:
+async def ensure_default_recipes(
+    session: AsyncSession, versions: Mapping[str, WorkflowVersion]
+) -> Recipe | None:
     """既定Recipeが無ければ作る。テンプレートが更新されていれば後継を作る。
 
     作成したRecipeを返す。何も作らなかった場合はNoneを返す。
@@ -100,6 +104,7 @@ async def ensure_default_recipes(session: AsyncSession) -> Recipe | None:
         kind="image",
         engine=ENGINE_COMFYUI,
         workflow_template_ref={"name": DEFAULT_TEMPLATE_NAME, "sha256": digest},
+        workflow_version_id=_version_id(versions, DEFAULT_TEMPLATE_NAME),
         input_schema=dict(DEFAULT_INPUT_SCHEMA),
         defaults=dict(DEFAULT_VALUES),
         # テンプレート更新時は既存Recipeを書き換えず、後継として並べる。
@@ -111,9 +116,6 @@ async def ensure_default_recipes(session: AsyncSession) -> Recipe | None:
     logger.info("既定Recipeを登録しました。recipe_id=%s", recipe.id)
     return recipe
 
-
-#: 音声Recipeが指す実行スナップショットの形。ComfyUIのWorkflowテンプレートに当たる。
-VOICE_TEMPLATE_NAME = "voice_runner_request"
 
 #: 画面へ出す入力欄の定義。参照音声の取り込みとVoice Canonの選択は画面が組み立てる。
 VOICE_INPUT_SCHEMA: dict[str, Any] = {
@@ -163,7 +165,9 @@ VOICE_RECIPES: tuple[tuple[str, str], ...] = (
 )
 
 
-async def ensure_voice_recipes(session: AsyncSession) -> list[Recipe]:
+async def ensure_voice_recipes(
+    session: AsyncSession, versions: Mapping[str, WorkflowVersion]
+) -> list[Recipe]:
     """音声Backendごとの既定Recipeを登録する。
 
     スナップショットの形が変わったときは既存Recipeを書き換えず、後継Recipeを追加
@@ -194,6 +198,7 @@ async def ensure_voice_recipes(session: AsyncSession) -> list[Recipe]:
                 "name": VOICE_TEMPLATE_NAME,
                 "version": voice_plan.SNAPSHOT_VERSION,
             },
+            workflow_version_id=_version_id(versions, VOICE_TEMPLATE_NAME),
             input_schema=dict(VOICE_INPUT_SCHEMA),
             defaults=dict(VOICE_DEFAULTS),
             supersedes_recipe_id=existing[0].id if existing else None,
@@ -425,7 +430,9 @@ async def _existing_recipes(session: AsyncSession, name: str) -> list[Recipe]:
     return list(result.scalars().all())
 
 
-async def ensure_media_recipes(session: AsyncSession) -> list[Recipe]:
+async def ensure_media_recipes(
+    session: AsyncSession, versions: Mapping[str, WorkflowVersion]
+) -> list[Recipe]:
     """動画・音楽・合成の既定Recipeを登録する。
 
     テンプレートやスナップショットの形が変わったときは既存Recipeを書き換えず、後継
@@ -448,6 +455,7 @@ async def ensure_media_recipes(session: AsyncSession) -> list[Recipe]:
                 kind=kind,
                 engine=ENGINE_COMFYUI,
                 template_ref={"name": template_name, "sha256": digest},
+                workflow_version_id=_version_id(versions, template_name),
                 schema=schema,
                 defaults=defaults,
                 existing=existing,
@@ -469,6 +477,9 @@ async def ensure_media_recipes(session: AsyncSession) -> list[Recipe]:
                     "name": compose_plan.COMPOSE_TEMPLATE_NAME,
                     "version": compose_plan.SNAPSHOT_VERSION,
                 },
+                workflow_version_id=_version_id(
+                    versions, compose_plan.COMPOSE_TEMPLATE_NAME
+                ),
                 schema=COMPOSE_INPUT_SCHEMA,
                 defaults=COMPOSE_DEFAULTS,
                 existing=existing,
@@ -483,12 +494,21 @@ async def ensure_media_recipes(session: AsyncSession) -> list[Recipe]:
     return created
 
 
+def _version_id(
+    versions: Mapping[str, WorkflowVersion], workflow_name: str
+) -> str | None:
+    """登録済みWorkflow版のIDを引く。未登録なら`workflow_template_ref`だけで残す。"""
+    version = versions.get(workflow_name)
+    return None if version is None else version.id
+
+
 def _new_recipe(
     *,
     name: str,
     kind: str,
     engine: str,
     template_ref: dict[str, Any],
+    workflow_version_id: str | None,
     schema: dict[str, Any],
     defaults: dict[str, Any],
     existing: list[Recipe],
@@ -500,6 +520,7 @@ def _new_recipe(
         kind=kind,
         engine=engine,
         workflow_template_ref=template_ref,
+        workflow_version_id=workflow_version_id,
         input_schema=dict(schema),
         defaults=dict(defaults),
         supersedes_recipe_id=existing[0].id if existing else None,

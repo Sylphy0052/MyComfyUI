@@ -66,6 +66,36 @@
 
 ManifestはJobごとに1件とする。`engine_version`だけは実行Backendの実測値であり、Job作成時点では確定できない。Job作成時にBackendへ接続しなければキューへ積めなくなるため、Adapterが実行を開始した直後に1回だけ設定し、以後は上書きしない。値が入る前にJobが失敗した場合はNULLのまま残す。`parameters`はJSON objectとする。`input_refs`は、Canonなどの`source_locator`、`revision`、`path`、`sha256`を持つ不変参照、またはGit管理外の利用者素材用の`kind: "cached_input"`、`relative_path: "inputs/<sha256>/..."`、`sha256`、`media_type`、`byte_size`を持つ入力cache参照の配列として保存する。入力cache参照の`relative_path`も`data_root`基準とする。生成済みArtifactを入力に使った場合は、`kind: "artifact"`、`artifact_id`、`job_id`、`relative_path`、`sha256`を持つArtifact参照を並べる。`parent_artifact_id`は単一の親しか持てず、複数の入力を表現できないためである。`cached_input`とArtifact参照はどちらも参照APIで解決せず、`data_root`配下の実ファイルのhashを記録値と突き合わせて再現可否を判定する。Workflow JSONはArtifact storeへ書き出し、そのSHA-256とArtifact IDで参照する。ManifestとArtifactの内容は変更しない。
 
+### Workflow
+
+|項目|必須|内容|更新可否|
+|---|---|---|---|
+|`id`|必須|Workflow ID|不可|
+|`name`|必須|同梱テンプレート名、またはAdapterのスナップショット名。一意|不可|
+|`kind`|必須|生成種別|不可|
+|`engines`|必須|このWorkflowを実行できるBackendの配列|不可|
+|`created_at`|必須|登録時刻|不可|
+
+Workflow本体はリポジトリ同梱のテンプレートとAdapterの実装であり、この表はその登録簿にあたる。行を足しても実行できるWorkflowは増えない。利用者入力から任意のJSONを実行させない制約は、同梱テンプレートの許可リストで維持する。`engines`を配列にするのは、音声のように同じ形のスナップショットを複数のBackendが使うためである。
+
+### WorkflowVersion
+
+|項目|必須|内容|更新可否|
+|---|---|---|---|
+|`id`|必須|Workflowバージョンの ID|不可|
+|`workflow_id`|必須|対象Workflow ID|不可|
+|`version`|必須|版の識別子。Workflowごとに一意|不可|
+|`template_sha256`|任意|同梱テンプレートのSHA-256。テンプレートファイルを持たない版ではNULL|不可|
+|`variables`|必須|差し替えを許す変数と、その型・必須・書き込み先|不可|
+|`model_slots`|必須|モデルファイル名を受け取る変数と、在庫確認に使うノード定義|不可|
+|`inputs`|必須|素材の取り込みが要る入力|不可|
+|`outputs`|必須|この版が生むArtifactの種別|不可|
+|`created_at`|必須|登録時刻|不可|
+
+版の内容は作成後に書き換えない。テンプレートやスナップショットの形が変われば新しい版を足す。Recipeが指している版を後から書き換えると、過去のJobがどの定義で実行されたか追えなくなるためである。`version`は、テンプレートファイルを持つComfyUI系がそのSHA-256、テンプレートを持たない音声と合成がスナップショットの版番号を文字列にしたものとする。
+
+`workflow_version`はWorkflowの宣言であり、`GenerationManifest.workflow_artifact_id`が指す実行時スナップショットとは別物である。前者は「この版は何を受け取れるか」、後者は「この実行で何を送ったか」を表す。
+
 ### Recipe
 
 |項目|必須|内容|更新可否|
@@ -74,9 +104,14 @@ ManifestはJobごとに1件とする。`engine_version`だけは実行Backendの
 |`name`、`kind`|必須|利用者向け名称と生成種別|不可|
 |`engine`|必須|対象Backend|不可|
 |`workflow_template_ref`|必須|登録済みWorkflow templateの不変参照|不可|
+|`workflow_version_id`|任意|参照するWorkflowバージョンの ID。レジストリ導入前に作られたRecipeではNULL|不可|
 |`input_schema`、`defaults`|必須|受け取る変数と既定値|不可|
 |`supersedes_recipe_id`|任意|置換したRecipe ID|不可|
 |`created_at`|必須|作成時刻|不可|
+
+RecipeはWorkflow本体を書き換えず、指した版が宣言した変数の範囲でだけ値を差し替える。`input_schema`は版の宣言より狭くはできるが広くはできない。版の宣言と同じ定義から組み立てた許可リストで投入前に検証し、宣言に無い変数を指すRecipeではJobを作らずに失敗させる。`workflow_version_id`を指定せずにRecipeを作った場合は、`workflow_template_ref`から登録済みの版を解決する。解決できなければNULLのままとし、作成は止めない。明示指定した場合は、その版が属するWorkflowの名前と生成種別が`workflow_template_ref`およびRecipeの`kind`と一致することを作成時に確かめる。
+
+レジストリ導入前に作られたRecipeの`workflow_version_id`は、起動時のWorkflow登録に続けて`workflow_template_ref`から解決し、解決できたものだけを後から結ぶ。結ぶのは`workflow_version_id`だけで、Recipeの他の項目は書き換えない。
 
 Recipeの変更は更新ではなく新規Recipeで表し、必要なら`supersedes_recipe_id`で後継を結ぶ。Jobは実行時に使用したRecipe IDを保持する。
 
