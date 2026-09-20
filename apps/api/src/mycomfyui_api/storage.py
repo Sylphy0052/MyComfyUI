@@ -7,7 +7,7 @@
 import hashlib
 import logging
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from mycomfyui_api.settings import Settings, get_settings
 
@@ -82,6 +82,80 @@ def resolve_input(relative_path: str, settings: Settings | None = None) -> Path:
     if not candidate.is_file():
         raise StorageError(f"入力cacheの実ファイルがありません: {relative_path}")
     return candidate
+
+
+def artifact_destination_dir(relative_path: str) -> str:
+    """`data_root`基準の相対パスから、`artifacts_root`基準の親ディレクトリを返す。
+
+    `move_artifact`へ渡せる形で移動元のディレクトリを取り出す。移動に失敗した後始末
+    で元の場所へ戻すときに使い、呼び出し元がパスを組み立てずに済むようにする。
+    """
+    parts = PurePosixPath(relative_path.replace("\\", "/")).parent.parts
+    if not parts or parts[0] != ARTIFACTS_DIR_NAME:
+        raise StorageError(f"Artifact storeの外を参照しています: {relative_path}")
+    return PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else "."
+
+
+def move_artifact(
+    relative_path: str, destination_dir: str, settings: Settings | None = None
+) -> str:
+    """Artifactの実ファイルを`artifacts_root`配下の別ディレクトリへ移し、相対パスを返す。
+
+    移動先は`artifacts_root`配下に限る。`data_root`配下であっても`artifacts/`の外へ
+    出すと`resolve_artifact`が配信を拒み、移動したArtifactを参照できなくなるためで
+    ある。絶対パス、`..`、symlink経由の脱出はいずれも拒否する。
+
+    ファイル名は移動元のものを維持する。移動先の名前を指定できる形にすると、拡張子を
+    偽装したファイルを配置できてしまう。移動先に同名ファイルがある場合も拒否し、既存
+    のArtifactを上書きしない。
+
+    既に移動先にある場合は何もせず現在の相対パスを返す。狙いどおりの状態になっている
+    ことを結果とし、再実行でファイルを二重に動かさない。
+
+    移動元のディレクトリが空になっても消さない。他のArtifactがそのディレクトリを参照
+    しているかを、この関数からは判定できないためである。
+    """
+    settings = settings or get_settings()
+    root = settings.data_root.resolve()
+    source = resolve_artifact(relative_path, settings)
+    directory = _resolve_destination_dir(destination_dir, settings)
+    target = directory / source.name
+    if target == source:
+        return _artifact_relative_path(source, root)
+    if target.exists() or target.is_symlink():
+        raise StorageError(f"移動先に同名のファイルがあります: {target.name}")
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        source.replace(target)
+    except OSError as error:
+        raise StorageError(f"Artifactを移動できません: {relative_path}") from error
+    return _artifact_relative_path(target, root)
+
+
+def _resolve_destination_dir(destination_dir: str, settings: Settings) -> Path:
+    """移動先ディレクトリを`artifacts_root`配下の実パスへ解決する。
+
+    `resolve()`で`..`とsymlinkを畳んでから範囲を判定する。文字列のまま`..`を弾く形に
+    すると、symlinkを経由した脱出を止められない。
+    """
+    candidate = destination_dir.replace("\\", "/").strip().strip("/")
+    if not candidate:
+        raise StorageError("移動先ディレクトリが指定されていません。")
+    if Path(destination_dir).is_absolute():
+        raise StorageError(f"移動先に絶対パスは指定できません: {destination_dir}")
+    artifacts_root = settings.artifacts_root.resolve()
+    directory = (artifacts_root / candidate).resolve()
+    if not directory.is_relative_to(artifacts_root):
+        raise StorageError(f"Artifact storeの外へは移動できません: {destination_dir}")
+    return directory
+
+
+def _artifact_relative_path(path: Path, root: Path) -> str:
+    """`data_root`基準の相対パスへ戻す。DBへ渡すのはこの形だけとする。"""
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError as error:
+        raise StorageError(f"保存先の外を参照しています: {path.name}") from error
 
 
 def write_artifact(

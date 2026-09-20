@@ -37,6 +37,9 @@ MAX_PLAN_TAGS = 10
 #: Recipe案が指定できる入力の件数上限。
 MAX_PLAN_DEFAULTS = 20
 
+#: 資産整理案が指定できる移動先ディレクトリの長さ上限。
+MAX_PLAN_DESTINATION_LENGTH = 500
+
 
 class ProposalOutput(BaseModel):
     """提案出力の基底。未知の項目を受け付けない。"""
@@ -124,11 +127,14 @@ class AssetOrganizationItem(ProposalOutput):
     #: タグの値は保存前にApplication API側の検証を通す。
     add_tags: list[str] = Field(default_factory=list, max_length=MAX_PLAN_TAGS)
     remove_tags: list[str] = Field(default_factory=list, max_length=MAX_PLAN_TAGS)
+    #: 移動先ディレクトリ。Artifact store(`artifacts/`)基準の相対パスとし、空文字は
+    #: 移動しないことを表す。範囲の検証は適用時に行い、範囲外の指定は履歴へ残す。
+    destination_dir: str = Field(default="", max_length=MAX_PLAN_DESTINATION_LENGTH)
     reason: str = Field(default="", max_length=1000)
 
 
 class AssetOrganizationPlanOutput(ProposalOutput):
-    """資産整理案。適用先はタグの更新だけとし、ファイルは移動しない。"""
+    """資産整理案。適用先はタグの更新と、Artifact store内でのファイル移動とする。"""
 
     items: list[AssetOrganizationItem] = Field(min_length=1, max_length=MAX_PLAN_STEPS)
     rationale: str = Field(default="", max_length=2000)
@@ -172,7 +178,10 @@ KIND_DIRECTIVES: dict[AgentProposalKind, str] = {
     ),
     "asset_organization_plan": (
         "与えた既存Artifactの一覧から、付けるとよいタグと外すとよいタグの案を出す。"
-        "artifact_idは一覧にあるものだけを使う。ファイルの移動は提案しない。"
+        "artifact_idは一覧にあるものだけを使う。"
+        "置き場所を変えたい場合はdestination_dirへ移動先を指定する。指定は"
+        "Artifact store(`artifacts/`)基準の相対ディレクトリとし、絶対パスと`..`は"
+        "使わない。移動しない場合は空文字にする。"
     ),
 }
 

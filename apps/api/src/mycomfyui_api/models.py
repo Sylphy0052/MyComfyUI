@@ -361,9 +361,13 @@ class AgentProposalApplication(Base):
     #: 適用状態。`applying`は実行中の印で、同じstepを2つの要求が同時に実行しない
     #: ための占有に使う。プロセスが落ちた場合は起動時に`failed`へ倒す。
     state: Mapped[str] = mapped_column(Text, nullable=False)
-    #: 適用先の種別。`generation_job`/`recipe`/`artifact_tag`のいずれか。
+    #: 適用先の種別。`generation_job`/`recipe`/`artifact_tag`/`artifact_file`の
+    #: いずれか。
     applied_ref_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     applied_ref_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: 適用先のIDだけでは辿れない実行結果。`file.move`は移動元と移動先を残す。
+    #: 他の操作種別はNULLのままとする。
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     failure_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
