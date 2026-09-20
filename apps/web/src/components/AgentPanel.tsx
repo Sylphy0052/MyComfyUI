@@ -6,6 +6,7 @@ import type {
   AgentProposal,
   AgentProposalKind,
   AgentProvider,
+  AgentProviderId,
   ApprovalLog,
   GenerationJob,
   Recipe,
@@ -84,6 +85,9 @@ export function AgentPanel({
   onAppliedJob,
 }: Props) {
   const [providers, setProviders] = useState<AgentProvider[]>([]);
+  // 空文字は「未選択」を表す。未選択なら送信時にProviderを指定せず、サーバの既定
+  // Providerを使う。
+  const [providerId, setProviderId] = useState<AgentProviderId | "">("");
   const [kind, setKind] = useState<AgentProposalKind>("image_prompt");
   const [recipeId, setRecipeId] = useState<string>("");
   const [instruction, setInstruction] = useState("");
@@ -195,6 +199,7 @@ export function AgentPanel({
     try {
       const proposal = await api.createAgentProposal({
         kind,
+        provider_id: providerId || null,
         project_id: projectId,
         scene_id: sceneId,
         shot_id: selectedKind?.needsShot ? shotId : null,
@@ -291,6 +296,24 @@ export function AgentPanel({
           </li>
         ))}
       </ul>
+
+      <label>
+        Provider
+        <select
+          value={providerId}
+          onChange={(event) =>
+            setProviderId(event.target.value as AgentProviderId | "")
+          }
+        >
+          <option value="">設定の既定Providerを使う</option>
+          {providers.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.label} ({provider.id})
+              {provider.available ? "" : " - 利用不可"}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <label>
         提案の種別

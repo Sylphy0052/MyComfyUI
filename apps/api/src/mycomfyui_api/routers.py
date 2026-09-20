@@ -2218,24 +2218,41 @@ async def create_voice_reference(payload: schemas.VoiceReferenceCreate):
     )
 
 
-def get_agent_provider(request: Request) -> AgentProvider:
-    return request.app.state.agent_provider
+def get_agent_providers(request: Request) -> dict[str, AgentProvider]:
+    return request.app.state.agent_providers
 
 
-AgentProviderDep = Annotated[AgentProvider, Depends(get_agent_provider)]
+AgentProvidersDep = Annotated[dict[str, AgentProvider], Depends(get_agent_providers)]
 
 #: 提案の入力へ載せる既存Artifactの取得上限。
 AGENT_CONTEXT_ARTIFACT_LIMIT = 20
 
 
 @router.get("/agent-providers", response_model=list[schemas.AgentProviderRead])
-async def list_agent_providers(provider: AgentProviderDep):
+async def list_agent_providers(providers: AgentProvidersDep):
     """設定済みProviderを返す。接続先と認証情報は返さない。"""
     return [
         schemas.AgentProviderRead(
             id=provider.id, label=provider.label, available=await provider.available()
         )
+        for provider in providers.values()
     ]
+
+
+def _resolve_agent_provider(
+    providers: dict[str, AgentProvider], provider_id: str | None
+) -> AgentProvider:
+    """要求されたProviderを選ぶ。未指定なら設定の既定Providerを使う。"""
+    resolved_id = provider_id or get_settings().agent_provider
+    provider = providers.get(resolved_id)
+    if provider is None:
+        raise ApiError(
+            "AGENT_PROVIDER_NOT_FOUND",
+            "指定されたProviderは利用できません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"provider_id": resolved_id},
+        )
+    return provider
 
 
 async def _fetch_envelopes(
@@ -2439,7 +2456,7 @@ async def create_agent_proposal(
     payload: schemas.AgentProposalCreate,
     session: SessionDep,
     source: ReferenceSourceDep,
-    provider: AgentProviderDep,
+    providers: AgentProvidersDep,
 ):
     """提案を取得して履歴へ残す。生成Jobは作らない。
 
@@ -2448,6 +2465,7 @@ async def create_agent_proposal(
 
     Providerが失敗した場合も提案を`failed`として残し、他の機能は止めない。
     """
+    provider = _resolve_agent_provider(providers, payload.provider_id)
     recipe: Recipe | None = None
     if payload.recipe_id is not None:
         recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
