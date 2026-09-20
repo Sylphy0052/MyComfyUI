@@ -120,7 +120,10 @@ VOICE_INPUT_SCHEMA: dict[str, Any] = {
         "required": True,
         "label": "Voice Canonと参照音声",
         "control": "voices",
-        "help": "台詞のvoice_idごとに、Voice Canonと取り込んだ参照音声を指定する。",
+        "help": (
+            "台詞のvoice_idごとに、Voice Canonと取り込んだ参照音声を指定する。"
+            "Voice Canonの指定は必須とする。"
+        ),
     },
     "profile": {"type": "string", "label": "プロファイル", "control": "text"},
     "language": {"type": "string", "label": "言語", "control": "text"},
