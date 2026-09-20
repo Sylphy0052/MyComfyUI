@@ -93,6 +93,9 @@ novel-writer の `検証_tts/06_seed固定` で 3 engine とも確認されて�
 
 ## 実機での確認
 
-現時点ではこの runner を動かせる GPU マシンを用意できていない。Application API 側は
+Remote GPU ホストは 2026-09-20 に構築した。runner の常駐手順は
+[Remote GPUホストの準備](../../docs/operations/remote-gpu-host.md)の手順 3 にある。
+
+この runner を実機で起動して生成を通した確認はまだ取れていない。Application API 側は
 `MYCOMFYUI_VOICE_STUB=true` のスタブ Backend で経路を確認している。実機で確認すべき
 項目は Issue #11 の「検証計画」に残してある。

@@ -2,7 +2,9 @@
 
 生成Backendを動かすRemote PCの準備手順。構成と判断の根拠は[ADR 0002](../adr/0002-remote-gpu-host.md)に記録する。
 
-手元PC側で必要な設定は`MYCOMFYUI_COMFYUI_BASE_URL`の変更だけとする。Application APIのコードは変更しない。
+手元PC側で必要な設定は接続先URLの変更だけとする。Application APIのコードは変更しない。変えるのはComfyUIを指す`MYCOMFYUI_COMFYUI_BASE_URL`と、`voice-runner`を指す`MYCOMFYUI_VOICE_RUNNER_BASE_URL`である。値は手順7にまとめる。
+
+Remote PCで常駐させるのもComfyUIだけではない。`voice-runner`(既定8770)も常駐させる(手順3)。ComfyUIだけを起動した状態では、画像・動画・音楽は生成できる一方、音声Jobだけが`BACKEND_UNAVAILABLE`で失敗する。
 
 ## 前提
 
@@ -180,6 +182,8 @@ Remote PCへ置くサービスは8188だけではない。`voice-runner`(既定8
 
 この2つは手元PCのApplication APIから接続する([ADR 0002](../adr/0002-remote-gpu-host.md)の配置表)。つまり8188と同じく待受を広げる必要があり、同じく到達元を限定する必要がある。「手元PCから接続しないから`127.0.0.1`のままでよい」が当てはまるのは、Remote PC内だけで完結する別のサービスである。
 
+本節は到達元の制限までを扱う。`voice-runner`本体を起動して常駐させる手順は手順3にある。本節を終えてから手順3のrunner常駐へ進む。
+
 8188の手順をポート番号だけ変えて同じように適用する。
 
 ```powershell
@@ -216,7 +220,9 @@ done
 
 ## 3. 常駐させる
 
-ComfyUIは常駐させる。TTSとWhisperは常駐させない(手順6)。
+常駐させるのはComfyUIと`voice-runner`の2つである。TTSとWhisperのBackendは常駐させない(手順6)。`voice-runner`が要求時に起動し、終了後にプロセスを落としてVRAMを返す。この配置は[ADR 0002](../adr/0002-remote-gpu-host.md)の配置表に記録する。
+
+### ComfyUIを常駐させる
 
 Linuxではsystemdのuser unitを作る。`<user>`と各pathは実際の環境へ置き換える。
 
@@ -274,6 +280,70 @@ ComfyUIはINFOを標準エラーへ出す。障害調査で見るのは`comfyui.
 常駐させる以上、ComfyUI本体とカスタムノードは更新せずに放置しない。LANへ待受を広げた分だけ、これらの脆弱性がそのまま攻撃面になる([ADR 0002](../adr/0002-remote-gpu-host.md))。
 
 カスタムノードにはgit管理下にないものが混じる。HuggingFaceなどからファイルを取得して配置したものがこれにあたり、`git log`では版が分からない。配布元URLと取得時のrevisionを別途記録しておく。ComfyUI Managerの管理対象外になるため、更新確認は手動で行う。
+
+### voice-runnerを常駐させる
+
+`voice-runner`は音声生成(TTS)と読み検証(ASR)のBackendを束ねるHTTPサービスであり、既定で8770を使う。起動と停止はComfyUIと同じく外部運用であり、**Application APIはrunnerのプロセスを起動しない**。この手順を飛ばすと、音声Jobだけが`BACKEND_UNAVAILABLE`で失敗する。runner自身の構成は[voice-runnerのREADME](../../tools/voice-runner/README.md)に記録する。
+
+**先に8770のFirewallルールを入れる。**「ComfyUI以外のポートも同じ扱いにする」の8770向けルール(到達元を手元PCのIPへ限定)を入れてから、以下の常駐設定を行う。`--host 0.0.0.0`はComfyUIと同じく無認証公開である。順序を逆にすると、その間はLAN上の全ホストが生成を投入できる。runnerには認証もrate limitも同時実行数の上限もなく、Application API側の直列キューもrunnerを直接叩かれると迂回される。
+
+runnerはMyComfyUIのリポジトリから起動する。Remote PCへリポジトリをcloneし、uvを入れておく。runner自身のvenvにはFastAPIとUvicornとPyYAMLしか入らないため、GPUもモデルも要らない。
+
+Linuxではsystemdのuser unitを作る。`<user>`と各pathは実際の環境へ置き換える。
+
+```ini
+# ~/.config/systemd/user/voice-runner.service
+[Unit]
+Description=MyComfyUI voice-runner
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/<user>/MyComfyUI
+ExecStart=/home/<user>/.local/bin/uv run --project tools/voice-runner uvicorn voice_runner.app:app --host 0.0.0.0 --port 8770
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/<user>/MyComfyUI/logs/voice-runner.log
+StandardError=append:/home/<user>/MyComfyUI/logs/voice-runner.err
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+mkdir -p ~/MyComfyUI/logs && chmod 700 ~/MyComfyUI/logs
+systemctl --user daemon-reload
+systemctl --user enable --now voice-runner
+```
+
+ComfyUIと同じく`loginctl enable-linger $USER`が要る。ComfyUIの手順で済ませていれば重ねて実行しなくてよい。
+
+WindowsではNSSMでサービス化する。pathは実際の環境へ置き換える。
+
+```powershell
+nssm install voice-runner C:\Users\<user>\.local\bin\uv.exe "run --project tools/voice-runner uvicorn voice_runner.app:app --host 0.0.0.0 --port 8770"
+nssm set voice-runner AppDirectory C:\MyComfyUI
+nssm set voice-runner AppStdout C:\MyComfyUI\logs\voice-runner.log
+nssm set voice-runner AppStderr C:\MyComfyUI\logs\voice-runner.err
+nssm start voice-runner
+```
+
+runner自身のログに残るのは、uvicornのアクセスログと、HTTPへ翻訳されなかった例外のstack traceである。合成するテキストと参照音声はHTTP bodyで渡るため、ログファイルには載らない。Backendが失敗したときの標準エラーも、末尾2000文字がHTTP応答の`detail`へ載るだけでログには出ない(`tools/voice-runner/src/voice_runner/process.py`)。
+
+それでも出力先ディレクトリは、ComfyUIのログと同じく本人だけが読める権限にする。アクセスログには投入の時刻と回数が残り、stack traceには一時ファイルのpathが混じる。Linuxの手順に入れた`chmod 700`はこのためであり、Windowsでも同じく出力先のACLを本人だけへ絞る。
+
+起動したら、Remote PC上で待受とhealthを確かめる。
+
+```bash
+ss -tlnp | grep :8770
+curl http://127.0.0.1:8770/v1/health
+```
+
+`/v1/health`はモデルをロードせず、engineのPython実行ファイルがあるかどうかだけを見る。手順6のvenvが揃う前でも、起動しているかどうかの確認には使える。engineが利用不可で返る場合は手順6を終えてからrunnerを再起動する。
+
+生成が通るのは、手順6のvenvが`tools/voice-runner/engines.yaml`の`python`と一致してからである。runnerが上がっているだけでは音声Jobは成功しない。
+
+手元PCからの疎通確認は手順5と同じく別の端末から行う。到達元制限を確かめる手順は「ComfyUI以外のポートも同じ扱いにする」に置いた。
 
 ## 4. モデル資産を配置する
 
@@ -342,14 +412,21 @@ PYTHONPATH=CosyVoice:CosyVoice/third_party/Matcha-TTS
 cd <cosyvoice-home> && PYTHONPATH=CosyVoice:CosyVoice/third_party/Matcha-TTS .venv/bin/python -c "from cosyvoice.cli.cosyvoice import CosyVoice2"
 ```
 
+importまで確認できたら、手順3の「voice-runnerを常駐させる」へ戻る。venvを置いただけでは音声Jobは通らない。venvを使う側のrunnerが上がっていない限り、Application APIは接続先へ到達できない。
+
 ## 7. 手元PCの接続先を変える
 
 ```dotenv
 MYCOMFYUI_COMFYUI_BASE_URL=http://<remote>:8188
 MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=900
+MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://<remote>:8770
 ```
 
-タイムアウトはネットワーク往復と生成物の転送分の余裕を見る。既定は600秒。
+ComfyUIのタイムアウトはネットワーク往復と生成物の転送分の余裕を見る。既定は600秒。
+
+`MYCOMFYUI_VOICE_RUNNER_BASE_URL`の既定値は`http://127.0.0.1:8770`であり、手元完結構成ではそのままでよい。Remote構成でこの行を落とすと、手元PCの8770へ繋ぎにいって接続を拒否される。冒頭に挙げた症状が出たときは、手順3のrunner常駐と併せてこの値を確かめる。
+
+`MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS`は1台詞あたりの実行上限であり、既定は300秒。Backendのプロセス起動とモデルロードを含む値のため、Remote構成にしたことだけを理由に変えない。実測で足りなければ上げる。
 
 設定の詳細は[Application APIのREADME](../../apps/api/README.md)を参照する。
 
@@ -358,7 +435,7 @@ MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=900
 |症状|失敗コード|確認|
 |---|---|---|
 |Jobがすぐ失敗する|`BACKEND_UNAVAILABLE`|手順1と手順2のFirewallと待受、Remote PCの電源、アドレスの変化|
-|音声Jobだけが失敗する|`BACKEND_UNAVAILABLE`|「ComfyUI以外のポートも同じ扱いにする」の8770。`voice-runner`の待受とFirewall|
+|音声Jobだけが失敗する|`BACKEND_UNAVAILABLE`|手順3の`voice-runner`常駐、手順7の`MYCOMFYUI_VOICE_RUNNER_BASE_URL`、「ComfyUI以外のポートも同じ扱いにする」の8770|
 |実行中に失敗する|`BACKEND_DISCONNECTED`|ネットワークの切断、ComfyUIプロセスの落ち、手順3のログ|
 |モデルが見つからない|`MODEL_NOT_FOUND`|手順4のファイル名とRecipeの指す名前|
 |完了検知が遅い|—|手順5のWebSocket。ポーリングへ落ちていないか|
