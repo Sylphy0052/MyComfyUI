@@ -9,19 +9,26 @@
       {
         "summary": "暗室の赤色光に浮かぶ人物のバストショット。",
         "camera": "bust / eye_level / locked",
-        "characters": ["hirohito"],
+        "characters": [
+          "hirohito"
+        ],
         "duration_sec": 6.0
       },
       {
         "summary": "現像トレイの中で像が浮かび上がる手元のクローズアップ。",
         "camera": "close_up / high_angle / locked",
-        "characters": ["hirohito"],
+        "characters": [
+          "hirohito"
+        ],
         "duration_sec": 4.0
       },
       {
         "summary": "写真を差し出す相手と、それを受け取る手のツーショット。",
         "camera": "medium / eye_level / pan",
-        "characters": ["hirohito", "akari"],
+        "characters": [
+          "hirohito",
+          "akari"
+        ],
         "duration_sec": 5.0
       }
     ],
@@ -51,5 +58,42 @@
       "cfg": 3.5
     },
     "rationale": "既存Recipeの入力欄だけを使って調整した固定応答。"
+  },
+  "workflow_registration_draft": {
+    "name": "暗室ライティング用 Recipe (登録案)",
+    "summary": "基準Recipeと同じWorkflow版に対して、赤色光の単光源向けの既定値を持つRecipeを登録する案。",
+    "defaults": {
+      "positive_prompt": "red safelight, single light source, high contrast"
+    },
+    "rationale": "新しいWorkflowテンプレートを足さず、既存の版に対する既定値の違いだけで表せる範囲の固定応答。"
+  },
+  "batch_generation_plan": {
+    "items": [
+      {
+        "shot_id": "",
+        "positive_prompt": "1girl, darkroom, red safelight, bust shot, cinematic lighting",
+        "negative_prompt": "lowres, bad anatomy, watermark"
+      },
+      {
+        "shot_id": "",
+        "positive_prompt": "close up of developing tray, red safelight, wet print, high contrast",
+        "negative_prompt": "lowres, text, watermark"
+      }
+    ],
+    "rationale": "実在するShot IDを持たない固定応答。計画の並べ方だけを示す。"
+  },
+  "asset_organization_plan": {
+    "items": [
+      {
+        "artifact_id": "",
+        "add_tags": [
+          "darkroom",
+          "lighting-red"
+        ],
+        "remove_tags": [],
+        "reason": "照明条件で後から引けるようにする。"
+      }
+    ],
+    "rationale": "実在するArtifact IDを持たない固定応答。タグの付け方だけを示す。"
   }
 }

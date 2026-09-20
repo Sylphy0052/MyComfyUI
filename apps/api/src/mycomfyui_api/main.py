@@ -26,7 +26,11 @@ from mycomfyui_api.errors import (
     unhandled_error_handler,
     validation_error_handler,
 )
-from mycomfyui_api.queue import JobQueueWorker, recover_interrupted_jobs
+from mycomfyui_api.queue import (
+    JobQueueWorker,
+    recover_interrupted_applications,
+    recover_interrupted_jobs,
+)
 from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
 from mycomfyui_api.settings import get_settings
@@ -52,6 +56,11 @@ async def lifespan(app: FastAPI):
         recovered = await recover_interrupted_jobs(session)
         if recovered:
             logger.info("中断Jobを%d件failedへ倒しました。", recovered)
+        # 適用中のまま終了したstepも同じ理由で失敗へ倒す。占有したままだと同じstepを
+        # 再実行できなくなる。
+        interrupted = await recover_interrupted_applications(session)
+        if interrupted:
+            logger.info("中断した提案の適用を%d件failedへ倒しました。", interrupted)
         # RecipeはWorkflowの版を指すため、レジストリの登録を先に済ませる。
         versions = await ensure_workflows(session)
         await ensure_default_recipes(session, versions)

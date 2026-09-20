@@ -13,7 +13,10 @@ from pydantic import (
 
 from mycomfyui_api import provenance
 from mycomfyui_api.adapters.agent.base import AgentProposalKind
-from mycomfyui_api.adapters.agent.proposals import MAX_INSTRUCTION_LENGTH
+from mycomfyui_api.adapters.agent.proposals import (
+    MAX_INSTRUCTION_LENGTH,
+    MAX_PLAN_STEPS,
+)
 from mycomfyui_api.approvals import OperationEffect
 from mycomfyui_api.settings import AgentProviderId
 from mycomfyui_api.storage import ARTIFACTS_DIR_NAME
@@ -511,7 +514,8 @@ class AgentProposalCreate(ApiModel):
     project_id: AiMediaId
     scene_id: AiMediaId
     shot_id: AiMediaId | None = None
-    #: `image_prompt`では承認後のJob投入先を決めるため必須とする。
+    #: 承認後のJob投入先、またはRecipe案の基準にするRecipe。
+    #: `image_prompt`、`batch_generation_plan`、`workflow_registration_draft`で必須。
     recipe_id: ResourceId | None = None
     instruction: str = Field(default="", max_length=MAX_INSTRUCTION_LENGTH)
 
@@ -519,6 +523,14 @@ class AgentProposalCreate(ApiModel):
     def _require_targets(self) -> "AgentProposalCreate":
         if self.kind == "image_prompt" and (self.shot_id is None or not self.recipe_id):
             raise ValueError("image_promptの提案にはshot_idとrecipe_idが必要です。")
+        # バッチ生成計画はScene配下の複数Shotを対象にするため、投入先のRecipeだけを
+        # 受け取る。Workflow登録案は、案に沿うRecipeを既存のWorkflow版へ登録する
+        # ため、基準にするRecipeを必須とする。
+        if (
+            self.kind in ("batch_generation_plan", "workflow_registration_draft")
+            and not self.recipe_id
+        ):
+            raise ValueError(f"{self.kind}の提案にはrecipe_idが必要です。")
         return self
 
 
@@ -555,8 +567,10 @@ class AgentProposalRead(ApiModel):
     applied_job_id: str | None
     created_at: str
     decided_at: str | None
-    #: 副作用のある操作を伴わない提案ではNoneになる。
+    #: 副作用のある操作を伴わない提案、複数操作を持つ提案ではNoneになる。
     planned_operation: PlannedOperation | None = None
+    #: 承認後に実行する操作の計画。単一操作の提案では1件、表示だけの提案では空になる。
+    planned_operations: list[PlannedOperation] = Field(default_factory=list)
 
 
 class AgentProposalDecision(ApiModel):
@@ -564,6 +578,54 @@ class AgentProposalDecision(ApiModel):
 
     decision: AgentDecision
     actor_id: str = Field(default="local-user", min_length=1, max_length=200)
+
+
+#: 計画1stepの適用状態。`applying`は実行中の占有、`applied`のstepは実行し直さない。
+AgentApplicationState = Literal["pending", "applying", "applied", "failed"]
+
+#: 適用先の種別。どの記録へつながったかを辿るために残す。
+AgentAppliedRefType = Literal["generation_job", "recipe", "artifact_tag"]
+
+
+class AgentProposalApplyRequest(ApiModel):
+    """計画の適用要求。
+
+    `step_indexes`を省略すると未適用のstepを順に処理する。指定すると、そのstepだけを
+    処理する。失敗したstepの再実行に使う。
+    """
+
+    step_indexes: list[int] | None = Field(default=None, max_length=MAX_PLAN_STEPS)
+
+    @field_validator("step_indexes")
+    @classmethod
+    def _check_step_indexes(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return value
+        if not value:
+            raise ValueError("step_indexesを空にできません。")
+        if any(index < 0 for index in value):
+            raise ValueError("step_indexesに負の値を指定できません。")
+        if len(set(value)) != len(value):
+            raise ValueError("step_indexesに重複を指定できません。")
+        return value
+
+
+class AgentProposalApplicationRead(ApiModel):
+    """計画1stepの適用状態。適用先はここから辿る。"""
+
+    id: str
+    proposal_id: str
+    step_index: int
+    operation_type: str
+    operation_digest: str
+    target: dict[str, Any]
+    state: AgentApplicationState
+    applied_ref_type: AgentAppliedRefType | None
+    applied_ref_id: str | None
+    failure_code: str | None
+    failure_message: str | None
+    created_at: str
+    updated_at: str
 
 
 #: 読み検証の実施状況。`verified`以外では`match`がNoneになる。

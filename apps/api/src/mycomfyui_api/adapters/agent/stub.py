@@ -71,5 +71,39 @@ class StubAgentProvider:
         payload = document.get(request.kind)
         if payload is None:
             raise AgentUnavailable(f"fixtureに{request.kind}の提案がありません。")
-        output = proposals.validate_output(request.kind, payload)
+        output = proposals.validate_output(
+            request.kind, _bind_context_ids(request, payload)
+        )
         return ProposalResult(output=output, model=None, usage={})
+
+
+def _bind_context_ids(request: ProposalRequest, payload: Any) -> Any:
+    """準備段階の計画fixtureへ、入力コンテキストに載っているIDを割り当てる。
+
+    適用先を持つ計画は、対象IDが入力の範囲外だとstepごと落ちる。fixtureは固定の
+    ID列を持てないため、渡された一覧の先頭から順に割り当て、CLIを入れていない環境
+    でも承認から適用までを通せるようにする。一覧より多いstepは落とす。
+    """
+    sources = {
+        "batch_generation_plan": ("shots", "id", "shot_id"),
+        "asset_organization_plan": ("artifacts", "artifact_id", "artifact_id"),
+    }
+    binding = sources.get(request.kind)
+    if binding is None or not isinstance(payload, dict):
+        return payload
+    context_key, source_key, target_key = binding
+    entries = request.context.get(context_key)
+    items = payload.get("items")
+    if not isinstance(entries, list) or not isinstance(items, list):
+        return payload
+    available = [
+        entry[source_key]
+        for entry in entries
+        if isinstance(entry, dict) and entry.get(source_key)
+    ]
+    bound = [
+        {**item, target_key: value}
+        for item, value in zip(items, available, strict=False)
+        if isinstance(item, dict)
+    ]
+    return {**payload, "items": bound}

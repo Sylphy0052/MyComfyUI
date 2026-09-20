@@ -25,6 +25,18 @@ MAX_INSTRUCTION_LENGTH = 2000
 #: 参照候補の提示に渡す既存Artifactの上限。
 MAX_CONTEXT_ARTIFACTS = 20
 
+#: バッチ生成計画の提示に渡すShotの上限。
+MAX_CONTEXT_SHOTS = 20
+
+#: 準備段階の提案が持てる適用stepの上限。1回の承認で長時間GPUキューを占有させない。
+MAX_PLAN_STEPS = 20
+
+#: 1件のArtifactへ1回の計画で足せる、または外せるタグの上限。
+MAX_PLAN_TAGS = 10
+
+#: Recipe案が指定できる入力の件数上限。
+MAX_PLAN_DEFAULTS = 20
+
 
 class ProposalOutput(BaseModel):
     """提案出力の基底。未知の項目を受け付けない。"""
@@ -76,11 +88,60 @@ class RecipeDraftOutput(ProposalOutput):
     rationale: str = Field(default="", max_length=2000)
 
 
+class WorkflowRegistrationDraftOutput(ProposalOutput):
+    """Workflow登録案。
+
+    適用先はWorkflowの登録簿ではなくRecipeの登録とする。登録簿は起動時に実装から
+    組み立て直す派生データであり、行を足しても実行できるWorkflowは増えない。案に
+    沿うRecipeを既存のWorkflow版に対して登録し、実行できるテンプレートの許可リストは
+    変えない。
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    summary: str = Field(default="", max_length=2000)
+    #: 基準Recipeが宣言した入力だけを指定する。宣言に無い項目は適用前に落とす。
+    defaults: dict[str, Any] = Field(default_factory=dict)
+    rationale: str = Field(default="", max_length=2000)
+
+
+class BatchGenerationItem(ProposalOutput):
+    #: 対象Shot。入力へ載せたScene配下の一覧にあるものだけを使う。
+    shot_id: str = Field(default="", max_length=200)
+    positive_prompt: str = Field(min_length=1, max_length=4000)
+    negative_prompt: str = Field(default="", max_length=4000)
+
+
+class BatchGenerationPlanOutput(ProposalOutput):
+    """バッチ生成計画。承認後に各Shotの生成Jobを投入する。"""
+
+    items: list[BatchGenerationItem] = Field(min_length=1, max_length=MAX_PLAN_STEPS)
+    rationale: str = Field(default="", max_length=2000)
+
+
+class AssetOrganizationItem(ProposalOutput):
+    #: 対象Artifact。入力へ載せた一覧にあるものだけを使う。
+    artifact_id: str = Field(default="", max_length=36)
+    #: タグの値は保存前にApplication API側の検証を通す。
+    add_tags: list[str] = Field(default_factory=list, max_length=MAX_PLAN_TAGS)
+    remove_tags: list[str] = Field(default_factory=list, max_length=MAX_PLAN_TAGS)
+    reason: str = Field(default="", max_length=1000)
+
+
+class AssetOrganizationPlanOutput(ProposalOutput):
+    """資産整理案。適用先はタグの更新だけとし、ファイルは移動しない。"""
+
+    items: list[AssetOrganizationItem] = Field(min_length=1, max_length=MAX_PLAN_STEPS)
+    rationale: str = Field(default="", max_length=2000)
+
+
 OUTPUT_MODELS: dict[AgentProposalKind, type[ProposalOutput]] = {
     "image_prompt": ImagePromptOutput,
     "shot_breakdown": ShotBreakdownOutput,
     "reference_candidates": ReferenceCandidatesOutput,
     "recipe_draft": RecipeDraftOutput,
+    "workflow_registration_draft": WorkflowRegistrationDraftOutput,
+    "batch_generation_plan": BatchGenerationPlanOutput,
+    "asset_organization_plan": AssetOrganizationPlanOutput,
 }
 
 #: 種別ごとの指示。Providerへ渡すsystem promptの本文へ埋め込む。
@@ -99,6 +160,19 @@ KIND_DIRECTIVES: dict[AgentProposalKind, str] = {
     ),
     "recipe_draft": (
         "与えたShotとRecipeの情報から、次に用意するとよいRecipeの案を出す。"
+    ),
+    "workflow_registration_draft": (
+        "与えた既存Recipeが指すWorkflow版に対して、次に用意するとよいRecipeの案を"
+        "1件出す。defaultsには基準Recipeが宣言した入力だけを指定する。"
+        "新しいWorkflowテンプレートの追加は提案しない。"
+    ),
+    "batch_generation_plan": (
+        "与えたScene配下のShot一覧から、続けて画像を生成するShotと、その"
+        "promptの案を出す。shot_idは一覧にあるものだけを使う。"
+    ),
+    "asset_organization_plan": (
+        "与えた既存Artifactの一覧から、付けるとよいタグと外すとよいタグの案を出す。"
+        "artifact_idは一覧にあるものだけを使う。ファイルの移動は提案しない。"
     ),
 }
 
@@ -201,6 +275,68 @@ def restrict_reference_candidates(
         for candidate in candidates
     ]
     return {**output, "candidates": restricted}
+
+
+def restrict_output(
+    kind: AgentProposalKind,
+    output: dict[str, Any],
+    *,
+    artifact_ids: set[str],
+    shot_ids: set[str],
+    recipe_input_names: set[str],
+) -> dict[str, Any]:
+    """提案の出力を、入力コンテキストへ載せた範囲だけへ制限する。
+
+    IDも入力名もProviderの出力であり、一覧から選ぶという指示を守る保証はない。範囲外
+    のまま履歴へ残すと、適用時に入力へ載せていない対象を触れてしまう。参照候補は値を
+    空にし、適用先を持つ準備段階の計画は該当stepごと落とす。空のIDを適用対象として
+    残さないためである。
+    """
+    if kind == "reference_candidates":
+        return restrict_reference_candidates(kind, output, artifact_ids)
+    if kind == "batch_generation_plan":
+        return _restrict_items(output, "shot_id", shot_ids)
+    if kind == "asset_organization_plan":
+        return _restrict_items(output, "artifact_id", artifact_ids)
+    if kind == "workflow_registration_draft":
+        return _restrict_defaults(output, recipe_input_names)
+    return output
+
+
+def _restrict_items(
+    output: dict[str, Any], key: str, allowed: set[str]
+) -> dict[str, Any]:
+    """計画のstepを、指定のIDが許可された範囲にあるものだけへ絞る。"""
+    items = output.get("items")
+    if not isinstance(items, list):
+        return output
+    kept = [
+        item for item in items if isinstance(item, dict) and item.get(key) in allowed
+    ]
+    return {**output, "items": kept}
+
+
+def _restrict_defaults(
+    output: dict[str, Any], allowed_names: set[str]
+) -> dict[str, Any]:
+    """Recipe案の`defaults`を、基準Recipeが宣言した入力だけへ絞る。
+
+    宣言に無い項目を通すと、基準Recipeの`input_schema`が許さない値をRecipeの既定値
+    として登録できてしまう。値も表示できる型だけへ限り、入れ子のJSONは落とす。
+    """
+    defaults = output.get("defaults")
+    if not isinstance(defaults, dict):
+        return output
+    kept: dict[str, Any] = {}
+    for name, value in defaults.items():
+        if name not in allowed_names or not isinstance(value, (str, int, float, bool)):
+            continue
+        if isinstance(value, str) and len(value) > 4000:
+            continue
+        kept[name] = value
+        if len(kept) >= MAX_PLAN_DEFAULTS:
+            break
+    return {**output, "defaults": kept}
 
 
 def _canon_refs(refs: Any) -> list[dict[str, Any]]:
@@ -316,18 +452,49 @@ def recipe_context(recipe: Any) -> dict[str, Any]:
     }
 
 
-def artifact_context(artifacts: Any) -> list[dict[str, Any]]:
-    """参照候補の提示に渡す既存Artifactの一覧。実ファイルの中身は渡さない。"""
+def artifact_context(
+    artifacts: Any, tags: dict[str, list[str]] | None = None
+) -> list[dict[str, Any]]:
+    """参照候補と資産整理の提示に渡す既存Artifactの一覧。実ファイルの中身は渡さない。
+
+    `tags`を渡すと現在のタグも載せる。資産整理案は既に付いているタグを見ないと、
+    付け直しと外す対象を選べないためである。
+    """
     entries: list[dict[str, Any]] = []
     if not isinstance(artifacts, list):
         return entries
     for artifact in artifacts[:MAX_CONTEXT_ARTIFACTS]:
+        artifact_id = getattr(artifact, "id", None)
+        entry: dict[str, Any] = {
+            "artifact_id": artifact_id,
+            "kind": getattr(artifact, "kind", None),
+            "decision": getattr(artifact, "decision", None),
+            "created_at": getattr(artifact, "created_at", None),
+        }
+        if tags is not None:
+            entry["tags"] = tags.get(str(artifact_id), [])
+        entries.append(entry)
+    return entries
+
+
+def shot_list_context(items: Any) -> list[dict[str, Any]]:
+    """バッチ生成計画に渡すScene配下のShot一覧。
+
+    渡すのは一覧表示に出る項目だけとする。Shot本文は対象のShotを個別に取得したとき
+    だけ渡し、Scene配下の全文を流さない。
+    """
+    entries: list[dict[str, Any]] = []
+    if not isinstance(items, list):
+        return entries
+    for item in items[:MAX_CONTEXT_SHOTS]:
+        if not isinstance(item, dict):
+            continue
         entries.append(
             {
-                "artifact_id": getattr(artifact, "id", None),
-                "kind": getattr(artifact, "kind", None),
-                "decision": getattr(artifact, "decision", None),
-                "created_at": getattr(artifact, "created_at", None),
+                "id": item.get("id"),
+                "sequence": item.get("sequence"),
+                "summary": item.get("summary"),
+                "duration_sec": item.get("duration_sec"),
             }
         )
     return entries
