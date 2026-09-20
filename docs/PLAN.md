@@ -6,7 +6,7 @@
 
 初期版は「Scene/Shotから画像を生成し、Artifactと生成履歴を管理する」ことに絞る。音声、動画、音楽は計画から外さず、画像生成の実行境界と履歴管理が安定してから順に追加する。
 
-新しい生成基盤を一から作らない。`~/workspace/github/novel-writer/tools/ai-media`にあるScene/Shot/Artifact/Voice Canon、ローカルComfyUI、既存の画像・動画・音声・BGM環境をMyComfyUIから操作・可視化する。`novel-writer`の作品正本は参照専用とし、MyComfyUIが無断で書き換えない。`ai-media`を共有ライブラリとして直接取り込まず、JSON Schema、ID、参照、provenanceの契約だけを共有し、実装はローカルAPI境界で分離する。
+新しい生成基盤を一から作らない。`~/workspace/github/novel-writer/tools/ai-media`にあるScene/Shot/Artifact/Voice Canon、ComfyUI、既存の画像・動画・音声・BGM環境をMyComfyUIから操作・可視化する。`novel-writer`の作品正本は参照専用とし、MyComfyUIが無断で書き換えない。`ai-media`を共有ライブラリとして直接取り込まず、JSON Schema、ID、参照、provenanceの契約だけを共有し、実装はローカルAPI境界で分離する。
 
 ## 既存資産と統合方針
 
@@ -36,7 +36,7 @@ ffmpegは後続の動画・音声合成に備えて実行境界だけを初期�
 ## 対象範囲
 
 - 画像:SD1.5、SDXL、Illustrious、Animaをプリセットとして扱う。既存の人物・背景・ポーズ参照をShotへ関連付ける。
-- 動画:MiniMax H3をローカルComfyUI APIへ投入する。動画の尺、参照画像、開始フレーム、音声ガイドを管理する。
+- 動画:MiniMax H3をComfyUI APIへ投入する。動画の尺、参照画像、開始フレーム、音声ガイドを管理する。
 - 音声:PrimaryをQwen3-TTS VoiceClone、SecondaryをVoxCPM2 Cloneとする。CosyVoice3は選択可能な比較用Backendとして保持する。
 - 音楽:ACE-StepでBGMを生成し、ffmpegで動画・音声と合成する。
 - エージェント:Codex、Claude Code、ローカルLLM(Qwen)の選択、指示、結果、変更対象、承認を記録する。
@@ -49,7 +49,7 @@ ffmpegは後続の動画・音声合成に備えて実行境界だけを初期�
 1. Canonは複製せず、IDと参照先で結ぶ。人物設定、参照音源、既存画像の正本を生成リクエストへコピーしない。参照時点は`source locator`、取得可能な不変`revision`、`path`、SHA-256で固定する。
 2. SceneとShotは制作の最小単位とし、生成結果はGeneration Manifestで解決済み入力、モデル、seed、最終プロンプト、実行パラメータ、実行時間を記録する。
 3. H3動画の尺は17k+5フレームのグリッドで決め、音声は動画尺に合わせて無音をパディングする。セリフはかな読みを持たせ、Whisperで読み間違いを検証できるようにする。
-4. 生成エンジンのPython環境は統合しない。ComfyUI、Qwen3-TTS、VoxCPM2、CosyVoice3は既存どおり別venv・別プロセスで起動する。
+4. 生成エンジンのPython環境は統合しない。ComfyUI、Qwen3-TTS、VoxCPM2、CosyVoice3は既存どおり別venv・別プロセスで起動する。これらはGPUを持つRemote PCで動かし、Application APIからはHTTPとWebSocketだけで接続する。配置と待受方式は[ADR 0002](adr/0002-remote-gpu-host.md)に従う。
 5. 大きな生成物はGitへ原則コミットしない。Gitではソース、Schema、ワークフロー、設定例、メタデータを管理し、生成物はローカル資産ストアとメタデータで対応付ける。
 6. APIキーとエージェント認証情報はOSの資格情報ストアまたはローカル環境変数に保存し、リポジトリと実行履歴へ保存しない。
 
@@ -95,7 +95,8 @@ Web UI
 
 - UIは生成エンジン固有のノード名やモデルファイル名へ直接依存しない。プロファイルとAdapterで分離する。
 - `ai-media`とMyComfyUIはJSON Schemaと参照契約だけを共有し、DB Schema、Python依存、リリース周期を結合しない。
-- ComfyUIは既存のローカルエンドポイントを使い、モデル切替時のVRAM断片化を避ける既存の「起動→1コマンド→停止」運用を最初は維持する。
+- Web UI、Application API、SQLite、Artifactストアは手元PCで動かし、GPUを使う生成BackendはLAN上のRemote PCへ置く。生成物は共有フォルダではなくHTTPで受け取る。
+- Remote PCではComfyUIを常駐させ、画像・動画・音楽の生成を1プロセスへ集約する。TTSとWhisperは常駐させず、要求時に起動して終了後にVRAMを返す。VRAM実測値からComfyUIとの同時常駐に耐えないため。
 - ComfyUI、Qwen3-TTS、VoxCPM2、CosyVoice3は別venv・別プロセスのままAdapter越しに扱う。GPU高負荷ジョブは共通キューで直列実行する。
 - MyComfyUI自身のプロジェクトと`novel-writer`の作品を明確に区別する。前者は新規制作・試行を管理し、後者はCanonを参照する場合だけ接続する。
 
