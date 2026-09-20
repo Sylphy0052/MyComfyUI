@@ -691,9 +691,7 @@ def template_defaults(template_name: str) -> dict[str, Any]:
     raw, _ = _load_template(template_name)
     workflow = json.loads(raw)
     if not isinstance(workflow, dict):
-        raise WorkflowError(
-            f"Workflowテンプレートの構造が不正です: {template_name}"
-        )
+        raise WorkflowError(f"Workflowテンプレートの構造が不正です: {template_name}")
     defaults: dict[str, Any] = {}
     for name, variable in binding.variables.items():
         node = binding.nodes.get(variable.role)

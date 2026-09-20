@@ -227,7 +227,8 @@ class GenerationPreviewDiff(ApiModel):
     recipe_default: Any
     #: 今回の入力で確定する値。
     value: Any
-    #: `workflow_default`と`value`が異なるか。
+    #: 基準となる既定値と`value`が異なるか。基準は`workflow_default`とし、それを
+    #: 持たないWorkflowでは`recipe_default`を使う。どちらも無ければ偽とする。
     changed: bool
     #: 値の出所。
     origin: Literal["input", "recipe_default", "workflow_default", "adapter"]

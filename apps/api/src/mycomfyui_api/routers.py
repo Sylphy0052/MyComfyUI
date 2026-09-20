@@ -418,8 +418,9 @@ def _build_workflow_diff(
 ) -> list[schemas.GenerationPreviewDiff]:
     """Workflowの既定値、Recipeの既定値、今回確定する値を変数ごとに並べる。
 
-    テンプレートファイルを持たないengineは`workflow_default`を持たないため、
-    Recipeの既定値と入力の対比だけになる。
+    テンプレートファイルを持たないengineは`workflow_default`を持たない。その場合は
+    Recipeの既定値を基準にして、変わったかどうかを判定する。基準が無ければ、変わって
+    いないものとして扱う。
     """
     workflow_defaults = engine_workflow_defaults(recipe)
     names = sorted(
@@ -430,6 +431,12 @@ def _build_workflow_diff(
         resolved = name in prepared.resolved_inputs
         value = prepared.resolved_inputs.get(name)
         workflow_default = workflow_defaults.get(name)
+        if name in workflow_defaults:
+            baseline: Any = workflow_default
+            has_baseline = True
+        else:
+            baseline = defaults.get(name)
+            has_baseline = name in defaults
         if name in inputs:
             origin = "input"
         elif name in defaults:
@@ -445,9 +452,7 @@ def _build_workflow_diff(
                 recipe_default=defaults.get(name),
                 value=value,
                 # 値が確定していない変数は、既定値から変わっていないものとして扱う。
-                changed=resolved
-                and name in workflow_defaults
-                and value != workflow_default,
+                changed=resolved and has_baseline and value != baseline,
                 origin=origin,
             )
         )
