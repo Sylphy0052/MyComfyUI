@@ -38,10 +38,14 @@ function normalize(injected: unknown): string | null {
   if (injected === undefined) {
     return null;
   }
-  if (typeof injected !== "string" || injected.trim() === "") {
+  if (typeof injected !== "string") {
     console.warn(
-      `${API_BASE_URL_GLOBAL} が文字列の URL ではないため同一 origin を使います`,
+      `${API_BASE_URL_GLOBAL} が文字列ではない (${typeof injected}) ため同一 origin を使います`,
     );
+    return null;
+  }
+  if (injected.trim() === "") {
+    console.warn(`${API_BASE_URL_GLOBAL} が空のため同一 origin を使います`);
     return null;
   }
   let url: URL;
@@ -64,6 +68,11 @@ function normalize(injected: unknown): string | null {
       `${API_BASE_URL_GLOBAL} の host (${url.hostname}) は loopback ではないため同一 origin を使います`,
     );
     return null;
+  }
+  if (url.search !== "" || url.hash !== "") {
+    console.warn(
+      `${API_BASE_URL_GLOBAL} の query と hash は使わずに捨てます`,
+    );
   }
   // 末尾の "/" を落としてから接頭辞を足す。shell が path 付きで渡す場合も保つ。
   const prefix = `${url.origin}${url.pathname}`.replace(/\/+$/, "");
