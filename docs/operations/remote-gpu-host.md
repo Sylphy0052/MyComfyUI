@@ -106,9 +106,11 @@ sudo firewall-cmd --reload
 Get-NetFirewallHyperVVMCreator
 ```
 
+返ってきたWSLのVMCreatorIdを、以下の`<VMCreatorId>`へ入れる。
+
 ```powershell
-Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Block
-New-NetFirewallHyperVRule -Name "ComfyUI-8188" -DisplayName "ComfyUI LAN (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 8188 -RemoteAddresses <手元PCのIP> -Action Allow
+Set-NetFirewallHyperVVMSetting -Name '<VMCreatorId>' -DefaultInboundAction Block
+New-NetFirewallHyperVRule -Name "ComfyUI-8188" -DisplayName "ComfyUI LAN (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '<VMCreatorId>' -Protocol TCP -LocalPorts 8188 -RemoteAddresses <手元PCのIP> -Action Allow
 ```
 
 作成後、`EnforcementStatus`が`OK`で`RemoteAddresses`が意図したアドレスであることを確かめる。
@@ -129,16 +131,30 @@ sudo ufw allow in on loopback0
 
 ### ComfyUI以外のポート
 
-Remote PCへ置くサービスは8188だけではない。`voice-runner`(既定8770)と、`novel-writer`側の`ai-media`参照API(既定8765)も同じマシンで動く。これらにも認証機構はない。
+Remote PCへ置くサービスは8188だけではない。`voice-runner`(既定8770)と、`novel-writer`側の`ai-media`参照API(既定8765)も同じマシンで動く。いずれも認証機構を持たない。
 
-8188と同じ扱いにする。待受を`0.0.0.0`へ広げるのは手元PCから接続する必要があるものだけとし、広げたポートはFirewallで到達元を手元PCのアドレスへ限定する。WSL2なら2層とも設定する。
+この2つは手元PCのApplication APIから接続する([ADR 0002](../adr/0002-remote-gpu-host.md)の配置表)。つまり8188と同じく待受を広げる必要があり、同じく到達元を限定する必要がある。「手元PCから接続しないから`127.0.0.1`のままでよい」が当てはまるのは、Remote PC内だけで完結する別のサービスである。
 
-手元PCから接続しないサービスは`127.0.0.1`へbindしたままにする。Remote PC内だけで完結するなら、待受を広げる理由がない。
+8188のレシピをポート番号だけ変えて同じように適用する。
+
+```powershell
+# WSL2の場合。8188と同じVMCreatorIdを使う
+New-NetFirewallHyperVRule -Name "voice-runner-8770" -DisplayName "voice-runner LAN (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '<VMCreatorId>' -Protocol TCP -LocalPorts 8770 -RemoteAddresses <手元PCのIP> -Action Allow
+New-NetFirewallHyperVRule -Name "ai-media-8765" -DisplayName "ai-media reference API (from <手元PCのIP>)" -Direction Inbound -VMCreatorId '<VMCreatorId>' -Protocol TCP -LocalPorts 8765 -RemoteAddresses <手元PCのIP> -Action Allow
+```
 
 ```bash
-# 待受を広げたポートの棚卸し。0.0.0.0 で待っているものを確認する
-ss -tlnp | grep -v '127\.0\.0\.1'
+# ufw。`ufw allow 8770/tcp` のように送信元を書かないルールは作らない
+sudo ufw allow from <手元PCのIP> to any port 8770 proto tcp
+sudo ufw allow from <手元PCのIP> to any port 8765 proto tcp
 ```
+
+firewalldの場合は8188と同じ`--add-rich-rule`をポート番号だけ変えて足す。
+
+設定後、次の2つを確かめる。前者だけでは送信元制限が効いているかは分からない。
+
+- Remote PCで`ss -tlnp | grep -E '8188|8765|8770'`を実行し、広げたポートだけが`0.0.0.0`で待っていること。`127.0.0.1`や`::1`で待っているものは外から到達しない
+- **手元PC以外の端末**から`curl http://<remote>:8770/`と`curl http://<remote>:8765/`が失敗すること。Firewallの到達元制限はこれでしか検証できない
 
 この送信元制限はネットワークアドレスに基づくものであり、認証ではない。同一セグメント内でのIP偽装には耐えられない。判断の前提は[ADR 0002](../adr/0002-remote-gpu-host.md)に記録する。
 
