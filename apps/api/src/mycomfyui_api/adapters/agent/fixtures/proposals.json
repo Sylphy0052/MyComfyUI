@@ -91,9 +91,10 @@
           "lighting-red"
         ],
         "remove_tags": [],
+        "destination_dir": "curated/darkroom",
         "reason": "照明条件で後から引けるようにする。"
       }
     ],
-    "rationale": "実在するArtifact IDを持たない固定応答。タグの付け方だけを示す。"
+    "rationale": "実在するArtifact IDを持たない固定応答。タグの付け方と移動先の書き方を示す。"
   }
 }

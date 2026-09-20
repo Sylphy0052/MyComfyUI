@@ -584,7 +584,9 @@ class AgentProposalDecision(ApiModel):
 AgentApplicationState = Literal["pending", "applying", "applied", "failed"]
 
 #: 適用先の種別。どの記録へつながったかを辿るために残す。
-AgentAppliedRefType = Literal["generation_job", "recipe", "artifact_tag"]
+AgentAppliedRefType = Literal[
+    "generation_job", "recipe", "artifact_tag", "artifact_file"
+]
 
 
 class AgentProposalApplyRequest(ApiModel):
@@ -622,6 +624,8 @@ class AgentProposalApplicationRead(ApiModel):
     state: AgentApplicationState
     applied_ref_type: AgentAppliedRefType | None
     applied_ref_id: str | None
+    #: 適用先のIDだけでは辿れない実行結果。`file.move`は移動元と移動先を持つ。
+    result: dict[str, Any] | None
     failure_code: str | None
     failure_message: str | None
     created_at: str

@@ -200,7 +200,10 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 |---|---|
 |`agent.propose`|副作用なし。承認を求めずに実行する|
 |`generation_job.create`|承認必須。ApprovalLogの承認を確認してから実行する|
-|`file.move`、`git.commit`、`external.send`|初期版では実行しない|
+|`recipe.create`|承認必須。基準Recipeを引き継ぎ、提案が決めるのは名前と既定値だけとする|
+|`artifact_tag.update`|承認必須。タグだけを更新し、ファイルには触れない|
+|`file.move`|承認必須。Artifact store(`artifacts/`)配下でのみ動かし、store外へは出さない|
+|`git.commit`、`external.send`|実行しない|
 
 承認と実行は別の操作として分ける。承認しただけでは何も実行せず、実行時に次をすべて満たす場合だけ進める。
 

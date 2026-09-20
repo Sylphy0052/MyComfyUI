@@ -24,7 +24,7 @@ OPERATION_GENERATION_JOB_CREATE = "generation_job.create"
 OPERATION_RECIPE_CREATE = "recipe.create"
 #: Artifactのタグ付与・除去。ファイルには触れない。
 OPERATION_ARTIFACT_TAG_UPDATE = "artifact_tag.update"
-#: 資産ファイルの移動。本Issueでは実装しない。
+#: 資産ファイルの移動。Artifact store内でのみ動かし、store外へは出さない。
 OPERATION_FILE_MOVE = "file.move"
 #: Git操作。本Issueでは実装しない。
 OPERATION_GIT_COMMIT = "git.commit"
@@ -39,7 +39,7 @@ OPERATION_POLICIES: dict[str, OperationEffect] = {
     OPERATION_GENERATION_JOB_CREATE: "requires_approval",
     OPERATION_RECIPE_CREATE: "requires_approval",
     OPERATION_ARTIFACT_TAG_UPDATE: "requires_approval",
-    OPERATION_FILE_MOVE: "forbidden",
+    OPERATION_FILE_MOVE: "requires_approval",
     OPERATION_GIT_COMMIT: "forbidden",
     OPERATION_EXTERNAL_SEND: "forbidden",
 }
@@ -72,9 +72,7 @@ def require_executable(operation_type: str) -> OperationEffect:
     """
     effect = effect_of(operation_type)
     if effect == "forbidden":
-        raise OperationNotAllowed(
-            f"本Issueでは実行しない操作種別です: {operation_type}"
-        )
+        raise OperationNotAllowed(f"実行を許可していない操作種別です: {operation_type}")
     return effect
 
 

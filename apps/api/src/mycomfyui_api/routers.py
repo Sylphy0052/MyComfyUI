@@ -2552,13 +2552,41 @@ def _plan_tags(values: Any) -> list[str]:
     return tags
 
 
+def _plan_destination_dir(value: Any) -> str:
+    """計画が指定した移動先を、操作へ載せられる形へ揃える。
+
+    ここでは空かどうかと長さだけを見る。上限を超える値は`_plan_tags`と同じく黙って
+    捨てる。保存できない値であり、履歴へ残す意味がないためである。
+
+    一方で`artifacts/`配下かどうかの判定は`storage.move_artifact`で行い、範囲外の指定
+    は適用の失敗として履歴へ残す。範囲外は「保存できない値」ではなく利用者が確かめる
+    べき指定であり、組み立ての時点で落とすと拒否した事実がどこにも残らない。
+    """
+    if not isinstance(value, str):
+        return ""
+    destination = value.strip()
+    if len(destination) > proposals.MAX_PLAN_DESTINATION_LENGTH:
+        logger.info(
+            "移動先が長すぎるため移動stepを作りません。length=%d", len(destination)
+        )
+        return ""
+    return destination
+
+
 def _asset_organization_operations(
     proposal: AgentProposal, output: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """資産整理案から、Artifactごとのタグ更新操作を組み立てる。
+    """資産整理案から、Artifactごとのタグ更新とファイル移動の操作を組み立てる。
 
     付与と除去に同じタグが並んだ場合は付与を残す。順序で結果が変わる指定を、実行する
-    側の順番任せにしない。付けるものも外すものも無いstepは操作にしない。
+    側の順番任せにしない。付けるものも外すものも無く、移動先も無いstepは操作にしない。
+
+    1件のitemはタグ更新と移動の最大2操作になる。同一item内はタグ更新を先に固定する。
+    stepの並びが変わるとdigestの突き合わせが成り立たないためである。
+
+    操作の総数は`MAX_PLAN_STEPS`で止める。1件のitemから作る操作は分割せず、入り切ら
+    なければそのitemごと落とす。タグだけ適用して移動を落とす形にしない。入り切らない
+    itemがあっても後続は見る。1操作だけのitemなら収まることがあるためである。
     """
     items = output.get("items")
     if not isinstance(items, list):
@@ -2574,15 +2602,34 @@ def _asset_organization_operations(
         remove_tags = [
             tag for tag in _plan_tags(item.get("remove_tags")) if tag not in add_tags
         ]
-        if not add_tags and not remove_tags:
+        destination_dir = _plan_destination_dir(item.get("destination_dir"))
+        planned: list[dict[str, Any]] = []
+        if add_tags or remove_tags:
+            planned.append(
+                {
+                    "type": approvals.OPERATION_ARTIFACT_TAG_UPDATE,
+                    "target": {"artifact_id": artifact_id},
+                    "payload": {"add_tags": add_tags, "remove_tags": remove_tags},
+                }
+            )
+        if destination_dir:
+            # 移動元の実パスは載せない。ここでDBを引くと提案一覧の取得が提案件数分の
+            # 追加クエリになる。実パスは適用時に解決し、結果を履歴へ残す。
+            planned.append(
+                {
+                    "type": approvals.OPERATION_FILE_MOVE,
+                    "target": {"artifact_id": artifact_id},
+                    "payload": {"destination_dir": destination_dir},
+                }
+            )
+        if not planned:
             continue
-        operations.append(
-            {
-                "type": approvals.OPERATION_ARTIFACT_TAG_UPDATE,
-                "target": {"artifact_id": artifact_id},
-                "payload": {"add_tags": add_tags, "remove_tags": remove_tags},
-            }
-        )
+        if len(operations) + len(planned) > proposals.MAX_PLAN_STEPS:
+            logger.info(
+                "操作の上限を超えるitemを落とします。artifact_id=%s", artifact_id
+            )
+            continue
+        operations.extend(planned)
     return operations
 
 
@@ -3221,15 +3268,104 @@ async def _apply_artifact_tag_update(
     return artifact_id
 
 
+async def _apply_file_move(
+    session: AsyncSession, operation: dict[str, Any]
+) -> tuple[str, dict[str, str]]:
+    """資産整理案の移動stepを適用し、対象ArtifactのIDと移動の結果を返す。
+
+    移動元は提案ではなくDBの`relative_path`から引く。Providerの出力を移動元として
+    信用すると、Artifact storeの任意のファイルを動かせてしまう。
+
+    パスの検証は`storage.move_artifact`へ任せる。範囲外の指定は`ApiError`へ変換し、
+    stepの失敗として理由を履歴へ残す。
+
+    ファイルを動かしてからDBを更新し、更新に失敗した場合は元の場所へ戻す。逆順にする
+    と、DBだけが移動後を指す状態が残る。
+
+    移動とDBの更新の間でプロセスが落ちた場合は戻す処理まで到達しない。その場合だけ、
+    再実行時に移動先の実ファイルを`storage.adopt_moved_artifact`で拾い、DBの追従だけ
+    を済ませる。移動元が消えたまま失敗し続ける状態を残さないためである。
+    """
+    artifact_id = operation["target"]["artifact_id"]
+    artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    from_path = artifact.relative_path
+    destination_dir = operation["payload"]["destination_dir"]
+    try:
+        to_path = storage.move_artifact(from_path, destination_dir)
+    except storage.StorageError as error:
+        adopted = storage.adopt_moved_artifact(
+            from_path, destination_dir, artifact.sha256
+        )
+        if adopted is None:
+            raise ApiError(
+                "ARTIFACT_MOVE_REJECTED",
+                str(error),
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                details={
+                    "artifact_id": artifact_id,
+                    "destination_dir": destination_dir,
+                },
+            ) from error
+        logger.info(
+            "移動済みの実ファイルを拾ってDBを追従させます。artifact_id=%s from=%s to=%s",
+            artifact_id,
+            from_path,
+            adopted,
+        )
+        to_path = adopted
+    result = {"from_path": from_path, "to_path": to_path}
+    if to_path == from_path:
+        # 既に移動先にある。狙いどおりの状態のため、DBも書き換えずに成功とする。
+        return artifact_id, result
+    artifact.relative_path = to_path
+    try:
+        await _commit(session)
+    except (ApiError, SQLAlchemyError) as error:
+        await session.rollback()
+        restored = True
+        try:
+            storage.move_artifact(to_path, storage.artifact_destination_dir(from_path))
+        except storage.StorageError:
+            restored = False
+            logger.exception(
+                "移動したArtifactを戻せません。artifact_id=%s from=%s to=%s",
+                artifact_id,
+                from_path,
+                to_path,
+            )
+        # 戻せた場合と戻せなかった場合で、次にすべきことが変わる。戻せなかったときは
+        # 実ファイルの居場所を失敗の記録へ残し、手当ての対象が分かるようにする。
+        raise ApiError(
+            "ARTIFACT_MOVE_NOT_RECORDED",
+            (
+                "Artifactの移動を記録できません。移動は取り消しました。"
+                if restored
+                else "Artifactの移動を記録できず、実ファイルを戻せませんでした。"
+                "移動先のファイルを確認してください。"
+            ),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={
+                "artifact_id": artifact_id,
+                "from_path": from_path,
+                "to_path": to_path,
+                "restored": restored,
+            },
+        ) from error
+    return artifact_id, result
+
+
 async def _execute_application(
     session: AsyncSession,
     source: ReferenceSource,
     operation: dict[str, Any],
-) -> tuple[str, str]:
-    """1stepを実行し、適用先の種別とIDを返す。
+) -> tuple[str, str, dict[str, Any] | None]:
+    """1stepを実行し、適用先の種別とID、実行の結果を返す。
 
     実行は既存の経路をそのまま使う。承認と履歴の形を揃えるために、ここへJob作成や
     Recipe登録の別実装を置かない。
+
+    結果は適用先のIDだけでは足りない操作のためにある。`file.move`が実際に動かした
+    移動元・移動先を返し、他の操作種別は`None`を返す。
     """
     operation_type = operation["type"]
     if operation_type == approvals.OPERATION_GENERATION_JOB_CREATE:
@@ -3246,11 +3382,18 @@ async def _execute_application(
             session=session,
             source=source,
         )
-        return "generation_job", job.id
+        return "generation_job", job.id, None
     if operation_type == approvals.OPERATION_RECIPE_CREATE:
-        return "recipe", await _apply_recipe_registration(session, operation)
+        return "recipe", await _apply_recipe_registration(session, operation), None
     if operation_type == approvals.OPERATION_ARTIFACT_TAG_UPDATE:
-        return "artifact_tag", await _apply_artifact_tag_update(session, operation)
+        return (
+            "artifact_tag",
+            await _apply_artifact_tag_update(session, operation),
+            None,
+        )
+    if operation_type == approvals.OPERATION_FILE_MOVE:
+        artifact_id, result = await _apply_file_move(session, operation)
+        return "artifact_file", artifact_id, result
     # 許可リストの確認を通った種別だけがここへ来る。実装の取りこぼしを実行時に握り
     # つぶさず、許可リストと実装の食い違いとして落とす。
     raise approvals.OperationNotAllowed(
@@ -3381,7 +3524,9 @@ async def apply_agent_proposal_steps(
             )
             continue
         try:
-            ref_type, ref_id = await _execute_application(session, source, operation)
+            ref_type, ref_id, result = await _execute_application(
+                session, source, operation
+            )
         except (ApiError, approvals.OperationNotAllowed) as error:
             # 失敗したstepだけを記録して打ち切る。後続を続けると、失敗の原因が共通
             # している場合に同じ失敗を残りのstep分だけ積み増すことになる。
@@ -3440,6 +3585,7 @@ async def apply_agent_proposal_steps(
                 state="applied",
                 applied_ref_type=ref_type,
                 applied_ref_id=ref_id,
+                result=result,
                 failure_code=None,
                 failure_message=None,
             )
@@ -3454,13 +3600,18 @@ async def apply_agent_proposal_steps(
                 ref_id,
             )
             await session.rollback()
-            await _relink_application(application_id, ref_type, ref_id)
+            await _relink_application(application_id, ref_type, ref_id, result)
     applications = await _load_applications(session, proposal_id)
     await _sync_proposal_state(session, proposal_id, applications)
     return applications
 
 
-async def _relink_application(application_id: str, ref_type: str, ref_id: str) -> None:
+async def _relink_application(
+    application_id: str,
+    ref_type: str,
+    ref_id: str,
+    result: dict[str, Any] | None = None,
+) -> None:
     """適用済みのstepへ結果を後から書く。応答を組み立てられなかった経路から使う。
 
     呼び出し元のセッションは書けない状態のため、別のセッションで書く。ここでも失敗
@@ -3475,6 +3626,7 @@ async def _relink_application(application_id: str, ref_type: str, ref_id: str) -
                 state="applied",
                 applied_ref_type=ref_type,
                 applied_ref_id=ref_id,
+                result=result,
                 failure_code=None,
                 failure_message=None,
             )
