@@ -2555,14 +2555,20 @@ def _plan_tags(values: Any) -> list[str]:
 def _plan_destination_dir(value: Any) -> str:
     """計画が指定した移動先を、操作へ載せられる形へ揃える。
 
-    ここでは空かどうかと長さだけを見る。`artifacts/`配下かどうかの判定は
-    `storage.move_artifact`で行い、範囲外の指定は適用の失敗として履歴へ残す。組み立て
-    の時点で落とすと、拒否した事実がどこにも残らない。
+    ここでは空かどうかと長さだけを見る。上限を超える値は`_plan_tags`と同じく黙って
+    捨てる。保存できない値であり、履歴へ残す意味がないためである。
+
+    一方で`artifacts/`配下かどうかの判定は`storage.move_artifact`で行い、範囲外の指定
+    は適用の失敗として履歴へ残す。範囲外は「保存できない値」ではなく利用者が確かめる
+    べき指定であり、組み立ての時点で落とすと拒否した事実がどこにも残らない。
     """
     if not isinstance(value, str):
         return ""
     destination = value.strip()
     if len(destination) > proposals.MAX_PLAN_DESTINATION_LENGTH:
+        logger.info(
+            "移動先が長すぎるため移動stepを作りません。length=%d", len(destination)
+        )
         return ""
     return destination
 
@@ -2579,7 +2585,8 @@ def _asset_organization_operations(
     stepの並びが変わるとdigestの突き合わせが成り立たないためである。
 
     操作の総数は`MAX_PLAN_STEPS`で止める。1件のitemから作る操作は分割せず、入り切ら
-    なければそのitemごと落とす。タグだけ適用して移動を落とす形にしない。
+    なければそのitemごと落とす。タグだけ適用して移動を落とす形にしない。入り切らない
+    itemがあっても後続は見る。1操作だけのitemなら収まることがあるためである。
     """
     items = output.get("items")
     if not isinstance(items, list):
@@ -2618,7 +2625,10 @@ def _asset_organization_operations(
         if not planned:
             continue
         if len(operations) + len(planned) > proposals.MAX_PLAN_STEPS:
-            break
+            logger.info(
+                "操作の上限を超えるitemを落とします。artifact_id=%s", artifact_id
+            )
+            continue
         operations.extend(planned)
     return operations
 
@@ -3271,6 +3281,10 @@ async def _apply_file_move(
 
     ファイルを動かしてからDBを更新し、更新に失敗した場合は元の場所へ戻す。逆順にする
     と、DBだけが移動後を指す状態が残る。
+
+    移動とDBの更新の間でプロセスが落ちた場合は戻す処理まで到達しない。その場合だけ、
+    再実行時に移動先の実ファイルを`storage.adopt_moved_artifact`で拾い、DBの追従だけ
+    を済ませる。移動元が消えたまま失敗し続ける状態を残さないためである。
     """
     artifact_id = operation["target"]["artifact_id"]
     artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
@@ -3279,12 +3293,26 @@ async def _apply_file_move(
     try:
         to_path = storage.move_artifact(from_path, destination_dir)
     except storage.StorageError as error:
-        raise ApiError(
-            "ARTIFACT_MOVE_REJECTED",
-            str(error),
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            details={"artifact_id": artifact_id, "destination_dir": destination_dir},
-        ) from error
+        adopted = storage.adopt_moved_artifact(
+            from_path, destination_dir, artifact.sha256
+        )
+        if adopted is None:
+            raise ApiError(
+                "ARTIFACT_MOVE_REJECTED",
+                str(error),
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                details={
+                    "artifact_id": artifact_id,
+                    "destination_dir": destination_dir,
+                },
+            ) from error
+        logger.info(
+            "移動済みの実ファイルを拾ってDBを追従させます。artifact_id=%s from=%s to=%s",
+            artifact_id,
+            from_path,
+            adopted,
+        )
+        to_path = adopted
     result = {"from_path": from_path, "to_path": to_path}
     if to_path == from_path:
         # 既に移動先にある。狙いどおりの状態のため、DBも書き換えずに成功とする。
@@ -3294,20 +3322,34 @@ async def _apply_file_move(
         await _commit(session)
     except (ApiError, SQLAlchemyError) as error:
         await session.rollback()
+        restored = True
         try:
             storage.move_artifact(to_path, storage.artifact_destination_dir(from_path))
         except storage.StorageError:
+            restored = False
             logger.exception(
                 "移動したArtifactを戻せません。artifact_id=%s from=%s to=%s",
                 artifact_id,
                 from_path,
                 to_path,
             )
+        # 戻せた場合と戻せなかった場合で、次にすべきことが変わる。戻せなかったときは
+        # 実ファイルの居場所を失敗の記録へ残し、手当ての対象が分かるようにする。
         raise ApiError(
             "ARTIFACT_MOVE_NOT_RECORDED",
-            "Artifactの移動を記録できません。",
+            (
+                "Artifactの移動を記録できません。移動は取り消しました。"
+                if restored
+                else "Artifactの移動を記録できず、実ファイルを戻せませんでした。"
+                "移動先のファイルを確認してください。"
+            ),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details={"artifact_id": artifact_id},
+            details={
+                "artifact_id": artifact_id,
+                "from_path": from_path,
+                "to_path": to_path,
+                "restored": restored,
+            },
         ) from error
     return artifact_id, result
 

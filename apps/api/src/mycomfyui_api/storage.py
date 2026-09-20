@@ -6,6 +6,7 @@
 
 import hashlib
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -107,7 +108,10 @@ def move_artifact(
 
     ファイル名は移動元のものを維持する。移動先の名前を指定できる形にすると、拡張子を
     偽装したファイルを配置できてしまう。移動先に同名ファイルがある場合も拒否し、既存
-    のArtifactを上書きしない。
+    のArtifactを上書きしない。配置はまずhard linkで名前を取り、取れた場合だけ移動元を
+    消す。存在確認と`replace`の2段では、確認を通った2つの移動が同じ名前へ重なったとき
+    に後勝ちで上書きしてしまう。hard linkを作れないファイルシステムでは、存在確認の
+    うえで`replace`へ落とす。
 
     既に移動先にある場合は何もせず現在の相対パスを返す。狙いどおりの状態になっている
     ことを結果とし、再実行でファイルを二重に動かさない。
@@ -126,10 +130,79 @@ def move_artifact(
         raise StorageError(f"移動先に同名のファイルがあります: {target.name}")
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        source.replace(target)
+        _place(source, target)
+    except FileExistsError as error:
+        raise StorageError(
+            f"移動先に同名のファイルがあります: {target.name}"
+        ) from error
     except OSError as error:
         raise StorageError(f"Artifactを移動できません: {relative_path}") from error
     return _artifact_relative_path(target, root)
+
+
+def _place(source: Path, target: Path) -> None:
+    """移動元を移動先の名前へ置く。既に同じ名前があれば`FileExistsError`とする。
+
+    `os.link`は名前が埋まっていれば失敗するため、確認と配置を1手で行える。hard linkを
+    作れないファイルシステム(FATや一部のマウント)では作成に失敗するため、その場合だけ
+    `replace`へ落とす。落とした先は後勝ちの上書きになるが、呼び出し元が直前に存在を
+    確認している。
+    """
+    try:
+        os.link(source, target)
+    except FileExistsError:
+        raise
+    except OSError:
+        source.replace(target)
+        return
+    source.unlink()
+
+
+def adopt_moved_artifact(
+    relative_path: str,
+    destination_dir: str,
+    sha256: str,
+    settings: Settings | None = None,
+) -> str | None:
+    """移動済みの実ファイルを見つけ、その相対パスを返す。無ければNoneを返す。
+
+    ファイルを動かしてからDBを更新するまでの間にプロセスが落ちると、DBは移動元を
+    指したまま実ファイルだけが移動先にある状態が残る。そのままではArtifactを配信
+    できず、stepを再実行しても移動元が無いため失敗し続ける。
+
+    移動元が消えていて、移動先に記録と同じ内容のファイルがある場合だけ、その
+    ファイルを移動の結果として扱う。同じ名前というだけでは別のファイルを掴みうる
+    ため、Artifactへ記録したSHA-256の一致まで確かめる。
+    """
+    settings = settings or get_settings()
+    root = settings.data_root.resolve()
+    name = PurePosixPath(relative_path.replace("\\", "/")).name
+    if not name:
+        return None
+    try:
+        directory = _resolve_destination_dir(destination_dir, settings)
+    except StorageError:
+        return None
+    if (root / relative_path).exists():
+        return None
+    target = directory / name
+    if target.is_symlink() or not target.is_file():
+        return None
+    try:
+        if _file_sha256(target) != sha256:
+            return None
+    except OSError:
+        return None
+    return _artifact_relative_path(target, root)
+
+
+def _file_sha256(path: Path) -> str:
+    """実ファイルのSHA-256。Artifactの記録と同じ内容かを確かめるのに使う。"""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _resolve_destination_dir(destination_dir: str, settings: Settings) -> Path:
@@ -137,15 +210,25 @@ def _resolve_destination_dir(destination_dir: str, settings: Settings) -> Path:
 
     `resolve()`で`..`とsymlinkを畳んでから範囲を判定する。文字列のまま`..`を弾く形に
     すると、symlinkを経由した脱出を止められない。
+
+    パスとして組み立てられない値もStorageErrorへ揃える。NUL文字のように`Path`が
+    ValueErrorを投げる入力がProviderの出力から届きうるため、未処理の例外で500を
+    返さず、拒否した理由を履歴へ残せる形にする。
     """
     candidate = destination_dir.replace("\\", "/").strip().strip("/")
     if not candidate:
         raise StorageError("移動先ディレクトリが指定されていません。")
-    if Path(destination_dir).is_absolute():
-        raise StorageError(f"移動先に絶対パスは指定できません: {destination_dir}")
     artifacts_root = settings.artifacts_root.resolve()
-    directory = (artifacts_root / candidate).resolve()
-    if not directory.is_relative_to(artifacts_root):
+    try:
+        if Path(destination_dir).is_absolute():
+            raise StorageError(f"移動先に絶対パスは指定できません: {destination_dir}")
+        directory = (artifacts_root / candidate).resolve()
+        is_inside = directory.is_relative_to(artifacts_root)
+    except (ValueError, OSError) as error:
+        raise StorageError(
+            f"移動先として扱えないパスです: {destination_dir!r}"
+        ) from error
+    if not is_inside:
         raise StorageError(f"Artifact storeの外へは移動できません: {destination_dir}")
     return directory
 
