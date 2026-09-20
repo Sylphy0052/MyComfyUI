@@ -328,7 +328,9 @@ nssm set voice-runner AppStderr C:\MyComfyUI\logs\voice-runner.err
 nssm start voice-runner
 ```
 
-runnerのログには、Backendが失敗したときの標準エラーが末尾2000文字まで残る。合成するテキストや参照音声の一時pathが混じりうる。ComfyUIのログと同じく、Remote PCを他の利用者と共有する場合は出力先ディレクトリを本人だけが読める権限にする。Linuxの手順に入れた`chmod 700`はこのためであり、Windowsでも同じく出力先のACLを本人だけへ絞る。
+runner自身のログに残るのはuvicornのアクセスログである。合成するテキストと参照音声はHTTP bodyで渡るためログファイルには載らない。Backendが失敗したときの標準エラーも、末尾2000文字がHTTP応答の`detail`へ載るだけでログには出ない(`tools/voice-runner/src/voice_runner/process.py`)。
+
+それでも出力先ディレクトリは、ComfyUIのログと同じく本人だけが読める権限にする。アクセスログには投入の時刻と回数が残る。加えて、`--log-config`でrootロガーへhandlerを足すと`voice_runner.app`が記録するBackendの失敗もここへ出るようになる。Linuxの手順に入れた`chmod 700`はこのためであり、Windowsでも同じく出力先のACLを本人だけへ絞る。
 
 起動したら、Remote PC上で待受とhealthを確かめる。
 
