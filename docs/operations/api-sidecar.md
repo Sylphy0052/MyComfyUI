@@ -41,6 +41,18 @@ sidecarを起動する側はこの行を読んでAPIの接続先を決める。�
 
 socketはこの行を出す前に確保してある。行が出た時点でportは確定しており、あとは`GET /api/v1/health`が200を返すまで待てばよい。
 
+portが使用中の場合はbindに失敗させる。`SO_REUSEADDR`は設定しない。Windowsでは既にlistenしているsocketと同じportへのbindまで許すため、認証を持たないAPIの待ち受けを別プロセスに横取りされうる。
+
+## 起動に失敗したときの終了コード
+
+起動できない理由は終了コードで分ける。標準エラーには原因の要約を出し、tracebackのままでは落とさない。
+
+- `20`: 設定の値が不正である。範囲外のportや空のhostを渡した場合。
+- `21`: 指定したhostとportにbindできない。portが使用中、権限が足りない、hostを解決できない場合。
+- `3`: uvicornの起動処理が失敗した。migrationの失敗はここに含まれる。
+
+`MYCOMFYUI_API_LISTENING`の行が出ないまま終了したときは、終了コードと標準エラーを見る。
+
 ## 起動時のmigration
 
 起動時にAlembicのmigrationをheadまで適用してから、DBのengineを作る。空の`data_root`を渡してもDBが無いまま動き出すことはない。適用済みなら何もしない。
@@ -105,7 +117,7 @@ Tauriのsidecarは`<name>-<target triple>`の名前で置く。Windows向けな�
 
 ## 受入の確認
 
-`tools/check-sidecar.sh`が起動、DB作成、CORSの挙動をまとめて確かめる。一時ディレクトリを`data_root`にして起動し、確認が終わったら落とす。
+`tools/check-sidecar.sh`が起動、DB作成、CORSの挙動、起動に失敗したときの終了コードをまとめて確かめる。一時ディレクトリを`data_root`にして起動し、確認が終わったら落とす。
 
 ```bash
 bash tools/check-sidecar.sh
