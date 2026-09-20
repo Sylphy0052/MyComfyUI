@@ -12,6 +12,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import PurePosixPath
 from types import TracebackType
 from typing import Any, Self
 from urllib.parse import urlencode
@@ -76,14 +77,37 @@ class WaitResult(Enum):
     CANCEL_REQUESTED = "cancel_requested"
 
 
-#: ComfyUIが履歴の`outputs`へ書く出力キーと、MyComfyUIのArtifact種別の対応。
-#: `SaveVideo`と`SaveAudio`がどのキーを使うかは実機で確認するまで確定できないため、
-#: 画像以外の候補も横断して読む。
+#: ComfyUIが履歴の`outputs`へ書く出力キーと、そのキーの既定のArtifact種別。
+#: 2026-09-20にComfyUI 0.33.0の実機で確認した結果、素の`SaveVideo`は動画を`videos`では
+#: なく`images`へ入れる(`{"images": [{"filename": "...mp4"}], "animated": [true]}`)。
+#: キーだけでは種別を判定できないため、既定として使い、判定は拡張子を優先する。
+#: `videos`と`gifs`はVideo Helper Suite系のカスタムノードが使う。
 OUTPUT_KINDS: dict[str, str] = {
     "images": "image",
     "videos": "video",
     "gifs": "video",
     "audio": "audio",
+}
+
+#: 拡張子から決まるArtifact種別。`SaveAnimatedWEBP`のように`animated`が真でも中身が
+#: 画像のノードがあるため、判定には`animated`ではなく拡張子を使う。`.gif`は載せない。
+#: 出力キー(`gifs`か`images`か)で従来どおり種別が決まるようにする。
+EXTENSION_KINDS: dict[str, str] = {
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".webp": "image",
+    ".mp4": "video",
+    ".webm": "video",
+    ".mkv": "video",
+    ".mov": "video",
+    ".avi": "video",
+    ".flac": "audio",
+    ".wav": "audio",
+    ".mp3": "audio",
+    ".ogg": "audio",
+    ".opus": "audio",
+    ".m4a": "audio",
 }
 
 
@@ -528,11 +552,32 @@ def _execution_error_message(data: dict[str, Any], prompt_id: str) -> str:
     return f"実行エラー (prompt_id={prompt_id})"
 
 
+def _kind_for(filename: str, fallback: str) -> str:
+    """ファイル名からArtifact種別を決める。拡張子が未知なら出力キーの既定に従う。
+
+    既定へ落ちたことはログへ残す。出力キーと中身が食い違うノード(素の`SaveVideo`が
+    その例)では既定が誤るため、誤った種別で記録し続けていることに後から気付けるよう
+    にする。
+    """
+    suffix = PurePosixPath(filename).suffix.lower()
+    kind = EXTENSION_KINDS.get(suffix)
+    if kind is None:
+        logger.info(
+            "拡張子から種別を決められないため出力キーの既定を使います。"
+            "filename=%s kind=%s",
+            filename,
+            fallback,
+        )
+        return fallback
+    return kind
+
+
 def _extract_outputs(entry: dict[str, Any]) -> tuple[OutputRef, ...]:
     """履歴の`outputs`から、取得できる生成物の参照を集める。
 
     ノードごとの出力は種別ごとに別のキーへ入る。どのキーに入るかはノード側の実装で
-    決まるため、扱える種別を横断して読む。
+    決まるため、扱える種別を横断して読む。種別の判定は拡張子を優先する。キーだけでは
+    `SaveVideo`の出力を画像として扱ってしまう(`OUTPUT_KINDS`の注記)。
     """
     outputs = entry.get("outputs")
     if not isinstance(outputs, dict):
@@ -559,7 +604,7 @@ def _extract_outputs(entry: dict[str, Any]) -> tuple[OutputRef, ...]:
                         filename=filename,
                         subfolder=str(item.get("subfolder", "")),
                         type=str(item.get("type", "output")),
-                        kind=kind,
+                        kind=_kind_for(filename, kind),
                     )
                 )
     return tuple(refs)
