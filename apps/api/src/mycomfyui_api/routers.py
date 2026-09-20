@@ -1134,6 +1134,12 @@ async def regenerate_generation_job(
         for ref in (manifest.input_refs or [])
         if isinstance(ref, dict) and ref.get("kind") not in provenance.RESOLVABLE_KINDS
     ]
+    # Scene/Shotが宣言していない、入力として選んだCanon(音声JobのVoice Canonなど)も
+    # 現在の参照で引き直す。ここで拾わないと、派生Jobの履歴からどのCanonで生成したかが
+    # 消える。
+    selected = await _current_selected_canon(
+        source, project_id, manifest.input_refs or []
+    )
     return await _create_derived_job(
         session,
         job,
@@ -1142,7 +1148,7 @@ async def regenerate_generation_job(
         workflow_artifact.id,
         scene_ref=resolved.scene_ref,
         shot_ref=resolved.shot_ref,
-        input_refs=resolved.input_refs(cached),
+        input_refs=_merge_input_refs(resolved.input_refs(cached), selected),
         replay_of_manifest_id=None,
     )
 
