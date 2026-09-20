@@ -983,7 +983,7 @@ export interface components {
             /** Project Id */
             project_id: string;
             /** Provider Id */
-            provider_id?: ("claude_code" | "codex" | "stub") | null;
+            provider_id?: ("claude_code" | "codex" | "qwen" | "stub") | null;
             /** Recipe Id */
             recipe_id?: string | null;
             /** Scene Id */

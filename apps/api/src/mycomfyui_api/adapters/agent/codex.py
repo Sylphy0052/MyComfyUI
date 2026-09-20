@@ -14,10 +14,9 @@ APIキーをMyComfyUI側へ持たず、CLIの既存認証(`codex login`)をそ�
 - 出力形式は`--output-schema`へ渡したJSON Schemaファイルで固定し、`-o`で最終応答だけを
   別ファイルへ書き出す。標準出力のJSONLイベント本文はログへ出さない。
 - Codexの`response_format`はOpenAIのstrict JSON Schemaを要求し、`properties`にある
-  項目を全て`required`へ含めないと400で拒否される(実測で確認)。`proposals.json_schema`
-  はPydanticの`default`を持つ項目を`required`から外すため、ここで全項目を`required`へ
-  足したschemaを別途組み立てる。出力の検証自体は`proposals.validate_output`(Pydantic側)
-  を通すため、Codexが`default`と同じ値を明示的に返しても扱いは変わらない。
+  項目を全て`required`へ含めないと400で拒否される(実測で確認)。この変換は
+  `proposals.strict_json_schema`が行う。出力の検証自体は`proposals.validate_output`
+  (Pydantic側)を通すため、Codexが`default`と同じ値を明示的に返しても扱いは変わらない。
 
 この条件が効くことはCLI 0.154.0で実測した。ファイル書き込みと外部送信(`curl`)を促す
 指示文を与えても、sandboxがどちらも拒否し、承認待ちで停止することもなかった。CLIを
@@ -60,25 +59,8 @@ USAGE_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens")
 
 
 def _strict_schema(kind: AgentProposalKind) -> dict[str, Any]:
-    """理由はモジュールdocstringを参照。`required`を`properties`の全項目へ揃える。"""
-    return _require_all_properties(proposals.json_schema(kind))
-
-
-def _require_all_properties(node: Any) -> Any:
-    """dict/listを再帰的に辿り、object nodeの`required`を`properties`全体へ揃える。
-
-    `$defs`配下のitem型定義にも同じ変換をかけるため、`properties`という名前に
-    決め打ちせず全nodeを見て回る。
-    """
-    if isinstance(node, dict):
-        result = {key: _require_all_properties(value) for key, value in node.items()}
-        properties = result.get("properties")
-        if isinstance(properties, dict):
-            result["required"] = list(properties.keys())
-        return result
-    if isinstance(node, list):
-        return [_require_all_properties(item) for item in node]
-    return node
+    """理由はモジュールdocstringを参照。QwenProviderと同じ変換を共有する。"""
+    return proposals.strict_json_schema(kind)
 
 
 class CodexProvider:

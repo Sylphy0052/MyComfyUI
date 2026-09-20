@@ -32,6 +32,7 @@
                 "enum": [
                   "claude_code",
                   "codex",
+                  "qwen",
                   "stub"
                 ],
                 "type": "string"
