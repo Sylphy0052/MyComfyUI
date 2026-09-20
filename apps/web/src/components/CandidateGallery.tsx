@@ -1,7 +1,5 @@
-import { useState } from "react";
-
-import { api } from "../api/client";
 import type { Artifact, ArtifactDecision } from "../api/client";
+import { ArtifactPreview } from "./ArtifactPreview";
 
 const DECISION_LABEL: Record<string, string> = {
   undecided: "未判断",
@@ -25,9 +23,6 @@ export function CandidateGallery({
   busyArtifactId,
   onDecide,
 }: Props) {
-  // 実ファイルを失った Artifact も記録としては残る。壊れた画像ではなく理由を出す。
-  const [missing, setMissing] = useState<Set<string>>(new Set());
-
   return (
     <section className="panel">
       <h2>候補比較</h2>
@@ -37,20 +32,7 @@ export function CandidateGallery({
         <div className="gallery">
           {candidates.map(({ artifact }) => (
             <figure key={artifact.id} className={artifact.decision}>
-              {missing.has(artifact.id) ? (
-                <p className="muted" style={{ padding: 8 }}>
-                  画像ファイルを取得できません。
-                </p>
-              ) : (
-                <img
-                  src={api.artifactContentUrl(artifact.id)}
-                  alt={`Artifact ${artifact.id}`}
-                  loading="lazy"
-                  onError={() =>
-                    setMissing((current) => new Set(current).add(artifact.id))
-                  }
-                />
-              )}
+              <ArtifactPreview artifact={artifact} />
               <figcaption>
                 <span className="muted">
                   {DECISION_LABEL[artifact.decision] ?? artifact.decision}
