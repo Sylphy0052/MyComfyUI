@@ -77,6 +77,24 @@ class Settings(BaseSettings):
     compose_timeout_seconds: float = Field(default=600.0, gt=0)
     #: 取り込む参照画像とガイド音声の上限バイト数。
     max_image_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
+    #: APIがbindするhost。認証を持たないため、loopback以外へ広げると同一LANの
+    #: 別端末から操作できてしまう。既定はloopbackのままにする。
+    api_host: str = "127.0.0.1"
+    #: bindするport。0を渡すとOSが空きportを選ぶ。
+    api_port: int = Field(default=8000, ge=0, le=65535)
+    #: ブラウザからの呼び出しを許すoriginをカンマ区切りで並べる。空のままなら
+    #: CORSのheaderを返さず、開発時のViteのproxyのように同一originからの呼び出し
+    #: だけが通る。
+    allowed_origins: str = ""
+
+    @property
+    def allowed_origin_list(self) -> tuple[str, ...]:
+        """許可originを並び順のまま返す。空白だけの項目は落とす。"""
+        return tuple(
+            origin.strip()
+            for origin in self.allowed_origins.split(",")
+            if origin.strip()
+        )
 
     @property
     def database_path(self) -> Path:
