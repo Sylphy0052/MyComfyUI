@@ -129,7 +129,13 @@ def move_artifact(
     target = directory / source.name
     if target == source:
         return _artifact_relative_path(source, root)
-    if target.exists() or target.is_symlink():
+    try:
+        taken = target.exists() or target.is_symlink()
+    except OSError as error:
+        # `Path.exists`は権限エラーをそのまま投げる。移動先を確かめられないことも
+        # 他の異常系と同じ形で失敗として残す。
+        raise StorageError(f"移動先を確かめられません: {destination_dir}") from error
+    if taken:
         if _is_same_file(source, target):
             # hard linkを張った後、移動元を消す前に中断した。残りの手順だけ進める。
             # 同じ実体を指しているため、ここで移動元を消しても内容は失われない。
