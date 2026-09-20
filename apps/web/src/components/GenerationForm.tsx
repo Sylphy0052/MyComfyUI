@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { Recipe } from "../api/client";
+import type { ApiError, GenerationPreview, Recipe } from "../api/client";
+import { ExecutionPreview } from "./ExecutionPreview";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -48,6 +49,11 @@ interface Props {
   disabled: boolean;
   submitting: boolean;
   onSubmit: (recipe: Recipe, inputs: Record<string, unknown>) => void;
+  // 投入前の確認もAPIを直接呼ばず、Appから受け取った関数へ委ねる。
+  onPreview: (recipe: Recipe, inputs: Record<string, unknown>) => void;
+  previewing: boolean;
+  preview: GenerationPreview | null;
+  previewError: ApiError | null;
 }
 
 export function GenerationForm({
@@ -55,6 +61,10 @@ export function GenerationForm({
   disabled,
   submitting,
   onSubmit,
+  onPreview,
+  previewing,
+  preview,
+  previewError,
 }: Props) {
   const [recipeId, setRecipeId] = useState<string>("");
   const recipe = useMemo(
@@ -77,17 +87,15 @@ export function GenerationForm({
     }
   }, [recipe]);
 
-  const submit = () => {
-    if (!recipe) {
-      return;
-    }
+  /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
+  const buildInputs = (): Record<string, unknown> | null => {
     const inputs: Record<string, unknown> = {};
     for (const field of fields) {
       const raw = values[field.name] ?? "";
       if (raw.trim() === "") {
         if (field.required) {
           setInvalid(`${field.label}は必須です。`);
-          return;
+          return null;
         }
         // 未入力は送らず、Recipe の既定値を使う。
         continue;
@@ -96,14 +104,14 @@ export function GenerationForm({
         const parsed = Number.parseInt(raw, 10);
         if (!Number.isFinite(parsed)) {
           setInvalid(`${field.label}は整数で入力してください。`);
-          return;
+          return null;
         }
         inputs[field.name] = parsed;
       } else if (field.type === "number") {
         const parsed = Number.parseFloat(raw);
         if (!Number.isFinite(parsed)) {
           setInvalid(`${field.label}は数値で入力してください。`);
-          return;
+          return null;
         }
         inputs[field.name] = parsed;
       } else {
@@ -111,7 +119,30 @@ export function GenerationForm({
       }
     }
     setInvalid(null);
+    return inputs;
+  };
+
+  const submit = () => {
+    if (!recipe) {
+      return;
+    }
+    const inputs = buildInputs();
+    if (!inputs) {
+      return;
+    }
     onSubmit(recipe, inputs);
+  };
+
+  /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
+  const runPreview = () => {
+    if (!recipe) {
+      return;
+    }
+    const inputs = buildInputs();
+    if (!inputs) {
+      return;
+    }
+    onPreview(recipe, inputs);
   };
 
   return (
@@ -164,7 +195,14 @@ export function GenerationForm({
         {invalid && <p className="error">{invalid}</p>}
         {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
 
-        <div>
+        <div className="row">
+          <button
+            type="button"
+            disabled={disabled || previewing || !recipe}
+            onClick={runPreview}
+          >
+            {previewing ? "確認中..." : "投入前に確認"}
+          </button>
           <button
             type="button"
             className="primary"
@@ -174,6 +212,12 @@ export function GenerationForm({
             {submitting ? "投入中..." : "画像生成を投入"}
           </button>
         </div>
+
+        <ExecutionPreview
+          preview={preview}
+          error={previewError}
+          loading={previewing}
+        />
       </div>
     </section>
   );

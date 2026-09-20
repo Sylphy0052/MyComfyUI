@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { Artifact, ComfyUIBackendHealth, GenerationJob, Recipe } from "../api/client";
+import type {
+  Artifact,
+  ComfyUIBackendHealth,
+  GenerationJob,
+  GenerationPreview,
+  Recipe,
+} from "../api/client";
 import type { ShotEnvelope } from "../api/aimedia";
+import { ExecutionPreview } from "./ExecutionPreview";
 
 /** フレーム数のグリッド。17k+5に合わない値はComfyUI側で切り上げられ、指定した尺とずれる。 */
 const FRAME_GRID_STEP = 17;
@@ -115,6 +122,11 @@ export function VideoPanel({
   const [videoArtifactsByJob, setVideoArtifactsByJob] = useState<
     Record<string, Artifact[]>
   >({});
+  const [previewResult, setPreviewResult] = useState<GenerationPreview | null>(
+    null,
+  );
+  const [previewError, setPreviewError] = useState<ApiError | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const recipe = useMemo(
     () => recipes.find((item) => item.id === recipeId) ?? null,
@@ -319,35 +331,34 @@ export function VideoPanel({
     });
   };
 
-  const submit = async () => {
-    if (!projectId || !sceneId || !shotId || !recipe) return;
+  const buildInputs = (): Record<string, unknown> | null => {
     if (!mode) {
       setError("選んだRecipeのWorkflowテンプレートが未対応です。");
-      return;
+      return null;
     }
     if (!prompt.trim()) {
       setError("プロンプトを入力してください。");
-      return;
+      return null;
     }
     if (!Number.isFinite(seconds) || seconds <= 0) {
       setError("秒数は0より大きい数値で入力してください。");
-      return;
+      return null;
     }
     const length = framesFromSeconds(seconds);
     const width = Number.parseInt(widthStr, 10);
     if (!Number.isFinite(width) || width <= 0) {
       setError("幅は正の整数で入力してください。");
-      return;
+      return null;
     }
     const height = Number.parseInt(heightStr, 10);
     if (!Number.isFinite(height) || height <= 0) {
       setError("高さは正の整数で入力してください。");
-      return;
+      return null;
     }
     const seed = Number.parseInt(seedStr || "-1", 10);
     if (!Number.isFinite(seed)) {
       setError("seedは整数で入力してください。");
-      return;
+      return null;
     }
 
     const inputs: Record<string, unknown> = {
@@ -362,13 +373,13 @@ export function VideoPanel({
     if (mode === "ref2v") {
       if (references.length < 1 || references.length > MAX_REFERENCES) {
         setError(`参照画像は1〜${MAX_REFERENCES}枚で指定してください。`);
-        return;
+        return null;
       }
       inputs.references = references.map((item) => item.source);
     } else {
       if (!firstFrame) {
         setError("開始フレームの画像を指定してください。");
-        return;
+        return null;
       }
       inputs.first_frame = firstFrame.source;
     }
@@ -376,7 +387,7 @@ export function VideoPanel({
     if (audioMode === "external_voice") {
       if (!guideAudio) {
         setError("ガイド音声を指定してください。");
-        return;
+        return null;
       }
       const guideFrameIdx = Number.parseInt(guideFrameIdxStr || "0", 10);
       if (
@@ -385,11 +396,19 @@ export function VideoPanel({
         guideFrameIdx >= length
       ) {
         setError(`guide_frame_idxは0以上${length}未満で指定してください。`);
-        return;
+        return null;
       }
       inputs.guide_audio = guideAudio.source;
       inputs.guide_frame_idx = guideFrameIdx;
     }
+
+    return inputs;
+  };
+
+  const submit = async () => {
+    if (!projectId || !sceneId || !shotId || !recipe) return;
+    const inputs = buildInputs();
+    if (!inputs) return;
 
     setSubmitting(true);
     setError(null);
@@ -407,6 +426,36 @@ export function VideoPanel({
       setError(describe(cause));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const runPreview = async () => {
+    if (!projectId || !sceneId || !shotId || !recipe) return;
+    const inputs = buildInputs();
+    if (!inputs) return;
+
+    setPreviewing(true);
+    setError(null);
+    try {
+      const preview = await api.previewJob({
+        kind: "video",
+        project_id: projectId,
+        scene_id: sceneId,
+        shot_id: shotId,
+        recipe_id: recipe.id,
+        inputs,
+      });
+      setPreviewResult(preview);
+      setPreviewError(null);
+    } catch (cause) {
+      if (cause instanceof ApiError) {
+        setPreviewError(cause);
+        setPreviewResult(null);
+      } else {
+        setError(describe(cause));
+      }
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -671,6 +720,13 @@ export function VideoPanel({
         <div>
           <button
             type="button"
+            disabled={submitting || previewing || !shotId || !recipeId}
+            onClick={runPreview}
+          >
+            {previewing ? "確認中..." : "投入前に確認"}
+          </button>
+          <button
+            type="button"
             className="primary"
             disabled={submitting || !shotId || !recipeId}
             onClick={submit}
@@ -678,6 +734,11 @@ export function VideoPanel({
             {submitting ? "投入中..." : "動画生成を投入"}
           </button>
         </div>
+        <ExecutionPreview
+          preview={previewResult}
+          error={previewError}
+          loading={previewing}
+        />
       </div>
 
       <h3 className="muted">生成した動画</h3>

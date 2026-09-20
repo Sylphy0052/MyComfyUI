@@ -414,6 +414,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/generation-jobs/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Generation Job
+         * @description 投入せずに、解決済みの入力とWorkflow既定値からの差分を返す。
+         *
+         *     Jobの作成と同じ経路で参照を解決し実行内容を組み立てるが、スナップショットの
+         *     書き出し、レコードの作成、キュー順の採番は行わない。解決できない入力は作成時と
+         *     同じ`VALIDATION_ERROR`で返し、画面が投入時とプレビューで分岐を二重に持たない
+         *     ようにする。
+         */
+        post: operations["preview_generation_job_api_v1_generation_jobs_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generation-jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -1356,6 +1381,116 @@ export interface components {
             seed: number;
             /** Workflow Artifact Id */
             workflow_artifact_id: string;
+        };
+        /**
+         * GenerationPreviewCreate
+         * @description 投入せずに、解決済みの入力とWorkflow差分だけを確かめる要求。
+         *
+         *     項目はJobの作成要求からキュー順の指定を除いたものとする。プレビューはキューへ
+         *     積まないため、順番を受け取らない。
+         */
+        GenerationPreviewCreate: {
+            /** Input Refs */
+            input_refs?: {
+                [key: string]: unknown;
+            }[];
+            /** Inputs */
+            inputs?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "image" | "video" | "voice" | "music" | "compose";
+            /** Parent Job Id */
+            parent_job_id?: string | null;
+            /** Project Id */
+            project_id: string;
+            /** Recipe Id */
+            recipe_id: string;
+            /** Scene Id */
+            scene_id: string;
+            /** Shot Id */
+            shot_id: string;
+        };
+        /**
+         * GenerationPreviewDiff
+         * @description 1変数について、Workflowの既定値と今回確定する値の対比。
+         */
+        GenerationPreviewDiff: {
+            /** Changed */
+            changed: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "input" | "recipe_default" | "workflow_default" | "adapter";
+            /** Recipe Default */
+            recipe_default: unknown;
+            /** Value */
+            value: unknown;
+            /** Workflow Default */
+            workflow_default: unknown;
+        };
+        /**
+         * GenerationPreviewRead
+         * @description 投入前に確認する、解決済みの実行内容とWorkflow差分。
+         *
+         *     実行スナップショット本体は返さない。Workflow JSONの差分表示は対象外のため、
+         *     確定した値と既定値との対比だけを示す。
+         */
+        GenerationPreviewRead: {
+            /** Canon Refs */
+            canon_refs: {
+                [key: string]: unknown;
+            }[];
+            /** Diff */
+            diff: components["schemas"]["GenerationPreviewDiff"][];
+            /** Engine */
+            engine: string;
+            /** Input Refs */
+            input_refs: {
+                [key: string]: unknown;
+            }[];
+            /** Model */
+            model: {
+                [key: string]: unknown;
+            };
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Parent Job Id */
+            parent_job_id: string | null;
+            /** Resolved Inputs */
+            resolved_inputs: {
+                [key: string]: unknown;
+            };
+            /** Resolved Prompt */
+            resolved_prompt: string;
+            /** Scene Ref */
+            scene_ref: {
+                [key: string]: unknown;
+            };
+            /** Seed */
+            seed: number;
+            /** Seed Auto */
+            seed_auto: boolean;
+            /** Shot Ref */
+            shot_ref: {
+                [key: string]: unknown;
+            };
+            /** Template Sha256 */
+            template_sha256: string | null;
+            /** Version */
+            version: string | null;
+            /** Workflow Name */
+            workflow_name: string | null;
+            /** Workflow Version Id */
+            workflow_version_id: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2358,6 +2493,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerationJobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_generation_job_api_v1_generation_jobs_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationPreviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationPreviewRead"];
                 };
             };
             /** @description Validation Error */

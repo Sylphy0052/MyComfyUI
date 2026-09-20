@@ -3,11 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   GenerationJob,
+  GenerationPreview,
   Recipe,
   VoiceBackendHealth,
   VoiceVerification,
 } from "../api/client";
 import type { CanonDescriptor, ShotEnvelope } from "../api/aimedia";
+import { ExecutionPreview } from "./ExecutionPreview";
 
 /** 1 つの voice_id に対する Voice Canon と参照音声の指定。 */
 interface VoiceBinding {
@@ -83,6 +85,11 @@ export function VoicePanel({
   const [error, setError] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [verifications, setVerifications] = useState<VoiceVerification[]>([]);
+  const [previewResult, setPreviewResult] = useState<GenerationPreview | null>(
+    null,
+  );
+  const [previewError, setPreviewError] = useState<ApiError | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const dialogue = useMemo(() => shot?.data.dialogue ?? [], [shot]);
   const voiceIds = useMemo(
@@ -186,31 +193,28 @@ export function VoicePanel({
     }
   };
 
-  const submit = async () => {
-    if (!projectId || !sceneId || !shotId) return;
-    const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+  const buildInputs = (): Record<string, unknown> | null => {
     const voices: Record<string, unknown> = {};
     for (const voiceId of voiceIds) {
       const binding = bindings[voiceId] ?? EMPTY_BINDING;
       if (!binding.canonId) {
         // どの Voice Canon で生成したかを残さない Job は作らない。
         setError(`${voiceId}のVoice Canonを選んでください。`);
-        return;
+        return null;
       }
       if (!binding.relativePath || !binding.sha256) {
         setError(`${voiceId}の参照音声を取り込んでください。`);
-        return;
+        return null;
       }
       if (!binding.transcript.trim()) {
         // 嘘の参照テキストを渡すと生成が破綻するため、空のまま送らない。
         setError(`${voiceId}の参照テキストを入力してください。`);
-        return;
+        return null;
       }
       const leading = Number.parseFloat(binding.leadingSilenceSec || "0");
       if (!Number.isFinite(leading) || leading < 0) {
         setError(`${voiceId}の先頭無音は0以上の数値で入力してください。`);
-        return;
+        return null;
       }
       voices[voiceId] = {
         canon_id: binding.canonId,
@@ -225,8 +229,24 @@ export function VoicePanel({
     const parsedSeed = Number.parseInt(seed || "-1", 10);
     if (!Number.isFinite(parsedSeed)) {
       setError("seedは整数で入力してください。");
-      return;
+      return null;
     }
+    return {
+      profile,
+      seed: parsedSeed,
+      verify_with_asr: verifyWithAsr,
+      pad_to_duration: padToDuration,
+      voices,
+    };
+  };
+
+  const submit = async () => {
+    if (!projectId || !sceneId || !shotId) return;
+    const recipe = recipes.find((item) => item.id === recipeId);
+    if (!recipe) return;
+    const inputs = buildInputs();
+    if (!inputs) return;
+
     setSubmitting(true);
     setError(null);
     try {
@@ -236,13 +256,7 @@ export function VoicePanel({
         scene_id: sceneId,
         shot_id: shotId,
         recipe_id: recipe.id,
-        inputs: {
-          profile,
-          seed: parsedSeed,
-          verify_with_asr: verifyWithAsr,
-          pad_to_duration: padToDuration,
-          voices,
-        },
+        inputs,
       });
       setSelectedJobId(job.id);
       onSubmittedJob(job);
@@ -250,6 +264,38 @@ export function VoicePanel({
       setError(describe(cause));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const runPreview = async () => {
+    if (!projectId || !sceneId || !shotId) return;
+    const recipe = recipes.find((item) => item.id === recipeId);
+    if (!recipe) return;
+    const inputs = buildInputs();
+    if (!inputs) return;
+
+    setPreviewing(true);
+    setError(null);
+    try {
+      const preview = await api.previewJob({
+        kind: "voice",
+        project_id: projectId,
+        scene_id: sceneId,
+        shot_id: shotId,
+        recipe_id: recipe.id,
+        inputs,
+      });
+      setPreviewResult(preview);
+      setPreviewError(null);
+    } catch (cause) {
+      if (cause instanceof ApiError) {
+        setPreviewError(cause);
+        setPreviewResult(null);
+      } else {
+        setError(describe(cause));
+      }
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -415,6 +461,13 @@ export function VoicePanel({
           <div>
             <button
               type="button"
+              disabled={submitting || previewing || !shotId || !recipeId}
+              onClick={runPreview}
+            >
+              {previewing ? "確認中..." : "投入前に確認"}
+            </button>
+            <button
+              type="button"
               className="primary"
               disabled={submitting || !shotId || !recipeId}
               onClick={submit}
@@ -422,6 +475,11 @@ export function VoicePanel({
               {submitting ? "投入中..." : "音声生成を投入"}
             </button>
           </div>
+          <ExecutionPreview
+            preview={previewResult}
+            error={previewError}
+            loading={previewing}
+          />
         </div>
       )}
 

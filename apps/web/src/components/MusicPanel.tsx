@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { Artifact, GenerationJob, Recipe } from "../api/client";
+import type {
+  Artifact,
+  GenerationJob,
+  GenerationPreview,
+  Recipe,
+} from "../api/client";
 import type { SceneEnvelope } from "../api/aimedia";
+import { ExecutionPreview } from "./ExecutionPreview";
 
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
@@ -39,6 +45,11 @@ export function MusicPanel({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewResult, setPreviewResult] = useState<GenerationPreview | null>(
+    null,
+  );
+  const [previewError, setPreviewError] = useState<ApiError | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [audioArtifactsByJob, setAudioArtifactsByJob] = useState<
     Record<string, Artifact[]>
   >({});
@@ -115,24 +126,35 @@ export function MusicPanel({
     };
   }, [succeededMusicJobIds]);
 
-  const submit = async () => {
-    if (!projectId || !sceneId || !shotId) return;
-    const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+  /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
+  const buildInputs = (): Record<string, unknown> | null => {
     if (!mood.trim()) {
       setError("moodを入力してください。");
-      return;
+      return null;
     }
     const seconds = Number.parseFloat(secondsStr);
     if (!Number.isFinite(seconds) || seconds <= 0) {
       setError("尺は0より大きい数値で入力してください。");
-      return;
+      return null;
     }
     const seed = Number.parseInt(seedStr || "-1", 10);
     if (!Number.isFinite(seed)) {
       setError("seedは整数で入力してください。");
-      return;
+      return null;
     }
+    return {
+      positive_prompt: tags,
+      seconds,
+      seed,
+    };
+  };
+
+  const submit = async () => {
+    if (!projectId || !sceneId || !shotId) return;
+    const recipe = recipes.find((item) => item.id === recipeId);
+    if (!recipe) return;
+    const inputs = buildInputs();
+    if (!inputs) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -142,17 +164,45 @@ export function MusicPanel({
         scene_id: sceneId,
         shot_id: shotId,
         recipe_id: recipe.id,
-        inputs: {
-          positive_prompt: tags,
-          seconds,
-          seed,
-        },
+        inputs,
       });
       onSubmittedJob(job);
     } catch (cause) {
       setError(describe(cause));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
+  const runPreview = async () => {
+    if (!projectId || !sceneId || !shotId) return;
+    const recipe = recipes.find((item) => item.id === recipeId);
+    if (!recipe) return;
+    const inputs = buildInputs();
+    if (!inputs) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      const result = await api.previewJob({
+        kind: "music",
+        project_id: projectId,
+        scene_id: sceneId,
+        shot_id: shotId,
+        recipe_id: recipe.id,
+        inputs,
+      });
+      setPreviewResult(result);
+      setPreviewError(null);
+    } catch (cause) {
+      setPreviewResult(null);
+      if (cause instanceof ApiError) {
+        setPreviewError(cause);
+      } else {
+        setError(describe(cause));
+      }
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -238,7 +288,14 @@ export function MusicPanel({
 
         {error && <p className="error">{error}</p>}
 
-        <div>
+        <div className="row">
+          <button
+            type="button"
+            disabled={previewing || !shotId || !recipeId}
+            onClick={runPreview}
+          >
+            {previewing ? "確認中..." : "投入前に確認"}
+          </button>
           <button
             type="button"
             className="primary"
@@ -248,6 +305,12 @@ export function MusicPanel({
             {submitting ? "投入中..." : "音楽生成を投入"}
           </button>
         </div>
+
+        <ExecutionPreview
+          preview={previewResult}
+          error={previewError}
+          loading={previewing}
+        />
       </div>
 
       <h3 className="muted">生成した音楽</h3>
