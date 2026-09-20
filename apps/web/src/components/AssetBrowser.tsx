@@ -10,6 +10,7 @@ import type {
 import type { SceneSummary, ShotSummary } from "../api/aimedia";
 import { ArtifactDetail } from "./ArtifactDetail";
 import { ArtifactPreview, mediaLabel } from "./ArtifactPreview";
+import { DECISION_LABEL, DECISION_OPTIONS } from "./CandidateGallery";
 
 const KIND_OPTIONS = [
   { value: "image", label: "画像" },
@@ -19,22 +20,10 @@ const KIND_OPTIONS = [
   { value: "log", label: "ログ" },
 ];
 
-const DECISION_OPTIONS = [
-  { value: "undecided", label: "未判断" },
-  { value: "accepted", label: "採用" },
-  { value: "rejected", label: "却下" },
-];
-
 const AVAILABILITY_OPTIONS = [
   { value: "complete", label: "実ファイルあり" },
   { value: "incomplete", label: "実ファイル欠損" },
 ];
-
-const DECISION_LABEL: Record<string, string> = {
-  undecided: "未判断",
-  accepted: "採用",
-  rejected: "却下",
-};
 
 /** 一度に取る件数。資産ブラウザは全件走査ではなく新しい順の窓で見る。 */
 const PAGE_SIZE = 60;

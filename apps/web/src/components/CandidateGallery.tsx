@@ -1,11 +1,16 @@
 import type { Artifact, ArtifactDecision } from "../api/client";
 import { ArtifactPreview } from "./ArtifactPreview";
 
-const DECISION_LABEL: Record<string, string> = {
-  undecided: "未判断",
-  accepted: "採用",
-  rejected: "却下",
-};
+/** 採否の値と表示名。候補比較と資産ブラウザで同じ文言を使う。 */
+export const DECISION_OPTIONS: { value: string; label: string }[] = [
+  { value: "undecided", label: "未判断" },
+  { value: "accepted", label: "採用" },
+  { value: "rejected", label: "却下" },
+];
+
+export const DECISION_LABEL: Record<string, string> = Object.fromEntries(
+  DECISION_OPTIONS.map((option) => [option.value, option.label]),
+);
 
 export interface Candidate {
   artifact: Artifact;

@@ -7,7 +7,7 @@ import type {
 } from "../api/client";
 import { KIND_LABEL, asText, shorten } from "./CanonWarning";
 
-export const STATE_LABEL: Record<string, string> = {
+const STATE_LABEL: Record<string, string> = {
   queued: "待機中",
   running: "実行中",
   cancelling: "取消中",
