@@ -60,11 +60,11 @@
 |`engine_version`|任意|実行Backendのバージョン|実行開始時に1回だけ設定|
 |`model`|必須|モデル識別子、版、SHA-256|不可|
 |`seed`、`resolved_prompt`、`parameters`|必須|解決済みseed、最終prompt、実行パラメータ|不可|
-|`input_refs`|必須|入力素材、Scene、Shot、Canonの不変参照または入力cache参照|不可|
+|`input_refs`|必須|入力素材、Scene、Shot、Canonの不変参照、入力cache参照、Artifact参照|不可|
 |`workflow_artifact_id`|必須|実行時Workflow JSONのArtifact ID|不可|
 |`created_at`|必須|スナップショット確定時刻|不可|
 
-ManifestはJobごとに1件とする。`engine_version`だけは実行Backendの実測値であり、Job作成時点では確定できない。Job作成時にBackendへ接続しなければキューへ積めなくなるため、Adapterが実行を開始した直後に1回だけ設定し、以後は上書きしない。値が入る前にJobが失敗した場合はNULLのまま残す。`parameters`はJSON objectとする。`input_refs`は、Canonなどの`source_locator`、`revision`、`path`、`sha256`を持つ不変参照、またはGit管理外の利用者素材用の`kind: "cached_input"`、`relative_path: "inputs/<sha256>/..."`、`sha256`、`media_type`、`byte_size`を持つ入力cache参照の配列として保存する。入力cache参照の`relative_path`も`data_root`基準とする。Workflow JSONはArtifact storeへ書き出し、そのSHA-256とArtifact IDで参照する。ManifestとArtifactの内容は変更しない。
+ManifestはJobごとに1件とする。`engine_version`だけは実行Backendの実測値であり、Job作成時点では確定できない。Job作成時にBackendへ接続しなければキューへ積めなくなるため、Adapterが実行を開始した直後に1回だけ設定し、以後は上書きしない。値が入る前にJobが失敗した場合はNULLのまま残す。`parameters`はJSON objectとする。`input_refs`は、Canonなどの`source_locator`、`revision`、`path`、`sha256`を持つ不変参照、またはGit管理外の利用者素材用の`kind: "cached_input"`、`relative_path: "inputs/<sha256>/..."`、`sha256`、`media_type`、`byte_size`を持つ入力cache参照の配列として保存する。入力cache参照の`relative_path`も`data_root`基準とする。生成済みArtifactを入力に使った場合は、`kind: "artifact"`、`artifact_id`、`job_id`、`relative_path`、`sha256`を持つArtifact参照を並べる。`parent_artifact_id`は単一の親しか持てず、複数の入力を表現できないためである。`cached_input`とArtifact参照はどちらも参照APIで解決せず、`data_root`配下の実ファイルのhashを記録値と突き合わせて再現可否を判定する。Workflow JSONはArtifact storeへ書き出し、そのSHA-256とArtifact IDで参照する。ManifestとArtifactの内容は変更しない。
 
 ### Recipe
 
@@ -210,6 +210,7 @@ stateDiagram-v2
 - 通常の新規生成では`parent_job_id`と`parent_artifact_id`を設定しない。
 - 既存Jobから再実行する場合は、必ず新しいJobと新しいManifestを作る。元Jobを更新しない。
 - 再実行の新Jobは元Jobの`id`を`parent_job_id`へ設定する。入力Artifactを加工した場合は、新Artifactの`parent_artifact_id`へ元Artifactを設定する。
+- 既存の生成物を入力にして別の生成物を作る場合(動画と音声の合成など)は、主たる入力のJobを`parent_job_id`、主たる入力のArtifactを`parent_artifact_id`とし、残りの入力はManifestの`input_refs`へArtifact参照として並べる。
 - lineageは親から子への有向非循環グラフとする。親を後から付け替えない。
 
 ### Exact Replay
