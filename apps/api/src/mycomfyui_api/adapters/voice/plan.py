@@ -409,4 +409,14 @@ async def prepare(
             },
         },
         input_refs=[*canon_refs, *cached_refs],
+        resolved_inputs={
+            "profile": profile,
+            "language": language,
+            "seed": seed,
+            "verify_with_asr": verify_with_asr,
+            "pad_to_duration": pad_to_duration,
+            "voices": {
+                voice_id: dict(binding) for voice_id, binding in bindings.items()
+            },
+        },
     )

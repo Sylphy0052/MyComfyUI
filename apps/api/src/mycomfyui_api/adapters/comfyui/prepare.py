@@ -62,6 +62,8 @@ class _MediaPlan:
     uploads: list[dict[str, Any]] = field(default_factory=list)
     input_refs: list[dict[str, Any]] = field(default_factory=list)
     parameters: dict[str, Any] = field(default_factory=dict)
+    #: テンプレート変数ではないが、入力として受け取って確定した値。
+    resolved_extras: dict[str, Any] = field(default_factory=dict)
 
 
 def resolve_template_name(recipe: Recipe) -> str:
@@ -278,6 +280,7 @@ async def _video_plan(
             # 参照画像の枚数だけを数える。開始フレームとガイド音声はここに含めない。
             "reference_count": reference_count,
         },
+        resolved_extras={"audio_mode": audio_mode},
     )
 
 
@@ -338,4 +341,5 @@ async def prepare(
             "input_uploads": plan.uploads,
         },
         input_refs=plan.input_refs,
+        resolved_inputs={**prepared.resolved_values, **plan.resolved_extras},
     )

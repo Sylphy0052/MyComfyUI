@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { Artifact, GenerationJob, Recipe } from "../api/client";
+import type {
+  Artifact,
+  GenerationJob,
+  GenerationPreview,
+  Recipe,
+} from "../api/client";
+import { ExecutionPreview } from "./ExecutionPreview";
 
 /** BGMは台詞の約3分の1を既定値とする (台詞1.0に対しBGM0.33)。 */
 const DEFAULT_VOICE_VOLUME = "1.0";
@@ -56,6 +62,11 @@ export function ComposePanel({
   const [videoArtifactsByJob, setVideoArtifactsByJob] = useState<
     Record<string, Artifact[]>
   >({});
+  const [previewResult, setPreviewResult] = useState<GenerationPreview | null>(
+    null,
+  );
+  const [previewError, setPreviewError] = useState<ApiError | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const composeJobs = useMemo(
     () => jobs.filter((job) => job.kind === "compose"),
@@ -157,30 +168,27 @@ export function ComposePanel({
     setVoiceTracks((current) => current.filter((item) => item.key !== key));
   };
 
-  const submit = async () => {
-    if (!projectId || !sceneId || !shotId) return;
-    const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+  const buildInputs = (): Record<string, unknown> | null => {
     if (!selectedVideoArtifactId) {
       setError("合成する動画Artifactを選んでください。");
-      return;
+      return null;
     }
 
     const voices: Record<string, unknown>[] = [];
     for (const track of voiceTracks) {
       if (!track.artifactId) {
         setError("台詞音声のArtifactを選んでください。");
-        return;
+        return null;
       }
       const startSec = Number.parseFloat(track.startSecStr);
       if (!Number.isFinite(startSec) || startSec < 0) {
         setError("台詞音声の開始位置は0以上の数値で入力してください。");
-        return;
+        return null;
       }
       const volume = Number.parseFloat(track.volumeStr);
       if (!Number.isFinite(volume) || volume <= 0) {
         setError("台詞音声の音量は0より大きい数値で入力してください。");
-        return;
+        return null;
       }
       voices.push({ artifact_id: track.artifactId, start_sec: startSec, volume });
     }
@@ -194,10 +202,20 @@ export function ComposePanel({
       const bgmVolume = Number.parseFloat(bgmVolumeStr);
       if (!Number.isFinite(bgmVolume) || bgmVolume <= 0) {
         setError("BGMの音量は0より大きい数値で入力してください。");
-        return;
+        return null;
       }
       inputs.bgm = { artifact_id: bgmArtifactId, volume: bgmVolume };
     }
+
+    return inputs;
+  };
+
+  const submit = async () => {
+    if (!projectId || !sceneId || !shotId) return;
+    const recipe = recipes.find((item) => item.id === recipeId);
+    if (!recipe) return;
+    const inputs = buildInputs();
+    if (!inputs) return;
 
     setSubmitting(true);
     setError(null);
@@ -218,6 +236,38 @@ export function ComposePanel({
       setError(describe(cause));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const runPreview = async () => {
+    if (!projectId || !sceneId || !shotId) return;
+    const recipe = recipes.find((item) => item.id === recipeId);
+    if (!recipe) return;
+    const inputs = buildInputs();
+    if (!inputs) return;
+
+    setPreviewing(true);
+    setError(null);
+    try {
+      const preview = await api.previewJob({
+        kind: "compose",
+        project_id: projectId,
+        scene_id: sceneId,
+        shot_id: shotId,
+        recipe_id: recipe.id,
+        inputs,
+      });
+      setPreviewResult(preview);
+      setPreviewError(null);
+    } catch (cause) {
+      if (cause instanceof ApiError) {
+        setPreviewError(cause);
+        setPreviewResult(null);
+      } else {
+        setError(describe(cause));
+      }
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -371,13 +421,25 @@ export function ComposePanel({
         <div>
           <button
             type="button"
+            disabled={submitting || previewing || !shotId || !recipeId}
+            onClick={runPreview}
+          >
+            {previewing ? "確認中..." : "投入前に確認"}
+          </button>
+          <button
+            type="button"
             className="primary"
-            disabled={submitting || !shotId || !recipeId}
+            disabled={submitting || previewing || !shotId || !recipeId}
             onClick={submit}
           >
             {submitting ? "投入中..." : "合成を投入"}
           </button>
         </div>
+        <ExecutionPreview
+          preview={previewResult}
+          error={previewError}
+          loading={previewing}
+        />
       </div>
 
       <h3 className="muted">合成した動画</h3>

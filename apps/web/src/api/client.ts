@@ -36,6 +36,10 @@ export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
 export type ComfyUIBackendHealth =
   components["schemas"]["ComfyUIBackendHealthRead"];
 export type ImageReference = components["schemas"]["ImageReferenceRead"];
+export type GenerationPreview =
+  components["schemas"]["GenerationPreviewRead"];
+export type GenerationPreviewDiff =
+  components["schemas"]["GenerationPreviewDiff"];
 
 const BASE = "/api/v1";
 
@@ -152,6 +156,20 @@ export const api = {
     inputs: Record<string, unknown>;
   }) =>
     request<GenerationJob>("/generation-jobs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  // 投入前の確認。Job も Manifest も Artifact も作らない (Issue #41)。
+  previewJob: (payload: {
+    kind: string;
+    project_id: string;
+    scene_id: string;
+    shot_id: string;
+    recipe_id: string;
+    inputs: Record<string, unknown>;
+  }) =>
+    request<GenerationPreview>("/generation-jobs/preview", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

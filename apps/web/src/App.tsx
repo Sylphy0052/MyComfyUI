@@ -6,6 +6,7 @@ import type {
   ArtifactDecision,
   GenerationJob,
   GenerationManifest,
+  GenerationPreview,
   Recipe,
 } from "./api/client";
 import type {
@@ -62,6 +63,11 @@ export function App() {
     Record<string, Artifact[]>
   >({});
   const [submitting, setSubmitting] = useState(false);
+  const [previewResult, setPreviewResult] = useState<GenerationPreview | null>(
+    null,
+  );
+  const [previewError, setPreviewError] = useState<ApiError | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [busyArtifactId, setBusyArtifactId] = useState<string | null>(null);
   // Job を投入・派生させたときに値を変え、Artifact 履歴を取り直させる。
   const [historyToken, setHistoryToken] = useState(0);
@@ -287,6 +293,34 @@ export function App() {
     }
   };
 
+  /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
+  const preview = async (recipe: Recipe, inputs: Record<string, unknown>) => {
+    if (!projectId || !sceneId || !shotId) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      const result = await api.previewJob({
+        kind: "image",
+        project_id: projectId,
+        scene_id: sceneId,
+        shot_id: shotId,
+        recipe_id: recipe.id,
+        inputs,
+      });
+      setPreviewResult(result);
+      setPreviewError(null);
+    } catch (cause) {
+      setPreviewResult(null);
+      if (cause instanceof ApiError) {
+        setPreviewError(cause);
+      } else {
+        setError(describe(cause));
+      }
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const cancel = async (jobId: string) => {
     setError(null);
     try {
@@ -364,6 +398,10 @@ export function App() {
           disabled={!shotId}
           submitting={submitting}
           onSubmit={submit}
+          onPreview={preview}
+          previewing={previewing}
+          preview={previewResult}
+          previewError={previewError}
         />
         <CandidateGallery
           candidates={candidates}

@@ -1140,6 +1140,268 @@
         "title": "GenerationManifestRead",
         "type": "object"
       },
+      "GenerationPreviewCreate": {
+        "additionalProperties": false,
+        "description": "投入せずに、解決済みの入力とWorkflow差分だけを確かめる要求。\n\n項目はJobの作成要求からキュー順の指定を除いたものとする。プレビューはキューへ\n積まないため、順番を受け取らない。",
+        "properties": {
+          "input_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Input Refs",
+            "type": "array"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "voice",
+              "music",
+              "compose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_job_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Job Id"
+          },
+          "project_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "recipe_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Recipe Id",
+            "type": "string"
+          },
+          "scene_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "shot_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Shot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "project_id",
+          "scene_id",
+          "shot_id",
+          "recipe_id"
+        ],
+        "title": "GenerationPreviewCreate",
+        "type": "object"
+      },
+      "GenerationPreviewDiff": {
+        "additionalProperties": false,
+        "description": "1変数について、Workflowの既定値と今回確定する値の対比。",
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "input",
+              "recipe_default",
+              "workflow_default",
+              "adapter"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "recipe_default": {
+            "title": "Recipe Default"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "workflow_default": {
+            "title": "Workflow Default"
+          }
+        },
+        "required": [
+          "name",
+          "workflow_default",
+          "recipe_default",
+          "value",
+          "changed",
+          "origin"
+        ],
+        "title": "GenerationPreviewDiff",
+        "type": "object"
+      },
+      "GenerationPreviewRead": {
+        "additionalProperties": false,
+        "description": "投入前に確認する、解決済みの実行内容とWorkflow差分。\n\n実行スナップショット本体は返さない。Workflow JSONの差分表示は対象外のため、\n確定した値と既定値との対比だけを示す。",
+        "properties": {
+          "canon_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Canon Refs",
+            "type": "array"
+          },
+          "diff": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationPreviewDiff"
+            },
+            "title": "Diff",
+            "type": "array"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "input_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Input Refs",
+            "type": "array"
+          },
+          "model": {
+            "additionalProperties": true,
+            "title": "Model",
+            "type": "object"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "parent_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Job Id"
+          },
+          "resolved_inputs": {
+            "additionalProperties": true,
+            "title": "Resolved Inputs",
+            "type": "object"
+          },
+          "resolved_prompt": {
+            "title": "Resolved Prompt",
+            "type": "string"
+          },
+          "scene_ref": {
+            "additionalProperties": true,
+            "title": "Scene Ref",
+            "type": "object"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "seed_auto": {
+            "title": "Seed Auto",
+            "type": "boolean"
+          },
+          "shot_ref": {
+            "additionalProperties": true,
+            "title": "Shot Ref",
+            "type": "object"
+          },
+          "template_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Sha256"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          },
+          "workflow_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version Id"
+          }
+        },
+        "required": [
+          "scene_ref",
+          "shot_ref",
+          "canon_refs",
+          "engine",
+          "resolved_prompt",
+          "model",
+          "seed",
+          "seed_auto",
+          "parameters",
+          "resolved_inputs",
+          "input_refs",
+          "workflow_name",
+          "workflow_version_id",
+          "version",
+          "template_sha256",
+          "diff",
+          "parent_job_id"
+        ],
+        "title": "GenerationPreviewRead",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3344,6 +3606,45 @@
           }
         },
         "summary": "Create Generation Job"
+      }
+    },
+    "/api/v1/generation-jobs/preview": {
+      "post": {
+        "description": "投入せずに、解決済みの入力とWorkflow既定値からの差分を返す。\n\nJobの作成と同じ経路で参照を解決し実行内容を組み立てるが、スナップショットの\n書き出し、レコードの作成、キュー順の採番は行わない。解決できない入力は作成時と\n同じ`VALIDATION_ERROR`で返し、画面が投入時とプレビューで分岐を二重に持たない\nようにする。",
+        "operationId": "preview_generation_job_api_v1_generation_jobs_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationPreviewCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Generation Job"
       }
     },
     "/api/v1/generation-jobs/{job_id}": {

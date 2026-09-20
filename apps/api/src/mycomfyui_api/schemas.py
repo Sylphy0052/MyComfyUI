@@ -160,12 +160,11 @@ class RecipeRead(ApiModel):
     created_at: str
 
 
-class GenerationJobCreate(ApiModel):
-    """Jobと実行時Manifestを同一トランザクションで作成する要求。
+class GenerationPreviewCreate(ApiModel):
+    """投入せずに、解決済みの入力とWorkflow差分だけを確かめる要求。
 
-    Workflow JSONはApplication APIがRecipeと`inputs`から組み立てる。Scene、Shot、
-    Canonの不変参照も参照APIから解決して固定する。呼び出し元はManifestの中身も
-    ComfyUIのノードも参照の中身も組み立てない。
+    項目はJobの作成要求からキュー順の指定を除いたものとする。プレビューはキューへ
+    積まないため、順番を受け取らない。
     """
 
     kind: GenerationKind
@@ -174,8 +173,6 @@ class GenerationJobCreate(ApiModel):
     shot_id: AiMediaId
     recipe_id: ResourceId
     parent_job_id: ResourceId | None = None
-    #: 未指定ならApplication APIが現在の最大値の次を採番する。
-    queue_sequence: int | None = Field(default=None, ge=0)
     inputs: dict[str, Any] = Field(default_factory=dict)
     #: 利用者素材のcache参照だけを受け取る。Scene/Shot/Canonの参照は解決結果が正本の
     #: ため、ここから渡された同種の参照は受け付けない。
@@ -205,6 +202,63 @@ class GenerationJobCreate(ApiModel):
             if isinstance(relative_path, str):
                 _reject_unsafe_path(relative_path)
         return value
+
+
+class GenerationJobCreate(GenerationPreviewCreate):
+    """Jobと実行時Manifestを同一トランザクションで作成する要求。
+
+    Workflow JSONはApplication APIがRecipeと`inputs`から組み立てる。Scene、Shot、
+    Canonの不変参照も参照APIから解決して固定する。呼び出し元はManifestの中身も
+    ComfyUIのノードも参照の中身も組み立てない。
+    """
+
+    #: 未指定ならApplication APIが現在の最大値の次を採番する。
+    queue_sequence: int | None = Field(default=None, ge=0)
+
+
+class GenerationPreviewDiff(ApiModel):
+    """1変数について、Workflowの既定値と今回確定する値の対比。"""
+
+    name: str
+    #: Workflowテンプレートのノード入力に書かれている値。テンプレートファイルを持た
+    #: ないWorkflow(音声・合成)ではNoneになる。
+    workflow_default: Any
+    #: Recipeの`defaults`の値。指定が無ければNone。
+    recipe_default: Any
+    #: 今回の入力で確定する値。
+    value: Any
+    #: 基準となる既定値と`value`が異なるか。基準は`workflow_default`とし、それを
+    #: 持たないWorkflowでは`recipe_default`を使う。どちらも無ければ偽とする。
+    changed: bool
+    #: 値の出所。
+    origin: Literal["input", "recipe_default", "workflow_default", "adapter"]
+
+
+class GenerationPreviewRead(ApiModel):
+    """投入前に確認する、解決済みの実行内容とWorkflow差分。
+
+    実行スナップショット本体は返さない。Workflow JSONの差分表示は対象外のため、
+    確定した値と既定値との対比だけを示す。
+    """
+
+    scene_ref: dict[str, Any]
+    shot_ref: dict[str, Any]
+    canon_refs: list[dict[str, Any]]
+    engine: str
+    resolved_prompt: str
+    model: dict[str, Any]
+    seed: int
+    #: seedを自動採番したか。真のとき、投入時のseedはこの値と一致しない。
+    seed_auto: bool
+    parameters: dict[str, Any]
+    resolved_inputs: dict[str, Any]
+    input_refs: list[dict[str, Any]]
+    workflow_name: str | None
+    workflow_version_id: str | None
+    version: str | None
+    template_sha256: str | None
+    diff: list[GenerationPreviewDiff]
+    parent_job_id: str | None
 
 
 class GenerationJobRead(ApiModel):
