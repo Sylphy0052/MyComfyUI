@@ -39,6 +39,9 @@ class PreparationContext:
     shot_data: dict[str, Any]
     #: Canon descriptorを引くための参照元。準備中の読取りだけに使う。
     canon_lookup: Any = None
+    #: 既存Artifactを引くための参照元。合成Jobと、生成済み画像を入力にする動画Jobが
+    #: 使う。準備中の読取りだけに使い、更新はしない。
+    artifact_lookup: Any = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,15 @@ class PreparedExecution:
     parameters: dict[str, Any]
     #: 準備の過程で判った入力参照。呼び出し元の`input_refs`と併せてManifestへ残す。
     input_refs: list[dict[str, Any]] = field(default_factory=list)
+    #: 入力から決まる親Job。合成Jobが入力の動画Jobを親に持つために使う。要求が
+    #: `parent_job_id`を指定していないときだけ採用する。
+    parent_job_id: str | None = None
+
+
+class ArtifactLookup(Protocol):
+    """既存Artifactの読取り。準備処理がDBセッションを直接持たないようにする。"""
+
+    async def get(self, artifact_id: str) -> Any | None: ...
 
 
 class EnginePreparer(Protocol):

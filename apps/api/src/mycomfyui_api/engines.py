@@ -3,6 +3,10 @@
 `routers`と`main`はengineの種類を直接知らない。Recipeの`engine`でここを引き、
 Jobの組み立てと実行の両方を差し込む。音声Jobも画像Jobと同じ`JobQueueWorker`の
 キューへ積まれるため、同一GPUを共有する構成でも同時に実行されない。
+
+動画と音楽はComfyUIの同じプロセスで動くため、engineは`comfyui`のままRecipeの`kind`
+とテンプレート名で区別する。合成だけはGPUを使わず実行基盤も別のため、`ffmpeg`を
+engineとして分ける。
 """
 
 import asyncio
@@ -13,6 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mycomfyui_api.adapters.comfyui import prepare as comfyui_prepare
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI, ComfyUIExecutor
+from mycomfyui_api.adapters.compose import plan as compose_plan
+from mycomfyui_api.adapters.compose.executor import ComposeExecutor
+from mycomfyui_api.adapters.compose.plan import ENGINE_FFMPEG
 from mycomfyui_api.adapters.voice import plan as voice_plan
 from mycomfyui_api.adapters.voice.base import VOICE_ENGINES
 from mycomfyui_api.adapters.voice.executor import VoiceExecutor
@@ -33,6 +40,7 @@ FAILURE_CODE_INPUT_UNRESOLVED = "INPUT_UNRESOLVED"
 #: engineごとの準備処理。Recipeと入力から実行スナップショットを組み立てる。
 PREPARERS = {
     ENGINE_COMFYUI: comfyui_prepare.prepare,
+    ENGINE_FFMPEG: compose_plan.prepare,
     **{engine: voice_plan.prepare for engine in VOICE_ENGINES},
 }
 
@@ -112,6 +120,8 @@ class ExecutorRegistry:
             created: JobExecutor = ComfyUIExecutor(
                 self._session_factory, settings=self._settings
             )
+        elif engine == ENGINE_FFMPEG:
+            created = ComposeExecutor(self._session_factory, settings=self._settings)
         elif engine in VOICE_ENGINES:
             created = VoiceExecutor(self._session_factory, settings=self._settings)
         else:
