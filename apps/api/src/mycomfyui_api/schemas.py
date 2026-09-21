@@ -19,7 +19,7 @@ from mycomfyui_api.adapters.agent.proposals import (
 )
 from mycomfyui_api.approvals import OperationEffect
 from mycomfyui_api.settings import AgentProviderId
-from mycomfyui_api.storage import ARTIFACTS_DIR_NAME
+from mycomfyui_api.storage import ARTIFACTS_DIR_NAME, INPUTS_DIR_NAME
 
 GenerationKind = Literal["image", "video", "voice", "music", "compose"]
 ArtifactKind = Literal["image", "video", "audio", "workflow", "log"]
@@ -292,6 +292,88 @@ class ProjectSyncPreview(ApiModel):
     has_conflicts: bool
 
 
+class ProjectReferenceImage(ApiModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    relative_path: str = Field(min_length=1, max_length=1_000)
+    sha256: Sha256
+    byte_size: int = Field(gt=0)
+    media_type: str = Field(pattern=r"^image/")
+
+    @field_validator("relative_path")
+    @classmethod
+    def _safe_relative_path(cls, value: str) -> str:
+        candidate = _reject_unsafe_path(value)
+        if not candidate.replace("\\", "/").startswith(f"{INPUTS_DIR_NAME}/"):
+            raise ValueError(
+                f"relative_pathは{INPUTS_DIR_NAME}/配下を指す必要があります。"
+            )
+        return candidate
+
+    @field_validator("media_type")
+    @classmethod
+    def _safe_media_type(cls, value: str) -> str:
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES or not media_type.startswith("image/"):
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        return media_type
+
+
+class ProjectCharacterProfile(ApiModel):
+    id: ResourceId
+    name: ProjectName
+    tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
+    reference_images: list[ProjectReferenceImage] = Field(
+        default_factory=list, max_length=20
+    )
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("人物・キャラクターのタグを重複させられません。")
+        return value
+
+    @field_validator("reference_images")
+    @classmethod
+    def _unique_references(
+        cls, value: list[ProjectReferenceImage]
+    ) -> list[ProjectReferenceImage]:
+        paths = [item.relative_path for item in value]
+        if len(set(paths)) != len(paths):
+            raise ValueError("同じ参照画像を重複して登録できません。")
+        return value
+
+
+class ProjectLocalOverrides(ApiModel):
+    characters: list[ProjectCharacterProfile] = Field(
+        default_factory=list, max_length=100
+    )
+    scene_prompts: dict[str, str] = Field(default_factory=dict)
+    shot_prompts: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("characters")
+    @classmethod
+    def _unique_characters(
+        cls, value: list[ProjectCharacterProfile]
+    ) -> list[ProjectCharacterProfile]:
+        ids = [item.id for item in value]
+        if len(set(ids)) != len(ids):
+            raise ValueError("人物・キャラクターのIDを重複させられません。")
+        return value
+
+    @field_validator("scene_prompts", "shot_prompts")
+    @classmethod
+    def _validate_prompts(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 10_000:
+            raise ValueError("プロンプトを10,000件より多く登録できません。")
+        for resource_id, prompt in value.items():
+            if not resource_id or len(resource_id) > 128:
+                raise ValueError("Scene・Shot IDは1〜128文字で指定してください。")
+            if len(prompt) > 10_000:
+                raise ValueError("プロンプトは10,000文字以内で指定してください。")
+        return value
+
+
 class ProjectTemplateCreate(ApiModel):
     name: ProjectName
     description: str | None = Field(default=None, max_length=10_000)
@@ -324,6 +406,7 @@ class PortableProject(ApiModel):
     tags: list[str]
     favorite: bool
     generation_defaults: ProjectGenerationDefaults
+    local_overrides: ProjectLocalOverrides = Field(default_factory=ProjectLocalOverrides)
     source_type: ProjectSourceType
     source_locator: str | None = None
     source_revision: str | None = None
@@ -390,14 +473,21 @@ class PortableArtifact(ApiModel):
         raise ValueError(f"扱えないmedia_typeです: {value}")
 
 
+class PortableInputFile(ApiModel):
+    sha256: Sha256
+    byte_size: int = Field(gt=0)
+    content_base64: str = Field(min_length=1)
+
+
 class ProjectPackage(ApiModel):
     format: Literal["mycomfyui.project"] = "mycomfyui.project"
-    version: Literal[1] = 1
+    version: Literal[2] = 2
     exported_at: str
     project: PortableProject
     scenes: list[PortableScene] = Field(default_factory=list)
     shots: list[PortableShot] = Field(default_factory=list)
     artifacts: list[PortableArtifact] = Field(default_factory=list)
+    input_files: list[PortableInputFile] = Field(default_factory=list)
     dependencies: dict[str, list[str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -416,6 +506,16 @@ class ProjectPackage(ApiModel):
         known_scenes = set(scene_ids)
         known_shots = set(shot_ids)
         known_artifacts = set(artifact_ids)
+        input_hashes = [item.sha256 for item in self.input_files]
+        if len(input_hashes) != len(set(input_hashes)):
+            raise ValueError("入力素材のSHA-256がpackage内で重複しています。")
+        reference_hashes = {
+            reference.sha256
+            for character in self.project.local_overrides.characters
+            for reference in character.reference_images
+        }
+        if any(sha256 not in reference_hashes for sha256 in input_hashes):
+            raise ValueError("人物参照画像から参照されない入力素材が含まれています。")
         if any(item.scene_id not in known_scenes for item in self.shots):
             raise ValueError("Shotがpackage内にないSceneを参照しています。")
         for item in self.artifacts:

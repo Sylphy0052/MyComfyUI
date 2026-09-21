@@ -33,6 +33,35 @@ class StoredFile:
     byte_size: int
 
 
+def detect_image_media_type(header: bytes) -> str | None:
+    """画像のmagic bytesから、保存可能なmedia_typeを返す。"""
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if header.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if header.startswith(b"BM"):
+        return "image/bmp"
+    if header.startswith((b"II*\x00", b"MM\x00*")):
+        return "image/tiff"
+    if header.startswith(b"\x00\x00\x01\x00"):
+        return "image/x-icon"
+    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "image/webp"
+    if header.startswith(b"\xff\x0a"):
+        return "image/jxl"
+    if len(header) >= 12 and header[4:8] == b"ftyp":
+        brand = header[8:12]
+        if brand in (b"avif", b"avis"):
+            return "image/avif"
+        if brand in (b"heic", b"heix", b"hevc", b"hevx", b"mif1"):
+            return "image/heic"
+        if brand == b"jxl ":
+            return "image/jxl"
+    return None
+
+
 def _safe_name(name: str) -> str:
     """Backendが返したファイル名から、ディレクトリを跨げる要素を取り除く。
 

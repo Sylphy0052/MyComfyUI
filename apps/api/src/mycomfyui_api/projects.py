@@ -1,5 +1,6 @@
 """Projectの永続化、外部同期、ライフサイクルAPI。"""
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -12,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from mycomfyui_api import schemas
+from mycomfyui_api import schemas, storage
 from mycomfyui_api.adapters.aimedia.client import (
     AiMediaNotFound,
     AiMediaUnavailable,
@@ -261,6 +262,7 @@ async def create_project(payload: schemas.ProjectCreate, session: SessionDep):
         favorite=payload.favorite,
         thumbnail_artifact_id=payload.thumbnail_artifact_id,
         generation_defaults=schemas.ProjectGenerationDefaults().model_dump(),
+        local_overrides=schemas.ProjectLocalOverrides().model_dump(),
         source_type="local",
         source_locator=None,
         source_revision=None,
@@ -539,6 +541,7 @@ async def import_external_project(
         favorite=False,
         thumbnail_artifact_id=None,
         generation_defaults=schemas.ProjectGenerationDefaults().model_dump(),
+        local_overrides=schemas.ProjectLocalOverrides().model_dump(),
         source_type="external",
         source_locator=str(source_info.get("source_locator") or "external"),
         source_revision=_revision(snapshot),
@@ -660,6 +663,85 @@ async def update_sync_settings(
     project.updated_at = schemas.now_iso()
     await _commit(session)
     return _read(project)
+
+
+@router.get(
+    "/{project_id}/local-overrides", response_model=schemas.ProjectLocalOverrides
+)
+async def get_local_overrides(project_id: schemas.AiMediaId, session: SessionDep):
+    project = await _require_project(session, project_id)
+    return schemas.ProjectLocalOverrides.model_validate(project.local_overrides or {})
+
+
+@router.put(
+    "/{project_id}/local-overrides", response_model=schemas.ProjectLocalOverrides
+)
+async def update_local_overrides(
+    project_id: schemas.AiMediaId,
+    payload: schemas.ProjectLocalOverrides,
+    session: SessionDep,
+):
+    project = await _require_project(session, project_id)
+    if project.lifecycle != "active":
+        raise ApiError(
+            "PROJECT_NOT_ACTIVE",
+            "ローカル設定を変更するにはProjectを復元してください。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"project_id": project_id, "lifecycle": project.lifecycle},
+        )
+    await asyncio.to_thread(_validate_local_reference_images, payload)
+    project.local_overrides = payload.model_dump(mode="json")
+    project.updated_at = schemas.now_iso()
+    await _commit(session)
+    return payload
+
+
+def _validate_local_reference_images(payload: schemas.ProjectLocalOverrides) -> None:
+    verified: dict[str, tuple[int, str, str | None]] = {}
+    for character in payload.characters:
+        for reference in character.reference_images:
+            actual = verified.get(reference.relative_path)
+            if actual is None:
+                try:
+                    path = storage.resolve_input(reference.relative_path)
+                    byte_size = path.stat().st_size
+                    digest = hashlib.sha256()
+                    with path.open("rb") as stream:
+                        header = stream.read(32)
+                        digest.update(header)
+                        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                except (OSError, storage.StorageError) as error:
+                    raise ApiError(
+                        "PROJECT_REFERENCE_IMAGE_INVALID",
+                        "登録する参照画像を入力cacheから確認できません。",
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        details={"relative_path": reference.relative_path},
+                    ) from error
+                actual = (
+                    byte_size,
+                    digest.hexdigest(),
+                    storage.detect_image_media_type(header),
+                )
+                verified[reference.relative_path] = actual
+            if actual[:2] != (reference.byte_size, reference.sha256):
+                raise ApiError(
+                    "PROJECT_REFERENCE_IMAGE_MISMATCH",
+                    "参照画像のサイズまたはSHA-256が入力cacheと一致しません。",
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    details={"relative_path": reference.relative_path},
+                )
+            if actual[2] != reference.media_type:
+                raise ApiError(
+                    "PROJECT_REFERENCE_IMAGE_MEDIA_TYPE_MISMATCH",
+                    "参照画像の実形式とmedia_typeが一致しません。",
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    details={
+                        "relative_path": reference.relative_path,
+                        "declared": reference.media_type,
+                        "detected": actual[2],
+                    },
+                )
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectRead)

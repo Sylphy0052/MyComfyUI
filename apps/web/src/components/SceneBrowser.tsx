@@ -12,6 +12,7 @@ import type {
   ShotEnvelope,
   ShotSummary,
 } from "../api/aimedia";
+import { ProjectLocalOverridesEditor } from "./ProjectLocalOverridesEditor";
 
 const STATUSES: { value: ProductionStatus; label: string }[] = [
   { value: "not_started", label: "未着手" },
@@ -157,8 +158,16 @@ export function SceneBrowser(props: Props) {
       </section>
 
       {error && <p className="error">{error}</p>}
+      {selectedProject && projectId && (
+        <ProjectLocalOverridesEditor
+          key={projectId}
+          projectId={projectId}
+          sceneId={sceneId}
+          shotId={shotId}
+        />
+      )}
       {selectedProject && !editable && (
-        <p className="muted">外部同期ProjectのScene・Shotは読取り専用です。</p>
+        <p className="muted">外部同期Projectの原文と構造は読取り専用です。人物設定と生成プロンプトはMyComfyUI側で編集できます。</p>
       )}
 
       <section className="panel structure-panel">

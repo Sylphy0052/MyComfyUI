@@ -2780,6 +2780,33 @@
         "title": "PortableArtifact",
         "type": "object"
       },
+      "PortableInputFile": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "exclusiveMinimum": 0.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_base64": {
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "byte_size",
+          "content_base64"
+        ],
+        "title": "PortableInputFile",
+        "type": "object"
+      },
       "PortableProject": {
         "additionalProperties": false,
         "properties": {
@@ -2815,6 +2842,9 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "local_overrides": {
+            "$ref": "#/components/schemas/ProjectLocalOverrides"
           },
           "name": {
             "title": "Name",
@@ -3076,6 +3106,47 @@
           "summary"
         ],
         "title": "PortableShot",
+        "type": "object"
+      },
+      "ProjectCharacterProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "reference_images": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectReferenceImage"
+            },
+            "maxItems": 20,
+            "title": "Reference Images",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ProjectCharacterProfile",
         "type": "object"
       },
       "ProjectCloneRequest": {
@@ -3514,6 +3585,35 @@
         "title": "ProjectList",
         "type": "object"
       },
+      "ProjectLocalOverrides": {
+        "additionalProperties": false,
+        "properties": {
+          "characters": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectCharacterProfile"
+            },
+            "maxItems": 100,
+            "title": "Characters",
+            "type": "array"
+          },
+          "scene_prompts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Scene Prompts",
+            "type": "object"
+          },
+          "shot_prompts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Shot Prompts",
+            "type": "object"
+          }
+        },
+        "title": "ProjectLocalOverrides",
+        "type": "object"
+      },
       "ProjectPackage": {
         "additionalProperties": false,
         "properties": {
@@ -3544,6 +3644,13 @@
             "title": "Format",
             "type": "string"
           },
+          "input_files": {
+            "items": {
+              "$ref": "#/components/schemas/PortableInputFile"
+            },
+            "title": "Input Files",
+            "type": "array"
+          },
           "project": {
             "$ref": "#/components/schemas/PortableProject"
           },
@@ -3562,8 +3669,8 @@
             "type": "array"
           },
           "version": {
-            "const": 1,
-            "default": 1,
+            "const": 2,
+            "default": 2,
             "title": "Version",
             "type": "integer"
           }
@@ -3952,6 +4059,47 @@
           "deleted_at"
         ],
         "title": "ProjectRead",
+        "type": "object"
+      },
+      "ProjectReferenceImage": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "exclusiveMinimum": 0.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "file_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          },
+          "media_type": {
+            "pattern": "^image/",
+            "title": "Media Type",
+            "type": "string"
+          },
+          "relative_path": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name",
+          "relative_path",
+          "sha256",
+          "byte_size",
+          "media_type"
+        ],
+        "title": "ProjectReferenceImage",
         "type": "object"
       },
       "ProjectSource": {
@@ -9232,6 +9380,100 @@
           }
         },
         "summary": "Update Generation Defaults",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/local-overrides": {
+      "get": {
+        "operationId": "get_local_overrides_api_v1_projects__project_id__local_overrides_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLocalOverrides"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Local Overrides",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "operationId": "update_local_overrides_api_v1_projects__project_id__local_overrides_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectLocalOverrides"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLocalOverrides"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Local Overrides",
         "tags": [
           "projects"
         ]
