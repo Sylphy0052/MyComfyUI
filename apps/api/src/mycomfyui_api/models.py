@@ -124,6 +124,9 @@ class ProjectScene(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list] = mapped_column(JSON, nullable=False)
     production_status: Mapped[str] = mapped_column(Text, nullable=False)
+    todo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    due_date: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
     deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -155,6 +158,9 @@ class ProjectShot(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list] = mapped_column(JSON, nullable=False)
     production_status: Mapped[str] = mapped_column(Text, nullable=False)
+    todo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    due_date: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
     deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -302,6 +308,46 @@ class GenerationJob(Base):
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_stage: Mapped[str | None] = mapped_column(Text, nullable=True)
     retryable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class GenerationBatch(Base):
+    """複数Scene・Shotへ同じ生成設定を展開した計画。"""
+
+    __tablename__ = "generation_batch"
+    __table_args__ = (Index("ix_generation_batch_project", "project_id", "created_at"),)
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(PROJECT_ID_LENGTH), ForeignKey("project.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    request: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class GenerationBatchItem(Base):
+    """一括生成の対象と、現在その対象を担うJobの対応。"""
+
+    __tablename__ = "generation_batch_item"
+    __table_args__ = (
+        Index("ix_generation_batch_item_batch", "batch_id", "created_at"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    batch_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_batch.id"), nullable=False
+    )
+    scene_id: Mapped[str] = mapped_column(String(PROJECT_ID_LENGTH), nullable=False)
+    shot_id: Mapped[str | None] = mapped_column(String(PROJECT_ID_LENGTH), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    planning_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class GenerationManifest(Base):

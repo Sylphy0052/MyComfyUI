@@ -469,6 +469,7 @@ async def _import_package(
             id=scene_ids[item.id], project_id=project_id, sequence=item.sequence,
             summary=item.summary, notes=item.notes, tags=list(item.tags),
             production_status=item.production_status, created_at=now, updated_at=now, deleted_at=None,
+            todo=item.todo, due_date=item.due_date, priority=item.priority,
         ))
     for item in package.shots:
         if item.scene_id not in scene_ids:
@@ -477,6 +478,7 @@ async def _import_package(
             id=shot_ids[item.id], project_id=project_id, scene_id=scene_ids[item.scene_id],
             sequence=item.sequence, duration_sec=item.duration_sec, summary=item.summary,
             notes=item.notes, tags=list(item.tags), production_status=item.production_status,
+            todo=item.todo, due_date=item.due_date, priority=item.priority,
             created_at=now, updated_at=now, deleted_at=None,
         ))
     project.scene_count = len(package.scenes)

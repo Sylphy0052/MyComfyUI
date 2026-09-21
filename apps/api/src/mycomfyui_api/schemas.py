@@ -36,6 +36,7 @@ GenerationDefaultOrigin = Literal[
 ProductionStatus = Literal[
     "not_started", "in_progress", "has_candidates", "accepted", "completed"
 ]
+ProductionPriority = Literal["low", "medium", "high", "urgent"]
 ApprovalDecision = Literal["approved", "rejected", "expired"]
 JobState = Literal[
     "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
@@ -336,6 +337,9 @@ class PortableScene(ApiModel):
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     production_status: ProductionStatus = "not_started"
+    todo: str | None = None
+    due_date: str | None = None
+    priority: ProductionPriority | None = None
 
 
 class PortableShot(ApiModel):
@@ -347,6 +351,9 @@ class PortableShot(ApiModel):
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     production_status: ProductionStatus = "not_started"
+    todo: str | None = None
+    due_date: str | None = None
+    priority: ProductionPriority | None = None
 
 
 class PortableArtifact(ApiModel):
@@ -466,6 +473,9 @@ class SceneCreate(ApiModel):
     notes: str | None = Field(default=None, max_length=10_000)
     tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
     production_status: ProductionStatus = "not_started"
+    todo: str | None = Field(default=None, max_length=2_000)
+    due_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    priority: ProductionPriority | None = None
 
     @field_validator("tags")
     @classmethod
@@ -480,6 +490,9 @@ class SceneUpdate(ApiModel):
     notes: str | None = Field(default=None, max_length=10_000)
     tags: list[ArtifactTagValue] | None = Field(default=None, max_length=50)
     production_status: ProductionStatus | None = None
+    todo: str | None = Field(default=None, max_length=2_000)
+    due_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    priority: ProductionPriority | None = None
 
     @field_validator("tags")
     @classmethod
@@ -495,6 +508,9 @@ class ShotCreate(ApiModel):
     notes: str | None = Field(default=None, max_length=10_000)
     tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
     production_status: ProductionStatus = "not_started"
+    todo: str | None = Field(default=None, max_length=2_000)
+    due_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    priority: ProductionPriority | None = None
 
     @field_validator("tags")
     @classmethod
@@ -510,6 +526,9 @@ class ShotUpdate(ApiModel):
     notes: str | None = Field(default=None, max_length=10_000)
     tags: list[ArtifactTagValue] | None = Field(default=None, max_length=50)
     production_status: ProductionStatus | None = None
+    todo: str | None = Field(default=None, max_length=2_000)
+    due_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    priority: ProductionPriority | None = None
 
     @field_validator("tags")
     @classmethod
@@ -544,6 +563,105 @@ class ProjectProgress(ApiModel):
     project_id: str
     scenes: dict[ProductionStatus, int]
     shots: dict[ProductionStatus, int]
+
+
+class BatchTarget(ApiModel):
+    scene_id: AiMediaId
+    shot_id: AiMediaId | None = None
+
+
+class GenerationBatchCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: GenerationKind
+    targets: list[BatchTarget] = Field(min_length=2, max_length=200)
+    recipe_id: ResourceId | None = None
+    use_inherited_defaults: bool = False
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    input_refs: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _unique_targets(self) -> "GenerationBatchCreate":
+        keys = [(item.scene_id, item.shot_id) for item in self.targets]
+        if len(keys) != len(set(keys)):
+            raise ValueError("一括生成の対象を重複させられません。")
+        return self
+
+
+class GenerationBatchPreviewItem(ApiModel):
+    scene_id: str
+    shot_id: str | None
+    recipe_id: str
+    recipe_origin: GenerationDefaultOrigin
+    engine: str
+    model: dict[str, Any]
+    seed: int
+    seed_auto: bool
+    parameters: dict[str, Any]
+    resolved_inputs: dict[str, Any]
+    workflow_name: str | None
+    workflow_version_id: str | None
+    parent_job_id: str | None
+
+
+class GenerationBatchPreview(ApiModel):
+    name: str
+    kind: GenerationKind
+    job_count: int
+    recipe_ids: list[str]
+    workflow_dependencies: list[str]
+    reference_dependencies: list[str]
+    items: list[GenerationBatchPreviewItem]
+
+
+class GenerationBatchItemRead(ApiModel):
+    id: str
+    scene_id: str
+    shot_id: str | None
+    job_id: str | None
+    state: str
+    attempts: int
+    planning_error: str | None
+
+
+class GenerationBatchRead(ApiModel):
+    id: str
+    project_id: str
+    name: str
+    kind: GenerationKind
+    state: str
+    counts: dict[str, int]
+    items: list[GenerationBatchItemRead]
+    created_at: str
+    updated_at: str
+
+
+class StatisticsBreakdown(ApiModel):
+    key: str
+    label: str
+    jobs: int
+    succeeded: int
+    failed: int
+    processing_seconds: float
+
+
+class ProjectCostSummary(ApiModel):
+    actual_usd: float | None = None
+    estimated_usd: float | None = None
+    source: str | None = None
+    reason: str | None = None
+
+
+class ProjectStatistics(ApiModel):
+    project_id: str
+    jobs: int
+    succeeded: int
+    failed: int
+    cancelled: int
+    processing_seconds: float
+    by_model: list[StatisticsBreakdown]
+    by_workflow: list[StatisticsBreakdown]
+    by_recipe: list[StatisticsBreakdown]
+    cost: ProjectCostSummary
 
 
 class WorkflowVersionRead(ApiModel):

@@ -987,6 +987,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Batches */
+        get: operations["list_batches_api_v1_projects__project_id__batches_get"];
+        put?: never;
+        /** Create Batch */
+        post: operations["create_batch_api_v1_projects__project_id__batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/batches/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Batch */
+        post: operations["preview_batch_api_v1_projects__project_id__batches_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch */
+        get: operations["get_batch_api_v1_projects__project_id__batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/batches/{batch_id}/cancel-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Pending Batch Jobs */
+        post: operations["cancel_pending_batch_jobs_api_v1_projects__project_id__batches__batch_id__cancel_pending_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/batches/{batch_id}/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Failed Batch Jobs */
+        post: operations["retry_failed_batch_jobs_api_v1_projects__project_id__batches__batch_id__retry_failed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/canon": {
         parameters: {
             query?: never;
@@ -1230,6 +1316,23 @@ export interface paths {
         };
         /** Get Shot Deletion Impact */
         get: operations["get_shot_deletion_impact_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Statistics */
+        get: operations["project_statistics_api_v1_projects__project_id__statistics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1810,6 +1913,13 @@ export interface components {
             /** Shot Id */
             shot_id?: string | null;
         };
+        /** BatchTarget */
+        BatchTarget: {
+            /** Scene Id */
+            scene_id: string;
+            /** Shot Id */
+            shot_id?: string | null;
+        };
         /**
          * CanonStatusRead
          * @description Canon更新警告と、Exact Replayの可否。
@@ -1881,6 +1991,134 @@ export interface components {
             external_id: string;
             /** Project Id */
             project_id?: string | null;
+        };
+        /** GenerationBatchCreate */
+        GenerationBatchCreate: {
+            /** Input Refs */
+            input_refs?: {
+                [key: string]: unknown;
+            }[];
+            /** Inputs */
+            inputs?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "image" | "video" | "voice" | "music" | "compose";
+            /** Name */
+            name: string;
+            /** Recipe Id */
+            recipe_id?: string | null;
+            /** Targets */
+            targets: components["schemas"]["BatchTarget"][];
+            /**
+             * Use Inherited Defaults
+             * @default false
+             */
+            use_inherited_defaults: boolean;
+        };
+        /** GenerationBatchItemRead */
+        GenerationBatchItemRead: {
+            /** Attempts */
+            attempts: number;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string | null;
+            /** Planning Error */
+            planning_error: string | null;
+            /** Scene Id */
+            scene_id: string;
+            /** Shot Id */
+            shot_id: string | null;
+            /** State */
+            state: string;
+        };
+        /** GenerationBatchPreview */
+        GenerationBatchPreview: {
+            /** Items */
+            items: components["schemas"]["GenerationBatchPreviewItem"][];
+            /** Job Count */
+            job_count: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "image" | "video" | "voice" | "music" | "compose";
+            /** Name */
+            name: string;
+            /** Recipe Ids */
+            recipe_ids: string[];
+            /** Reference Dependencies */
+            reference_dependencies: string[];
+            /** Workflow Dependencies */
+            workflow_dependencies: string[];
+        };
+        /** GenerationBatchPreviewItem */
+        GenerationBatchPreviewItem: {
+            /** Engine */
+            engine: string;
+            /** Model */
+            model: {
+                [key: string]: unknown;
+            };
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Parent Job Id */
+            parent_job_id: string | null;
+            /** Recipe Id */
+            recipe_id: string;
+            /**
+             * Recipe Origin
+             * @enum {string}
+             */
+            recipe_origin: "runtime" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
+            /** Resolved Inputs */
+            resolved_inputs: {
+                [key: string]: unknown;
+            };
+            /** Scene Id */
+            scene_id: string;
+            /** Seed */
+            seed: number;
+            /** Seed Auto */
+            seed_auto: boolean;
+            /** Shot Id */
+            shot_id: string | null;
+            /** Workflow Name */
+            workflow_name: string | null;
+            /** Workflow Version Id */
+            workflow_version_id: string | null;
+        };
+        /** GenerationBatchRead */
+        GenerationBatchRead: {
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Items */
+            items: components["schemas"]["GenerationBatchItemRead"][];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "image" | "video" | "voice" | "music" | "compose";
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id: string;
+            /** State */
+            state: string;
+            /** Updated At */
+            updated_at: string;
         };
         /**
          * GenerationJobCreate
@@ -2286,10 +2524,14 @@ export interface components {
         };
         /** PortableScene */
         PortableScene: {
+            /** Due Date */
+            due_date?: string | null;
             /** Id */
             id: string;
             /** Notes */
             notes?: string | null;
+            /** Priority */
+            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /**
              * Production Status
              * @default not_started
@@ -2302,9 +2544,13 @@ export interface components {
             summary: string;
             /** Tags */
             tags?: string[];
+            /** Todo */
+            todo?: string | null;
         };
         /** PortableShot */
         PortableShot: {
+            /** Due Date */
+            due_date?: string | null;
             /**
              * Duration Sec
              * @default 5
@@ -2314,6 +2560,8 @@ export interface components {
             id: string;
             /** Notes */
             notes?: string | null;
+            /** Priority */
+            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /**
              * Production Status
              * @default not_started
@@ -2328,6 +2576,8 @@ export interface components {
             summary: string;
             /** Tags */
             tags?: string[];
+            /** Todo */
+            todo?: string | null;
         };
         /** ProjectCloneRequest */
         ProjectCloneRequest: {
@@ -2345,6 +2595,17 @@ export interface components {
             name: string;
             /** Project Id */
             project_id?: string | null;
+        };
+        /** ProjectCostSummary */
+        ProjectCostSummary: {
+            /** Actual Usd */
+            actual_usd?: number | null;
+            /** Estimated Usd */
+            estimated_usd?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Source */
+            source?: string | null;
         };
         /**
          * ProjectCreate
@@ -2599,6 +2860,28 @@ export interface components {
             /** Source Locator */
             source_locator: string;
         };
+        /** ProjectStatistics */
+        ProjectStatistics: {
+            /** By Model */
+            by_model: components["schemas"]["StatisticsBreakdown"][];
+            /** By Recipe */
+            by_recipe: components["schemas"]["StatisticsBreakdown"][];
+            /** By Workflow */
+            by_workflow: components["schemas"]["StatisticsBreakdown"][];
+            /** Cancelled */
+            cancelled: number;
+            cost: components["schemas"]["ProjectCostSummary"];
+            /** Failed */
+            failed: number;
+            /** Jobs */
+            jobs: number;
+            /** Processing Seconds */
+            processing_seconds: number;
+            /** Project Id */
+            project_id: string;
+            /** Succeeded */
+            succeeded: number;
+        };
         /** ProjectSyncApply */
         ProjectSyncApply: {
             /** Resolutions */
@@ -2790,8 +3073,12 @@ export interface components {
         };
         /** SceneCreate */
         SceneCreate: {
+            /** Due Date */
+            due_date?: string | null;
             /** Notes */
             notes?: string | null;
+            /** Priority */
+            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /**
              * Production Status
              * @default not_started
@@ -2802,20 +3089,30 @@ export interface components {
             summary: string;
             /** Tags */
             tags?: string[];
+            /** Todo */
+            todo?: string | null;
         };
         /** SceneUpdate */
         SceneUpdate: {
+            /** Due Date */
+            due_date?: string | null;
             /** Notes */
             notes?: string | null;
+            /** Priority */
+            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /** Production Status */
             production_status?: ("not_started" | "in_progress" | "has_candidates" | "accepted" | "completed") | null;
             /** Summary */
             summary?: string | null;
             /** Tags */
             tags?: string[] | null;
+            /** Todo */
+            todo?: string | null;
         };
         /** ShotCreate */
         ShotCreate: {
+            /** Due Date */
+            due_date?: string | null;
             /**
              * Duration Sec
              * @default 5
@@ -2823,6 +3120,8 @@ export interface components {
             duration_sec: number;
             /** Notes */
             notes?: string | null;
+            /** Priority */
+            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /**
              * Production Status
              * @default not_started
@@ -2833,19 +3132,42 @@ export interface components {
             summary: string;
             /** Tags */
             tags?: string[];
+            /** Todo */
+            todo?: string | null;
         };
         /** ShotUpdate */
         ShotUpdate: {
+            /** Due Date */
+            due_date?: string | null;
             /** Duration Sec */
             duration_sec?: number | null;
             /** Notes */
             notes?: string | null;
+            /** Priority */
+            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /** Production Status */
             production_status?: ("not_started" | "in_progress" | "has_candidates" | "accepted" | "completed") | null;
             /** Summary */
             summary?: string | null;
             /** Tags */
             tags?: string[] | null;
+            /** Todo */
+            todo?: string | null;
+        };
+        /** StatisticsBreakdown */
+        StatisticsBreakdown: {
+            /** Failed */
+            failed: number;
+            /** Jobs */
+            jobs: number;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Processing Seconds */
+            processing_seconds: number;
+            /** Succeeded */
+            succeeded: number;
         };
         /** StructureDeletionImpact */
         StructureDeletionImpact: {
@@ -4766,6 +5088,203 @@ export interface operations {
             };
         };
     };
+    list_batches_api_v1_projects__project_id__batches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationBatchRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_batch_api_v1_projects__project_id__batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationBatchCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_batch_api_v1_projects__project_id__batches_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationBatchCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationBatchPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_api_v1_projects__project_id__batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_pending_batch_jobs_api_v1_projects__project_id__batches__batch_id__cancel_pending_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_failed_batch_jobs_api_v1_projects__project_id__batches__batch_id__retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationBatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_canon_api_v1_projects__project_id__canon_get: {
         parameters: {
             query?: {
@@ -5466,6 +5985,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StructureDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_statistics_api_v1_projects__project_id__statistics_get: {
+        parameters: {
+            query?: {
+                recipe_id?: string | null;
+                workflow_version_id?: string | null;
+                model?: string | null;
+                date_from?: string | null;
+                date_to?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectStatistics"];
                 };
             };
             /** @description Validation Error */

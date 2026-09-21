@@ -80,6 +80,12 @@ export type ProjectTemplate = components["schemas"]["ProjectTemplateRead"];
 export type ProjectPackage = components["schemas"]["ProjectPackage"];
 export type ProjectPackagePreflight =
   components["schemas"]["ProjectPackagePreflight"];
+export type GenerationBatchCreate =
+  components["schemas"]["GenerationBatchCreate"];
+export type GenerationBatchPreview =
+  components["schemas"]["GenerationBatchPreview"];
+export type GenerationBatch = components["schemas"]["GenerationBatchRead"];
+export type ProjectStatistics = components["schemas"]["ProjectStatistics"];
 
 /**
  * API が返す共通 Envelope。表示文言ではなく code で種別を判定する (ADR 0001)。
@@ -429,6 +435,65 @@ export const api = {
     request<ProjectProgress>(
       `/projects/${encodeURIComponent(projectId)}/progress`,
     ),
+
+  previewGenerationBatch: (
+    projectId: string,
+    payload: GenerationBatchCreate,
+  ) =>
+    request<GenerationBatchPreview>(
+      `/projects/${encodeURIComponent(projectId)}/batches/preview`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  createGenerationBatch: (
+    projectId: string,
+    payload: GenerationBatchCreate,
+  ) =>
+    request<GenerationBatch>(
+      `/projects/${encodeURIComponent(projectId)}/batches`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  listGenerationBatches: (projectId: string) =>
+    request<GenerationBatch[]>(
+      `/projects/${encodeURIComponent(projectId)}/batches`,
+    ),
+
+  cancelPendingBatchJobs: (projectId: string, batchId: string) =>
+    request<GenerationBatch>(
+      `/projects/${encodeURIComponent(projectId)}/batches/${encodeURIComponent(batchId)}/cancel-pending`,
+      { method: "POST" },
+    ),
+
+  retryFailedBatchJobs: (projectId: string, batchId: string) =>
+    request<GenerationBatch>(
+      `/projects/${encodeURIComponent(projectId)}/batches/${encodeURIComponent(batchId)}/retry-failed`,
+      { method: "POST" },
+    ),
+
+  getProjectStatistics: (
+    projectId: string,
+    filters?: {
+      recipeId?: string;
+      workflowVersionId?: string;
+      model?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    },
+  ) => {
+    const query = new URLSearchParams();
+    if (filters?.recipeId) query.set("recipe_id", filters.recipeId);
+    if (filters?.workflowVersionId) {
+      query.set("workflow_version_id", filters.workflowVersionId);
+    }
+    if (filters?.model) query.set("model", filters.model);
+    if (filters?.dateFrom) query.set("date_from", filters.dateFrom);
+    if (filters?.dateTo) query.set("date_to", filters.dateTo);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<ProjectStatistics>(
+      `/projects/${encodeURIComponent(projectId)}/statistics${suffix}`,
+    );
+  },
 
   listJobs: (params: {
     projectId?: string;

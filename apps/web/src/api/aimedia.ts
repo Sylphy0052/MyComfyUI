@@ -24,6 +24,9 @@ export interface SceneSummary {
   notes?: string | null;
   tags?: string[];
   production_status?: ProductionStatus;
+  todo?: string | null;
+  due_date?: string | null;
+  priority?: ProductionPriority | null;
   reference: ImmutableReference;
 }
 
@@ -40,6 +43,9 @@ export interface ShotSummary {
   notes?: string | null;
   tags?: string[];
   production_status?: ProductionStatus;
+  todo?: string | null;
+  due_date?: string | null;
+  priority?: ProductionPriority | null;
   reference: ImmutableReference;
 }
 
@@ -64,6 +70,8 @@ export type ProductionStatus =
   | "accepted"
   | "completed";
 
+export type ProductionPriority = "low" | "medium" | "high" | "urgent";
+
 /** SceneのBGM。Shot単位では作らない。 */
 export interface MusicGenerationSpec {
   engine?: string;
@@ -83,6 +91,9 @@ export interface SceneData {
   notes?: string | null;
   tags?: string[];
   production_status?: ProductionStatus;
+  todo?: string | null;
+  due_date?: string | null;
+  priority?: ProductionPriority | null;
   location?: { id: string; display_name?: string | null };
   time_of_day?: string;
   season?: string | null;
@@ -126,6 +137,9 @@ export interface ShotData {
   notes?: string | null;
   tags?: string[];
   production_status?: ProductionStatus;
+  todo?: string | null;
+  due_date?: string | null;
+  priority?: ProductionPriority | null;
   camera?: {
     framing: string;
     angle?: string;

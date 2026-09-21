@@ -8,8 +8,10 @@ import type {
   ProjectDeletionImpact,
   ProjectProgress,
   ProjectRecord,
+  ProjectStatistics,
 } from "../api/client";
 import { ProjectGenerationDefaultsEditor } from "./ProjectGenerationDefaultsEditor";
+import { ProjectOperations } from "./ProjectOperations";
 import { ProjectPackageDialog, ProjectPortabilityPanel } from "./ProjectPortability";
 import { ExternalProjectImporter, ProjectSyncPanel } from "./ProjectSyncPanel";
 
@@ -28,6 +30,7 @@ interface ProjectHome {
   jobs: GenerationJob[];
   artifacts: Artifact[];
   progress: ProjectProgress;
+  statistics: ProjectStatistics | null;
 }
 
 interface PendingAction {
@@ -170,13 +173,16 @@ export function ProjectWorkspace({
     setHomeError(null);
     (async () => {
       try {
-        const [impact, jobs, artifacts, progress] = await Promise.all([
+        const [impact, jobs, artifacts, progress, statistics] = await Promise.all([
           api.getProjectDeletionImpact(selected.id),
           api.listJobs({ projectId: selected.id }),
           api.listArtifacts({ projectId: selected.id, limit: 6 }),
           api.getProjectProgress(selected.id),
+          selected.lifecycle === "trashed"
+            ? Promise.resolve(null)
+            : api.getProjectStatistics(selected.id),
         ]);
-        if (active) setHome({ impact, jobs, artifacts, progress });
+        if (active) setHome({ impact, jobs, artifacts, progress, statistics });
       } catch (cause) {
         if (active) setHomeError(describe(cause));
       } finally {
@@ -470,6 +476,9 @@ export function ProjectWorkspace({
                     <Metric label="Artifact" value={home.impact.artifact_count} />
                     <Metric label="実行中Job" value={home.impact.active_job_count} />
                     <Metric label="失敗Job" value={failedJobs} tone={failedJobs ? "danger" : undefined} />
+                    {home.statistics && <Metric label="生成合計" value={home.statistics.jobs} />}
+                    {home.statistics && <Metric label="生成成功" value={home.statistics.succeeded} />}
+                    {home.statistics && <Metric label="処理時間(秒)" value={Math.round(home.statistics.processing_seconds)} />}
                   </div>
                   {selected.source_type === "local" && (
                     <>
@@ -508,6 +517,10 @@ export function ProjectWorkspace({
                     </ul>
                   )}
                 </>
+              )}
+
+              {selected.lifecycle !== "trashed" && (
+                <ProjectOperations key={selected.id} project={selected} />
               )}
 
               {selected.source_type === "external" && (
