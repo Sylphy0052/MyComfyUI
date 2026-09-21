@@ -34,7 +34,7 @@ router = APIRouter(prefix="/api/v1/project-portability", tags=["project-portabil
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 FORMAT = "mycomfyui.project"
-VERSION = 1
+VERSION = 2
 SENSITIVE_KEYS = {
     "api_key",
     "authorization",
@@ -438,11 +438,26 @@ def _migrate_package(payload: dict[str, Any]) -> schemas.ProjectPackage:
     if payload.get("format") != FORMAT:
         raise _error("PROJECT_PACKAGE_FORMAT_INVALID", "Project package形式ではありません。")
     version = payload.get("version")
+    if version == 1:
+        project = payload.get("project")
+        project_payload = dict(project) if isinstance(project, dict) else project
+        if isinstance(project_payload, dict):
+            project_payload.setdefault(
+                "local_overrides",
+                schemas.ProjectLocalOverrides().model_dump(mode="json"),
+            )
+        payload = {
+            **payload,
+            "version": VERSION,
+            "project": project_payload,
+            "input_files": [],
+        }
+        version = VERSION
     if version != VERSION:
         raise _error(
             "PROJECT_PACKAGE_VERSION_UNSUPPORTED",
             "対応していないProject package versionです。",
-            details={"supported": [VERSION], "received": version},
+            details={"supported": [1, VERSION], "received": version},
         )
     try:
         return schemas.ProjectPackage.model_validate(payload)
@@ -499,6 +514,14 @@ async def _preflight(
         for character in package.project.local_overrides.characters
         for reference in character.reference_images
     ]
+    encoded_total = sum(len(item.content_base64) for item in package.input_files)
+    encoded_total_limit = (settings.project_package_max_bytes + 2) // 3 * 4
+    if encoded_total > encoded_total_limit:
+        raise _error(
+            "PROJECT_PACKAGE_TOO_LARGE",
+            "人物参照画像のbase64合計がProject package上限を超えています。",
+            http_status=413,
+        )
     if sum(item.byte_size for item in package.input_files) > settings.project_package_max_bytes:
         raise _error(
             "PROJECT_PACKAGE_TOO_LARGE",
@@ -579,6 +602,13 @@ def _reference_image_exists(
 def _decode_input_file(
     item: schemas.PortableInputFile, settings: Settings
 ) -> bytes:
+    encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
+    if len(item.content_base64) > encoded_limit:
+        raise _error(
+            "PROJECT_PACKAGE_TOO_LARGE",
+            "参照画像が入力素材の上限を超えています。",
+            http_status=413,
+        )
     try:
         content = base64.b64decode(item.content_base64, validate=True)
     except (ValueError, binascii.Error) as error:
@@ -642,20 +672,27 @@ def _restore_local_overrides(
                 relative_path = stored.relative_path
                 sha256 = stored.sha256
                 byte_size = stored.byte_size
-            else:
-                _reference_image_content(reference, settings)
-                relative_path = reference.relative_path
-                sha256 = reference.sha256
-                byte_size = reference.byte_size
-            references.append(
-                schemas.ProjectReferenceImage(
+                restored = schemas.ProjectReferenceImage(
                     file_name=reference.file_name,
                     relative_path=relative_path,
                     sha256=sha256,
                     byte_size=byte_size,
                     media_type=reference.media_type,
                 )
-            )
+                _reference_image_content(restored, settings)
+            else:
+                _reference_image_content(reference, settings)
+                relative_path = reference.relative_path
+                sha256 = reference.sha256
+                byte_size = reference.byte_size
+                restored = schemas.ProjectReferenceImage(
+                    file_name=reference.file_name,
+                    relative_path=relative_path,
+                    sha256=sha256,
+                    byte_size=byte_size,
+                    media_type=reference.media_type,
+                )
+            references.append(restored)
         characters.append(
             schemas.ProjectCharacterProfile(
                 id=character.id,

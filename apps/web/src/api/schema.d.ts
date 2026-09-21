@@ -2903,10 +2903,10 @@ export interface components {
             shots?: components["schemas"]["PortableShot"][];
             /**
              * Version
-             * @default 1
+             * @default 2
              * @constant
              */
-            version: 1;
+            version: 2;
         };
         /** ProjectPackageImport */
         ProjectPackageImport: {

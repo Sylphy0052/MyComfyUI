@@ -3669,8 +3669,8 @@
             "type": "array"
           },
           "version": {
-            "const": 1,
-            "default": 1,
+            "const": 2,
+            "default": 2,
             "title": "Version",
             "type": "integer"
           }

@@ -481,7 +481,7 @@ class PortableInputFile(ApiModel):
 
 class ProjectPackage(ApiModel):
     format: Literal["mycomfyui.project"] = "mycomfyui.project"
-    version: Literal[1] = 1
+    version: Literal[2] = 2
     exported_at: str
     project: PortableProject
     scenes: list[PortableScene] = Field(default_factory=list)
