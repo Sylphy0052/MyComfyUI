@@ -9,3 +9,9 @@
 
 # 参照API未提供時に検証用JSONを明示的に差し替える場合だけ指定する。
 # aimedia_fixture_path = "/absolute/path/to/reference.json"
+
+# 外部画像Artifactの総保存量。既定は20GiB。
+# external_image_import_quota_bytes = 21474836480
+
+# 外部画像のpreview確認を確定できる有効期間。既定は15分。
+# external_image_preview_ttl_seconds = 900

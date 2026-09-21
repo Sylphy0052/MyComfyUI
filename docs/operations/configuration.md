@@ -24,6 +24,8 @@ WindowsとmacOSではplatformdirsが各OS標準の設定ディレクトリを選
 
 `data_root`内の内容はGit管理しない。Project packageのexport、backup、restoreを使う場合も、認証情報は含めない。
 
+外部画像をArtifactとして取り込む場合、`external_image_import_quota_bytes`で取込元画像の総保存量を制限する。既定値は20GiBである。previewの確認結果は`external_image_preview_ttl_seconds`の間だけconfirmに使用でき、既定値は900秒である。埋込Workflowは非信頼入力として保存するだけで実行しない。
+
 ## 既存作品への接続
 
 上流のai-media参照APIが利用できる場合は、ユーザー設定へ`aimedia_base_url`を指定する。参照APIはProject、Scene、Shot、Canonを読取り専用で返す必要がある。接続後は画面から外部作品をインポートし、同期時もMyComfyUI側のスナップショットだけを更新する。

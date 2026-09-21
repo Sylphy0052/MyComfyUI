@@ -740,6 +740,49 @@
         "title": "ArtifactDecisionUpdate",
         "type": "object"
       },
+      "ArtifactImportRead": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "original_file_name": {
+            "title": "Original File Name",
+            "type": "string"
+          },
+          "raw_metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Raw Metadata",
+            "type": "object"
+          },
+          "recipe_draft": {
+            "additionalProperties": true,
+            "title": "Recipe Draft",
+            "type": "object"
+          },
+          "source_format": {
+            "title": "Source Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "original_file_name",
+          "source_format",
+          "raw_metadata",
+          "recipe_draft",
+          "created_at"
+        ],
+        "title": "ArtifactImportRead",
+        "type": "object"
+      },
       "ArtifactIntegrityEntry": {
         "additionalProperties": false,
         "description": "整合性を欠いたArtifact 1件。理由が1つも無いArtifactは一覧へ出さない。",
@@ -1165,6 +1208,170 @@
           "reachable"
         ],
         "title": "ComfyUIBackendHealthRead",
+        "type": "object"
+      },
+      "ExternalImageImportConfirm": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment": {
+            "$ref": "#/components/schemas/AssignmentTarget"
+          },
+          "content_base64": {
+            "maxLength": 35000000,
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "expected_sha256": {
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "title": "Expected Sha256",
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          },
+          "media_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          },
+          "preview_token": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Preview Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name",
+          "content_base64",
+          "media_type",
+          "preview_token",
+          "expected_sha256"
+        ],
+        "title": "ExternalImageImportConfirm",
+        "type": "object"
+      },
+      "ExternalImageImportRead": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactRead"
+          },
+          "import_info": {
+            "$ref": "#/components/schemas/ArtifactImportRead"
+          }
+        },
+        "required": [
+          "artifact",
+          "import_info"
+        ],
+        "title": "ExternalImageImportRead",
+        "type": "object"
+      },
+      "ExternalImagePreviewCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "content_base64": {
+            "maxLength": 35000000,
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "file_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "File Name",
+            "type": "string"
+          },
+          "media_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name",
+          "content_base64",
+          "media_type"
+        ],
+        "title": "ExternalImagePreviewCreate",
+        "type": "object"
+      },
+      "ExternalImagePreviewRead": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
+          "preview_token": {
+            "title": "Preview Token",
+            "type": "string"
+          },
+          "recipe_draft": {
+            "additionalProperties": true,
+            "title": "Recipe Draft",
+            "type": "object"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source_format": {
+            "title": "Source Format",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "preview_token",
+          "file_name",
+          "sha256",
+          "byte_size",
+          "media_type",
+          "source_format",
+          "width",
+          "height",
+          "metadata",
+          "recipe_draft",
+          "warnings"
+        ],
+        "title": "ExternalImagePreviewRead",
         "type": "object"
       },
       "ExternalProjectCandidate": {
@@ -2731,6 +2938,16 @@
             "title": "Id",
             "type": "string"
           },
+          "import_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PortableArtifactImport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "enum": [
               "image",
@@ -2778,6 +2995,51 @@
           "created_at"
         ],
         "title": "PortableArtifact",
+        "type": "object"
+      },
+      "PortableArtifactImport": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "original_file_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Original File Name",
+            "type": "string"
+          },
+          "raw_metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Raw Metadata",
+            "type": "object"
+          },
+          "recipe_draft": {
+            "additionalProperties": true,
+            "title": "Recipe Draft",
+            "type": "object"
+          },
+          "source_format": {
+            "enum": [
+              "png",
+              "jpeg",
+              "webp"
+            ],
+            "title": "Source Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "original_file_name",
+          "source_format",
+          "raw_metadata",
+          "recipe_draft",
+          "created_at"
+        ],
+        "title": "PortableArtifactImport",
         "type": "object"
       },
       "PortableProject": {
@@ -6945,6 +7207,45 @@
         "summary": "Update Artifact Decision"
       }
     },
+    "/api/v1/artifacts/{artifact_id}/import": {
+      "get": {
+        "operationId": "get_artifact_import_api_v1_artifacts__artifact_id__import_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Artifact Import"
+      }
+    },
     "/api/v1/artifacts/{artifact_id}/tags": {
       "post": {
         "description": "Artifactへタグを付ける。既に付いている場合も現在の状態を返す。\n\n同じタグを二度送るのは、画面の再送や操作の重複で普通に起こる。既に狙いどおりの\n状態になっているものをエラーにしても、呼び出し側は結局現在の状態を引き直すため、\n付け直しは成功として扱う。",
@@ -7073,6 +7374,84 @@
           }
         },
         "summary": "Get Voice Backend Health"
+      }
+    },
+    "/api/v1/external-images/import": {
+      "post": {
+        "description": "previewで確認した内容だけを外部Artifactとして確定する。",
+        "operationId": "confirm_external_image_import_api_v1_external_images_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalImageImportConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalImageImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm External Image Import"
+      }
+    },
+    "/api/v1/external-images/import/preview": {
+      "post": {
+        "description": "画像を保存せず検証し、非実行のRecipe下書きと警告を返す。",
+        "operationId": "preview_external_image_import_api_v1_external_images_import_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalImagePreviewCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalImagePreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview External Image Import"
       }
     },
     "/api/v1/generation-jobs": {

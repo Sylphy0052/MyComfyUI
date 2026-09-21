@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 from starlette import status
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from mycomfyui_api.adapters.agent import create_agent_providers
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
@@ -28,6 +29,7 @@ from mycomfyui_api.errors import (
     unhandled_error_handler,
     validation_error_handler,
 )
+from mycomfyui_api.image_imports import MAX_IMAGE_BYTES as MAX_EXTERNAL_IMAGE_BYTES
 from mycomfyui_api.migrator import upgrade_to_head
 from mycomfyui_api.queue import (
     JobQueueWorker,
@@ -124,6 +126,30 @@ def _max_request_bytes() -> int:
     return encoded + REQUEST_BODY_MARGIN_BYTES
 
 
+def _request_limit(path: str) -> int:
+    """大容量Project packageを許す全体上限と、画像取込専用の上限を分ける。"""
+    if path.startswith("/api/v1/external-images/import"):
+        encoded = (MAX_EXTERNAL_IMAGE_BYTES + 2) // 3 * 4
+        return encoded + REQUEST_BODY_MARGIN_BYTES
+    return _max_request_bytes()
+
+
+class PathRequestBodyLimitMiddleware:
+    """pathごとの上限を、Content-Lengthなしのchunked本文にも適用する。"""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        limiter = RequestBodyLimitMiddleware(
+            self.app, max_body_size=_request_limit(scope.get("path", ""))
+        )
+        await limiter(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="MyComfyUI Application API", version="0.1.0", lifespan=lifespan)
     app.add_exception_handler(ApiError, api_error_handler)
@@ -139,7 +165,7 @@ def create_app() -> FastAPI:
     # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
     # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りするため、
     # ASGIの受信側にも関所を置く。
-    app.add_middleware(RequestBodyLimitMiddleware, max_body_size=_max_request_bytes())
+    app.add_middleware(PathRequestBodyLimitMiddleware)
 
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):
@@ -152,7 +178,7 @@ def create_app() -> FastAPI:
         """
         declared = request.headers.get("Content-Length")
         if declared is not None and declared.isdigit():
-            limit = _max_request_bytes()
+            limit = _request_limit(request.url.path)
             if int(declared) > limit:
                 # 例外ハンドラはこのミドルウェアの内側にあり、ここで送出しても
                 # 共通Envelopeにならない。応答を直接組み立てて返す。

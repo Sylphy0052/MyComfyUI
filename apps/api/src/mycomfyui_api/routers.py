@@ -1,22 +1,25 @@
+import asyncio
 import base64
 import binascii
 import hashlib
 import json
 import logging
+import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from starlette.concurrency import run_in_threadpool
 
-from mycomfyui_api import approvals, provenance, schemas, storage
+from mycomfyui_api import approvals, image_imports, provenance, schemas, storage
 from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import proposals
@@ -49,10 +52,12 @@ from mycomfyui_api.models import (
     AgentProposalApplication,
     ApprovalLog,
     Artifact,
+    ArtifactImport,
     ArtifactTag,
     Base,
     GenerationJob,
     GenerationManifest,
+    ImageImportPreview,
     Project,
     ProjectShot,
     Recipe,
@@ -111,6 +116,12 @@ DIGEST_CHUNK_SIZE = 1024 * 1024
 #: 派生関係の探索を上限で打ち切ったことを伝える応答ヘッダ。一覧の応答本体は
 #: Artifactの配列のままにし、打ち切りの有無だけをヘッダで返す。
 LINEAGE_TRUNCATED_HEADER = "X-Lineage-Truncated"
+
+# 画像decoderと大きなbase64処理をevent loopから分離したうえで、同時実行数も絞る。
+IMAGE_IMPORT_PARSE_SEMAPHORE = asyncio.Semaphore(2)
+# quota確認から保存・DB commitまでを直列化し、同時confirmによる上限超過を防ぐ。
+IMAGE_IMPORT_CONFIRM_LOCK = asyncio.Lock()
+MIN_FREE_SPACE_AFTER_IMPORT = 512 * 1024 * 1024
 
 # 異常なBackend応答をそのままブラウザへ増幅しない。通常のモデル在庫を十分収めつつ、
 # 応答とselect要素が無制限に増えることを防ぐ。
@@ -1466,6 +1477,194 @@ async def _artifact_read(
     return reads[0]
 
 
+async def _parse_external_image(
+    payload: schemas.ExternalImagePreviewCreate,
+) -> image_imports.ParsedImage:
+    try:
+        async with IMAGE_IMPORT_PARSE_SEMAPHORE:
+            return await run_in_threadpool(
+                image_imports.parse_image,
+                payload.file_name,
+                payload.content_base64,
+                payload.media_type,
+            )
+    except image_imports.ImageImportError as error:
+        raise ApiError(
+            "INVALID_IMAGE_IMPORT",
+            str(error),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        ) from error
+
+
+@router.post(
+    "/external-images/import/preview",
+    response_model=schemas.ExternalImagePreviewRead,
+)
+async def preview_external_image_import(
+    payload: schemas.ExternalImagePreviewCreate, session: SessionDep
+):
+    """画像を保存せず検証し、非実行のRecipe下書きと警告を返す。"""
+    parsed = await _parse_external_image(payload)
+    now = datetime.now().astimezone()
+    settings = get_settings()
+    preview = ImageImportPreview(
+        id=schemas.new_id(),
+        sha256=parsed.sha256,
+        file_name=payload.file_name,
+        media_type=parsed.media_type,
+        created_at=now.isoformat(),
+        expires_at=(
+            now + timedelta(seconds=settings.external_image_preview_ttl_seconds)
+        ).isoformat(),
+        consumed_at=None,
+    )
+    session.add(preview)
+    await session.execute(
+        delete(ImageImportPreview).where(
+            ImageImportPreview.expires_at < now.isoformat()
+        )
+    )
+    await _commit(session)
+    return schemas.ExternalImagePreviewRead(
+        preview_token=preview.id,
+        file_name=payload.file_name,
+        sha256=parsed.sha256,
+        byte_size=parsed.byte_size,
+        media_type=parsed.media_type,
+        source_format=parsed.source_format,
+        width=parsed.width,
+        height=parsed.height,
+        metadata=parsed.metadata,
+        recipe_draft=parsed.recipe_draft,
+        warnings=parsed.warnings,
+    )
+
+
+@router.post(
+    "/external-images/import",
+    response_model=schemas.ExternalImageImportRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def confirm_external_image_import(
+    payload: schemas.ExternalImageImportConfirm,
+    session: SessionDep,
+    source: ReferenceSourceDep,
+):
+    """previewで確認した内容だけを外部Artifactとして確定する。"""
+    parsed = await _parse_external_image(payload)
+    if parsed.sha256 != payload.expected_sha256:
+        raise ApiError(
+            "IMAGE_IMPORT_CHANGED",
+            "確認後に画像の内容が変わりました。もう一度previewしてください。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    assignment = await _validate_assignment_target(session, source, payload.assignment)
+    settings = get_settings()
+    async with IMAGE_IMPORT_CONFIRM_LOCK:
+        preview = await session.get(ImageImportPreview, payload.preview_token)
+        now = datetime.now().astimezone()
+        if (
+            preview is None
+            or preview.consumed_at is not None
+            or datetime.fromisoformat(preview.expires_at) <= now
+            or preview.sha256 != parsed.sha256
+            or preview.file_name != payload.file_name
+            or preview.media_type != parsed.media_type
+        ):
+            raise ApiError(
+                "IMAGE_IMPORT_PREVIEW_INVALID",
+                "previewが無効または期限切れです。もう一度確認してください。",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+        used_rows = await session.execute(
+            select(Artifact.relative_path, Artifact.byte_size)
+            .join(ArtifactImport, ArtifactImport.artifact_id == Artifact.id)
+            .where(Artifact.availability == "complete")
+        )
+        used_bytes = sum(dict(used_rows.all()).values())
+        if used_bytes + parsed.byte_size > settings.external_image_import_quota_bytes:
+            raise ApiError(
+                "IMAGE_IMPORT_QUOTA_EXCEEDED",
+                "外部画像の保存上限を超えます。",
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                details={
+                    "used_bytes": used_bytes,
+                    "quota_bytes": settings.external_image_import_quota_bytes,
+                },
+            )
+        free_bytes = (
+            await run_in_threadpool(shutil.disk_usage, settings.data_root)
+        ).free
+        if free_bytes - parsed.byte_size < MIN_FREE_SPACE_AFTER_IMPORT:
+            raise ApiError(
+                "INSUFFICIENT_STORAGE",
+                "Artifact storeの空き容量が不足しています。",
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            )
+        artifact_id = schemas.new_id()
+        try:
+            stored = await run_in_threadpool(
+                storage.write_artifact,
+                f"import-{artifact_id}",
+                payload.file_name,
+                parsed.data,
+            )
+        except storage.StorageError as error:
+            raise ApiError(
+                "ARTIFACT_WRITE_FAILED",
+                "外部画像をArtifact storeへ保存できません。",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ) from error
+        created_at = now.isoformat()
+        artifact = Artifact(
+            id=artifact_id,
+            job_id=None,
+            kind="image",
+            relative_path=stored.relative_path,
+            sha256=stored.sha256,
+            byte_size=stored.byte_size,
+            media_type=parsed.media_type,
+            availability="complete",
+            parent_artifact_id=None,
+            assigned_project_id=assignment[0],
+            assigned_scene_id=assignment[1],
+            assigned_shot_id=assignment[2],
+            created_at=created_at,
+            decision="undecided",
+            decision_at=None,
+        )
+        import_info = ArtifactImport(
+            artifact_id=artifact_id,
+            original_file_name=payload.file_name,
+            source_format=parsed.source_format,
+            raw_metadata=parsed.metadata,
+            recipe_draft=parsed.recipe_draft,
+            created_at=created_at,
+        )
+        preview.consumed_at = created_at
+        session.add_all([artifact, import_info])
+        try:
+            await _commit(session)
+        except Exception:
+            storage.discard_artifacts([stored.relative_path])
+            raise
+    return schemas.ExternalImageImportRead(
+        artifact=await _artifact_read(session, artifact),
+        import_info=schemas.ArtifactImportRead.model_validate(import_info),
+    )
+
+
+@router.get(
+    "/artifacts/{artifact_id}/import",
+    response_model=schemas.ArtifactImportRead,
+)
+async def get_artifact_import(artifact_id: str, session: SessionDep):
+    await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    return await _get_or_404(
+        session, ArtifactImport, "ArtifactImport", artifact_id
+    )
+
+
 async def _collect_artifact_lineage(
     session: AsyncSession, artifact: Artifact
 ) -> tuple[list[str], bool]:
@@ -1597,6 +1796,14 @@ async def operate_artifacts(
         tags_by_id: dict[str, list[str]] = {}
         for artifact_id, tag in tag_rows:
             tags_by_id.setdefault(artifact_id, []).append(tag)
+        import_rows = list(
+            await session.scalars(
+                select(ArtifactImport).where(
+                    ArtifactImport.artifact_id.in_(payload.artifact_ids)
+                )
+            )
+        )
+        imports_by_id = {row.artifact_id: row for row in import_rows}
         now = schemas.now_iso()
         for original in rows:
             copied = Artifact(
@@ -1617,6 +1824,18 @@ async def operate_artifacts(
                 decision_at=original.decision_at,
             )
             session.add(copied)
+            imported = imports_by_id.get(original.id)
+            if imported is not None:
+                session.add(
+                    ArtifactImport(
+                        artifact_id=copied.id,
+                        original_file_name=imported.original_file_name,
+                        source_format=imported.source_format,
+                        raw_metadata=imported.raw_metadata,
+                        recipe_draft=imported.recipe_draft,
+                        created_at=now,
+                    )
+                )
             for tag in tags_by_id.get(original.id, []):
                 session.add(
                     ArtifactTag(
@@ -1975,6 +2194,13 @@ async def list_artifact_integrity(
     candidates = list(result.scalars().all())
     truncated = len(candidates) > limit
     candidates = candidates[:limit]
+    imported_artifact_ids = set(
+        await session.scalars(
+            select(ArtifactImport.artifact_id).where(
+                ArtifactImport.artifact_id.in_([item.id for item in candidates])
+            )
+        )
+    )
 
     # 判定を頼まれていない場合も「Canon更新は判定できていない」状態として返す。
     # 判定した結果として更新が無かったのか、そもそも見ていないのかを取り違えさせない。
@@ -1989,24 +2215,32 @@ async def list_artifact_integrity(
     job_findings: dict[str | None, list[schemas.ArtifactIntegrityFinding]] = {}
     found: list[tuple[Artifact, list[schemas.ArtifactIntegrityFinding]]] = []
     for artifact in candidates:
-        if artifact.job_id not in job_findings:
-            job_findings[artifact.job_id] = (
-                [_integrity_finding("reference_broken", "移行したArtifactには作成元Jobがありません。")]
-                if artifact.job_id is None
-                else await _job_integrity_findings(
+        if artifact.job_id is None:
+            related_findings = (
+                []
+                if artifact.id in imported_artifact_ids
+                else [
+                    _integrity_finding(
+                        "reference_broken", "移行したArtifactには作成元Jobがありません。"
+                    )
+                ]
+            )
+        else:
+            if artifact.job_id not in job_findings:
+                job_findings[artifact.job_id] = await _job_integrity_findings(
                     session,
                     source,
                     artifact.job_id,
                     canon_state=canon_state,
                 )
-            )
+            related_findings = job_findings[artifact.job_id]
         # hashの取り直しは1件あたりのファイル全体を読む同期I/Oになる。対象が最大
         # `limit`件続くため、そのまま呼ぶとイベントループを塞いで他の要求が止まる。
         file_findings = await run_in_threadpool(_artifact_file_findings, artifact)
         found.append(
             (
                 artifact,
-                [*file_findings, *job_findings[artifact.job_id]],
+                [*file_findings, *related_findings],
             )
         )
 

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
@@ -356,6 +357,42 @@ class PortableShot(ApiModel):
     priority: ProductionPriority | None = None
 
 
+class PortableArtifactImport(ApiModel):
+    original_file_name: str = Field(min_length=1, max_length=255)
+    source_format: Literal["png", "jpeg", "webp"]
+    raw_metadata: dict[str, str]
+    recipe_draft: dict[str, Any]
+    created_at: str
+
+    @field_validator("raw_metadata")
+    @classmethod
+    def _validate_raw_metadata(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 64:
+            raise ValueError("raw_metadataは64項目以下にしてください。")
+        total = 0
+        for key, text in value.items():
+            if not key or len(key) > 79:
+                raise ValueError("raw_metadataのkeyが不正です。")
+            size = len(text.encode("utf-8"))
+            if size > 256 * 1024:
+                raise ValueError("raw_metadataの値が大きすぎます。")
+            total += size
+        if total > 1024 * 1024:
+            raise ValueError("raw_metadataの総量が大きすぎます。")
+        return value
+
+    @field_validator("recipe_draft")
+    @classmethod
+    def _validate_recipe_draft(cls, value: dict[str, Any]) -> dict[str, Any]:
+        try:
+            size = len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+        except (RecursionError, TypeError, ValueError) as error:
+            raise ValueError("recipe_draftをJSONとして保存できません。") from error
+        if size > 1024 * 1024:
+            raise ValueError("recipe_draftが大きすぎます。")
+        return value
+
+
 class PortableArtifact(ApiModel):
     id: str
     kind: ArtifactKind
@@ -369,7 +406,14 @@ class PortableArtifact(ApiModel):
     assigned_shot_id: str | None = None
     created_at: str
     decision: ArtifactDecision = "undecided"
+    import_info: PortableArtifactImport | None = None
     content_base64: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_import_info(self) -> "PortableArtifact":
+        if self.import_info is not None and self.kind != "image":
+            raise ValueError("外部取込来歴を持てるのは画像Artifactだけです。")
+        return self
 
     @field_validator("relative_path")
     @classmethod
@@ -881,6 +925,26 @@ class GenerationManifestRead(ApiModel):
     created_at: str
 
 
+class ExternalImagePreviewCreate(ApiModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    content_base64: str = Field(min_length=1, max_length=35_000_000)
+    media_type: str = Field(min_length=1, max_length=100)
+
+
+class ExternalImagePreviewRead(ApiModel):
+    preview_token: str
+    file_name: str
+    sha256: str
+    byte_size: int
+    media_type: str
+    source_format: str
+    width: int
+    height: int
+    metadata: dict[str, str]
+    recipe_draft: dict[str, Any]
+    warnings: list[str]
+
+
 class ArtifactCreate(ApiModel):
     job_id: ResourceId
     kind: ArtifactKind
@@ -947,6 +1011,15 @@ class ArtifactRead(ApiModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class ArtifactImportRead(ApiModel):
+    artifact_id: str
+    original_file_name: str
+    source_format: str
+    raw_metadata: dict[str, str]
+    recipe_draft: dict[str, Any]
+    created_at: str
+
+
 class AssignmentTarget(ApiModel):
     """現在の整理先。すべてNoneなら未所属へ戻す。"""
 
@@ -961,6 +1034,17 @@ class AssignmentTarget(ApiModel):
         if self.shot_id is not None and self.scene_id is None:
             raise ValueError("Shotの割当てにはscene_idが必要です。")
         return self
+
+
+class ExternalImageImportConfirm(ExternalImagePreviewCreate):
+    preview_token: ResourceId
+    expected_sha256: Sha256
+    assignment: AssignmentTarget = Field(default_factory=AssignmentTarget)
+
+
+class ExternalImageImportRead(ApiModel):
+    artifact: ArtifactRead
+    import_info: ArtifactImportRead
 
 
 class JobAssignmentUpdate(AssignmentTarget):

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   Artifact,
+  ArtifactImport,
   GenerationJob,
   GenerationManifest,
   JobLineage,
@@ -13,6 +14,7 @@ import type { SceneSummary, ShotSummary } from "../api/aimedia";
 import { ArtifactDetail } from "./ArtifactDetail";
 import { ArtifactPreview, mediaLabel } from "./ArtifactPreview";
 import { DECISION_LABEL, DECISION_OPTIONS } from "./CandidateGallery";
+import { ExternalImageImportPanel } from "./ExternalImageImportPanel";
 import { AssignmentPicker } from "./AssignmentPicker";
 
 const KIND_OPTIONS = [
@@ -93,6 +95,11 @@ export function AssetBrowser({
     null,
   );
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [importDetail, setImportDetail] = useState<ArtifactImport | null>(null);
+  const [importLookup, setImportLookup] = useState<{
+    artifactId: string;
+    state: "loading" | "found" | "not-found" | "failed";
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // 0件が「条件に合わない」のか「取得に失敗した」のかを区別する。
@@ -165,6 +172,12 @@ export function AssetBrowser({
   );
 
   const selectedJobId = selected?.job_id ?? null;
+  const selectedDetail =
+    detail?.job.id === selectedJobId ? detail : null;
+  const selectedImportDetail =
+    importDetail?.artifact_id === selected?.id ? importDetail : null;
+  const selectedImportState =
+    importLookup?.artifactId === selected?.id ? importLookup.state : "loading";
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -192,6 +205,37 @@ export function AssetBrowser({
       active = false;
     };
   }, [selectedJobId]);
+
+  useEffect(() => {
+    if (!selected || selected.job_id) {
+      setImportDetail(null);
+      setImportLookup(null);
+      return;
+    }
+    let active = true;
+    setImportDetail(null);
+    setImportLookup({ artifactId: selected.id, state: "loading" });
+    api
+      .getArtifactImport(selected.id)
+      .then((result) => {
+        if (active) {
+          setImportDetail(result);
+          setImportLookup({ artifactId: selected.id, state: "found" });
+        }
+      })
+      .catch((cause) => {
+        if (!active) return;
+        if (!(cause instanceof ApiError && cause.code === "RESOURCE_NOT_FOUND")) {
+          setError(describe(cause));
+          setImportLookup({ artifactId: selected.id, state: "failed" });
+        } else {
+          setImportLookup({ artifactId: selected.id, state: "not-found" });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [selected]);
 
   const addTagFilter = () => {
     const value = tagDraft.trim();
@@ -291,6 +335,17 @@ export function AssetBrowser({
           </button>
         </div>
       )}
+      <ExternalImageImportPanel
+        assignment={{
+          project_id: projectId,
+          scene_id: projectId ? sceneId : null,
+          shot_id: projectId && sceneId ? shotId : null,
+        }}
+        onImported={async () => {
+          setReloadToken((current) => current + 1);
+          await onAssignmentsChanged();
+        }}
+      />
 
       <div className="panel stack assignment-batch">
         <div className="row spread">
@@ -552,19 +607,21 @@ export function AssetBrowser({
         </div>
 
         <div className="stack">
-          {selected && detail ? (
+          {selected ? (
             <>
-              <div className="row">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLineageArtifactId(null);
-                    setLineageJobId(detail.job.id);
-                  }}
-                >
-                  このJobの派生で絞り込む
-                </button>
-              </div>
+              {selectedDetail && (
+                <div className="row">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLineageArtifactId(null);
+                      setLineageJobId(selectedDetail.job.id);
+                    }}
+                  >
+                    このJobの派生で絞り込む
+                  </button>
+                </div>
+              )}
 
               <div className="stack">
                 <label htmlFor="asset-detail-tag">タグ</label>
@@ -608,12 +665,38 @@ export function AssetBrowser({
                 </div>
               </div>
               <ArtifactPreview artifact={selected} />
-              <ArtifactDetail
-                artifact={selected}
-                job={detail.job}
-                manifest={detail.manifest}
-                lineage={detail.lineage}
-              />
+              {selectedDetail ? (
+                <ArtifactDetail
+                  artifact={selected}
+                  job={selectedDetail.job}
+                  manifest={selectedDetail.manifest}
+                  lineage={selectedDetail.lineage}
+                />
+              ) : selectedImportDetail ? (
+                <div className="stack">
+                  <h3>外部画像の来歴</h3>
+                  <p>元ファイル:{selectedImportDetail.original_file_name}</p>
+                  <p>形式:{selectedImportDetail.source_format}</p>
+                  <details>
+                    <summary>取込メタデータ</summary>
+                    <pre>
+                      {JSON.stringify(selectedImportDetail.raw_metadata, null, 2)}
+                    </pre>
+                  </details>
+                  <details open>
+                    <summary>Recipe下書き（実行不可）</summary>
+                    <pre>
+                      {JSON.stringify(selectedImportDetail.recipe_draft, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              ) : selectedImportState === "loading" ? (
+                <p className="muted">外部来歴を確認中です。</p>
+              ) : selectedImportState === "failed" ? (
+                <p className="error">外部来歴を取得できませんでした。</p>
+              ) : (
+                <p className="muted">生成Jobを持たないArtifactです。</p>
+              )}
             </>
           ) : (
             <p className="muted">
