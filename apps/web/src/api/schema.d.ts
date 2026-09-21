@@ -206,7 +206,8 @@ export interface paths {
          * List Artifacts
          * @description Artifact履歴の一覧。既定は作成の新しい順に返す。
          *
-         *     `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
+         *     Projectコンテキストは作成元Jobの不変参照と突き合わせる。`unassigned`は
+         *     Project参照を持たないArtifactだけへ絞る。
          *     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
          *
          *     `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
@@ -424,8 +425,8 @@ export interface paths {
          * List Generation Jobs
          * @description キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。
          *
-         *     `scene_id`と`shot_id`は`scene_ref`/`shot_ref`の`id`と突き合わせる。画面が特定の
-         *     Shotの生成履歴だけを見るために使う。
+         *     `project_id`、`scene_id`、`shot_id`は不変参照と突き合わせる。`unassigned`は
+         *     Project参照を持たないJobだけへ絞る。
          */
         get: operations["list_generation_jobs_api_v1_generation_jobs_get"];
         put?: never;
@@ -1387,15 +1388,15 @@ export interface components {
             /** Parent Job Id */
             parent_job_id?: string | null;
             /** Project Id */
-            project_id: string;
+            project_id?: string | null;
             /** Queue Sequence */
             queue_sequence?: number | null;
             /** Recipe Id */
             recipe_id: string;
             /** Scene Id */
-            scene_id: string;
+            scene_id?: string | null;
             /** Shot Id */
-            shot_id: string;
+            shot_id?: string | null;
         };
         /** GenerationJobRead */
         GenerationJobRead: {
@@ -1493,13 +1494,13 @@ export interface components {
             /** Parent Job Id */
             parent_job_id?: string | null;
             /** Project Id */
-            project_id: string;
+            project_id?: string | null;
             /** Recipe Id */
             recipe_id: string;
             /** Scene Id */
-            scene_id: string;
+            scene_id?: string | null;
             /** Shot Id */
-            shot_id: string;
+            shot_id?: string | null;
         };
         /**
          * GenerationPreviewDiff
@@ -2277,8 +2278,10 @@ export interface operations {
     list_artifacts_api_v1_artifacts_get: {
         parameters: {
             query?: {
+                project_id?: string | null;
                 scene_id?: string | null;
                 shot_id?: string | null;
+                unassigned?: boolean;
                 job_id?: string | null;
                 kind?: ("image" | "video" | "audio" | "workflow" | "log") | null;
                 decision?: ("undecided" | "accepted" | "rejected") | null;
@@ -2353,8 +2356,10 @@ export interface operations {
     list_artifact_integrity_api_v1_artifacts_integrity_get: {
         parameters: {
             query?: {
+                project_id?: string | null;
                 scene_id?: string | null;
                 shot_id?: string | null;
+                unassigned?: boolean;
                 job_id?: string | null;
                 kind?: ("image" | "video" | "audio" | "workflow" | "log") | null;
                 tag?: string[] | null;
@@ -2595,8 +2600,10 @@ export interface operations {
         parameters: {
             query?: {
                 state?: ("queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled") | null;
+                project_id?: string | null;
                 scene_id?: string | null;
                 shot_id?: string | null;
+                unassigned?: boolean;
                 limit?: number;
                 offset?: number;
             };

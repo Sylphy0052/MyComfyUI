@@ -476,20 +476,38 @@ class _ResolvedReferences:
 
     def input_refs(self, extra: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Manifestの`input_refs`を組み立てる。`extra`は入力cache参照を想定する。"""
-        return [self.scene_ref, self.shot_ref, *self.canon_refs, *extra]
+        return [
+            reference
+            for reference in [self.scene_ref, self.shot_ref, *self.canon_refs, *extra]
+            if reference.get("kind")
+        ]
 
 
 async def _resolve_references(
-    source: ReferenceSource, project_id: str, scene_id: str, shot_id: str
+    source: ReferenceSource,
+    project_id: str | None,
+    scene_id: str | None,
+    shot_id: str | None,
 ) -> _ResolvedReferences:
-    """Scene/Shotを参照APIから取得し、本文とCanonの不変参照を固定する。
+    """指定されたScene/Shotを参照APIから取得し、不変参照を固定する。
 
     Canon参照を解決できないままJobを作ると、どのCanonで生成したか後から説明できない
     履歴だけが残る。取得できない場合と応答から参照を取り出せない場合はJobを作らない。
     """
+    scene_ref: dict[str, Any] = (
+        {"project_id": project_id} if project_id is not None else {}
+    )
+    shot_ref: dict[str, Any] = {}
+    scene_canon: list[dict[str, Any]] = []
+    shot_canon: list[dict[str, Any]] = []
+    scene_envelope: Any = None
+    shot_envelope: Any = None
+
     try:
-        scene_envelope = await source.get_scene(project_id, scene_id)
-        shot_envelope = await source.get_shot(project_id, scene_id, shot_id)
+        if scene_id is not None and project_id is not None:
+            scene_envelope = await source.get_scene(project_id, scene_id)
+        if shot_id is not None and scene_id is not None and project_id is not None:
+            shot_envelope = await source.get_shot(project_id, scene_id, shot_id)
     except AiMediaNotFound as error:
         raise ApiError(
             "REFERENCE_NOT_FOUND",
@@ -510,12 +528,20 @@ async def _resolve_references(
         ) from error
 
     try:
-        scene_ref, scene_canon = provenance.resolve_envelope(
-            provenance.KIND_SCENE, scene_id, scene_envelope
-        )
-        shot_ref, shot_canon = provenance.resolve_envelope(
-            provenance.KIND_SHOT, shot_id, shot_envelope
-        )
+        if scene_id is not None:
+            resolved_scene_ref, scene_canon = provenance.resolve_envelope(
+                provenance.KIND_SCENE, scene_id, scene_envelope
+            )
+            scene_ref = {**resolved_scene_ref, "project_id": project_id}
+        if shot_id is not None:
+            resolved_shot_ref, shot_canon = provenance.resolve_envelope(
+                provenance.KIND_SHOT, shot_id, shot_envelope
+            )
+            shot_ref = {
+                **resolved_shot_ref,
+                "project_id": project_id,
+                "scene_id": scene_id,
+            }
     except provenance.ReferenceError as error:
         logger.warning("参照APIの応答から不変参照を取り出せません。", exc_info=error)
         raise ApiError(
@@ -525,8 +551,8 @@ async def _resolve_references(
         ) from error
 
     return _ResolvedReferences(
-        scene_ref={**scene_ref, "project_id": project_id},
-        shot_ref={**shot_ref, "project_id": project_id, "scene_id": scene_id},
+        scene_ref=scene_ref,
+        shot_ref=shot_ref,
         canon_refs=provenance.deduplicate([*scene_canon, *shot_canon]),
         scene_data=_envelope_data(scene_envelope),
         shot_data=_envelope_data(shot_envelope),
@@ -795,21 +821,37 @@ async def _load_queue_sequence(session: AsyncSession, job: GenerationJob) -> Non
 async def list_generation_jobs(
     session: SessionDep,
     state: schemas.JobState | None = None,
+    project_id: str | None = None,
     scene_id: str | None = None,
     shot_id: str | None = None,
+    unassigned: bool = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。
 
-    `scene_id`と`shot_id`は`scene_ref`/`shot_ref`の`id`と突き合わせる。画面が特定の
-    Shotの生成履歴だけを見るために使う。
+    `project_id`、`scene_id`、`shot_id`は不変参照と突き合わせる。`unassigned`は
+    Project参照を持たないJobだけへ絞る。
     """
+    if unassigned and any(
+        value is not None for value in (project_id, scene_id, shot_id)
+    ):
+        raise _validation_error(
+            "unassignedとProjectコンテキストの絞り込みは同時に指定できません。"
+        )
     query = select(GenerationJob).order_by(
         GenerationJob.queue_sequence.asc(), GenerationJob.id.asc()
     )
     if state is not None:
         query = query.where(GenerationJob.state == state)
+    if project_id is not None:
+        query = query.where(
+            GenerationJob.scene_ref["project_id"].as_string() == project_id
+        )
+    if unassigned:
+        query = query.where(
+            GenerationJob.scene_ref["project_id"].as_string().is_(None)
+        )
     if scene_id is not None:
         query = query.where(GenerationJob.scene_ref["id"].as_string() == scene_id)
     if shot_id is not None:
@@ -1027,8 +1069,10 @@ async def create_artifact(payload: schemas.ArtifactCreate, session: SessionDep):
 def _artifact_filters(
     query: Select[tuple[Artifact]],
     *,
+    project_id: str | None,
     scene_id: str | None,
     shot_id: str | None,
+    unassigned: bool,
     job_id: str | None,
     kind: str | None,
     decision: str | None = None,
@@ -1037,14 +1081,27 @@ def _artifact_filters(
 ) -> Select[tuple[Artifact]]:
     """Artifactの絞り込み条件を組み立てる。条件はすべてANDで重ねる。
 
-    `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
+    Projectコンテキストは作成元Jobの不変参照と突き合わせる。
     `tags`を複数指定したときは、すべてのタグが付いたArtifactだけを返す。資産を絞り
     込む用途では和集合より積集合が要る。
     """
     if job_id is not None:
         query = query.where(Artifact.job_id == job_id)
-    if scene_id is not None or shot_id is not None:
+    if (
+        project_id is not None
+        or scene_id is not None
+        or shot_id is not None
+        or unassigned
+    ):
         jobs = select(GenerationJob.id)
+        if project_id is not None:
+            jobs = jobs.where(
+                GenerationJob.scene_ref["project_id"].as_string() == project_id
+            )
+        if unassigned:
+            jobs = jobs.where(
+                GenerationJob.scene_ref["project_id"].as_string().is_(None)
+            )
         if scene_id is not None:
             jobs = jobs.where(GenerationJob.scene_ref["id"].as_string() == scene_id)
         if shot_id is not None:
@@ -1112,8 +1169,10 @@ async def _apply_lineage_filters(
 async def list_artifacts(
     session: SessionDep,
     response: Response,
+    project_id: str | None = None,
     scene_id: str | None = None,
     shot_id: str | None = None,
+    unassigned: bool = False,
     job_id: str | None = None,
     kind: schemas.ArtifactKind | None = None,
     decision: schemas.ArtifactDecision | None = None,
@@ -1128,7 +1187,8 @@ async def list_artifacts(
 ):
     """Artifact履歴の一覧。既定は作成の新しい順に返す。
 
-    `scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。
+    Projectコンテキストは作成元Jobの不変参照と突き合わせる。`unassigned`は
+    Project参照を持たないArtifactだけへ絞る。
     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
 
     `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
@@ -1138,11 +1198,19 @@ async def list_artifacts(
     派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の
     件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。
     """
+    if unassigned and any(
+        value is not None for value in (project_id, scene_id, shot_id)
+    ):
+        raise _validation_error(
+            "unassignedとProjectコンテキストの絞り込みは同時に指定できません。"
+        )
     query = select(Artifact).order_by(Artifact.created_at.desc(), Artifact.id.asc())
     query = _artifact_filters(
         query,
+        project_id=project_id,
         scene_id=scene_id,
         shot_id=shot_id,
+        unassigned=unassigned,
         job_id=job_id,
         kind=kind,
         decision=decision,
@@ -1277,8 +1345,10 @@ async def _job_integrity_findings(
 async def list_artifact_integrity(
     session: SessionDep,
     source: ReferenceSourceDep,
+    project_id: str | None = None,
     scene_id: str | None = None,
     shot_id: str | None = None,
+    unassigned: bool = False,
     job_id: str | None = None,
     kind: schemas.ArtifactKind | None = None,
     tag: Annotated[
@@ -1302,11 +1372,19 @@ async def list_artifact_integrity(
 
     判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。
     """
+    if unassigned and any(
+        value is not None for value in (project_id, scene_id, shot_id)
+    ):
+        raise _validation_error(
+            "unassignedとProjectコンテキストの絞り込みは同時に指定できません。"
+        )
     query = select(Artifact).order_by(Artifact.created_at.desc(), Artifact.id.asc())
     query = _artifact_filters(
         query,
+        project_id=project_id,
         scene_id=scene_id,
         shot_id=shot_id,
+        unassigned=unassigned,
         job_id=job_id,
         kind=kind,
         tags=tag,
@@ -1548,7 +1626,7 @@ async def _get_workflow_artifact(
     return artifact
 
 
-def _reference_ids(job: GenerationJob) -> tuple[str, str, str]:
+def _reference_ids(job: GenerationJob) -> tuple[str | None, str | None, str | None]:
     """Jobに記録した参照IDを取り出す。
 
     参照を解決する前に作られたJobには`project_id`が無い。現在値を引けないため、
@@ -1559,14 +1637,15 @@ def _reference_ids(job: GenerationJob) -> tuple[str, str, str]:
     project_id = scene_ref.get("project_id") or shot_ref.get("project_id")
     scene_id = scene_ref.get("id")
     shot_id = shot_ref.get("id")
-    if not (
-        isinstance(project_id, str)
-        and isinstance(scene_id, str)
-        and isinstance(shot_id, str)
+    project_id = project_id if isinstance(project_id, str) else None
+    scene_id = scene_id if isinstance(scene_id, str) else None
+    shot_id = shot_id if isinstance(shot_id, str) else None
+    if (scene_id is not None and project_id is None) or (
+        shot_id is not None and scene_id is None
     ):
         raise ApiError(
             "REFERENCE_IDS_MISSING",
-            "JobにProject、Scene、Shotの参照IDが記録されていません。",
+            "JobのProject、Scene、Shot参照IDに不足があります。",
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             details={"job_id": job.id},
         )
@@ -1591,15 +1670,14 @@ async def _current_references(
     try:
         project_id, scene_id, shot_id = _reference_ids(job)
         resolved = await _resolve_references(source, project_id, scene_id, shot_id)
-        selected = await _current_selected_canon(source, project_id, recorded or [])
+        selected = (
+            await _current_selected_canon(source, project_id, recorded or [])
+            if project_id is not None
+            else []
+        )
     except ApiError as error:
         return None, error
-    return [
-        resolved.scene_ref,
-        resolved.shot_ref,
-        *resolved.canon_refs,
-        *selected,
-    ], None
+    return [*resolved.input_refs([]), *selected], None
 
 
 async def _current_selected_canon(
@@ -1928,8 +2006,10 @@ async def regenerate_generation_job(
     # Scene/Shotが宣言していない、入力として選んだCanon(音声JobのVoice Canonなど)も
     # 現在の参照で引き直す。ここで拾わないと、派生Jobの履歴からどのCanonで生成したかが
     # 消える。
-    selected = await _current_selected_canon(
-        source, project_id, manifest.input_refs or []
+    selected = (
+        await _current_selected_canon(source, project_id, manifest.input_refs or [])
+        if project_id is not None
+        else []
     )
     return await _create_derived_job(
         session,

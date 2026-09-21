@@ -21,6 +21,7 @@ interface Detail {
 
 interface Props {
   shotId: string | null;
+  unassigned: boolean;
   /** Job を投入したときに値を変え、履歴を取り直させる。 */
   refreshToken: number;
   onDerivedJob: (job: GenerationJob) => void;
@@ -35,7 +36,12 @@ function describe(error: unknown): string {
   return String(error);
 }
 
-export function ArtifactHistory({ shotId, refreshToken, onDerivedJob }: Props) {
+export function ArtifactHistory({
+  shotId,
+  unassigned,
+  refreshToken,
+  onDerivedJob,
+}: Props) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(
     null,
@@ -46,16 +52,12 @@ export function ArtifactHistory({ shotId, refreshToken, onDerivedJob }: Props) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!shotId) {
-      setArtifacts([]);
-      setSelectedArtifactId(null);
-      return;
-    }
     let active = true;
     (async () => {
       try {
         const list = await api.listArtifacts({
-          shotId,
+          shotId: shotId ?? undefined,
+          unassigned,
           kind: includeRecords ? undefined : "image",
         });
         if (!active) return;
@@ -72,7 +74,7 @@ export function ArtifactHistory({ shotId, refreshToken, onDerivedJob }: Props) {
     return () => {
       active = false;
     };
-  }, [shotId, includeRecords, refreshToken]);
+  }, [shotId, unassigned, includeRecords, refreshToken]);
 
   const selected = useMemo(
     () => artifacts.find((item) => item.id === selectedArtifactId) ?? null,
@@ -164,7 +166,11 @@ export function ArtifactHistory({ shotId, refreshToken, onDerivedJob }: Props) {
           ))}
         </ul>
         {artifacts.length === 0 && (
-          <p className="muted">このShotのArtifactはまだありません。</p>
+          <p className="muted">
+            {unassigned
+              ? "未所属のArtifactはまだありません。"
+              : "このShotのArtifactはまだありません。"}
+          </p>
         )}
 
         {detail && (

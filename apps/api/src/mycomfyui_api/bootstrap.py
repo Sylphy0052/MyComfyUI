@@ -119,6 +119,19 @@ async def ensure_default_recipes(
 
 #: 画面へ出す入力欄の定義。参照音声の取り込みとVoice Canonの選択は画面が組み立てる。
 VOICE_INPUT_SCHEMA: dict[str, Any] = {
+    "dialogue": {
+        "type": "array",
+        "required": False,
+        "label": "台詞",
+        "control": "dialogue",
+        "help": "未所属で生成するときに読む台詞を指定する。",
+    },
+    "duration_sec": {
+        "type": "number",
+        "required": False,
+        "label": "目標尺（秒）",
+        "control": "number",
+    },
     "voices": {
         "type": "object",
         "required": True,
@@ -126,7 +139,7 @@ VOICE_INPUT_SCHEMA: dict[str, Any] = {
         "control": "voices",
         "help": (
             "台詞のvoice_idごとに、Voice Canonと取り込んだ参照音声を指定する。"
-            "Voice Canonの指定は必須とする。"
+            "未所属で生成するときはVoice Canonを指定しない。"
         ),
     },
     "profile": {"type": "string", "label": "プロファイル", "control": "text"},

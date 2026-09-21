@@ -24,7 +24,7 @@ from mycomfyui_api.execution import (
 from mycomfyui_api.models import Recipe
 
 #: スナップショットの版。読み込み側は値を見て解釈を決める。
-SNAPSHOT_VERSION = 1
+SNAPSHOT_VERSION = 2
 
 #: seedの自動採番を指示する値。
 AUTO_SEED = -1
@@ -49,6 +49,8 @@ VOICE_VARIABLES: dict[str, dict[str, Any]] = {
     "seed": {"value_type": "seed", "required": False},
     "verify_with_asr": {"value_type": "bool", "required": False},
     "pad_to_duration": {"value_type": "bool", "required": False},
+    "dialogue": {"value_type": "dialogue", "required": False},
+    "duration_sec": {"value_type": "float", "required": False},
     "voices": {"value_type": "voice_bindings", "required": True},
 }
 
@@ -139,12 +141,9 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
             f"{voice_id}のreference_sha256は小文字16進数64桁で指定します。"
         )
     canon_id = raw.get("canon_id")
-    if not _is_sha256(canon_id):
-        # どのVoice Canonで生成したかを後から説明できないJobを作らない。省略できる
-        # ようにすると、参照音声だけを渡したJobが履歴にCanon参照を残さずに残る。
+    if canon_id not in (None, "") and not _is_sha256(canon_id):
         raise PreparationError(
             f"{voice_id}のcanon_idは小文字16進数64桁で指定します。"
-            "Voice Canonを指定しない音声Jobは作れません。"
         )
     leading_silence = raw.get("leading_silence_sec", 0.0)
     if isinstance(leading_silence, bool) or not isinstance(
@@ -153,9 +152,8 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
         raise PreparationError(f"{voice_id}のleading_silence_secは数値で指定します。")
     if leading_silence < 0:
         raise PreparationError(f"{voice_id}のleading_silence_secは0以上です。")
-    return {
+    binding = {
         "voice_id": voice_id,
-        "canon_id": str(canon_id).lower(),
         "reference": {
             "relative_path": _cached_input_path(
                 raw.get("reference_relative_path"), voice_id
@@ -169,14 +167,17 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
             float(leading_silence) >= LEADING_SILENCE_TRIM_THRESHOLD_SEC
         ),
     }
+    if canon_id:
+        binding["canon_id"] = str(canon_id).lower()
+    return binding
 
 
 def _dialogue(shot_data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Shot本文から台詞を取り出し、Job内での位置を固定する。"""
+    """Shot本文または直接入力から台詞を取り出し、Job内での位置を固定する。"""
     raw = shot_data.get("dialogue")
     if not isinstance(raw, list) or not raw:
         raise PreparationError(
-            "Shotに台詞がありません。音声Jobを作れません。",
+            "台詞がありません。音声Jobを作れません。",
             {"shot_id": shot_data.get("id")},
         )
     lines: list[dict[str, Any]] = []
@@ -213,7 +214,7 @@ def _dialogue(shot_data: dict[str, Any]) -> list[dict[str, Any]]:
 def _duration(shot_data: dict[str, Any]) -> float:
     value = shot_data.get("duration_sec")
     if isinstance(value, bool) or not isinstance(value, int | float):
-        raise PreparationError("Shotにduration_secがありません。")
+        raise PreparationError("duration_secがありません。")
     duration = float(value)
     if not MIN_DURATION_SEC <= duration <= MAX_DURATION_SEC:
         raise PreparationError(
@@ -256,13 +257,23 @@ async def _canon_refs(
 ) -> list[dict[str, Any]]:
     """Voice Canon descriptorを参照APIから引き、不変参照として記録する。
 
-    Canon本文は取得しない。`canon_id`は`_binding`で必須にしてあり、参照を引けない
-    場合はJobを作らない。どのVoice Canonで生成したかを説明できない履歴を残さない。
+    Canon本文は取得しない。Project配下の音声はCanonを不変参照として記録し、未所属
+    音声は取り込んだ参照音声のhashだけで再現性を担保する。
     """
     source = context.canon_lookup
     entries: list[dict[str, Any]] = []
     for voice_id, binding in bindings.items():
-        canon_id = binding["canon_id"]
+        canon_id = binding.get("canon_id")
+        if canon_id is None:
+            if context.project_id is not None:
+                raise PreparationError(
+                    f"{voice_id}のVoice Canonを指定してください。"
+                )
+            continue
+        if context.project_id is None:
+            raise PreparationError(
+                f"{voice_id}のVoice CanonにはProjectの指定が必要です。"
+            )
         if source is None:
             raise PreparationError("Voice Canonを解決できません。")
         try:
@@ -334,11 +345,19 @@ async def prepare(
         for voice_id, raw in raw_voices.items()
     }
 
-    lines = _dialogue(context.shot_data)
+    source_data = (
+        context.shot_data
+        if context.shot_id is not None
+        else {
+            "dialogue": values.get("dialogue"),
+            "duration_sec": values.get("duration_sec"),
+        }
+    )
+    lines = _dialogue(source_data)
     missing = sorted({line["voice_id"] for line in lines} - set(bindings))
     if missing:
         raise PreparationError(
-            "台詞が参照するVoice Canonの設定がありません。", {"missing": missing}
+            "台詞が参照する音声設定がありません。", {"missing": missing}
         )
 
     seed = _resolve_seed(values.get("seed"))
@@ -355,7 +374,7 @@ async def prepare(
     if not isinstance(pad_to_duration, bool):
         raise PreparationError("pad_to_durationは真偽値で指定します。")
 
-    duration_sec = _duration(context.shot_data)
+    duration_sec = _duration(source_data)
     canon_refs = await _canon_refs(context, bindings)
 
     snapshot: dict[str, Any] = {

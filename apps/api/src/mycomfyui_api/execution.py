@@ -32,9 +32,9 @@ class PreparationContext:
     Manifestとスナップショットへ固定する必要があり、IDだけでは組み立てられない。
     """
 
-    project_id: str
-    scene_id: str
-    shot_id: str
+    project_id: str | None
+    scene_id: str | None
+    shot_id: str | None
     scene_data: dict[str, Any]
     shot_data: dict[str, Any]
     #: Canon descriptorを引くための参照元。準備中の読取りだけに使う。

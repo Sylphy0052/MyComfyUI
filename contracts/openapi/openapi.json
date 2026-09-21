@@ -1040,9 +1040,16 @@
             "title": "Parent Job Id"
           },
           "project_id": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Project Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "queue_sequence": {
             "anyOf": [
@@ -1063,21 +1070,32 @@
             "type": "string"
           },
           "scene_id": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Scene Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
           },
           "shot_id": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Shot Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
           }
         },
         "required": [
           "kind",
-          "project_id",
-          "scene_id",
-          "shot_id",
           "recipe_id"
         ],
         "title": "GenerationJobCreate",
@@ -1361,9 +1379,16 @@
             "title": "Parent Job Id"
           },
           "project_id": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Project Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "recipe_id": {
             "maxLength": 36,
@@ -1372,21 +1397,32 @@
             "type": "string"
           },
           "scene_id": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Scene Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
           },
           "shot_id": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Shot Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
           }
         },
         "required": [
           "kind",
-          "project_id",
-          "scene_id",
-          "shot_id",
           "recipe_id"
         ],
         "title": "GenerationPreviewCreate",
@@ -3030,9 +3066,25 @@
     },
     "/api/v1/artifacts": {
       "get": {
-        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\n`scene_id`と`shot_id`は作成元Jobの`scene_ref`/`shot_ref`の`id`と突き合わせる。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
+        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nProjectコンテキストは作成元Jobの不変参照と突き合わせる。`unassigned`は\nProject参照を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
         "operationId": "list_artifacts_api_v1_artifacts_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
           {
             "in": "query",
             "name": "scene_id",
@@ -3063,6 +3115,16 @@
                 }
               ],
               "title": "Shot Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unassigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unassigned",
+              "type": "boolean"
             }
           },
           {
@@ -3307,6 +3369,22 @@
         "parameters": [
           {
             "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "scene_id",
             "required": false,
             "schema": {
@@ -3335,6 +3413,16 @@
                 }
               ],
               "title": "Shot Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unassigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unassigned",
+              "type": "boolean"
             }
           },
           {
@@ -3741,7 +3829,7 @@
     },
     "/api/v1/generation-jobs": {
       "get": {
-        "description": "キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。\n\n`scene_id`と`shot_id`は`scene_ref`/`shot_ref`の`id`と突き合わせる。画面が特定の\nShotの生成履歴だけを見るために使う。",
+        "description": "キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。\n\n`project_id`、`scene_id`、`shot_id`は不変参照と突き合わせる。`unassigned`は\nProject参照を持たないJobだけへ絞る。",
         "operationId": "list_generation_jobs_api_v1_generation_jobs_get",
         "parameters": [
           {
@@ -3766,6 +3854,22 @@
                 }
               ],
               "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
             }
           },
           {
@@ -3798,6 +3902,16 @@
                 }
               ],
               "title": "Shot Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unassigned",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unassigned",
+              "type": "boolean"
             }
           },
           {

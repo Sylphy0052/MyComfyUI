@@ -172,15 +172,23 @@ class GenerationPreviewCreate(ApiModel):
     """
 
     kind: GenerationKind
-    project_id: AiMediaId
-    scene_id: AiMediaId
-    shot_id: AiMediaId
+    project_id: AiMediaId | None = None
+    scene_id: AiMediaId | None = None
+    shot_id: AiMediaId | None = None
     recipe_id: ResourceId
     parent_job_id: ResourceId | None = None
     inputs: dict[str, Any] = Field(default_factory=dict)
     #: 利用者素材のcache参照だけを受け取る。Scene/Shot/Canonの参照は解決結果が正本の
     #: ため、ここから渡された同種の参照は受け付けない。
     input_refs: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_context(self) -> "GenerationPreviewCreate":
+        if self.scene_id is not None and self.project_id is None:
+            raise ValueError("scene_idを指定する場合はproject_idが必要です。")
+        if self.shot_id is not None and self.scene_id is None:
+            raise ValueError("shot_idを指定する場合はscene_idが必要です。")
+        return self
 
     @field_validator("input_refs")
     @classmethod

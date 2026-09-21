@@ -95,13 +95,24 @@ export function ComposePanel({
   }, []);
 
   const loadArtifacts = useCallback(async () => {
-    if (!shotId) return { videos: [], audios: [] };
     const [videos, audios] = await Promise.all([
-      api.listArtifacts({ shotId, kind: "video", limit: 50 }),
-      api.listArtifacts({ shotId, kind: "audio", limit: 50 }),
+      api.listArtifacts({
+        projectId: projectId ?? undefined,
+        shotId: shotId ?? undefined,
+        unassigned: !projectId,
+        kind: "video",
+        limit: 50,
+      }),
+      api.listArtifacts({
+        projectId: projectId ?? undefined,
+        shotId: shotId ?? undefined,
+        unassigned: !projectId,
+        kind: "audio",
+        limit: 50,
+      }),
     ]);
     return { videos, audios };
-  }, [shotId]);
+  }, [projectId, shotId]);
 
   // Shot が変わったら候補と選択をやり直す。別 Shot の指定を引き継がない。
   useEffect(() => {
@@ -211,7 +222,6 @@ export function ComposePanel({
   };
 
   const submit = async () => {
-    if (!projectId || !sceneId || !shotId) return;
     const recipe = recipes.find((item) => item.id === recipeId);
     if (!recipe) return;
     const inputs = buildInputs();
@@ -240,7 +250,6 @@ export function ComposePanel({
   };
 
   const runPreview = async () => {
-    if (!projectId || !sceneId || !shotId) return;
     const recipe = recipes.find((item) => item.id === recipeId);
     if (!recipe) return;
     const inputs = buildInputs();
@@ -421,7 +430,7 @@ export function ComposePanel({
         <div>
           <button
             type="button"
-            disabled={submitting || previewing || !shotId || !recipeId}
+            disabled={submitting || previewing || !recipeId}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -429,7 +438,7 @@ export function ComposePanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || previewing || !shotId || !recipeId}
+            disabled={submitting || previewing || !recipeId}
             onClick={submit}
           >
             {submitting ? "投入中..." : "合成を投入"}

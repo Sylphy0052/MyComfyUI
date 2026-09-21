@@ -41,6 +41,7 @@ interface Detail {
 }
 
 interface Props {
+  projectId: string | null;
   scenes: SceneSummary[];
   sceneId: string | null;
   onSelectScene: (sceneId: string | null) => void;
@@ -59,6 +60,7 @@ function describe(error: unknown): string {
 }
 
 export function AssetBrowser({
+  projectId,
   scenes,
   sceneId,
   onSelectScene,
@@ -97,8 +99,10 @@ export function AssetBrowser({
     (async () => {
       try {
         const list = await api.listArtifacts({
+          projectId: projectId ?? undefined,
           sceneId: sceneId ?? undefined,
           shotId: shotId ?? undefined,
+          unassigned: !projectId,
           kind: kind || undefined,
           decision: decision || undefined,
           availability: availability || undefined,
@@ -130,6 +134,7 @@ export function AssetBrowser({
       active = false;
     };
   }, [
+    projectId,
     sceneId,
     shotId,
     kind,
