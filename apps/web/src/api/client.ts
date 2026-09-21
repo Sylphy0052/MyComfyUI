@@ -60,6 +60,9 @@ export type ShotUpdate = components["schemas"]["ShotUpdate"];
 export type StructureDeletionImpact =
   components["schemas"]["StructureDeletionImpact"];
 export type ProjectProgress = components["schemas"]["ProjectProgress"];
+export type AssignmentTarget = components["schemas"]["AssignmentTarget"];
+export type ArtifactBatchOperation =
+  components["schemas"]["ArtifactBatchOperation"];
 
 /**
  * API が返す共通 Envelope。表示文言ではなく code で種別を判定する (ADR 0001)。
@@ -344,6 +347,15 @@ export const api = {
       { method: "POST" },
     ),
 
+  updateJobAssignment: (
+    jobId: string,
+    payload: AssignmentTarget & { include_artifacts?: boolean },
+  ) =>
+    request<GenerationJob>(
+      `/generation-jobs/${encodeURIComponent(jobId)}/assignment`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    ),
+
   listJobArtifacts: (jobId: string) =>
     request<Artifact[]>(
       `/generation-jobs/${encodeURIComponent(jobId)}/artifacts`,
@@ -359,6 +371,12 @@ export const api = {
       `/artifacts/${encodeURIComponent(artifactId)}/decision`,
       { method: "PATCH", body: JSON.stringify({ decision }) },
     ),
+
+  operateArtifacts: (payload: ArtifactBatchOperation) =>
+    request<Artifact[]>("/artifacts/batch-operation", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   // tag は複数指定でき、すべてのタグが付いた Artifact だけが返る (AND)。
   // lineage_* は祖先と子孫の両方向を辿った結果へ絞る。

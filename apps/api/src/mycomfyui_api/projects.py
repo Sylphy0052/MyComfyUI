@@ -170,7 +170,7 @@ async def _commit(session: AsyncSession) -> None:
 async def _impact(
     session: AsyncSession, project: Project
 ) -> schemas.ProjectDeletionImpact:
-    project_jobs = GenerationJob.scene_ref["project_id"].as_string() == project.id
+    project_jobs = GenerationJob.assigned_project_id == project.id
     job_count = int(
         await session.scalar(
             select(func.count()).select_from(GenerationJob).where(project_jobs)
@@ -189,8 +189,7 @@ async def _impact(
         await session.scalar(
             select(func.count())
             .select_from(Artifact)
-            .join(GenerationJob, Artifact.job_id == GenerationJob.id)
-            .where(project_jobs)
+            .where(Artifact.assigned_project_id == project.id)
         )
         or 0
     )

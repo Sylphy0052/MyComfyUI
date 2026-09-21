@@ -257,6 +257,12 @@ class ComposeExecutor:
         では表せないため、Manifestの`input_refs`から辿る。
         """
         async with self._session_factory() as session:
+            job = await session.get(GenerationJob, context.job_id)
+            assignment = (
+                (job.assigned_project_id, job.assigned_scene_id, job.assigned_shot_id)
+                if job is not None
+                else (None, None, None)
+            )
             session.add(
                 Artifact(
                     id=schemas.new_id(),
@@ -268,6 +274,9 @@ class ComposeExecutor:
                     media_type=context.output_media_type,
                     availability="complete",
                     parent_artifact_id=context.video_artifact_id,
+                    assigned_project_id=assignment[0],
+                    assigned_scene_id=assignment[1],
+                    assigned_shot_id=assignment[2],
                     created_at=schemas.now_iso(),
                     decision="undecided",
                     decision_at=None,

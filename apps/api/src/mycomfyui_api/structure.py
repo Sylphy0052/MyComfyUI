@@ -188,9 +188,9 @@ async def _impact(
     scene_id: str,
     shot_id: str | None = None,
 ) -> schemas.StructureDeletionImpact:
-    job_filter = GenerationJob.scene_ref["id"].as_string() == scene_id
+    job_filter = GenerationJob.assigned_scene_id == scene_id
     if shot_id is not None:
-        job_filter = GenerationJob.shot_ref["id"].as_string() == shot_id
+        job_filter = GenerationJob.assigned_shot_id == shot_id
     job_count = int(
         await session.scalar(select(func.count()).select_from(GenerationJob).where(job_filter))
         or 0
@@ -207,8 +207,11 @@ async def _impact(
         await session.scalar(
             select(func.count())
             .select_from(Artifact)
-            .join(GenerationJob, Artifact.job_id == GenerationJob.id)
-            .where(job_filter)
+            .where(
+                Artifact.assigned_shot_id == shot_id
+                if shot_id is not None
+                else Artifact.assigned_scene_id == scene_id
+            )
         )
         or 0
     )

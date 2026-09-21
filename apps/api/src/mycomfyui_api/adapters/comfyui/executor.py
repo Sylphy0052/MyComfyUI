@@ -476,6 +476,12 @@ class ComfyUIExecutor:
         session = self._session_factory()
         try:
             created_at = schemas.now_iso()
+            job = await session.get(GenerationJob, job_id)
+            assignment = (
+                (job.assigned_project_id, job.assigned_scene_id, job.assigned_shot_id)
+                if job is not None
+                else (None, None, None)
+            )
             for ref, item in stored:
                 session.add(
                     Artifact(
@@ -488,6 +494,9 @@ class ComfyUIExecutor:
                         media_type=_media_type(item.relative_path, ref.kind),
                         availability="complete",
                         parent_artifact_id=None,
+                        assigned_project_id=assignment[0],
+                        assigned_scene_id=assignment[1],
+                        assigned_shot_id=assignment[2],
                         created_at=created_at,
                         decision="undecided",
                         decision_at=None,

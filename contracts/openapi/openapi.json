@@ -592,6 +592,61 @@
         "title": "ApprovalLogRead",
         "type": "object"
       },
+      "ArtifactBatchOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Artifact Ids",
+            "type": "array"
+          },
+          "operation": {
+            "enum": [
+              "move",
+              "copy",
+              "unassign",
+              "tag"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssignmentTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "artifact_ids",
+          "operation"
+        ],
+        "title": "ArtifactBatchOperation",
+        "type": "object"
+      },
       "ArtifactCreate": {
         "additionalProperties": false,
         "properties": {
@@ -782,6 +837,39 @@
         "additionalProperties": false,
         "description": "Artifact 1件。`tags`は付けた順ではなくタグの昇順で返す。\n\n`tags`はArtifactを返すすべての経路で埋める。経路によって入ったり入らなかったり\nすると、空配列が「タグ無し」なのか「この経路では返していない」のか区別できない。",
         "properties": {
+          "assigned_project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Project Id"
+          },
+          "assigned_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Scene Id"
+          },
+          "assigned_shot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Shot Id"
+          },
           "availability": {
             "title": "Availability",
             "type": "string"
@@ -862,6 +950,9 @@
           "media_type",
           "availability",
           "parent_artifact_id",
+          "assigned_project_id",
+          "assigned_scene_id",
+          "assigned_shot_id",
           "created_at",
           "decision",
           "decision_at"
@@ -884,6 +975,50 @@
           "tag"
         ],
         "title": "ArtifactTagCreate",
+        "type": "object"
+      },
+      "AssignmentTarget": {
+        "additionalProperties": false,
+        "description": "現在の整理先。すべてNoneなら未所属へ戻す。",
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          }
+        },
+        "title": "AssignmentTarget",
         "type": "object"
       },
       "CanonStatusRead": {
@@ -1104,6 +1239,39 @@
       "GenerationJobRead": {
         "additionalProperties": false,
         "properties": {
+          "assigned_project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Project Id"
+          },
+          "assigned_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Scene Id"
+          },
+          "assigned_shot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Shot Id"
+          },
           "cancel_requested_at": {
             "anyOf": [
               {
@@ -1233,6 +1401,9 @@
           "state",
           "scene_ref",
           "shot_ref",
+          "assigned_project_id",
+          "assigned_scene_id",
+          "assigned_shot_id",
           "recipe_id",
           "manifest_id",
           "parent_job_id",
@@ -1687,6 +1858,54 @@
           "media_type"
         ],
         "title": "ImageReferenceRead",
+        "type": "object"
+      },
+      "JobAssignmentUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "include_artifacts": {
+            "default": false,
+            "title": "Include Artifacts",
+            "type": "boolean"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          }
+        },
+        "title": "JobAssignmentUpdate",
         "type": "object"
       },
       "JobLineageRead": {
@@ -3862,7 +4081,7 @@
     },
     "/api/v1/artifacts": {
       "get": {
-        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nProjectコンテキストは作成元Jobの不変参照と突き合わせる。`unassigned`は\nProject参照を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
+        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nProjectコンテキストは現在の所属先と突き合わせる。`unassigned`は\n現在のProject所属を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
         "operationId": "list_artifacts_api_v1_artifacts_get",
         "parameters": [
           {
@@ -4156,6 +4375,49 @@
           }
         },
         "summary": "Create Artifact"
+      }
+    },
+    "/api/v1/artifacts/batch-operation": {
+      "post": {
+        "description": "Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。",
+        "operationId": "operate_artifacts_api_v1_artifacts_batch_operation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactBatchOperation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactRead"
+                  },
+                  "title": "Response Operate Artifacts Api V1 Artifacts Batch Operation Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Operate Artifacts"
       }
     },
     "/api/v1/artifacts/integrity": {
@@ -4625,7 +4887,7 @@
     },
     "/api/v1/generation-jobs": {
       "get": {
-        "description": "キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。\n\n`project_id`、`scene_id`、`shot_id`は不変参照と突き合わせる。`unassigned`は\nProject参照を持たないJobだけへ絞る。",
+        "description": "キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。\n\n`project_id`、`scene_id`、`shot_id`は現在の整理先と突き合わせる。`unassigned`は\n現在Projectに所属しないJobだけへ絞る。生成時参照とManifestは所属変更で変えない。",
         "operationId": "list_generation_jobs_api_v1_generation_jobs_get",
         "parameters": [
           {
@@ -4920,6 +5182,56 @@
           }
         },
         "summary": "List Job Artifacts"
+      }
+    },
+    "/api/v1/generation-jobs/{job_id}/assignment": {
+      "patch": {
+        "description": "完了済みJobの現在所属を変更する。生成時参照とManifestは更新しない。",
+        "operationId": "update_job_assignment_api_v1_generation_jobs__job_id__assignment_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobAssignmentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationJobRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Job Assignment"
       }
     },
     "/api/v1/generation-jobs/{job_id}/cancel": {

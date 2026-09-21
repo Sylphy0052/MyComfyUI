@@ -242,6 +242,7 @@ class GenerationJob(Base):
             deferrable=True,
             initially="DEFERRED",
         ),
+        Index("ix_generation_job_assignment", "assigned_project_id", "assigned_scene_id", "assigned_shot_id"),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
@@ -249,6 +250,16 @@ class GenerationJob(Base):
     state: Mapped[str] = mapped_column(Text, nullable=False)
     scene_ref: Mapped[dict] = mapped_column(JSON, nullable=False)
     shot_ref: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # Manifestと上の参照は生成時点の記録として固定し、整理先は別に更新する。
+    assigned_project_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
+    assigned_scene_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
+    assigned_shot_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
     recipe_id: Mapped[str] = mapped_column(
         String(UUID_LENGTH), ForeignKey("recipe.id"), nullable=False
     )
@@ -314,6 +325,7 @@ class Artifact(Base):
             "decision in ('undecided','accepted','rejected')",
             name="ck_artifact_decision",
         ),
+        Index("ix_artifact_assignment", "assigned_project_id", "assigned_scene_id", "assigned_shot_id"),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
@@ -328,6 +340,15 @@ class Artifact(Base):
     availability: Mapped[str] = mapped_column(Text, nullable=False)
     parent_artifact_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=True
+    )
+    assigned_project_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
+    assigned_scene_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
+    assigned_shot_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
     )
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     decision: Mapped[str] = mapped_column(Text, nullable=False, default="undecided")
