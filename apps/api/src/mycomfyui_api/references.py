@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from mycomfyui_api.adapters.aimedia.client import (
@@ -17,7 +18,9 @@ from mycomfyui_api.adapters.aimedia.client import (
     AiMediaUnavailable,
     ReferenceSource,
 )
+from mycomfyui_api.db import get_session
 from mycomfyui_api.errors import ApiError
+from mycomfyui_api.models import Project
 from mycomfyui_api.schemas import CANON_ID_PATTERN, REFERENCE_ID_PATTERN
 
 logger = logging.getLogger(__name__)
@@ -36,6 +39,7 @@ def get_reference_source(request: Request) -> ReferenceSource:
 
 
 ReferenceSourceDep = Annotated[ReferenceSource, Depends(get_reference_source)]
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 async def _relay(call: Callable[[], Awaitable[dict[str, Any]]]) -> dict[str, Any]:
@@ -60,37 +64,59 @@ async def _relay(call: Callable[[], Awaitable[dict[str, Any]]]) -> dict[str, Any
         ) from error
 
 
-@router.get("/projects")
-async def list_projects(source: ReferenceSourceDep) -> dict[str, Any]:
-    return await _relay(source.list_projects)
+async def _require_project(session: AsyncSession, project_id: str) -> Project:
+    project = await session.get(Project, project_id)
+    if project is None or project.lifecycle == "trashed":
+        raise ApiError(
+            "PROJECT_NOT_FOUND",
+            "Projectがありません。",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"project_id": project_id},
+        )
+    return project
 
 
-@router.get("/projects/{project_id}")
-async def get_project(
-    project_id: ReferenceId, source: ReferenceSourceDep
-) -> dict[str, Any]:
-    return await _relay(lambda: source.get_project(project_id))
+def _external_id(project: Project) -> str:
+    if project.source_type != "external" or project.external_id is None:
+        raise ApiError(
+            "PROJECT_HAS_NO_EXTERNAL_SOURCE",
+            "ローカルProjectには外部参照データがありません。",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"project_id": project.id},
+        )
+    return project.external_id
 
 
 @router.get("/projects/{project_id}/scenes")
 async def list_scenes(
-    project_id: ReferenceId, source: ReferenceSourceDep
+    project_id: ReferenceId, source: ReferenceSourceDep, session: SessionDep
 ) -> dict[str, Any]:
-    return await _relay(lambda: source.list_scenes(project_id))
+    project = await _require_project(session, project_id)
+    if project.source_type == "local":
+        return {"items": []}
+    return await _relay(lambda: source.list_scenes(_external_id(project)))
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}")
 async def get_scene(
-    project_id: ReferenceId, scene_id: ReferenceId, source: ReferenceSourceDep
+    project_id: ReferenceId,
+    scene_id: ReferenceId,
+    source: ReferenceSourceDep,
+    session: SessionDep,
 ) -> dict[str, Any]:
-    return await _relay(lambda: source.get_scene(project_id, scene_id))
+    project = await _require_project(session, project_id)
+    return await _relay(lambda: source.get_scene(_external_id(project), scene_id))
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}/shots")
 async def list_shots(
-    project_id: ReferenceId, scene_id: ReferenceId, source: ReferenceSourceDep
+    project_id: ReferenceId,
+    scene_id: ReferenceId,
+    source: ReferenceSourceDep,
+    session: SessionDep,
 ) -> dict[str, Any]:
-    return await _relay(lambda: source.list_shots(project_id, scene_id))
+    project = await _require_project(session, project_id)
+    return await _relay(lambda: source.list_shots(_external_id(project), scene_id))
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}")
@@ -99,8 +125,12 @@ async def get_shot(
     scene_id: ReferenceId,
     shot_id: ReferenceId,
     source: ReferenceSourceDep,
+    session: SessionDep,
 ) -> dict[str, Any]:
-    return await _relay(lambda: source.get_shot(project_id, scene_id, shot_id))
+    project = await _require_project(session, project_id)
+    return await _relay(
+        lambda: source.get_shot(_external_id(project), scene_id, shot_id)
+    )
 
 
 #: Canon descriptorの種別。正本は`contracts/ai-media/v1/schema/reference-api.schema.json`。
@@ -113,6 +143,7 @@ CanonKind = Annotated[str | None, Query(pattern=f"^({'|'.join(CANON_KINDS)})$")]
 async def list_canon(
     project_id: ReferenceId,
     source: ReferenceSourceDep,
+    session: SessionDep,
     kind: CanonKind = None,
 ) -> dict[str, Any]:
     """Canon descriptorを一覧する。`kind`を指定すると種別で絞り込む。
@@ -120,7 +151,10 @@ async def list_canon(
     上流の契約に`kind`クエリは無いため、絞り込みはMyComfyUI側で行う。参照APIには
     Voice Canon専用のEndpointが無く、画面は`CanonList`から絞り込む形になる。
     """
-    payload = await _relay(lambda: source.list_canon(project_id))
+    project = await _require_project(session, project_id)
+    if project.source_type == "local":
+        return {"items": []}
+    payload = await _relay(lambda: source.list_canon(_external_id(project)))
     if kind is None:
         return payload
     items = payload.get("items")
@@ -138,6 +172,10 @@ async def list_canon(
 
 @router.get("/projects/{project_id}/canon/{canon_id}")
 async def get_canon(
-    project_id: ReferenceId, canon_id: CanonId, source: ReferenceSourceDep
+    project_id: ReferenceId,
+    canon_id: CanonId,
+    source: ReferenceSourceDep,
+    session: SessionDep,
 ) -> dict[str, Any]:
-    return await _relay(lambda: source.get_canon(project_id, canon_id))
+    project = await _require_project(session, project_id)
+    return await _relay(lambda: source.get_canon(_external_id(project), canon_id))

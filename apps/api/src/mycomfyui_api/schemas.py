@@ -25,6 +25,9 @@ GenerationKind = Literal["image", "video", "voice", "music", "compose"]
 ArtifactKind = Literal["image", "video", "audio", "workflow", "log"]
 Availability = Literal["complete", "incomplete"]
 ArtifactDecision = Literal["undecided", "accepted", "rejected"]
+ProjectStatus = Literal["planning", "active", "on_hold", "completed"]
+ProjectLifecycle = Literal["active", "archived", "trashed"]
+ProjectSourceType = Literal["local", "external"]
 ApprovalDecision = Literal["approved", "rejected", "expired"]
 JobState = Literal[
     "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
@@ -115,6 +118,96 @@ ArtifactTagValue = Annotated[
 
 class ApiModel(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+
+def _project_name(value: str) -> str:
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("Project名を空にできません。")
+    return candidate
+
+
+ProjectName = Annotated[
+    str, Field(min_length=1, max_length=120), AfterValidator(_project_name)
+]
+
+
+class ProjectCreate(ApiModel):
+    """ローカルProjectの作成。`id`は省略時に採番し、作成後は変更できない。"""
+
+    id: AiMediaId | None = None
+    name: ProjectName
+    description: str | None = Field(default=None, max_length=10_000)
+    status: ProjectStatus = "planning"
+    tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
+    thumbnail_artifact_id: ResourceId | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("Projectのタグを重複させられません。")
+        return value
+
+
+class ProjectUpdate(ApiModel):
+    """Projectの変更可能なメタデータ。IDとsource情報は変更できない。"""
+
+    name: ProjectName | None = None
+    description: str | None = Field(default=None, max_length=10_000)
+    status: ProjectStatus | None = None
+    tags: list[ArtifactTagValue] | None = Field(default=None, max_length=50)
+    thumbnail_artifact_id: ResourceId | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("Projectのタグを重複させられません。")
+        return value
+
+
+class ProjectSource(ApiModel):
+    source_locator: str
+    revision: str
+
+
+class ProjectRead(ApiModel):
+    id: str
+    name: str
+    #: 既存のai-media参照契約との互換表示名。`name`と同じ値を返す。
+    title: str
+    description: str | None
+    status: ProjectStatus
+    lifecycle: ProjectLifecycle
+    tags: list[str]
+    thumbnail_artifact_id: str | None
+    source_type: ProjectSourceType
+    source: ProjectSource
+    external_id: str | None
+    scene_count: int
+    shot_count: int
+    canon_count: int
+    created_at: str
+    updated_at: str
+    last_used_at: str | None
+    archived_at: str | None
+    deleted_at: str | None
+
+
+class ProjectList(ApiModel):
+    items: list[ProjectRead]
+
+
+class ProjectDeletionImpact(ApiModel):
+    project_id: str
+    job_count: int
+    artifact_count: int
+    active_job_count: int
+    scene_count: int
+    shot_count: int
+    requires_confirmation: bool
+    blockers: list[str]
 
 
 class WorkflowVersionRead(ApiModel):

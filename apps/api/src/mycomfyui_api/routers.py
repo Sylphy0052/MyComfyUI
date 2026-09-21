@@ -51,6 +51,7 @@ from mycomfyui_api.models import (
     Base,
     GenerationJob,
     GenerationManifest,
+    Project,
     Recipe,
     VoiceVerification,
     Workflow,
@@ -305,6 +306,7 @@ async def create_generation_job(
     """
     recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
     _validate_recipe_matches(recipe, payload)
+    await _validate_project_context(session, payload.project_id)
     resolved = await _resolve_references(
         source, payload.project_id, payload.scene_id, payload.shot_id
     )
@@ -345,6 +347,7 @@ async def preview_generation_job(
     """
     recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
     _validate_recipe_matches(recipe, payload)
+    await _validate_project_context(session, payload.project_id)
     resolved = await _resolve_references(
         source, payload.project_id, payload.scene_id, payload.shot_id
     )
@@ -481,6 +484,29 @@ class _ResolvedReferences:
             for reference in [self.scene_ref, self.shot_ref, *self.canon_refs, *extra]
             if reference.get("kind")
         ]
+
+
+async def _validate_project_context(
+    session: AsyncSession, project_id: str | None
+) -> None:
+    """生成先Projectが存在し、利用可能な状態であることを確かめる。"""
+    if project_id is None:
+        return
+    project = await session.get(Project, project_id)
+    if project is None or project.lifecycle == "trashed":
+        raise ApiError(
+            "PROJECT_NOT_FOUND",
+            "生成先Projectがありません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"project_id": project_id},
+        )
+    if project.lifecycle != "active":
+        raise ApiError(
+            "PROJECT_NOT_ACTIVE",
+            "アーカイブ中のProjectには生成できません。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"project_id": project_id, "lifecycle": project.lifecycle},
+        )
 
 
 async def _resolve_references(

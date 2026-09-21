@@ -15,6 +15,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 UUID_LENGTH = 36
 SHA256_LENGTH = 64
+PROJECT_ID_LENGTH = 128
 
 
 class Base(DeclarativeBase):
@@ -23,6 +24,55 @@ class Base(DeclarativeBase):
 
 def _uuid_column(*, primary_key: bool = False):
     return mapped_column(String(UUID_LENGTH), primary_key=primary_key)
+
+
+class Project(Base):
+    """制作物をまとめる永続Project。
+
+    `id`とsource情報は作成後に変更しない。削除要求は`lifecycle`を`trashed`へ進め、
+    関連するJobやArtifactを消さない。
+    """
+
+    __tablename__ = "project"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('planning','active','on_hold','completed')",
+            name="ck_project_status",
+        ),
+        CheckConstraint(
+            "lifecycle in ('active','archived','trashed')",
+            name="ck_project_lifecycle",
+        ),
+        CheckConstraint(
+            "source_type in ('local','external')", name="ck_project_source_type"
+        ),
+        UniqueConstraint("name", name="uq_project_name"),
+        Index("ix_project_lifecycle_last_used", "lifecycle", "last_used_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(PROJECT_ID_LENGTH), primary_key=True)
+    name: Mapped[str] = mapped_column(Text(collation="NOCASE"), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    lifecycle: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    thumbnail_artifact_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=True
+    )
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_locator: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_revision: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
+    scene_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    shot_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    canon_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+    last_used_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archived_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Workflow(Base):

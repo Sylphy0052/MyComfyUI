@@ -48,6 +48,11 @@ export type WorkflowVersion = components["schemas"]["WorkflowVersionRead"];
 export type ArtifactIntegrity = components["schemas"]["ArtifactIntegrityRead"];
 export type ArtifactIntegrityReason =
   components["schemas"]["ArtifactIntegrityFinding"]["reason"];
+export type ProjectRecord = components["schemas"]["ProjectRead"];
+export type ProjectCreate = components["schemas"]["ProjectCreate"];
+export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
+export type ProjectDeletionImpact =
+  components["schemas"]["ProjectDeletionImpact"];
 
 /**
  * API が返す共通 Envelope。表示文言ではなく code で種別を判定する (ADR 0001)。
@@ -124,7 +129,62 @@ export const api = {
     return request<Recipe[]>(`/recipes${query}`);
   },
 
-  listProjects: () => request<ProjectList>("/projects"),
+  listProjects: (params?: {
+    lifecycle?: "active" | "archived" | "trashed";
+    query?: string;
+    sourceType?: "local" | "external";
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.lifecycle) query.set("lifecycle", params.lifecycle);
+    if (params?.query) query.set("q", params.query);
+    if (params?.sourceType) query.set("source_type", params.sourceType);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<ProjectList>(`/projects${suffix}`);
+  },
+
+  getProject: (projectId: string) =>
+    request<ProjectRecord>(`/projects/${encodeURIComponent(projectId)}`),
+
+  createProject: (payload: ProjectCreate) =>
+    request<ProjectRecord>("/projects", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateProject: (projectId: string, payload: ProjectUpdate) =>
+    request<ProjectRecord>(`/projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  archiveProject: (projectId: string) =>
+    request<ProjectRecord>(
+      `/projects/${encodeURIComponent(projectId)}/archive`,
+      { method: "POST" },
+    ),
+
+  restoreProject: (projectId: string) =>
+    request<ProjectRecord>(
+      `/projects/${encodeURIComponent(projectId)}/restore`,
+      { method: "POST" },
+    ),
+
+  touchProject: (projectId: string) =>
+    request<ProjectRecord>(
+      `/projects/${encodeURIComponent(projectId)}/touch`,
+      { method: "POST" },
+    ),
+
+  getProjectDeletionImpact: (projectId: string) =>
+    request<ProjectDeletionImpact>(
+      `/projects/${encodeURIComponent(projectId)}/deletion-impact`,
+    ),
+
+  trashProject: (projectId: string, confirm = false) =>
+    request<ProjectRecord>(
+      `/projects/${encodeURIComponent(projectId)}?confirm=${String(confirm)}`,
+      { method: "DELETE" },
+    ),
 
   listScenes: (projectId: string) =>
     request<SceneList>(`/projects/${encodeURIComponent(projectId)}/scenes`),
