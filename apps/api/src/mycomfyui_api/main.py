@@ -34,6 +34,7 @@ from mycomfyui_api.queue import (
     recover_interrupted_applications,
     recover_interrupted_jobs,
 )
+from mycomfyui_api.projects import router as project_router
 from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
 from mycomfyui_api.settings import get_settings
@@ -123,6 +124,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(SQLAlchemyError, storage_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
     app.include_router(router)
+    app.include_router(project_router)
     app.include_router(reference_router)
     # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
     # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りするため、

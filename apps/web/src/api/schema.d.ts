@@ -716,7 +716,8 @@ export interface paths {
         /** List Projects */
         get: operations["list_projects_api_v1_projects_get"];
         put?: never;
-        post?: never;
+        /** Create Project */
+        post: operations["create_project_api_v1_projects_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -734,6 +735,25 @@ export interface paths {
         get: operations["get_project_api_v1_projects__project_id__get"];
         put?: never;
         post?: never;
+        /** Trash Project */
+        delete: operations["trash_project_api_v1_projects__project_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Project */
+        patch: operations["update_project_api_v1_projects__project_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Project */
+        post: operations["archive_project_api_v1_projects__project_id__archive_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -774,6 +794,40 @@ export interface paths {
         get: operations["get_canon_api_v1_projects__project_id__canon__canon_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Deletion Impact */
+        get: operations["get_deletion_impact_api_v1_projects__project_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Project */
+        post: operations["restore_project_api_v1_projects__project_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -842,6 +896,23 @@ export interface paths {
         get: operations["get_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/touch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Touch Project */
+        post: operations["touch_project_api_v1_projects__project_id__touch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1658,6 +1729,124 @@ export interface components {
             };
             /** Type */
             type: string;
+        };
+        /**
+         * ProjectCreate
+         * @description ローカルProjectの作成。`id`は省略時に採番し、作成後は変更できない。
+         */
+        ProjectCreate: {
+            /** Description */
+            description?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @default planning
+             * @enum {string}
+             */
+            status: "planning" | "active" | "on_hold" | "completed";
+            /** Tags */
+            tags?: string[];
+            /** Thumbnail Artifact Id */
+            thumbnail_artifact_id?: string | null;
+        };
+        /** ProjectDeletionImpact */
+        ProjectDeletionImpact: {
+            /** Active Job Count */
+            active_job_count: number;
+            /** Artifact Count */
+            artifact_count: number;
+            /** Blockers */
+            blockers: string[];
+            /** Job Count */
+            job_count: number;
+            /** Project Id */
+            project_id: string;
+            /** Requires Confirmation */
+            requires_confirmation: boolean;
+            /** Scene Count */
+            scene_count: number;
+            /** Shot Count */
+            shot_count: number;
+        };
+        /** ProjectList */
+        ProjectList: {
+            /** Items */
+            items: components["schemas"]["ProjectRead"][];
+        };
+        /** ProjectRead */
+        ProjectRead: {
+            /** Archived At */
+            archived_at: string | null;
+            /** Canon Count */
+            canon_count: number;
+            /** Created At */
+            created_at: string;
+            /** Deleted At */
+            deleted_at: string | null;
+            /** Description */
+            description: string | null;
+            /** External Id */
+            external_id: string | null;
+            /** Id */
+            id: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /**
+             * Lifecycle
+             * @enum {string}
+             */
+            lifecycle: "active" | "archived" | "trashed";
+            /** Name */
+            name: string;
+            /** Scene Count */
+            scene_count: number;
+            /** Shot Count */
+            shot_count: number;
+            source: components["schemas"]["ProjectSource"];
+            /**
+             * Source Type
+             * @enum {string}
+             */
+            source_type: "local" | "external";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "planning" | "active" | "on_hold" | "completed";
+            /** Tags */
+            tags: string[];
+            /** Thumbnail Artifact Id */
+            thumbnail_artifact_id: string | null;
+            /** Title */
+            title: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** ProjectSource */
+        ProjectSource: {
+            /** Revision */
+            revision: string;
+            /** Source Locator */
+            source_locator: string;
+        };
+        /**
+         * ProjectUpdate
+         * @description Projectの変更可能なメタデータ。IDとsource情報は変更できない。
+         */
+        ProjectUpdate: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Status */
+            status?: ("planning" | "active" | "on_hold" | "completed") | null;
+            /** Tags */
+            tags?: string[] | null;
+            /** Thumbnail Artifact Id */
+            thumbnail_artifact_id?: string | null;
         };
         /** RecipeCreate */
         RecipeCreate: {
@@ -3035,7 +3224,13 @@ export interface operations {
     };
     list_projects_api_v1_projects_get: {
         parameters: {
-            query?: never;
+            query?: {
+                lifecycle?: "active" | "archived" | "trashed";
+                q?: string | null;
+                source_type?: ("local" | "external") | null;
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3048,9 +3243,49 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ProjectList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_project_api_v1_projects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3072,9 +3307,106 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trash_project_api_v1_projects__project_id__delete: {
+        parameters: {
+            query?: {
+                confirm?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_project_api_v1_projects__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_project_api_v1_projects__project_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
                 };
             };
             /** @description Validation Error */
@@ -3144,6 +3476,68 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_deletion_impact_api_v1_projects__project_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_project_api_v1_projects__project_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
                 };
             };
             /** @description Validation Error */
@@ -3280,6 +3674,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    touch_project_api_v1_projects__project_id__touch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
                 };
             };
             /** @description Validation Error */
