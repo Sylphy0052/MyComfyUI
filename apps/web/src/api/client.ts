@@ -51,6 +51,10 @@ export type ProjectRecord = components["schemas"]["ProjectRead"];
 export type ProjectList = components["schemas"]["ProjectList"];
 export type ProjectCreate = components["schemas"]["ProjectCreate"];
 export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
+export type ProjectGenerationDefaults =
+  components["schemas"]["ProjectGenerationDefaults"];
+export type ProjectGenerationDefaultsRead =
+  components["schemas"]["ProjectGenerationDefaultsRead"];
 export type ProjectDeletionImpact =
   components["schemas"]["ProjectDeletionImpact"];
 export type SceneCreate = components["schemas"]["SceneCreate"];
@@ -170,6 +174,20 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+
+  getProjectGenerationDefaults: (projectId: string) =>
+    request<ProjectGenerationDefaultsRead>(
+      `/projects/${encodeURIComponent(projectId)}/generation-defaults`,
+    ),
+
+  updateProjectGenerationDefaults: (
+    projectId: string,
+    payload: ProjectGenerationDefaults,
+  ) =>
+    request<ProjectGenerationDefaultsRead>(
+      `/projects/${encodeURIComponent(projectId)}/generation-defaults`,
+      { method: "PUT", body: JSON.stringify(payload) },
+    ),
 
   archiveProject: (projectId: string) =>
     request<ProjectRecord>(
@@ -319,7 +337,8 @@ export const api = {
     project_id?: string | null;
     scene_id?: string | null;
     shot_id?: string | null;
-    recipe_id: string;
+    recipe_id?: string | null;
+    use_inherited_defaults?: boolean;
     inputs: Record<string, unknown>;
   }) =>
     request<GenerationJob>("/generation-jobs", {
@@ -333,7 +352,8 @@ export const api = {
     project_id?: string | null;
     scene_id?: string | null;
     shot_id?: string | null;
-    recipe_id: string;
+    recipe_id?: string | null;
+    use_inherited_defaults?: boolean;
     inputs: Record<string, unknown>;
   }) =>
     request<GenerationPreview>("/generation-jobs/preview", {

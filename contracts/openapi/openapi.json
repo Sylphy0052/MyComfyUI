@@ -1199,10 +1199,17 @@
             "title": "Queue Sequence"
           },
           "recipe_id": {
-            "maxLength": 36,
-            "minLength": 1,
-            "title": "Recipe Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
           },
           "scene_id": {
             "anyOf": [
@@ -1227,11 +1234,15 @@
               }
             ],
             "title": "Shot Id"
+          },
+          "use_inherited_defaults": {
+            "default": false,
+            "title": "Use Inherited Defaults",
+            "type": "boolean"
           }
         },
         "required": [
-          "kind",
-          "recipe_id"
+          "kind"
         ],
         "title": "GenerationJobCreate",
         "type": "object"
@@ -1562,10 +1573,17 @@
             "title": "Project Id"
           },
           "recipe_id": {
-            "maxLength": 36,
-            "minLength": 1,
-            "title": "Recipe Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
           },
           "scene_id": {
             "anyOf": [
@@ -1590,11 +1608,15 @@
               }
             ],
             "title": "Shot Id"
+          },
+          "use_inherited_defaults": {
+            "default": false,
+            "title": "Use Inherited Defaults",
+            "type": "boolean"
           }
         },
         "required": [
-          "kind",
-          "recipe_id"
+          "kind"
         ],
         "title": "GenerationPreviewCreate",
         "type": "object"
@@ -1613,7 +1635,10 @@
           },
           "origin": {
             "enum": [
-              "input",
+              "runtime",
+              "shot",
+              "scene",
+              "project",
               "recipe_default",
               "workflow_default",
               "adapter"
@@ -1694,6 +1719,23 @@
             ],
             "title": "Parent Job Id"
           },
+          "recipe_id": {
+            "title": "Recipe Id",
+            "type": "string"
+          },
+          "recipe_origin": {
+            "enum": [
+              "runtime",
+              "shot",
+              "scene",
+              "project",
+              "recipe_default",
+              "workflow_default",
+              "adapter"
+            ],
+            "title": "Recipe Origin",
+            "type": "string"
+          },
           "resolved_inputs": {
             "additionalProperties": true,
             "title": "Resolved Inputs",
@@ -1771,6 +1813,8 @@
           "shot_ref",
           "canon_refs",
           "engine",
+          "recipe_id",
+          "recipe_origin",
           "resolved_prompt",
           "model",
           "seed",
@@ -2125,6 +2169,204 @@
         "title": "ProjectDeletionImpact",
         "type": "object"
       },
+      "ProjectGenerationDefaultWarning": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "RECIPE_NOT_FOUND",
+              "RECIPE_KIND_MISMATCH",
+              "WORKFLOW_NOT_FOUND",
+              "INPUT_NOT_SUPPORTED",
+              "INPUT_VALUE_UNAVAILABLE"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "voice",
+              "music",
+              "compose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "code",
+          "message"
+        ],
+        "title": "ProjectGenerationDefaultWarning",
+        "type": "object"
+      },
+      "ProjectGenerationDefaults": {
+        "additionalProperties": false,
+        "properties": {
+          "compose": {
+            "$ref": "#/components/schemas/ProjectGenerationProfile"
+          },
+          "image": {
+            "$ref": "#/components/schemas/ProjectGenerationProfile"
+          },
+          "music": {
+            "$ref": "#/components/schemas/ProjectGenerationProfile"
+          },
+          "video": {
+            "$ref": "#/components/schemas/ProjectGenerationProfile"
+          },
+          "voice": {
+            "$ref": "#/components/schemas/ProjectGenerationProfile"
+          }
+        },
+        "title": "ProjectGenerationDefaults",
+        "type": "object"
+      },
+      "ProjectGenerationDefaultsRead": {
+        "additionalProperties": false,
+        "properties": {
+          "defaults": {
+            "$ref": "#/components/schemas/ProjectGenerationDefaults"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectGenerationDefaultWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "defaults",
+          "warnings"
+        ],
+        "title": "ProjectGenerationDefaultsRead",
+        "type": "object"
+      },
+      "ProjectGenerationProfile": {
+        "additionalProperties": false,
+        "description": "媒体ごとにProjectへ保存する生成条件。`inputs`はRecipeへ渡す実行値。",
+        "properties": {
+          "bgm_policy": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bgm Policy"
+          },
+          "character_references": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Character References",
+            "type": "array"
+          },
+          "color_tone": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Tone"
+          },
+          "filename_pattern": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename Pattern"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "output_directory": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Directory"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
+          },
+          "style": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Style"
+          },
+          "voice_cast": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Cast"
+          }
+        },
+        "title": "ProjectGenerationProfile",
+        "type": "object"
+      },
       "ProjectList": {
         "additionalProperties": false,
         "properties": {
@@ -2249,6 +2491,9 @@
             "title": "Favorite",
             "type": "boolean"
           },
+          "generation_defaults": {
+            "$ref": "#/components/schemas/ProjectGenerationDefaults"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2343,6 +2588,7 @@
           "tags",
           "favorite",
           "thumbnail_artifact_id",
+          "generation_defaults",
           "source_type",
           "source",
           "external_id",
@@ -6089,6 +6335,100 @@
           }
         },
         "summary": "Get Deletion Impact",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/generation-defaults": {
+      "get": {
+        "operationId": "get_generation_defaults_api_v1_projects__project_id__generation_defaults_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectGenerationDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Generation Defaults",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "operationId": "update_generation_defaults_api_v1_projects__project_id__generation_defaults_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectGenerationDefaults"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectGenerationDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Generation Defaults",
         "tags": [
           "projects"
         ]

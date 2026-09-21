@@ -4,7 +4,10 @@ import { KIND_LABEL, shorten } from "./CanonWarning";
 
 /** 値の出所を画面の語へ直す。API が新しい値を返しても値をそのまま出す。 */
 const ORIGIN_LABEL: Record<string, string> = {
-  input: "入力",
+  runtime: "今回の入力",
+  shot: "Shot設定",
+  scene: "Scene設定",
+  project: "Project既定値",
   recipe_default: "プリセット既定",
   workflow_default: "Workflow既定",
   adapter: "自動",
@@ -51,6 +54,10 @@ export function ExecutionPreview({
     <div className="stack">
       <div className="row">
         <span className="badge">{preview.engine}</span>
+        <span className="muted">
+          Recipe: {shorten(preview.recipe_id, 12)}（
+          {ORIGIN_LABEL[preview.recipe_origin] ?? preview.recipe_origin}）
+        </span>
         <span className="muted">
           {preview.workflow_name ?? "Workflow未登録"}
           {preview.version ? ` / ${shorten(preview.version, 12)}` : ""}

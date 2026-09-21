@@ -857,6 +857,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/generation-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Generation Defaults */
+        get: operations["get_generation_defaults_api_v1_projects__project_id__generation_defaults_get"];
+        /** Update Generation Defaults */
+        put: operations["update_generation_defaults_api_v1_projects__project_id__generation_defaults_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/progress": {
         parameters: {
             query?: never;
@@ -1625,11 +1643,16 @@ export interface components {
             /** Queue Sequence */
             queue_sequence?: number | null;
             /** Recipe Id */
-            recipe_id: string;
+            recipe_id?: string | null;
             /** Scene Id */
             scene_id?: string | null;
             /** Shot Id */
             shot_id?: string | null;
+            /**
+             * Use Inherited Defaults
+             * @default false
+             */
+            use_inherited_defaults: boolean;
         };
         /** GenerationJobRead */
         GenerationJobRead: {
@@ -1735,11 +1758,16 @@ export interface components {
             /** Project Id */
             project_id?: string | null;
             /** Recipe Id */
-            recipe_id: string;
+            recipe_id?: string | null;
             /** Scene Id */
             scene_id?: string | null;
             /** Shot Id */
             shot_id?: string | null;
+            /**
+             * Use Inherited Defaults
+             * @default false
+             */
+            use_inherited_defaults: boolean;
         };
         /**
          * GenerationPreviewDiff
@@ -1754,7 +1782,7 @@ export interface components {
              * Origin
              * @enum {string}
              */
-            origin: "input" | "recipe_default" | "workflow_default" | "adapter";
+            origin: "runtime" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
             /** Recipe Default */
             recipe_default: unknown;
             /** Value */
@@ -1792,6 +1820,13 @@ export interface components {
             };
             /** Parent Job Id */
             parent_job_id: string | null;
+            /** Recipe Id */
+            recipe_id: string;
+            /**
+             * Recipe Origin
+             * @enum {string}
+             */
+            recipe_origin: "runtime" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
             /** Resolved Inputs */
             resolved_inputs: {
                 [key: string]: unknown;
@@ -1958,6 +1993,63 @@ export interface components {
             /** Shot Count */
             shot_count: number;
         };
+        /** ProjectGenerationDefaultWarning */
+        ProjectGenerationDefaultWarning: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "RECIPE_NOT_FOUND" | "RECIPE_KIND_MISMATCH" | "WORKFLOW_NOT_FOUND" | "INPUT_NOT_SUPPORTED" | "INPUT_VALUE_UNAVAILABLE";
+            /** Field */
+            field?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "image" | "video" | "voice" | "music" | "compose";
+            /** Message */
+            message: string;
+        };
+        /** ProjectGenerationDefaults */
+        ProjectGenerationDefaults: {
+            compose?: components["schemas"]["ProjectGenerationProfile"];
+            image?: components["schemas"]["ProjectGenerationProfile"];
+            music?: components["schemas"]["ProjectGenerationProfile"];
+            video?: components["schemas"]["ProjectGenerationProfile"];
+            voice?: components["schemas"]["ProjectGenerationProfile"];
+        };
+        /** ProjectGenerationDefaultsRead */
+        ProjectGenerationDefaultsRead: {
+            defaults: components["schemas"]["ProjectGenerationDefaults"];
+            /** Warnings */
+            warnings: components["schemas"]["ProjectGenerationDefaultWarning"][];
+        };
+        /**
+         * ProjectGenerationProfile
+         * @description 媒体ごとにProjectへ保存する生成条件。`inputs`はRecipeへ渡す実行値。
+         */
+        ProjectGenerationProfile: {
+            /** Bgm Policy */
+            bgm_policy?: string | null;
+            /** Character References */
+            character_references?: string[];
+            /** Color Tone */
+            color_tone?: string | null;
+            /** Filename Pattern */
+            filename_pattern?: string | null;
+            /** Inputs */
+            inputs?: {
+                [key: string]: unknown;
+            };
+            /** Output Directory */
+            output_directory?: string | null;
+            /** Recipe Id */
+            recipe_id?: string | null;
+            /** Style */
+            style?: string | null;
+            /** Voice Cast */
+            voice_cast?: string | null;
+        };
         /** ProjectList */
         ProjectList: {
             /** Items */
@@ -1992,6 +2084,7 @@ export interface components {
             external_id: string | null;
             /** Favorite */
             favorite: boolean;
+            generation_defaults: components["schemas"]["ProjectGenerationDefaults"];
             /** Id */
             id: string;
             /** Last Used At */
@@ -3862,6 +3955,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_generation_defaults_api_v1_projects__project_id__generation_defaults_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectGenerationDefaultsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_generation_defaults_api_v1_projects__project_id__generation_defaults_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectGenerationDefaults"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectGenerationDefaultsRead"];
                 };
             };
             /** @description Validation Error */

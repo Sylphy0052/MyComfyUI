@@ -45,18 +45,28 @@ function initialValues(recipe: Recipe, fields: FieldSpec[]): Record<string, stri
 }
 
 interface Props {
+  projectId: string | null;
   recipes: Recipe[];
   disabled: boolean;
   submitting: boolean;
-  onSubmit: (recipe: Recipe, inputs: Record<string, unknown>) => void;
+  onSubmit: (
+    recipe: Recipe | null,
+    inputs: Record<string, unknown>,
+    useInheritedDefaults: boolean,
+  ) => void;
   // 投入前の確認もAPIを直接呼ばず、Appから受け取った関数へ委ねる。
-  onPreview: (recipe: Recipe, inputs: Record<string, unknown>) => void;
+  onPreview: (
+    recipe: Recipe | null,
+    inputs: Record<string, unknown>,
+    useInheritedDefaults: boolean,
+  ) => void;
   previewing: boolean;
   preview: GenerationPreview | null;
   previewError: ApiError | null;
 }
 
 export function GenerationForm({
+  projectId,
   recipes,
   disabled,
   submitting,
@@ -74,6 +84,7 @@ export function GenerationForm({
   const fields = useMemo(() => (recipe ? toFieldSpecs(recipe) : []), [recipe]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [invalid, setInvalid] = useState<string | null>(null);
+  const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
 
   useEffect(() => {
     if (!recipeId && recipes.length > 0) {
@@ -123,6 +134,10 @@ export function GenerationForm({
   };
 
   const submit = () => {
+    if (useInheritedDefaults) {
+      onSubmit(null, {}, true);
+      return;
+    }
     if (!recipe) {
       return;
     }
@@ -130,11 +145,15 @@ export function GenerationForm({
     if (!inputs) {
       return;
     }
-    onSubmit(recipe, inputs);
+    onSubmit(recipe, inputs, false);
   };
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
   const runPreview = () => {
+    if (useInheritedDefaults) {
+      onPreview(null, {}, true);
+      return;
+    }
     if (!recipe) {
       return;
     }
@@ -142,18 +161,31 @@ export function GenerationForm({
     if (!inputs) {
       return;
     }
-    onPreview(recipe, inputs);
+    onPreview(recipe, inputs, false);
   };
 
   return (
     <section className="panel">
       <h2>生成</h2>
       <div className="stack">
+        <button
+          type="button"
+          disabled={!projectId}
+          aria-pressed={useInheritedDefaults}
+          className={useInheritedDefaults ? "primary" : undefined}
+          onClick={() => setUseInheritedDefaults((value) => !value)}
+        >
+          {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
+        </button>
+        {useInheritedDefaults && (
+          <p className="muted">Project、Scene、Shotの設定だけで生成します。</p>
+        )}
         <div>
           <label htmlFor="recipe">プリセット</label>
           <select
             id="recipe"
             value={recipeId}
+            disabled={useInheritedDefaults}
             onChange={(event) => setRecipeId(event.target.value)}
           >
             {recipes.map((item) => (
@@ -173,6 +205,7 @@ export function GenerationForm({
             {field.control === "textarea" ? (
               <textarea
                 id={`field-${field.name}`}
+                disabled={useInheritedDefaults}
                 value={values[field.name] ?? ""}
                 onChange={(event) =>
                   setValues({ ...values, [field.name]: event.target.value })
@@ -181,6 +214,7 @@ export function GenerationForm({
             ) : (
               <input
                 id={`field-${field.name}`}
+                disabled={useInheritedDefaults}
                 type={field.control === "number" ? "number" : "text"}
                 value={values[field.name] ?? ""}
                 onChange={(event) =>
@@ -198,7 +232,7 @@ export function GenerationForm({
         <div className="row">
           <button
             type="button"
-            disabled={disabled || submitting || previewing || !recipe}
+            disabled={disabled || submitting || previewing || (!recipe && !useInheritedDefaults)}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -206,7 +240,7 @@ export function GenerationForm({
           <button
             type="button"
             className="primary"
-            disabled={disabled || submitting || previewing || !recipe}
+            disabled={disabled || submitting || previewing || (!recipe && !useInheritedDefaults)}
             onClick={submit}
           >
             {submitting ? "投入中..." : "画像生成を投入"}

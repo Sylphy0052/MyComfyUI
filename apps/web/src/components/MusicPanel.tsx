@@ -36,6 +36,7 @@ export function MusicPanel({
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
+  const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
 
   const [mood, setMood] = useState("");
   const [genre, setGenre] = useState("");
@@ -128,6 +129,7 @@ export function MusicPanel({
 
   /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
   const buildInputs = (): Record<string, unknown> | null => {
+    if (useInheritedDefaults) return {};
     if (!mood.trim()) {
       setError("moodを入力してください。");
       return null;
@@ -151,7 +153,7 @@ export function MusicPanel({
 
   const submit = async () => {
     const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+    if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
     setSubmitting(true);
@@ -162,7 +164,8 @@ export function MusicPanel({
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       onSubmittedJob(job);
@@ -176,7 +179,7 @@ export function MusicPanel({
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
   const runPreview = async () => {
     const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+    if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
     setPreviewing(true);
@@ -187,7 +190,8 @@ export function MusicPanel({
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       setPreviewResult(result);
@@ -213,11 +217,21 @@ export function MusicPanel({
       </p>
 
       <div className="stack">
+        <button
+          type="button"
+          disabled={!projectId}
+          aria-pressed={useInheritedDefaults}
+          className={useInheritedDefaults ? "primary" : undefined}
+          onClick={() => setUseInheritedDefaults((value) => !value)}
+        >
+          {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
+        </button>
         <div>
           <label htmlFor="music-recipe">Recipe</label>
           <select
             id="music-recipe"
             value={recipeId}
+            disabled={useInheritedDefaults}
             onChange={(event) => setRecipeId(event.target.value)}
           >
             {recipes.map((item) => (
@@ -288,7 +302,7 @@ export function MusicPanel({
         <div className="row">
           <button
             type="button"
-            disabled={submitting || previewing || !recipeId}
+            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -296,7 +310,7 @@ export function MusicPanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || previewing || !recipeId}
+            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
             onClick={submit}
           >
             {submitting ? "投入中..." : "音楽生成を投入"}

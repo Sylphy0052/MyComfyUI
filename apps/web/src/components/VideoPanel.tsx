@@ -95,6 +95,7 @@ export function VideoPanel({
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
+  const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
   const [health, setHealth] = useState<ComfyUIBackendHealth | null>(null);
 
   const [prompt, setPrompt] = useState("");
@@ -339,6 +340,7 @@ export function VideoPanel({
   };
 
   const buildInputs = (): Record<string, unknown> | null => {
+    if (useInheritedDefaults) return {};
     if (!mode) {
       setError("選んだRecipeのWorkflowテンプレートが未対応です。");
       return null;
@@ -413,7 +415,7 @@ export function VideoPanel({
   };
 
   const submit = async () => {
-    if (!recipe) return;
+    if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
 
@@ -425,7 +427,8 @@ export function VideoPanel({
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       onSubmittedJob(job);
@@ -437,7 +440,7 @@ export function VideoPanel({
   };
 
   const runPreview = async () => {
-    if (!recipe) return;
+    if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
 
@@ -449,7 +452,8 @@ export function VideoPanel({
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       setPreviewResult(preview);
@@ -487,11 +491,21 @@ export function VideoPanel({
       )}
 
       <div className="stack">
+        <button
+          type="button"
+          disabled={!projectId}
+          aria-pressed={useInheritedDefaults}
+          className={useInheritedDefaults ? "primary" : undefined}
+          onClick={() => setUseInheritedDefaults((value) => !value)}
+        >
+          {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
+        </button>
         <div>
           <label htmlFor="video-recipe">Recipe</label>
           <select
             id="video-recipe"
             value={recipeId}
+            disabled={useInheritedDefaults}
             onChange={(event) => setRecipeId(event.target.value)}
           >
             {recipes.map((item) => (
@@ -727,7 +741,7 @@ export function VideoPanel({
         <div>
           <button
             type="button"
-            disabled={submitting || previewing || !recipeId}
+            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -735,7 +749,7 @@ export function VideoPanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || previewing || !recipeId}
+            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
             onClick={submit}
           >
             {submitting ? "投入中..." : "動画生成を投入"}

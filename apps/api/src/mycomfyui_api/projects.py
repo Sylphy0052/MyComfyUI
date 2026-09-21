@@ -12,7 +12,13 @@ from starlette import status
 from mycomfyui_api import schemas
 from mycomfyui_api.db import get_session
 from mycomfyui_api.errors import ApiError
-from mycomfyui_api.models import Artifact, GenerationJob, Project
+from mycomfyui_api.models import (
+    Artifact,
+    GenerationJob,
+    Project,
+    Recipe,
+    WorkflowVersion,
+)
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -106,6 +112,9 @@ def _read(project: Project) -> schemas.ProjectRead:
         tags=list(project.tags or []),
         favorite=project.favorite,
         thumbnail_artifact_id=project.thumbnail_artifact_id,
+        generation_defaults=schemas.ProjectGenerationDefaults.model_validate(
+            project.generation_defaults or {}
+        ),
         source_type=project.source_type,
         source=schemas.ProjectSource(source_locator=locator, revision=revision),
         external_id=project.external_id,
@@ -237,6 +246,7 @@ async def create_project(payload: schemas.ProjectCreate, session: SessionDep):
         tags=list(payload.tags),
         favorite=payload.favorite,
         thumbnail_artifact_id=payload.thumbnail_artifact_id,
+        generation_defaults=schemas.ProjectGenerationDefaults().model_dump(),
         source_type="local",
         source_locator=None,
         source_revision=None,
@@ -281,6 +291,116 @@ async def list_projects(
 @router.get("/{project_id}", response_model=schemas.ProjectRead)
 async def get_project(project_id: schemas.AiMediaId, session: SessionDep):
     return _read(await _require_project(session, project_id))
+
+
+async def _generation_default_warnings(
+    session: AsyncSession, defaults: schemas.ProjectGenerationDefaults
+) -> list[schemas.ProjectGenerationDefaultWarning]:
+    warnings: list[schemas.ProjectGenerationDefaultWarning] = []
+    for kind in ("image", "video", "music", "voice", "compose"):
+        profile = getattr(defaults, kind)
+        if profile.recipe_id is None:
+            continue
+        recipe = await session.get(Recipe, profile.recipe_id)
+        if recipe is None:
+            warnings.append(
+                schemas.ProjectGenerationDefaultWarning(
+                    kind=kind,
+                    code="RECIPE_NOT_FOUND",
+                    message="設定されたRecipeがありません。",
+                    field="recipe_id",
+                )
+            )
+            continue
+        if recipe.kind != kind:
+            warnings.append(
+                schemas.ProjectGenerationDefaultWarning(
+                    kind=kind,
+                    code="RECIPE_KIND_MISMATCH",
+                    message=f"{kind}用ではないRecipeが設定されています。",
+                    field="recipe_id",
+                )
+            )
+        if recipe.workflow_version_id is not None and await session.get(
+            WorkflowVersion, recipe.workflow_version_id
+        ) is None:
+            warnings.append(
+                schemas.ProjectGenerationDefaultWarning(
+                    kind=kind,
+                    code="WORKFLOW_NOT_FOUND",
+                    message="Recipeが参照するWorkflow版がありません。",
+                    field="recipe_id",
+                )
+            )
+        schema = recipe.input_schema if isinstance(recipe.input_schema, dict) else {}
+        nested = schema.get("properties")
+        properties = nested if isinstance(nested, dict) else schema
+        for name, value in profile.inputs.items():
+            definition = properties.get(name)
+            if not isinstance(definition, dict):
+                warnings.append(
+                    schemas.ProjectGenerationDefaultWarning(
+                        kind=kind,
+                        code="INPUT_NOT_SUPPORTED",
+                        message=f"Recipeが入力{name}を受け付けません。",
+                        field=name,
+                    )
+                )
+                continue
+            choices = definition.get("enum")
+            if isinstance(choices, list) and value not in choices:
+                warnings.append(
+                    schemas.ProjectGenerationDefaultWarning(
+                        kind=kind,
+                        code="INPUT_VALUE_UNAVAILABLE",
+                        message=f"入力{name}の値を現在のRecipeで利用できません。",
+                        field=name,
+                    )
+                )
+    return warnings
+
+
+@router.get(
+    "/{project_id}/generation-defaults",
+    response_model=schemas.ProjectGenerationDefaultsRead,
+)
+async def get_generation_defaults(
+    project_id: schemas.AiMediaId, session: SessionDep
+):
+    project = await _require_project(session, project_id)
+    defaults = schemas.ProjectGenerationDefaults.model_validate(
+        project.generation_defaults or {}
+    )
+    return schemas.ProjectGenerationDefaultsRead(
+        defaults=defaults,
+        warnings=await _generation_default_warnings(session, defaults),
+    )
+
+
+@router.put(
+    "/{project_id}/generation-defaults",
+    response_model=schemas.ProjectGenerationDefaultsRead,
+)
+async def update_generation_defaults(
+    project_id: schemas.AiMediaId,
+    payload: schemas.ProjectGenerationDefaults,
+    session: SessionDep,
+):
+    project = await _require_project(session, project_id)
+    if project.lifecycle == "trashed":
+        raise ApiError(
+            "PROJECT_TRASHED",
+            "ゴミ箱のProjectは復元してから更新してください。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"project_id": project_id},
+        )
+    project.generation_defaults = payload.model_dump(mode="json")
+    project.updated_at = schemas.now_iso()
+    await _commit(session)
+    return schemas.ProjectGenerationDefaultsRead(
+        defaults=payload,
+        warnings=await _generation_default_warnings(session, payload),
+    )
 
 
 @router.patch("/{project_id}", response_model=schemas.ProjectRead)

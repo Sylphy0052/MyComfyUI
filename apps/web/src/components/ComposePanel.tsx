@@ -48,6 +48,7 @@ export function ComposePanel({
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
+  const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
 
   const [videoArtifacts, setVideoArtifacts] = useState<Artifact[]>([]);
   const [audioArtifacts, setAudioArtifacts] = useState<Artifact[]>([]);
@@ -180,6 +181,7 @@ export function ComposePanel({
   };
 
   const buildInputs = (): Record<string, unknown> | null => {
+    if (useInheritedDefaults) return {};
     if (!selectedVideoArtifactId) {
       setError("合成する動画Artifactを選んでください。");
       return null;
@@ -223,7 +225,7 @@ export function ComposePanel({
 
   const submit = async () => {
     const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+    if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
 
@@ -235,7 +237,8 @@ export function ComposePanel({
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       onSubmittedJob(job);
@@ -251,7 +254,7 @@ export function ComposePanel({
 
   const runPreview = async () => {
     const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+    if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
 
@@ -263,7 +266,8 @@ export function ComposePanel({
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       setPreviewResult(preview);
@@ -285,11 +289,21 @@ export function ComposePanel({
       <h2>動画合成</h2>
 
       <div className="stack">
+        <button
+          type="button"
+          disabled={!projectId}
+          aria-pressed={useInheritedDefaults}
+          className={useInheritedDefaults ? "primary" : undefined}
+          onClick={() => setUseInheritedDefaults((value) => !value)}
+        >
+          {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
+        </button>
         <div>
           <label htmlFor="compose-recipe">Recipe</label>
           <select
             id="compose-recipe"
             value={recipeId}
+            disabled={useInheritedDefaults}
             onChange={(event) => setRecipeId(event.target.value)}
           >
             {recipes.map((item) => (
@@ -430,7 +444,7 @@ export function ComposePanel({
         <div>
           <button
             type="button"
-            disabled={submitting || previewing || !recipeId}
+            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -438,7 +452,7 @@ export function ComposePanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || previewing || !recipeId}
+            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
             onClick={submit}
           >
             {submitting ? "投入中..." : "合成を投入"}

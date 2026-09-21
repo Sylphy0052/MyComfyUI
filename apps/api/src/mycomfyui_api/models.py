@@ -60,6 +60,7 @@ class Project(Base):
     thumbnail_artifact_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=True
     )
+    generation_defaults: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     source_type: Mapped[str] = mapped_column(Text, nullable=False)
     source_locator: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_revision: Mapped[str | None] = mapped_column(Text, nullable=True)
