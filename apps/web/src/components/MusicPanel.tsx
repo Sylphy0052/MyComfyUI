@@ -9,6 +9,7 @@ import type {
 } from "../api/client";
 import type { SceneEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { ModelSelector } from "./ModelSelector";
 
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
@@ -43,6 +44,8 @@ export function MusicPanel({
   const [instrumental, setInstrumental] = useState(true);
   const [secondsStr, setSecondsStr] = useState("14");
   const [seedStr, setSeedStr] = useState("-1");
+  const [modelValues, setModelValues] = useState<Record<string, string>>({});
+  const [modelsValid, setModelsValid] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +57,11 @@ export function MusicPanel({
   const [audioArtifactsByJob, setAudioArtifactsByJob] = useState<
     Record<string, Artifact[]>
   >({});
+
+  const recipe = useMemo(
+    () => recipes.find((item) => item.id === recipeId) ?? null,
+    [recipes, recipeId],
+  );
 
   const musicJobs = useMemo(
     () => jobs.filter((job) => job.kind === "music"),
@@ -145,6 +153,7 @@ export function MusicPanel({
       return null;
     }
     return {
+      ...modelValues,
       positive_prompt: tags,
       seconds,
       seed,
@@ -152,7 +161,6 @@ export function MusicPanel({
   };
 
   const submit = async () => {
-    const recipe = recipes.find((item) => item.id === recipeId);
     if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
@@ -178,7 +186,6 @@ export function MusicPanel({
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
   const runPreview = async () => {
-    const recipe = recipes.find((item) => item.id === recipeId);
     if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
@@ -242,6 +249,14 @@ export function MusicPanel({
           </select>
         </div>
 
+        <ModelSelector
+          recipe={recipe}
+          disabled={useInheritedDefaults}
+          values={modelValues}
+          onChange={setModelValues}
+          onValidityChange={setModelsValid}
+        />
+
         <div className="row">
           <div>
             <label htmlFor="music-mood">mood</label>
@@ -302,7 +317,12 @@ export function MusicPanel({
         <div className="row">
           <button
             type="button"
-            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
+            disabled={
+              submitting ||
+              previewing ||
+              !modelsValid ||
+              (!recipeId && !useInheritedDefaults)
+            }
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -310,7 +330,12 @@ export function MusicPanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
+            disabled={
+              submitting ||
+              previewing ||
+              !modelsValid ||
+              (!recipeId && !useInheritedDefaults)
+            }
             onClick={submit}
           >
             {submitting ? "投入中..." : "音楽生成を投入"}

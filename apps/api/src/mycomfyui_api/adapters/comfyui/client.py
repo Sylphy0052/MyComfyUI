@@ -15,7 +15,7 @@ from enum import Enum
 from pathlib import PurePosixPath
 from types import TracebackType
 from typing import Any, Self
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 import websockets
@@ -193,7 +193,7 @@ class ComfyUIClient:
 
     async def available_options(self, node_class: str, field: str) -> tuple[str, ...]:
         """あるノードの選択肢一覧を取得する。モデルファイルの在庫確認に使う。"""
-        payload = await self._get_json(f"/object_info/{node_class}")
+        payload = await self._get_json(f"/object_info/{quote(node_class, safe='')}")
         return _extract_option_names(payload, node=node_class, field=field)
 
     async def upload_input(self, file_name: str, data: bytes) -> str:

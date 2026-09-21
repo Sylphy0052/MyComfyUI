@@ -1491,6 +1491,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-versions/{workflow_version_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workflow Model Options
+         * @description 登録済みWorkflow版が宣言したmodel slotだけをComfyUIへ照会する。
+         */
+        get: operations["get_workflow_model_options_api_v1_workflow_versions__workflow_version_id__models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows": {
         parameters: {
             query?: never;
@@ -3315,6 +3335,36 @@ export interface components {
             status: string;
             /** Target Duration Sec */
             target_duration_sec: number;
+        };
+        /**
+         * WorkflowModelOptionsRead
+         * @description 任意node照会を許さず、Workflow版の宣言だけから解決したモデル在庫。
+         */
+        WorkflowModelOptionsRead: {
+            /** Backend Reachable */
+            backend_reachable: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Slots */
+            slots?: components["schemas"]["WorkflowModelSlotOptions"][];
+            /** Workflow Version Id */
+            workflow_version_id: string;
+        };
+        /**
+         * WorkflowModelSlotOptions
+         * @description Workflow版が宣言した1つのモデル入力とComfyUI上の在庫。
+         */
+        WorkflowModelSlotOptions: {
+            /** Node Class */
+            node_class: string;
+            /** Option Field */
+            option_field: string;
+            /** Options */
+            options?: string[];
+            /** Reason */
+            reason?: string | null;
+            /** Variable */
+            variable: string;
         };
         /** WorkflowRead */
         WorkflowRead: {
@@ -6315,6 +6365,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowVersionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_model_options_api_v1_workflow_versions__workflow_version_id__models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowModelOptionsRead"];
                 };
             };
             /** @description Validation Error */

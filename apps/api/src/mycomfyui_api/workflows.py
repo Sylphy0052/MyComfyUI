@@ -197,6 +197,15 @@ def definitions() -> list[WorkflowDefinition]:
     return built
 
 
+def allowed_model_slots() -> frozenset[tuple[str, str]]:
+    """同梱Workflowが宣言する(node class, option field)の許可集合。"""
+    return frozenset(
+        (slot["node_class"], slot["option_field"])
+        for definition in definitions()
+        for slot in definition.model_slots
+    )
+
+
 async def ensure_workflows(session: AsyncSession) -> dict[str, WorkflowVersion]:
     """登録済みWorkflowと版を最新化し、Workflow名から最新版への対応を返す。
 
