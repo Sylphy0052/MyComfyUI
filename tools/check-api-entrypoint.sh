@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Issue #63の受入基準を手元で確かめる。CIには載せず、実装時と回帰確認のときに手で叩く。
+# Application API起動エントリを手元で確かめる。CIには載せず、実装時と回帰確認のときに手で叩く。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

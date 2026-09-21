@@ -113,8 +113,8 @@ WSL2(Ubuntu, Python 3.12)での実測は約81MBで、ビルドに1分ほどか�
 
 ## 受入の確認
 
-`tools/check-sidecar.sh`が起動、DB作成、CORSの挙動、起動に失敗したときの終了コードをまとめて確かめる。一時ディレクトリを`data_root`にして起動し、確認が終わったら落とす。
+`tools/check-api-entrypoint.sh`が起動、DB作成、CORSの挙動、起動に失敗したときの終了コードをまとめて確かめる。一時ディレクトリを`data_root`にして起動し、確認が終わったら落とす。
 
 ```bash
-bash tools/check-sidecar.sh
+bash tools/check-api-entrypoint.sh
 ```
