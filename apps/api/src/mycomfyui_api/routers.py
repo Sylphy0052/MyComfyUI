@@ -312,15 +312,16 @@ async def create_generation_job(
     は先にArtifact storeへ書き出し、その内容のSHA-256をWorkflow Artifactとして記録する。
     投入するのはこのファイルそのものとする。
     """
-    recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
-    _validate_recipe_matches(recipe, payload)
     await _validate_project_context(session, payload.project_id)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
+    effective, recipe, _, _, preferences = await _resolve_generation_defaults(
+        session, payload, resolved
+    )
     # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
-    prepared = await _prepare_execution(recipe, payload, source, resolved, session)
+    prepared = await _prepare_execution(recipe, effective, source, resolved, session)
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
@@ -329,7 +330,14 @@ async def create_generation_job(
     # 永続化をまとめて囲み、後始末の無い隙間を作らない。
     try:
         job, workflow_artifact, manifest = _build_job_records(
-            job_id, payload, recipe, prepared, stored, queue_sequence, resolved
+            job_id,
+            effective,
+            recipe,
+            prepared,
+            stored,
+            queue_sequence,
+            resolved,
+            preferences,
         )
         await _persist_job_records(session, job, workflow_artifact, manifest)
     except Exception:
@@ -353,13 +361,14 @@ async def preview_generation_job(
     同じ`VALIDATION_ERROR`で返し、画面が投入時とプレビューで分岐を二重に持たない
     ようにする。
     """
-    recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
-    _validate_recipe_matches(recipe, payload)
     await _validate_project_context(session, payload.project_id)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
-    prepared = await _prepare_execution(recipe, payload, source, resolved, session)
+    effective, recipe, recipe_origin, input_origins, preferences = (
+        await _resolve_generation_defaults(session, payload, resolved)
+    )
+    prepared = await _prepare_execution(recipe, effective, source, resolved, session)
     defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
     version = await _load_recipe_version(session, recipe)
     workflow, workflow_version = version if version is not None else (None, None)
@@ -368,11 +377,16 @@ async def preview_generation_job(
         shot_ref=resolved.shot_ref,
         canon_refs=resolved.canon_refs,
         engine=recipe.engine,
+        recipe_id=recipe.id,
+        recipe_origin=recipe_origin,
         resolved_prompt=prepared.resolved_prompt,
         model=dict(prepared.model),
         seed=prepared.seed,
-        seed_auto=_is_seed_auto(defaults, payload.inputs, prepared),
-        parameters=dict(prepared.parameters),
+        seed_auto=_is_seed_auto(defaults, effective.inputs, prepared),
+        parameters={
+            **dict(prepared.parameters),
+            **({"production_preferences": preferences} if preferences else {}),
+        },
         resolved_inputs=dict(prepared.resolved_inputs),
         input_refs=_merge_input_refs(
             resolved.input_refs([]), prepared.input_refs, payload.input_refs
@@ -385,7 +399,9 @@ async def preview_generation_job(
         template_sha256=(
             workflow_version.template_sha256 if workflow_version is not None else None
         ),
-        diff=_build_workflow_diff(recipe, defaults, payload.inputs, prepared),
+        diff=_build_workflow_diff(
+            recipe, defaults, effective.inputs, prepared, input_origins
+        ),
         parent_job_id=_resolve_parent_job_id(payload, prepared),
     )
 
@@ -427,6 +443,7 @@ def _build_workflow_diff(
     defaults: dict[str, Any],
     inputs: dict[str, Any],
     prepared: PreparedExecution,
+    input_origins: dict[str, schemas.GenerationDefaultOrigin],
 ) -> list[schemas.GenerationPreviewDiff]:
     """Workflowの既定値、Recipeの既定値、今回確定する値を変数ごとに並べる。
 
@@ -450,7 +467,7 @@ def _build_workflow_diff(
             baseline = defaults.get(name)
             has_baseline = name in defaults
         if name in inputs:
-            origin = "input"
+            origin = input_origins.get(name, "runtime")
         elif name in defaults:
             origin = "recipe_default"
         elif resolved:
@@ -492,6 +509,104 @@ class _ResolvedReferences:
             for reference in [self.scene_ref, self.shot_ref, *self.canon_refs, *extra]
             if reference.get("kind")
         ]
+
+
+def _profile_from_data(
+    data: dict[str, Any], kind: schemas.GenerationKind
+) -> schemas.ProjectGenerationProfile:
+    """Scene/Shotの将来互換な`generation_defaults`から媒体設定を読む。"""
+    settings = data.get("generation_defaults")
+    if not isinstance(settings, dict):
+        return schemas.ProjectGenerationProfile()
+    raw = settings.get(kind)
+    if not isinstance(raw, dict):
+        return schemas.ProjectGenerationProfile()
+    try:
+        return schemas.ProjectGenerationProfile.model_validate(raw)
+    except ValueError:
+        # 外部参照の補助設定が壊れていても、明示した実行時入力までは妨げない。
+        return schemas.ProjectGenerationProfile()
+
+
+async def _resolve_generation_defaults(
+    session: AsyncSession,
+    payload: schemas.GenerationPreviewCreate,
+    resolved: _ResolvedReferences,
+) -> tuple[
+    schemas.GenerationPreviewCreate,
+    Recipe,
+    schemas.GenerationDefaultOrigin,
+    dict[str, schemas.GenerationDefaultOrigin],
+    dict[str, Any],
+]:
+    """Recipeと入力をProject、Scene、Shot、実行時指定の順で上書きする。"""
+    project_profile = schemas.ProjectGenerationProfile()
+    if payload.project_id is not None:
+        project = await session.get(Project, payload.project_id)
+        if project is not None:
+            defaults = schemas.ProjectGenerationDefaults.model_validate(
+                project.generation_defaults or {}
+            )
+            project_profile = getattr(defaults, payload.kind)
+    scene_profile = _profile_from_data(resolved.scene_data, payload.kind)
+    shot_profile = _profile_from_data(resolved.shot_data, payload.kind)
+
+    recipe_candidates: list[tuple[str | None, schemas.GenerationDefaultOrigin]] = [
+        (
+            None if payload.use_inherited_defaults else payload.recipe_id,
+            "runtime",
+        ),
+        (shot_profile.recipe_id, "shot"),
+        (scene_profile.recipe_id, "scene"),
+        (project_profile.recipe_id, "project"),
+    ]
+    recipe_id, recipe_origin = next(
+        ((value, origin) for value, origin in recipe_candidates if value is not None),
+        (None, "recipe_default"),
+    )
+    if recipe_id is None:
+        raise _validation_error(
+            "Recipeを指定するか、Projectの生成既定値へ設定してください。",
+            {"kind": payload.kind, "project_id": payload.project_id},
+        )
+    recipe = await _get_or_404(session, Recipe, "Recipe", recipe_id)
+    _validate_recipe_matches(recipe, payload)
+
+    inputs: dict[str, Any] = {}
+    input_origins: dict[str, schemas.GenerationDefaultOrigin] = {}
+    preferences: dict[str, Any] = {}
+    for profile, origin in (
+        (project_profile, "project"),
+        (scene_profile, "scene"),
+        (shot_profile, "shot"),
+    ):
+        for name, value in profile.inputs.items():
+            inputs[name] = value
+            input_origins[name] = origin
+        for name in (
+            "character_references",
+            "style",
+            "color_tone",
+            "voice_cast",
+            "bgm_policy",
+            "output_directory",
+            "filename_pattern",
+        ):
+            value = getattr(profile, name)
+            if value not in (None, [], ""):
+                preferences[name] = value
+    if not payload.use_inherited_defaults:
+        for name, value in payload.inputs.items():
+            inputs[name] = value
+            input_origins[name] = "runtime"
+
+    return (
+        payload.model_copy(update={"recipe_id": recipe.id, "inputs": inputs}),
+        recipe,
+        recipe_origin,
+        input_origins,
+        preferences,
+    )
 
 
 async def _validate_project_context(
@@ -723,6 +838,7 @@ def _build_job_records(
     stored: storage.StoredFile,
     queue_sequence: int | Any,
     resolved: _ResolvedReferences,
+    preferences: dict[str, Any] | None = None,
 ) -> tuple[GenerationJob, Artifact, GenerationManifest]:
     manifest_id = schemas.new_id()
     workflow_artifact_id = schemas.new_id()
@@ -767,7 +883,14 @@ def _build_job_records(
         model=prepared.model,
         seed=prepared.seed,
         resolved_prompt=prepared.resolved_prompt,
-        parameters=dict(prepared.parameters),
+        parameters={
+            **dict(prepared.parameters),
+            **(
+                {"production_preferences": preferences}
+                if preferences
+                else {}
+            ),
+        },
         input_refs=_merge_input_refs(
             resolved.input_refs([]), prepared.input_refs, payload.input_refs
         ),

@@ -360,7 +360,11 @@ export function App() {
     );
   }, [artifactsByJob]);
 
-  const submit = async (recipe: Recipe, inputs: Record<string, unknown>) => {
+  const submit = async (
+    recipe: Recipe | null,
+    inputs: Record<string, unknown>,
+    useInheritedDefaults: boolean,
+  ) => {
     setSubmitting(true);
     setError(null);
     try {
@@ -369,7 +373,8 @@ export function App() {
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       setSelectedJobId(job.id);
@@ -383,7 +388,11 @@ export function App() {
   };
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
-  const preview = async (recipe: Recipe, inputs: Record<string, unknown>) => {
+  const preview = async (
+    recipe: Recipe | null,
+    inputs: Record<string, unknown>,
+    useInheritedDefaults: boolean,
+  ) => {
     setPreviewing(true);
     setError(null);
     try {
@@ -392,7 +401,8 @@ export function App() {
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       setPreviewResult(result);
@@ -571,6 +581,7 @@ export function App() {
               hidden={generationTab !== "image"}
             >
               <GenerationForm
+                projectId={projectId}
                 recipes={recipes}
                 disabled={false}
                 submitting={submitting}

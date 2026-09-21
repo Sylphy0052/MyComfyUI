@@ -9,6 +9,7 @@ import type {
   ProjectProgress,
   ProjectRecord,
 } from "../api/client";
+import { ProjectGenerationDefaultsEditor } from "./ProjectGenerationDefaultsEditor";
 
 type Lifecycle = ProjectRecord["lifecycle"];
 type ProjectStatus = ProjectRecord["status"];
@@ -89,6 +90,7 @@ export function ProjectWorkspace({
   const [listError, setListError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [editor, setEditor] = useState<"create" | "edit" | null>(null);
+  const [defaultsEditor, setDefaultsEditor] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -405,6 +407,11 @@ export function ProjectWorkspace({
                     編集
                   </button>
                 )}
+                {selected.lifecycle !== "trashed" && (
+                  <button type="button" disabled={busy} onClick={() => setDefaultsEditor(true)}>
+                    生成既定値
+                  </button>
+                )}
                 {selected.lifecycle === "active" && (
                   <button
                     type="button"
@@ -514,6 +521,17 @@ export function ProjectWorkspace({
             setEditor(null);
             setLifecycle("active");
             setFocusedId(project.id);
+            await refresh();
+          }}
+        />
+      )}
+
+      {defaultsEditor && selected && (
+        <ProjectGenerationDefaultsEditor
+          projectId={selected.id}
+          onCancel={() => setDefaultsEditor(false)}
+          onSaved={async () => {
+            setDefaultsEditor(false);
             await refresh();
           }}
         />

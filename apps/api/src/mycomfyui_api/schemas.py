@@ -29,6 +29,9 @@ ProjectStatus = Literal["planning", "active", "on_hold", "completed"]
 ProjectLifecycle = Literal["active", "archived", "trashed"]
 ProjectSourceType = Literal["local", "external"]
 ProjectSort = Literal["name", "created", "updated", "last_used"]
+GenerationDefaultOrigin = Literal[
+    "runtime", "shot", "scene", "project", "recipe_default", "workflow_default", "adapter"
+]
 ProductionStatus = Literal[
     "not_started", "in_progress", "has_candidates", "accepted", "completed"
 ]
@@ -136,6 +139,46 @@ ProjectName = Annotated[
 ]
 
 
+class ProjectGenerationProfile(ApiModel):
+    """媒体ごとにProjectへ保存する生成条件。`inputs`はRecipeへ渡す実行値。"""
+
+    recipe_id: ResourceId | None = None
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    character_references: list[str] = Field(default_factory=list, max_length=100)
+    style: str | None = Field(default=None, max_length=2_000)
+    color_tone: str | None = Field(default=None, max_length=2_000)
+    voice_cast: str | None = Field(default=None, max_length=2_000)
+    bgm_policy: str | None = Field(default=None, max_length=2_000)
+    output_directory: str | None = Field(default=None, max_length=1_000)
+    filename_pattern: str | None = Field(default=None, max_length=500)
+
+
+class ProjectGenerationDefaults(ApiModel):
+    image: ProjectGenerationProfile = Field(default_factory=ProjectGenerationProfile)
+    video: ProjectGenerationProfile = Field(default_factory=ProjectGenerationProfile)
+    music: ProjectGenerationProfile = Field(default_factory=ProjectGenerationProfile)
+    voice: ProjectGenerationProfile = Field(default_factory=ProjectGenerationProfile)
+    compose: ProjectGenerationProfile = Field(default_factory=ProjectGenerationProfile)
+
+
+class ProjectGenerationDefaultWarning(ApiModel):
+    kind: GenerationKind
+    code: Literal[
+        "RECIPE_NOT_FOUND",
+        "RECIPE_KIND_MISMATCH",
+        "WORKFLOW_NOT_FOUND",
+        "INPUT_NOT_SUPPORTED",
+        "INPUT_VALUE_UNAVAILABLE",
+    ]
+    message: str
+    field: str | None = None
+
+
+class ProjectGenerationDefaultsRead(ApiModel):
+    defaults: ProjectGenerationDefaults
+    warnings: list[ProjectGenerationDefaultWarning]
+
+
 class ProjectCreate(ApiModel):
     """ローカルProjectの作成。`id`は省略時に採番し、作成後は変更できない。"""
 
@@ -189,6 +232,7 @@ class ProjectRead(ApiModel):
     tags: list[str]
     favorite: bool
     thumbnail_artifact_id: str | None
+    generation_defaults: ProjectGenerationDefaults
     source_type: ProjectSourceType
     source: ProjectSource
     external_id: str | None
@@ -360,7 +404,10 @@ class GenerationPreviewCreate(ApiModel):
     project_id: AiMediaId | None = None
     scene_id: AiMediaId | None = None
     shot_id: AiMediaId | None = None
-    recipe_id: ResourceId
+    #: 未指定時はShot、Scene、Projectの順で既定Recipeを解決する。
+    recipe_id: ResourceId | None = None
+    #: 真なら画面の入力を捨て、Project、Scene、Shotから継承した状態へ戻す。
+    use_inherited_defaults: bool = False
     parent_job_id: ResourceId | None = None
     inputs: dict[str, Any] = Field(default_factory=dict)
     #: 利用者素材のcache参照だけを受け取る。Scene/Shot/Canonの参照は解決結果が正本の
@@ -428,7 +475,7 @@ class GenerationPreviewDiff(ApiModel):
     #: 持たないWorkflowでは`recipe_default`を使う。どちらも無ければ偽とする。
     changed: bool
     #: 値の出所。
-    origin: Literal["input", "recipe_default", "workflow_default", "adapter"]
+    origin: GenerationDefaultOrigin
 
 
 class GenerationPreviewRead(ApiModel):
@@ -442,6 +489,8 @@ class GenerationPreviewRead(ApiModel):
     shot_ref: dict[str, Any]
     canon_refs: list[dict[str, Any]]
     engine: str
+    recipe_id: str
+    recipe_origin: GenerationDefaultOrigin
     resolved_prompt: str
     model: dict[str, Any]
     seed: int

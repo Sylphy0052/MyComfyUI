@@ -76,6 +76,7 @@ export function VoicePanel({
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
+  const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
   const [canon, setCanon] = useState<CanonDescriptor[]>([]);
   const [health, setHealth] = useState<VoiceBackendHealth | null>(null);
   const [bindings, setBindings] = useState<Record<string, VoiceBinding>>({});
@@ -201,6 +202,7 @@ export function VoicePanel({
   };
 
   const buildInputs = (): Record<string, unknown> | null => {
+    if (useInheritedDefaults) return {};
     const voices: Record<string, unknown> = {};
     for (const voiceId of voiceIds) {
       const binding = bindings[voiceId] ?? EMPTY_BINDING;
@@ -275,7 +277,7 @@ export function VoicePanel({
 
   const submit = async () => {
     const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+    if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
 
@@ -287,7 +289,8 @@ export function VoicePanel({
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       setSelectedJobId(job.id);
@@ -301,7 +304,7 @@ export function VoicePanel({
 
   const runPreview = async () => {
     const recipe = recipes.find((item) => item.id === recipeId);
-    if (!recipe) return;
+    if (!recipe && !useInheritedDefaults) return;
     const inputs = buildInputs();
     if (!inputs) return;
 
@@ -313,7 +316,8 @@ export function VoicePanel({
         project_id: projectId,
         scene_id: sceneId,
         shot_id: shotId,
-        recipe_id: recipe.id,
+        recipe_id: recipe?.id,
+        use_inherited_defaults: useInheritedDefaults,
         inputs,
       });
       setPreviewResult(preview);
@@ -357,11 +361,21 @@ export function VoicePanel({
         </p>
       ) : (
         <div className="stack">
+          <button
+            type="button"
+            disabled={!projectId}
+            aria-pressed={useInheritedDefaults}
+            className={useInheritedDefaults ? "primary" : undefined}
+            onClick={() => setUseInheritedDefaults((value) => !value)}
+          >
+            {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
+          </button>
           <div>
             <label htmlFor="voice-recipe">Backend</label>
             <select
               id="voice-recipe"
               value={recipeId}
+              disabled={useInheritedDefaults}
               onChange={(event) => setRecipeId(event.target.value)}
             >
               {recipes.map((item) => (
@@ -525,7 +539,7 @@ export function VoicePanel({
           <div>
             <button
               type="button"
-              disabled={submitting || previewing || !recipeId}
+              disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
               onClick={runPreview}
             >
               {previewing ? "確認中..." : "投入前に確認"}
@@ -533,7 +547,7 @@ export function VoicePanel({
             <button
               type="button"
               className="primary"
-              disabled={submitting || previewing || !recipeId}
+              disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
               onClick={submit}
             >
               {submitting ? "投入中..." : "音声生成を投入"}
