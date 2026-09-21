@@ -722,6 +722,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-prompt-assists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assist Image Prompt
+         * @description 日本語の説明を、SceneやShotに依存しない画像promptへ補完する。
+         *
+         *     Providerへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。
+         *     Job、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は
+         *     利用者が明示的に投入するまで始まらない。
+         */
+        post: operations["assist_image_prompt_api_v1_image_prompt_assists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/image-references": {
         parameters: {
             query?: never;
@@ -740,6 +764,26 @@ export interface paths {
          *     使えるようにする。実際のアップロードはJobの実行直前にAdapterが行う。
          */
         post: operations["create_image_reference_api_v1_image_references_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/image-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Image Tags
+         * @description 画像をQwen互換の視覚言語モデルへ渡し、正プロンプト用タグを返す。
+         */
+        post: operations["extract_image_tags_api_v1_image_tags_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1501,6 +1545,26 @@ export interface paths {
         };
         /** Get Workflow Version */
         get: operations["get_workflow_version_api_v1_workflow_versions__workflow_version_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-versions/{workflow_version_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workflow Model Options
+         * @description 登録済みWorkflow版が宣言したmodel slotだけをComfyUIへ照会する。
+         */
+        get: operations["get_workflow_model_options_api_v1_workflow_versions__workflow_version_id__models_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2384,6 +2448,35 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * ImagePromptAssistCreate
+         * @description SceneやShotに紐付けない画像prompt補完の要求。
+         */
+        ImagePromptAssistCreate: {
+            /** Instruction */
+            instruction: string;
+            /** Provider Id */
+            provider_id?: ("claude_code" | "codex" | "qwen" | "stub") | null;
+        };
+        /**
+         * ImagePromptAssistRead
+         * @description 構造化検証済みの画像prompt補完結果。
+         */
+        ImagePromptAssistRead: {
+            /** Model */
+            model: string | null;
+            /** Negative Prompt */
+            negative_prompt: string;
+            /** Positive Prompt */
+            positive_prompt: string;
+            /**
+             * Provider Id
+             * @enum {string}
+             */
+            provider_id: "claude_code" | "codex" | "qwen" | "stub";
+            /** Rationale */
+            rationale: string;
+        };
+        /**
          * ImageReferenceCreate
          * @description 参照画像とガイド音声の取り込み要求。
          *
@@ -2411,6 +2504,24 @@ export interface components {
             relative_path: string;
             /** Sha256 */
             sha256: string;
+        };
+        /**
+         * ImageTagExtractRead
+         * @description 視覚言語モデルが抽出した正プロンプト用のタグ。
+         */
+        ImageTagExtractRead: {
+            /** Tags */
+            tags: string[];
+        };
+        /**
+         * ImageTagExtractRequest
+         * @description 画像タグ抽出へ渡す画像。画像だけを受け付ける。
+         */
+        ImageTagExtractRequest: {
+            /** Content Base64 */
+            content_base64: string;
+            /** Media Type */
+            media_type: string;
         };
         /** JobAssignmentUpdate */
         JobAssignmentUpdate: {
@@ -3382,6 +3493,36 @@ export interface components {
             status: string;
             /** Target Duration Sec */
             target_duration_sec: number;
+        };
+        /**
+         * WorkflowModelOptionsRead
+         * @description 任意node照会を許さず、Workflow版の宣言だけから解決したモデル在庫。
+         */
+        WorkflowModelOptionsRead: {
+            /** Backend Reachable */
+            backend_reachable: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Slots */
+            slots?: components["schemas"]["WorkflowModelSlotOptions"][];
+            /** Workflow Version Id */
+            workflow_version_id: string;
+        };
+        /**
+         * WorkflowModelSlotOptions
+         * @description Workflow版が宣言した1つのモデル入力とComfyUI上の在庫。
+         */
+        WorkflowModelSlotOptions: {
+            /** Node Class */
+            node_class: string;
+            /** Option Field */
+            option_field: string;
+            /** Options */
+            options?: string[];
+            /** Reason */
+            reason?: string | null;
+            /** Variable */
+            variable: string;
         };
         /** WorkflowRead */
         WorkflowRead: {
@@ -4579,6 +4720,39 @@ export interface operations {
             };
         };
     };
+    assist_image_prompt_api_v1_image_prompt_assists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImagePromptAssistCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImagePromptAssistRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_image_reference_api_v1_image_references_post: {
         parameters: {
             query?: never;
@@ -4599,6 +4773,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageReferenceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_image_tags_api_v1_image_tags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageTagExtractRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageTagExtractRead"];
                 };
             };
             /** @description Validation Error */
@@ -6448,6 +6655,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowVersionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_model_options_api_v1_workflow_versions__workflow_version_id__models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowModelOptionsRead"];
                 };
             };
             /** @description Validation Error */

@@ -10,6 +10,7 @@ import type {
 } from "../api/client";
 import type { ShotEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { ModelSelector } from "./ModelSelector";
 
 /** フレーム数のグリッド。17k+5に合わない値はComfyUI側で切り上げられ、指定した尺とずれる。 */
 const FRAME_GRID_STEP = 17;
@@ -107,6 +108,8 @@ export function VideoPanel({
     "native",
   );
   const [guideFrameIdxStr, setGuideFrameIdxStr] = useState("0");
+  const [modelValues, setModelValues] = useState<Record<string, string>>({});
+  const [modelsValid, setModelsValid] = useState(false);
 
   const [imageArtifacts, setImageArtifacts] = useState<Artifact[]>([]);
   const [audioArtifacts, setAudioArtifacts] = useState<Artifact[]>([]);
@@ -371,6 +374,7 @@ export function VideoPanel({
     }
 
     const inputs: Record<string, unknown> = {
+      ...modelValues,
       positive_prompt: prompt,
       length,
       width,
@@ -515,6 +519,14 @@ export function VideoPanel({
             ))}
           </select>
         </div>
+
+        <ModelSelector
+          recipe={recipe}
+          disabled={useInheritedDefaults}
+          values={modelValues}
+          onChange={setModelValues}
+          onValidityChange={setModelsValid}
+        />
 
         <label htmlFor="video-prompt">プロンプト</label>
         <textarea
@@ -741,7 +753,12 @@ export function VideoPanel({
         <div>
           <button
             type="button"
-            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
+            disabled={
+              submitting ||
+              previewing ||
+              !modelsValid ||
+              (!recipeId && !useInheritedDefaults)
+            }
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -749,7 +766,12 @@ export function VideoPanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || previewing || (!recipeId && !useInheritedDefaults)}
+            disabled={
+              submitting ||
+              previewing ||
+              !modelsValid ||
+              (!recipeId && !useInheritedDefaults)
+            }
             onClick={submit}
           >
             {submitting ? "投入中..." : "動画生成を投入"}

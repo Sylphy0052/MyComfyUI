@@ -778,6 +778,25 @@ class WorkflowVersionRead(ApiModel):
     created_at: str
 
 
+class WorkflowModelSlotOptions(ApiModel):
+    """Workflow版が宣言した1つのモデル入力とComfyUI上の在庫。"""
+
+    variable: str
+    node_class: str
+    option_field: str
+    options: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class WorkflowModelOptionsRead(ApiModel):
+    """任意node照会を許さず、Workflow版の宣言だけから解決したモデル在庫。"""
+
+    workflow_version_id: str
+    backend_reachable: bool
+    reason: str | None = None
+    slots: list[WorkflowModelSlotOptions] = Field(default_factory=list)
+
+
 class WorkflowRead(ApiModel):
     id: str
     name: str
@@ -1240,6 +1259,24 @@ class AgentProposalCreate(ApiModel):
         return self
 
 
+class ImagePromptAssistCreate(ApiModel):
+    """SceneやShotに紐付けない画像prompt補完の要求。"""
+
+    #: 未指定なら設定の既定Providerを使う。
+    provider_id: AgentProviderId | None = None
+    instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
+
+
+class ImagePromptAssistRead(ApiModel):
+    """構造化検証済みの画像prompt補完結果。"""
+
+    positive_prompt: str = Field(min_length=1, max_length=4000)
+    negative_prompt: str = Field(max_length=4000)
+    rationale: str = Field(max_length=2000)
+    provider_id: AgentProviderId
+    model: str | None
+
+
 class PlannedOperation(ApiModel):
     """提案を承認したときに実行する操作。
 
@@ -1456,3 +1493,24 @@ class ImageReferenceRead(ApiModel):
     sha256: str
     byte_size: int
     media_type: str
+
+
+class ImageTagExtractRequest(ApiModel):
+    """画像タグ抽出へ渡す画像。画像だけを受け付ける。"""
+
+    content_base64: str = Field(min_length=1)
+    media_type: str = Field(min_length=1)
+
+    @field_validator("media_type")
+    @classmethod
+    def _validate_media_type(cls, value: str) -> str:
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES or not media_type.startswith("image/"):
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        return media_type
+
+
+class ImageTagExtractRead(ApiModel):
+    """視覚言語モデルが抽出した正プロンプト用のタグ。"""
+
+    tags: list[str]

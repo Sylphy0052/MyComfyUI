@@ -40,6 +40,21 @@ DEFAULT_TEMPLATE_NAME = "anima_txt2img"
 
 #: 画面へ出す入力欄の定義。`label`と`control`はUIの表示用で、検証には使わない。
 DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
+    "unet_name": {
+        "type": "string",
+        "label": "生成モデル",
+        "control": "model",
+    },
+    "clip_name": {
+        "type": "string",
+        "label": "テキストエンコーダ",
+        "control": "model",
+    },
+    "vae_name": {
+        "type": "string",
+        "label": "VAE",
+        "control": "model",
+    },
     "positive_prompt": {
         "type": "string",
         "required": True,
@@ -53,6 +68,12 @@ DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
     },
     "width": {"type": "integer", "label": "幅", "control": "number"},
     "height": {"type": "integer", "label": "高さ", "control": "number"},
+    "batch_size": {
+        "type": "integer",
+        "label": "バッチサイズ",
+        "control": "number",
+        "help": "1回のJobで生成する枚数。",
+    },
     "steps": {"type": "integer", "label": "ステップ数", "control": "number"},
     "cfg": {"type": "number", "label": "CFG", "control": "number"},
     "seed": {
@@ -63,7 +84,7 @@ DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
     },
 }
 
-#: モデルファイル名と出力名は利用者に選ばせず、ここで固定する。
+#: モデルファイル名は既定値として保持し、画面ではComfyUI在庫から選択する。
 DEFAULT_VALUES: dict[str, Any] = {
     "unet_name": "chosenMixAnima_v10.safetensors",
     "clip_name": "qwen_3_06b_base.safetensors",
@@ -72,6 +93,7 @@ DEFAULT_VALUES: dict[str, Any] = {
     "negative_prompt": "",
     "width": 832,
     "height": 1216,
+    "batch_size": 1,
     "steps": 30,
     "cfg": 4.0,
     "seed": workflow_module.AUTO_SEED,
@@ -94,7 +116,11 @@ async def ensure_default_recipes(
     existing = result.scalars().all()
     for recipe in existing:
         reference = recipe.workflow_template_ref
-        if isinstance(reference, dict) and reference.get("sha256") == digest:
+        if (
+            isinstance(reference, dict)
+            and reference.get("sha256") == digest
+            and recipe.input_schema == DEFAULT_INPUT_SCHEMA
+        ):
             return None
 
     # `existing`は作成日時の降順のため、先頭が直近の版になる。後継はそこへ結ぶ。
@@ -237,6 +263,21 @@ ACE_STEP_CHECKPOINT = "ace_step_v1_3.5b.safetensors"
 
 #: H3の共通の入力欄。参照画像と開始フレームだけがテンプレートごとに変わる。
 _H3_COMMON_SCHEMA: dict[str, Any] = {
+    "clip_name": {
+        "type": "string",
+        "label": "テキストエンコーダ",
+        "control": "model",
+    },
+    "video_vae_name": {
+        "type": "string",
+        "label": "Video VAE",
+        "control": "model",
+    },
+    "audio_vae_name": {
+        "type": "string",
+        "label": "Audio VAE",
+        "control": "model",
+    },
     "positive_prompt": {
         "type": "string",
         "required": True,
@@ -305,6 +346,11 @@ MUSIC_RECIPE_NAME = "音楽 ACE-Step (BGM)"
 COMPOSE_RECIPE_NAME = "合成 ffmpeg (動画+台詞+BGM)"
 
 VIDEO_REF2V_INPUT_SCHEMA: dict[str, Any] = {
+    "unet_name": {
+        "type": "string",
+        "label": "生成モデル",
+        "control": "model",
+    },
     "references": {
         "type": "array",
         "required": True,
@@ -327,6 +373,11 @@ VIDEO_REF2V_DEFAULTS: dict[str, Any] = {
 }
 
 VIDEO_I2V_INPUT_SCHEMA: dict[str, Any] = {
+    "unet_name": {
+        "type": "string",
+        "label": "生成モデル",
+        "control": "model",
+    },
     "first_frame": {
         "type": "object",
         "required": True,
@@ -344,6 +395,11 @@ VIDEO_I2V_DEFAULTS: dict[str, Any] = {
 }
 
 MUSIC_INPUT_SCHEMA: dict[str, Any] = {
+    "ckpt_name": {
+        "type": "string",
+        "label": "生成モデル",
+        "control": "model",
+    },
     "positive_prompt": {
         "type": "string",
         "required": True,
@@ -459,6 +515,7 @@ async def ensure_media_recipes(
         if any(
             isinstance(recipe.workflow_template_ref, dict)
             and recipe.workflow_template_ref.get("sha256") == digest
+            and recipe.input_schema == schema
             for recipe in existing
         ):
             continue

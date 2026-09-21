@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { ApiError, GenerationPreview, Recipe } from "../api/client";
+import { api } from "../api/client";
+import type {
+  AgentProvider,
+  AgentProviderId,
+  ApiError,
+  GenerationPreview,
+  Recipe,
+} from "../api/client";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { ModelSelector } from "./ModelSelector";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -44,6 +52,32 @@ function initialValues(recipe: Recipe, fields: FieldSpec[]): Record<string, stri
   return values;
 }
 
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("画像を読み込めませんでした。"));
+    reader.onabort = () => reject(new Error("画像の読み込みが中断されました。"));
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("画像をBase64へ変換できませんでした。"));
+        return;
+      }
+      const separator = reader.result.indexOf(",");
+      if (separator < 0) {
+        reject(new Error("画像をBase64へ変換できませんでした。"));
+        return;
+      }
+      resolve(reader.result.slice(separator + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 interface Props {
   projectId: string | null;
   recipes: Recipe[];
@@ -53,6 +87,7 @@ interface Props {
     recipe: Recipe | null,
     inputs: Record<string, unknown>,
     useInheritedDefaults: boolean,
+    batchCount: number,
   ) => void;
   // 投入前の確認もAPIを直接呼ばず、Appから受け取った関数へ委ねる。
   onPreview: (
@@ -81,10 +116,28 @@ export function GenerationForm({
     () => recipes.find((item) => item.id === recipeId) ?? null,
     [recipes, recipeId],
   );
-  const fields = useMemo(() => (recipe ? toFieldSpecs(recipe) : []), [recipe]);
+  const fields = useMemo(
+    () =>
+      recipe
+        ? toFieldSpecs(recipe).filter((field) => field.control !== "model")
+        : [],
+    [recipe],
+  );
   const [values, setValues] = useState<Record<string, string>>({});
+  const [modelValues, setModelValues] = useState<Record<string, string>>({});
+  const [modelsValid, setModelsValid] = useState(false);
   const [invalid, setInvalid] = useState<string | null>(null);
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
+  const [tagImage, setTagImage] = useState<File | null>(null);
+  const [extractingTags, setExtractingTags] = useState(false);
+  const [tagError, setTagError] = useState<string | null>(null);
+  const [extractedTags, setExtractedTags] = useState<string[]>([]);
+  const [description, setDescription] = useState("");
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [providerId, setProviderId] = useState<AgentProviderId | "">("");
+  const [assisting, setAssisting] = useState(false);
+  const [assistError, setAssistError] = useState<string | null>(null);
+  const [batchCount, setBatchCount] = useState("1");
 
   useEffect(() => {
     if (!recipeId && recipes.length > 0) {
@@ -98,9 +151,13 @@ export function GenerationForm({
     }
   }, [recipe]);
 
+  useEffect(() => {
+    void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
+
   /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
   const buildInputs = (): Record<string, unknown> | null => {
-    const inputs: Record<string, unknown> = {};
+    const inputs: Record<string, unknown> = { ...modelValues };
     for (const field of fields) {
       const raw = values[field.name] ?? "";
       if (raw.trim() === "") {
@@ -112,8 +169,8 @@ export function GenerationForm({
         continue;
       }
       if (field.type === "integer") {
-        const parsed = Number.parseInt(raw, 10);
-        if (!Number.isFinite(parsed)) {
+        const parsed = Number(raw);
+        if (!Number.isInteger(parsed)) {
           setInvalid(`${field.label}は整数で入力してください。`);
           return null;
         }
@@ -134,8 +191,13 @@ export function GenerationForm({
   };
 
   const submit = () => {
+    const parsedBatchCount = Number(batchCount);
+    if (!Number.isInteger(parsedBatchCount) || parsedBatchCount < 1 || parsedBatchCount > 20) {
+      setInvalid("バッチ数は1以上20以下の整数で入力してください。");
+      return;
+    }
     if (useInheritedDefaults) {
-      onSubmit(null, {}, true);
+      onSubmit(null, {}, true, parsedBatchCount);
       return;
     }
     if (!recipe) {
@@ -145,7 +207,31 @@ export function GenerationForm({
     if (!inputs) {
       return;
     }
-    onSubmit(recipe, inputs, false);
+    onSubmit(recipe, inputs, false, parsedBatchCount);
+  };
+
+  const assist = async () => {
+    if (!description.trim()) {
+      setAssistError("画像の説明を入力してください。");
+      return;
+    }
+    setAssisting(true);
+    setAssistError(null);
+    try {
+      const result = await api.assistImagePrompt({
+        instruction: description,
+        provider_id: providerId || null,
+      });
+      setValues((current) => ({
+        ...current,
+        positive_prompt: result.positive_prompt,
+        negative_prompt: result.negative_prompt,
+      }));
+    } catch (cause) {
+      setAssistError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAssisting(false);
+    }
   };
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
@@ -164,10 +250,95 @@ export function GenerationForm({
     onPreview(recipe, inputs, false);
   };
 
+  const extractTags = async () => {
+    if (!tagImage) return;
+    if (!tagImage.type.startsWith("image/")) {
+      setTagError("画像形式を判別できません。対応する画像を選び直してください。");
+      return;
+    }
+    setExtractingTags(true);
+    setTagError(null);
+    try {
+      const result = await api.extractImageTags(
+        await toBase64(tagImage),
+        tagImage.type,
+      );
+      setExtractedTags(result.tags);
+    } catch (error) {
+      setExtractedTags([]);
+      setTagError(describe(error));
+    } finally {
+      setExtractingTags(false);
+    }
+  };
+
+  const appendTags = () => {
+    if (extractedTags.length === 0) return;
+    const current = values.positive_prompt?.trim() ?? "";
+    const existing = new Set(
+      current
+        .split(",")
+        .map((tag) => tag.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+    const tagsToAdd: string[] = [];
+    for (const tag of extractedTags) {
+      const normalized = tag.toLocaleLowerCase();
+      if (existing.has(normalized)) continue;
+      existing.add(normalized);
+      tagsToAdd.push(tag);
+    }
+    const suffix = tagsToAdd.join(", ");
+    if (!suffix) return;
+    setValues({
+      ...values,
+      positive_prompt: current ? `${current}, ${suffix}` : suffix,
+    });
+  };
+
   return (
     <section className="panel">
       <h2>生成</h2>
       <div className="stack">
+        <div>
+          <label htmlFor="image-description">画像の説明</label>
+          <textarea
+            id="image-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
+          />
+          <p className="muted">日本語で説明するとAIがPromptとNegativeを補完します。</p>
+        </div>
+        <div className="row">
+          <label htmlFor="prompt-provider">AI</label>
+          <select
+            id="prompt-provider"
+            value={providerId}
+            onChange={(event) =>
+              setProviderId(event.target.value as AgentProviderId | "")
+            }
+          >
+            <option value="">既定のAI</option>
+            {providers.map((provider) => (
+              <option
+                key={provider.id}
+                value={provider.id}
+                disabled={!provider.available}
+              >
+                {provider.label}{provider.available ? "" : " (利用不可)"}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={assisting}
+            onClick={() => void assist()}
+          >
+            {assisting ? "補完中..." : "Promptを補完"}
+          </button>
+        </div>
+        {assistError && <p className="error">{assistError}</p>}
         <button
           type="button"
           disabled={!projectId}
@@ -196,6 +367,14 @@ export function GenerationForm({
           </select>
         </div>
 
+        <ModelSelector
+          recipe={recipe}
+          disabled={useInheritedDefaults}
+          values={modelValues}
+          onChange={setModelValues}
+          onValidityChange={setModelsValid}
+        />
+
         {fields.map((field) => (
           <div key={field.name}>
             <label htmlFor={`field-${field.name}`}>
@@ -223,8 +402,56 @@ export function GenerationForm({
               />
             )}
             {field.help && <p className="muted">{field.help}</p>}
+            {field.name === "positive_prompt" && (
+              <div className="tag-extractor">
+                <label htmlFor="tag-image">画像からタグを抽出</label>
+                <div className="row">
+                  <input
+                    id="tag-image"
+                    disabled={useInheritedDefaults || extractingTags}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      setTagImage(event.target.files?.[0] ?? null);
+                      setExtractedTags([]);
+                      setTagError(null);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={useInheritedDefaults || !tagImage || extractingTags}
+                    onClick={extractTags}
+                  >
+                    {extractingTags ? "抽出中..." : "タグを抽出"}
+                  </button>
+                </div>
+                <p className="muted">選んだ画像は設定済みのQwen互換AIへ送信して解析します。</p>
+                {tagError && <p className="error">{tagError}</p>}
+                {extractedTags.length > 0 && (
+                  <div className="row">
+                    <p className="tag-list">{extractedTags.join(", ")}</p>
+                    <button type="button" disabled={useInheritedDefaults} onClick={appendTags}>
+                      プロンプトへ追加
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
+
+        <div>
+          <label htmlFor="batch-count">バッチ数</label>
+          <input
+            id="batch-count"
+            type="number"
+            min="1"
+            max="20"
+            value={batchCount}
+            onChange={(event) => setBatchCount(event.target.value)}
+          />
+          <p className="muted">バッチサイズ×バッチ数が合計生成枚数です。</p>
+        </div>
 
         {invalid && <p className="error">{invalid}</p>}
         {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
@@ -232,7 +459,13 @@ export function GenerationForm({
         <div className="row">
           <button
             type="button"
-            disabled={disabled || submitting || previewing || (!recipe && !useInheritedDefaults)}
+            disabled={
+              disabled ||
+              submitting ||
+              previewing ||
+              !modelsValid ||
+              (!recipe && !useInheritedDefaults)
+            }
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -240,7 +473,13 @@ export function GenerationForm({
           <button
             type="button"
             className="primary"
-            disabled={disabled || submitting || previewing || (!recipe && !useInheritedDefaults)}
+            disabled={
+              disabled ||
+              submitting ||
+              previewing ||
+              !modelsValid ||
+              (!recipe && !useInheritedDefaults)
+            }
             onClick={submit}
           >
             {submitting ? "投入中..." : "画像生成を投入"}
