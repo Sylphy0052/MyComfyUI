@@ -752,6 +752,16 @@ async def _import_package(
     request: schemas.ProjectPackageImport,
     settings: Settings,
 ) -> Project:
+    """通常取込と同じlock内でquota確認からcommitまでを完了する。"""
+    async with image_imports.CONFIRM_LOCK:
+        return await _import_package_locked(session, request, settings)
+
+
+async def _import_package_locked(
+    session: AsyncSession,
+    request: schemas.ProjectPackageImport,
+    settings: Settings,
+) -> Project:
     package, _ = await _preflight(session, request, settings)
     decoded_contents = {
         item.id: _decode_artifact(item, settings)
@@ -829,12 +839,13 @@ async def _import_package(
                 "外部画像のサイズまたはSHA-256が一致しません。",
             )
         try:
-            parsed = await run_in_threadpool(
-                image_imports.parse_image_bytes,
-                item.import_info.original_file_name,
-                data,
-                item.media_type,
-            )
+            async with image_imports.PARSE_SEMAPHORE:
+                parsed = await run_in_threadpool(
+                    image_imports.parse_image_bytes,
+                    item.import_info.original_file_name,
+                    data,
+                    item.media_type,
+                )
         except image_imports.ImageImportError as error:
             raise _error(
                 "PROJECT_PACKAGE_ARTIFACT_INVALID",
@@ -844,6 +855,14 @@ async def _import_package(
             raise _error(
                 "PROJECT_PACKAGE_ARTIFACT_INVALID",
                 "外部画像の形式と来歴が一致しません。",
+            )
+        if (
+            parsed.metadata != item.import_info.raw_metadata
+            or parsed.recipe_draft != item.import_info.recipe_draft
+        ):
+            raise _error(
+                "PROJECT_PACKAGE_ARTIFACT_INVALID",
+                "外部画像の埋込情報と来歴が一致しません。",
             )
     project_id = request.project_id or str(uuid4())
     name = request.name or package.project.name

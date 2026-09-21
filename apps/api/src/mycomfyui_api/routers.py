@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import binascii
 import hashlib
@@ -117,10 +116,6 @@ DIGEST_CHUNK_SIZE = 1024 * 1024
 #: Artifactの配列のままにし、打ち切りの有無だけをヘッダで返す。
 LINEAGE_TRUNCATED_HEADER = "X-Lineage-Truncated"
 
-# 画像decoderと大きなbase64処理をevent loopから分離したうえで、同時実行数も絞る。
-IMAGE_IMPORT_PARSE_SEMAPHORE = asyncio.Semaphore(2)
-# quota確認から保存・DB commitまでを直列化し、同時confirmによる上限超過を防ぐ。
-IMAGE_IMPORT_CONFIRM_LOCK = asyncio.Lock()
 MIN_FREE_SPACE_AFTER_IMPORT = 512 * 1024 * 1024
 
 # 異常なBackend応答をそのままブラウザへ増幅しない。通常のモデル在庫を十分収めつつ、
@@ -1496,7 +1491,7 @@ async def _parse_external_image(
     payload: schemas.ExternalImagePreviewCreate,
 ) -> image_imports.ParsedImage:
     try:
-        async with IMAGE_IMPORT_PARSE_SEMAPHORE:
+        async with image_imports.PARSE_SEMAPHORE:
             return await run_in_threadpool(
                 image_imports.parse_image,
                 payload.file_name,
@@ -1575,7 +1570,7 @@ async def confirm_external_image_import(
         )
     assignment = await _validate_assignment_target(session, source, payload.assignment)
     settings = get_settings()
-    async with IMAGE_IMPORT_CONFIRM_LOCK:
+    async with image_imports.CONFIRM_LOCK:
         preview = await session.get(ImageImportPreview, payload.preview_token)
         now = datetime.now().astimezone()
         if (

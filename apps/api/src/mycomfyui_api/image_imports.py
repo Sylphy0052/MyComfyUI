@@ -1,5 +1,6 @@
 """外部画像の検証と、実行不能なRecipe下書きへのメタデータ抽出。"""
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -22,6 +23,10 @@ MAX_IMAGE_FRAMES = 100
 MAX_METADATA_ENTRIES = 64
 MAX_METADATA_VALUE_BYTES = 256 * 1024
 MAX_METADATA_TOTAL_BYTES = 1024 * 1024
+
+# 通常取込とProject package復元で共有し、decodeとquota確認の回避経路を作らない。
+PARSE_SEMAPHORE = asyncio.Semaphore(2)
+CONFIRM_LOCK = asyncio.Lock()
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 JPEG_SIGNATURE = b"\xff\xd8\xff"
