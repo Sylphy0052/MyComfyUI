@@ -1,7 +1,7 @@
 """add artifact import provenance
 
 Revision ID: 3f6a8c2d1e04
-Revises: f17a2c8e90b4
+Revises: 4a23c7f019d8
 Create Date: 2026-09-22 22:00:00.000000
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "3f6a8c2d1e04"
-down_revision: str | Sequence[str] | None = "f17a2c8e90b4"
+down_revision: str | Sequence[str] | None = "4a23c7f019d8"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

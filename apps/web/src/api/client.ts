@@ -74,6 +74,12 @@ export type ExternalProjectImport =
 export type ProjectSyncPreview =
   components["schemas"]["ProjectSyncPreview"];
 export type ProjectSyncApply = components["schemas"]["ProjectSyncApply"];
+export type ProjectLocalOverrides =
+  components["schemas"]["ProjectLocalOverrides"];
+export type ProjectCharacterProfile =
+  components["schemas"]["ProjectCharacterProfile"];
+export type ProjectReferenceImage =
+  components["schemas"]["ProjectReferenceImage"];
 export type ProjectDeletionImpact =
   components["schemas"]["ProjectDeletionImpact"];
 export type SceneCreate = components["schemas"]["SceneCreate"];
@@ -230,6 +236,20 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+
+  getProjectLocalOverrides: (projectId: string) =>
+    request<ProjectLocalOverrides>(
+      `/projects/${encodeURIComponent(projectId)}/local-overrides`,
+    ),
+
+  updateProjectLocalOverrides: (
+    projectId: string,
+    payload: ProjectLocalOverrides,
+  ) =>
+    request<ProjectLocalOverrides>(
+      `/projects/${encodeURIComponent(projectId)}/local-overrides`,
+      { method: "PUT", body: JSON.stringify(payload) },
+    ),
 
   getProjectGenerationDefaults: (projectId: string) =>
     request<ProjectGenerationDefaultsRead>(

@@ -125,6 +125,16 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |Scene 一覧・取得|`GET /api/v1/projects/{project_id}/scenes` / `.../scenes/{scene_id}`|
 |Shot 一覧・取得|`GET /api/v1/projects/{project_id}/scenes/{scene_id}/shots` / `.../shots/{shot_id}`|
 |Canon descriptor 一覧・取得|`GET /api/v1/projects/{project_id}/canon` / `.../canon/{canon_id}`|
+|人物・参照画像・生成プロンプト設定|`GET /api/v1/projects/{project_id}/local-overrides` / `PUT /api/v1/projects/{project_id}/local-overrides`|
+
+`local-overrides`は外部原文を書き換えず、MyComfyUIのProjectへ保存する。人物・
+キャラクターtagと参照画像、Scene・Shotごとの生成プロンプトを持ち、外部同期後も保持する。
+参照画像は先に`POST /api/v1/image-references`で入力cacheへ取り込み、応答の相対パス、
+SHA-256、バイト数、media_typeを登録する。PUT時に入力cacheの実ファイル、magic bytes、
+サイズ、SHA-256と照合する。
+
+Scene・Shotプロンプトは画像・動画生成の`positive_prompt`として継承する。SceneよりShotを
+優先し、生成時に入力した値があればローカル設定より実行時入力を優先する。
 
 Canon Endpoint は Canon 本文を返さず、`canon_id`、種別、表示名、不変参照だけを返す。
 `canon_id` は `[source_locator, revision, path, anchor]` を RFC 8785 の JSON Canonicalization

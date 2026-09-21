@@ -1249,6 +1249,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/local-overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Local Overrides */
+        get: operations["get_local_overrides_api_v1_projects__project_id__local_overrides_get"];
+        /** Update Local Overrides */
+        put: operations["update_local_overrides_api_v1_projects__project_id__local_overrides_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/progress": {
         parameters: {
             query?: never;
@@ -2757,6 +2775,15 @@ export interface components {
              */
             source_format: "png" | "jpeg" | "webp";
         };
+        /** PortableInputFile */
+        PortableInputFile: {
+            /** Byte Size */
+            byte_size: number;
+            /** Content Base64 */
+            content_base64: string;
+            /** Sha256 */
+            sha256: string;
+        };
         /** PortableProject */
         PortableProject: {
             /** Description */
@@ -2768,6 +2795,7 @@ export interface components {
             generation_defaults: components["schemas"]["ProjectGenerationDefaults"];
             /** Id */
             id: string;
+            local_overrides?: components["schemas"]["ProjectLocalOverrides"];
             /** Name */
             name: string;
             /** Source Locator */
@@ -2843,6 +2871,17 @@ export interface components {
             tags?: string[];
             /** Todo */
             todo?: string | null;
+        };
+        /** ProjectCharacterProfile */
+        ProjectCharacterProfile: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Reference Images */
+            reference_images?: components["schemas"]["ProjectReferenceImage"][];
+            /** Tags */
+            tags?: string[];
         };
         /** ProjectCloneRequest */
         ProjectCloneRequest: {
@@ -2980,6 +3019,19 @@ export interface components {
             /** Items */
             items: components["schemas"]["ProjectRead"][];
         };
+        /** ProjectLocalOverrides */
+        ProjectLocalOverrides: {
+            /** Characters */
+            characters?: components["schemas"]["ProjectCharacterProfile"][];
+            /** Scene Prompts */
+            scene_prompts?: {
+                [key: string]: string;
+            };
+            /** Shot Prompts */
+            shot_prompts?: {
+                [key: string]: string;
+            };
+        };
         /** ProjectPackage */
         ProjectPackage: {
             /** Artifacts */
@@ -2996,6 +3048,8 @@ export interface components {
              * @constant
              */
             format: "mycomfyui.project";
+            /** Input Files */
+            input_files?: components["schemas"]["PortableInputFile"][];
             project: components["schemas"]["PortableProject"];
             /** Scenes */
             scenes?: components["schemas"]["PortableScene"][];
@@ -3003,10 +3057,10 @@ export interface components {
             shots?: components["schemas"]["PortableShot"][];
             /**
              * Version
-             * @default 1
+             * @default 2
              * @constant
              */
-            version: 1;
+            version: 2;
         };
         /** ProjectPackageImport */
         ProjectPackageImport: {
@@ -3117,6 +3171,19 @@ export interface components {
             title: string;
             /** Updated At */
             updated_at: string;
+        };
+        /** ProjectReferenceImage */
+        ProjectReferenceImage: {
+            /** Byte Size */
+            byte_size: number;
+            /** File Name */
+            file_name: string;
+            /** Media Type */
+            media_type: string;
+            /** Relative Path */
+            relative_path: string;
+            /** Sha256 */
+            sha256: string;
         };
         /** ProjectSource */
         ProjectSource: {
@@ -5896,6 +5963,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectGenerationDefaultsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_local_overrides_api_v1_projects__project_id__local_overrides_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectLocalOverrides"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_local_overrides_api_v1_projects__project_id__local_overrides_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectLocalOverrides"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectLocalOverrides"];
                 };
             };
             /** @description Validation Error */
