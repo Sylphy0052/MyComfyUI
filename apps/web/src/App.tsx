@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent } from "react";
 
 import { ApiError, api } from "./api/client";
 import type {
@@ -38,11 +39,20 @@ import { WorkflowRegistry } from "./components/WorkflowRegistry";
 const POLL_INTERVAL_MS = 2000;
 
 type View = "generate" | "assets" | "workflows";
+type GenerationTab = "image" | "video" | "music" | "voice" | "compose";
 
 const VIEWS: { value: View; label: string }[] = [
   { value: "generate", label: "生成" },
   { value: "assets", label: "資産ブラウザ" },
   { value: "workflows", label: "Workflow" },
+];
+
+const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
+  { value: "image", label: "画像" },
+  { value: "video", label: "動画" },
+  { value: "music", label: "音楽" },
+  { value: "voice", label: "音声" },
+  { value: "compose", label: "合成" },
 ];
 
 function describe(error: unknown): string {
@@ -57,6 +67,8 @@ function describe(error: unknown): string {
 export function App() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>("generate");
+  const [generationTab, setGenerationTab] =
+    useState<GenerationTab>("image");
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -371,6 +383,34 @@ export function App() {
     void refreshJobs().catch((cause) => setError(describe(cause)));
   };
 
+  const handleGenerationTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentTab: GenerationTab,
+  ) => {
+    const currentIndex = GENERATION_TABS.findIndex(
+      (item) => item.value === currentTab,
+    );
+    let nextIndex: number | null = null;
+
+    if (event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1) % GENERATION_TABS.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex =
+        (currentIndex - 1 + GENERATION_TABS.length) % GENERATION_TABS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = GENERATION_TABS.length - 1;
+    }
+
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextTab = GENERATION_TABS[nextIndex].value;
+    setGenerationTab(nextTab);
+    document.getElementById(`generation-tab-${nextTab}`)?.focus();
+  };
+
   return (
     <div className="app">
       <header>
@@ -422,22 +462,119 @@ export function App() {
             />
           </div>
 
-          <div>
-            <GenerationForm
-              recipes={recipes}
-              disabled={!shotId}
-              submitting={submitting}
-              onSubmit={submit}
-              onPreview={preview}
-              previewing={previewing}
-              preview={previewResult}
-              previewError={previewError}
-            />
-            <CandidateGallery
-              candidates={candidates}
-              busyArtifactId={busyArtifactId}
-              onDecide={decide}
-            />
+          <div className="generation-workspace">
+            <nav
+              className="generation-tabs"
+              role="tablist"
+              aria-label="生成種別"
+            >
+              {GENERATION_TABS.map((item) => (
+                <button
+                  key={item.value}
+                  id={`generation-tab-${item.value}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={generationTab === item.value}
+                  aria-controls={`generation-panel-${item.value}`}
+                  tabIndex={generationTab === item.value ? 0 : -1}
+                  className={
+                    generationTab === item.value ? "primary" : undefined
+                  }
+                  onClick={() => setGenerationTab(item.value)}
+                  onKeyDown={(event) =>
+                    handleGenerationTabKeyDown(event, item.value)
+                  }
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+
+            <div
+              id="generation-panel-image"
+              role="tabpanel"
+              aria-labelledby="generation-tab-image"
+              hidden={generationTab !== "image"}
+            >
+              <GenerationForm
+                recipes={recipes}
+                disabled={!shotId}
+                submitting={submitting}
+                onSubmit={submit}
+                onPreview={preview}
+                previewing={previewing}
+                preview={previewResult}
+                previewError={previewError}
+              />
+              <CandidateGallery
+                candidates={candidates}
+                busyArtifactId={busyArtifactId}
+                onDecide={decide}
+              />
+            </div>
+
+            <div
+              id="generation-panel-video"
+              role="tabpanel"
+              aria-labelledby="generation-tab-video"
+              hidden={generationTab !== "video"}
+            >
+              <VideoPanel
+                projectId={projectId}
+                sceneId={sceneId}
+                shotId={shotId}
+                shot={shot}
+                jobs={jobs}
+                onSubmittedJob={handleDerivedJob}
+              />
+            </div>
+
+            <div
+              id="generation-panel-music"
+              role="tabpanel"
+              aria-labelledby="generation-tab-music"
+              hidden={generationTab !== "music"}
+            >
+              <MusicPanel
+                projectId={projectId}
+                sceneId={sceneId}
+                shotId={shotId}
+                scene={scene}
+                jobs={jobs}
+                onSubmittedJob={handleDerivedJob}
+              />
+            </div>
+
+            <div
+              id="generation-panel-voice"
+              role="tabpanel"
+              aria-labelledby="generation-tab-voice"
+              hidden={generationTab !== "voice"}
+            >
+              <VoicePanel
+                projectId={projectId}
+                sceneId={sceneId}
+                shotId={shotId}
+                shot={shot}
+                jobs={jobs}
+                onSubmittedJob={handleDerivedJob}
+              />
+            </div>
+
+            <div
+              id="generation-panel-compose"
+              role="tabpanel"
+              aria-labelledby="generation-tab-compose"
+              hidden={generationTab !== "compose"}
+            >
+              <ComposePanel
+                projectId={projectId}
+                sceneId={sceneId}
+                shotId={shotId}
+                jobs={jobs}
+                onSubmittedJob={handleDerivedJob}
+              />
+            </div>
           </div>
 
           <div>
@@ -447,49 +584,6 @@ export function App() {
               manifest={manifest}
               onSelect={setSelectedJobId}
               onCancel={cancel}
-            />
-          </div>
-
-          <div className="full">
-            <VoicePanel
-              projectId={projectId}
-              sceneId={sceneId}
-              shotId={shotId}
-              shot={shot}
-              jobs={jobs}
-              onSubmittedJob={handleDerivedJob}
-            />
-          </div>
-
-          <div className="full">
-            <VideoPanel
-              projectId={projectId}
-              sceneId={sceneId}
-              shotId={shotId}
-              shot={shot}
-              jobs={jobs}
-              onSubmittedJob={handleDerivedJob}
-            />
-          </div>
-
-          <div className="full">
-            <MusicPanel
-              projectId={projectId}
-              sceneId={sceneId}
-              shotId={shotId}
-              scene={scene}
-              jobs={jobs}
-              onSubmittedJob={handleDerivedJob}
-            />
-          </div>
-
-          <div className="full">
-            <ComposePanel
-              projectId={projectId}
-              sceneId={sceneId}
-              shotId={shotId}
-              jobs={jobs}
-              onSubmittedJob={handleDerivedJob}
             />
           </div>
 
