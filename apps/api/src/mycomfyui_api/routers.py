@@ -27,6 +27,7 @@ from mycomfyui_api.adapters.aimedia.client import (
     AiMediaUnavailable,
     ReferenceSource,
 )
+from mycomfyui_api.adapters.comfyui import workflow as comfyui_workflow
 from mycomfyui_api.adapters.comfyui.client import ComfyUIError
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
 from mycomfyui_api.adapters.comfyui.factory import create_comfyui_client
@@ -110,6 +111,12 @@ DIGEST_CHUNK_SIZE = 1024 * 1024
 #: 派生関係の探索を上限で打ち切ったことを伝える応答ヘッダ。一覧の応答本体は
 #: Artifactの配列のままにし、打ち切りの有無だけをヘッダで返す。
 LINEAGE_TRUNCATED_HEADER = "X-Lineage-Truncated"
+
+# 異常なBackend応答をそのままブラウザへ増幅しない。通常のモデル在庫を十分収めつつ、
+# 応答とselect要素が無制限に増えることを防ぐ。
+MAX_MODEL_OPTIONS_PER_SLOT = 2000
+MAX_MODEL_OPTION_LENGTH = 512
+MODEL_INVENTORY_UNAVAILABLE = "ComfyUIのモデル在庫を取得できません。"
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -214,6 +221,133 @@ async def get_workflow_version(workflow_version_id: str, session: SessionDep):
     return await _get_or_404(
         session, WorkflowVersion, "WorkflowVersion", workflow_version_id
     )
+
+
+@router.get(
+    "/workflow-versions/{workflow_version_id}/models",
+    response_model=schemas.WorkflowModelOptionsRead,
+)
+async def get_workflow_model_options(workflow_version_id: str, session: SessionDep):
+    """登録済みWorkflow版が宣言したmodel slotだけをComfyUIへ照会する。"""
+    version = await _get_or_404(
+        session, WorkflowVersion, "WorkflowVersion", workflow_version_id
+    )
+    raw_slots = version.model_slots if isinstance(version.model_slots, list) else []
+    allowed_slots = workflow_registry.allowed_model_slots()
+    declared: list[tuple[str, str, str]] = []
+    for raw in raw_slots:
+        if not isinstance(raw, dict):
+            continue
+        variable = raw.get("variable")
+        node_class = raw.get("node_class")
+        option_field = raw.get("option_field")
+        if all(
+            isinstance(value, str) and value
+            for value in (variable, node_class, option_field)
+        ) and (node_class, option_field) in allowed_slots:
+            declared.append((variable, node_class, option_field))
+
+    client = create_comfyui_client()
+    slots: list[schemas.WorkflowModelSlotOptions] = []
+    successful_queries = 0
+    try:
+        for variable, node_class, option_field in declared:
+            try:
+                raw_options = await client.available_options(node_class, option_field)
+            except ComfyUIError as error:
+                logger.info(
+                    "ComfyUIのモデル在庫を取得できません。slot=%s",
+                    variable,
+                    exc_info=error,
+                )
+                slots.append(
+                    schemas.WorkflowModelSlotOptions(
+                        variable=variable,
+                        node_class=node_class,
+                        option_field=option_field,
+                        reason=MODEL_INVENTORY_UNAVAILABLE,
+                    )
+                )
+                continue
+            successful_queries += 1
+            valid_options = [
+                option
+                for option in raw_options
+                if 0 < len(option) <= MAX_MODEL_OPTION_LENGTH
+            ]
+            truncated = len(valid_options) > MAX_MODEL_OPTIONS_PER_SLOT
+            options = valid_options[:MAX_MODEL_OPTIONS_PER_SLOT]
+            if truncated:
+                reason = (
+                    f"モデル在庫が上限{MAX_MODEL_OPTIONS_PER_SLOT}件を超えたため、"
+                    "先頭だけを表示しています。"
+                )
+            elif not options:
+                reason = "ComfyUIに利用可能なモデルがありません。"
+            else:
+                reason = None
+            slots.append(
+                schemas.WorkflowModelSlotOptions(
+                    variable=variable,
+                    node_class=node_class,
+                    option_field=option_field,
+                    options=options,
+                    reason=reason,
+                )
+            )
+    finally:
+        await client.aclose()
+    reachable = not declared or successful_queries > 0
+    return schemas.WorkflowModelOptionsRead(
+        workflow_version_id=workflow_version_id,
+        backend_reachable=reachable,
+        reason=None if reachable else MODEL_INVENTORY_UNAVAILABLE,
+        slots=slots,
+    )
+
+
+async def _validate_resolved_models(
+    recipe: Recipe, prepared: PreparedExecution
+) -> None:
+    """既定値を全て解決した後のモデルを、Job作成前にComfyUI在庫へ再照合する。"""
+    if recipe.engine != ENGINE_COMFYUI:
+        return
+    reference = recipe.workflow_template_ref
+    template_name = reference.get("name") if isinstance(reference, dict) else None
+    if not isinstance(template_name, str):
+        raise _validation_error("RecipeのWorkflow参照が不正です。")
+
+    client = create_comfyui_client()
+    missing: list[str] = []
+    try:
+        for slot in comfyui_workflow.model_slots(template_name):
+            required = prepared.model.get(slot.variable)
+            if not required:
+                continue
+            options = await client.available_options(slot.node_class, slot.option_field)
+            if not options:
+                raise ApiError(
+                    "MODEL_INVENTORY_UNAVAILABLE",
+                    MODEL_INVENTORY_UNAVAILABLE,
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    details={"slot": slot.variable},
+                )
+            if required not in options:
+                missing.append(slot.variable)
+    except ComfyUIError as error:
+        logger.info("ComfyUIのモデル在庫を再検証できません。", exc_info=error)
+        raise ApiError(
+            "MODEL_INVENTORY_UNAVAILABLE",
+            MODEL_INVENTORY_UNAVAILABLE,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+    finally:
+        await client.aclose()
+    if missing:
+        raise _validation_error(
+            "ComfyUIに指定したモデルがありません。",
+            {"slots": sorted(missing)},
+        )
 
 
 async def _validate_workflow_version(
@@ -323,6 +457,7 @@ async def create_generation_job(
     # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
     prepared = await _prepare_execution(recipe, effective, source, resolved, session)
+    await _validate_resolved_models(recipe, prepared)
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
@@ -370,6 +505,7 @@ async def preview_generation_job(
         await _resolve_generation_defaults(session, payload, resolved)
     )
     prepared = await _prepare_execution(recipe, effective, source, resolved, session)
+    await _validate_resolved_models(recipe, prepared)
     defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
     version = await _load_recipe_version(session, recipe)
     workflow, workflow_version = version if version is not None else (None, None)

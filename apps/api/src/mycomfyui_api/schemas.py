@@ -678,6 +678,25 @@ class WorkflowVersionRead(ApiModel):
     created_at: str
 
 
+class WorkflowModelSlotOptions(ApiModel):
+    """Workflow版が宣言した1つのモデル入力とComfyUI上の在庫。"""
+
+    variable: str
+    node_class: str
+    option_field: str
+    options: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class WorkflowModelOptionsRead(ApiModel):
+    """任意node照会を許さず、Workflow版の宣言だけから解決したモデル在庫。"""
+
+    workflow_version_id: str
+    backend_reachable: bool
+    reason: str | None = None
+    slots: list[WorkflowModelSlotOptions] = Field(default_factory=list)
+
+
 class WorkflowRead(ApiModel):
     id: str
     name: str

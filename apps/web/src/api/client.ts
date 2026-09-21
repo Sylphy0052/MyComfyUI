@@ -47,6 +47,8 @@ export type GenerationPreviewDiff =
   components["schemas"]["GenerationPreviewDiff"];
 export type Workflow = components["schemas"]["WorkflowRead"];
 export type WorkflowVersion = components["schemas"]["WorkflowVersionRead"];
+export type WorkflowModelOptions =
+  components["schemas"]["WorkflowModelOptionsRead"];
 export type ArtifactIntegrity = components["schemas"]["ArtifactIntegrityRead"];
 export type ArtifactIntegrityReason =
   components["schemas"]["ArtifactIntegrityFinding"]["reason"];
@@ -676,6 +678,11 @@ export const api = {
   listWorkflowVersions: (workflowId: string) =>
     request<WorkflowVersion[]>(
       `/workflows/${encodeURIComponent(workflowId)}/versions`,
+    ),
+
+  getWorkflowModelOptions: (workflowVersionId: string) =>
+    request<WorkflowModelOptions>(
+      `/workflow-versions/${encodeURIComponent(workflowVersionId)}/models`,
     ),
 
   getJob: (jobId: string) =>

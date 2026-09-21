@@ -9,6 +9,7 @@ import type {
   Recipe,
 } from "../api/client";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { ModelSelector } from "./ModelSelector";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -115,8 +116,16 @@ export function GenerationForm({
     () => recipes.find((item) => item.id === recipeId) ?? null,
     [recipes, recipeId],
   );
-  const fields = useMemo(() => (recipe ? toFieldSpecs(recipe) : []), [recipe]);
+  const fields = useMemo(
+    () =>
+      recipe
+        ? toFieldSpecs(recipe).filter((field) => field.control !== "model")
+        : [],
+    [recipe],
+  );
   const [values, setValues] = useState<Record<string, string>>({});
+  const [modelValues, setModelValues] = useState<Record<string, string>>({});
+  const [modelsValid, setModelsValid] = useState(false);
   const [invalid, setInvalid] = useState<string | null>(null);
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
   const [tagImage, setTagImage] = useState<File | null>(null);
@@ -148,7 +157,7 @@ export function GenerationForm({
 
   /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
   const buildInputs = (): Record<string, unknown> | null => {
-    const inputs: Record<string, unknown> = {};
+    const inputs: Record<string, unknown> = { ...modelValues };
     for (const field of fields) {
       const raw = values[field.name] ?? "";
       if (raw.trim() === "") {
@@ -358,6 +367,14 @@ export function GenerationForm({
           </select>
         </div>
 
+        <ModelSelector
+          recipe={recipe}
+          disabled={useInheritedDefaults}
+          values={modelValues}
+          onChange={setModelValues}
+          onValidityChange={setModelsValid}
+        />
+
         {fields.map((field) => (
           <div key={field.name}>
             <label htmlFor={`field-${field.name}`}>
@@ -442,7 +459,13 @@ export function GenerationForm({
         <div className="row">
           <button
             type="button"
-            disabled={disabled || submitting || previewing || (!recipe && !useInheritedDefaults)}
+            disabled={
+              disabled ||
+              submitting ||
+              previewing ||
+              !modelsValid ||
+              (!recipe && !useInheritedDefaults)
+            }
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -450,7 +473,13 @@ export function GenerationForm({
           <button
             type="button"
             className="primary"
-            disabled={disabled || submitting || previewing || (!recipe && !useInheritedDefaults)}
+            disabled={
+              disabled ||
+              submitting ||
+              previewing ||
+              !modelsValid ||
+              (!recipe && !useInheritedDefaults)
+            }
             onClick={submit}
           >
             {submitting ? "投入中..." : "画像生成を投入"}

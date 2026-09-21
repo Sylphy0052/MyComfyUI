@@ -5497,6 +5497,87 @@
         "title": "VoiceVerificationRead",
         "type": "object"
       },
+      "WorkflowModelOptionsRead": {
+        "additionalProperties": false,
+        "description": "任意node照会を許さず、Workflow版の宣言だけから解決したモデル在庫。",
+        "properties": {
+          "backend_reachable": {
+            "title": "Backend Reachable",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowModelSlotOptions"
+            },
+            "title": "Slots",
+            "type": "array"
+          },
+          "workflow_version_id": {
+            "title": "Workflow Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_version_id",
+          "backend_reachable"
+        ],
+        "title": "WorkflowModelOptionsRead",
+        "type": "object"
+      },
+      "WorkflowModelSlotOptions": {
+        "additionalProperties": false,
+        "description": "Workflow版が宣言した1つのモデル入力とComfyUI上の在庫。",
+        "properties": {
+          "node_class": {
+            "title": "Node Class",
+            "type": "string"
+          },
+          "option_field": {
+            "title": "Option Field",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "variable": {
+            "title": "Variable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "variable",
+          "node_class",
+          "option_field"
+        ],
+        "title": "WorkflowModelSlotOptions",
+        "type": "object"
+      },
       "WorkflowRead": {
         "additionalProperties": false,
         "properties": {
@@ -10604,6 +10685,46 @@
           }
         },
         "summary": "Get Workflow Version"
+      }
+    },
+    "/api/v1/workflow-versions/{workflow_version_id}/models": {
+      "get": {
+        "description": "登録済みWorkflow版が宣言したmodel slotだけをComfyUIへ照会する。",
+        "operationId": "get_workflow_model_options_api_v1_workflow_versions__workflow_version_id__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_version_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowModelOptionsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow Model Options"
       }
     },
     "/api/v1/workflows": {
