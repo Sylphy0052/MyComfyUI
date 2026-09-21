@@ -746,6 +746,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Image Tags
+         * @description 画像をQwen互換の視覚言語モデルへ渡し、正プロンプト用タグを返す。
+         */
+        post: operations["extract_image_tags_api_v1_image_tags_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/project-portability/import": {
         parameters: {
             query?: never;
@@ -2393,6 +2413,24 @@ export interface components {
             relative_path: string;
             /** Sha256 */
             sha256: string;
+        };
+        /**
+         * ImageTagExtractRead
+         * @description 視覚言語モデルが抽出した正プロンプト用のタグ。
+         */
+        ImageTagExtractRead: {
+            /** Tags */
+            tags: string[];
+        };
+        /**
+         * ImageTagExtractRequest
+         * @description 画像タグ抽出へ渡す画像。画像だけを受け付ける。
+         */
+        ImageTagExtractRequest: {
+            /** Content Base64 */
+            content_base64: string;
+            /** Media Type */
+            media_type: string;
         };
         /** JobAssignmentUpdate */
         JobAssignmentUpdate: {
@@ -4532,6 +4570,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageReferenceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_image_tags_api_v1_image_tags_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageTagExtractRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageTagExtractRead"];
                 };
             };
             /** @description Validation Error */

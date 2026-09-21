@@ -38,6 +38,7 @@ export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
 export type ComfyUIBackendHealth =
   components["schemas"]["ComfyUIBackendHealthRead"];
 export type ImageReference = components["schemas"]["ImageReferenceRead"];
+export type ImageTagExtract = components["schemas"]["ImageTagExtractRead"];
 export type GenerationPreview =
   components["schemas"]["GenerationPreviewRead"];
 export type GenerationPreviewDiff =
@@ -784,6 +785,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({
         file_name: fileName,
+        content_base64: contentBase64,
+        media_type: mediaType,
+      }),
+    }),
+
+  extractImageTags: (contentBase64: string, mediaType: string) =>
+    request<ImageTagExtract>("/image-tags", {
+      method: "POST",
+      body: JSON.stringify({
         content_base64: contentBase64,
         media_type: mediaType,
       }),

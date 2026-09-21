@@ -21,6 +21,7 @@ from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import proposals
 from mycomfyui_api.adapters.agent.base import AgentProvider
+from mycomfyui_api.adapters.image_tagger import ImageTaggerError, QwenImageTagger
 from mycomfyui_api.adapters.aimedia.client import (
     AiMediaNotFound,
     AiMediaUnavailable,
@@ -2717,6 +2718,37 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
         byte_size=stored.byte_size,
         media_type=payload.media_type,
     )
+
+
+@router.post("/image-tags", response_model=schemas.ImageTagExtractRead)
+async def extract_image_tags(payload: schemas.ImageTagExtractRequest):
+    """画像をQwen互換の視覚言語モデルへ渡し、正プロンプト用タグを返す。"""
+    settings = get_settings()
+    encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
+    if len(payload.content_base64) > encoded_limit:
+        raise _validation_error(
+            "画像が上限を超えています。", {"limit": settings.max_image_bytes}
+        )
+    try:
+        data = base64.b64decode(payload.content_base64, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise _validation_error("content_base64を復号できません。") from error
+    if not data:
+        raise _validation_error("空の画像は解析できません。")
+    if len(data) > settings.max_image_bytes:
+        raise _validation_error(
+            "画像が上限を超えています。",
+            {"byte_size": len(data), "limit": settings.max_image_bytes},
+        )
+    try:
+        tags = await QwenImageTagger(settings).extract(
+            payload.content_base64, payload.media_type
+        )
+    except ImageTaggerError as error:
+        raise ApiError(
+            "IMAGE_TAGGER_ERROR", str(error), status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        ) from error
+    return schemas.ImageTagExtractRead(tags=tags)
 
 
 @router.post(

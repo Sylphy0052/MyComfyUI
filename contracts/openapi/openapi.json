@@ -2405,6 +2405,46 @@
         "title": "ImageReferenceRead",
         "type": "object"
       },
+      "ImageTagExtractRead": {
+        "additionalProperties": false,
+        "description": "視覚言語モデルが抽出した正プロンプト用のタグ。",
+        "properties": {
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "title": "ImageTagExtractRead",
+        "type": "object"
+      },
+      "ImageTagExtractRequest": {
+        "additionalProperties": false,
+        "description": "画像タグ抽出へ渡す画像。画像だけを受け付ける。",
+        "properties": {
+          "content_base64": {
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "media_type": {
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_base64",
+          "media_type"
+        ],
+        "title": "ImageTagExtractRequest",
+        "type": "object"
+      },
       "JobAssignmentUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -7559,6 +7599,45 @@
           }
         },
         "summary": "Create Image Reference"
+      }
+    },
+    "/api/v1/image-tags": {
+      "post": {
+        "description": "画像をQwen互換の視覚言語モデルへ渡し、正プロンプト用タグを返す。",
+        "operationId": "extract_image_tags_api_v1_image_tags_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageTagExtractRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageTagExtractRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extract Image Tags"
       }
     },
     "/api/v1/project-portability/import": {

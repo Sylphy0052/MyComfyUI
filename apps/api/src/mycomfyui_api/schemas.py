@@ -1356,3 +1356,24 @@ class ImageReferenceRead(ApiModel):
     sha256: str
     byte_size: int
     media_type: str
+
+
+class ImageTagExtractRequest(ApiModel):
+    """画像タグ抽出へ渡す画像。画像だけを受け付ける。"""
+
+    content_base64: str = Field(min_length=1)
+    media_type: str = Field(min_length=1)
+
+    @field_validator("media_type")
+    @classmethod
+    def _validate_media_type(cls, value: str) -> str:
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES or not media_type.startswith("image/"):
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        return media_type
+
+
+class ImageTagExtractRead(ApiModel):
+    """視覚言語モデルが抽出した正プロンプト用のタグ。"""
+
+    tags: list[str]
