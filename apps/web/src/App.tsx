@@ -40,6 +40,7 @@ const POLL_INTERVAL_MS = 2000;
 
 type View = "generate" | "assets" | "workflows";
 type GenerationTab = "image" | "video" | "music" | "voice" | "compose";
+type LowerTab = "agent" | "history";
 
 const VIEWS: { value: View; label: string }[] = [
   { value: "generate", label: "生成" },
@@ -55,6 +56,33 @@ const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
   { value: "compose", label: "合成" },
 ];
 
+const LOWER_TABS: { value: LowerTab; label: string }[] = [
+  { value: "agent", label: "エージェント" },
+  { value: "history", label: "Artifact履歴" },
+];
+
+function nextTabForKey<T extends string>(
+  key: string,
+  tabs: readonly { value: T }[],
+  currentTab: T,
+): T | null {
+  const currentIndex = tabs.findIndex((item) => item.value === currentTab);
+  if (currentIndex < 0) return null;
+
+  let nextIndex: number | null = null;
+  if (key === "ArrowRight") {
+    nextIndex = (currentIndex + 1) % tabs.length;
+  } else if (key === "ArrowLeft") {
+    nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  } else if (key === "Home") {
+    nextIndex = 0;
+  } else if (key === "End") {
+    nextIndex = tabs.length - 1;
+  }
+
+  return nextIndex === null ? null : tabs[nextIndex].value;
+}
+
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
     return error.requestId
@@ -69,6 +97,7 @@ export function App() {
   const [view, setView] = useState<View>("generate");
   const [generationTab, setGenerationTab] =
     useState<GenerationTab>("image");
+  const [lowerTab, setLowerTab] = useState<LowerTab>("agent");
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -387,28 +416,28 @@ export function App() {
     event: KeyboardEvent<HTMLButtonElement>,
     currentTab: GenerationTab,
   ) => {
-    const currentIndex = GENERATION_TABS.findIndex(
-      (item) => item.value === currentTab,
+    const nextTab = nextTabForKey(
+      event.key,
+      GENERATION_TABS,
+      currentTab,
     );
-    let nextIndex: number | null = null;
-
-    if (event.key === "ArrowRight") {
-      nextIndex = (currentIndex + 1) % GENERATION_TABS.length;
-    } else if (event.key === "ArrowLeft") {
-      nextIndex =
-        (currentIndex - 1 + GENERATION_TABS.length) % GENERATION_TABS.length;
-    } else if (event.key === "Home") {
-      nextIndex = 0;
-    } else if (event.key === "End") {
-      nextIndex = GENERATION_TABS.length - 1;
-    }
-
-    if (nextIndex === null) return;
+    if (!nextTab) return;
 
     event.preventDefault();
-    const nextTab = GENERATION_TABS[nextIndex].value;
     setGenerationTab(nextTab);
     document.getElementById(`generation-tab-${nextTab}`)?.focus();
+  };
+
+  const handleLowerTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentTab: LowerTab,
+  ) => {
+    const nextTab = nextTabForKey(event.key, LOWER_TABS, currentTab);
+    if (!nextTab) return;
+
+    event.preventDefault();
+    setLowerTab(nextTab);
+    document.getElementById(`lower-tab-${nextTab}`)?.focus();
   };
 
   return (
@@ -587,22 +616,59 @@ export function App() {
             />
           </div>
 
-          <div className="full">
-            <AgentPanel
-              projectId={projectId}
-              sceneId={sceneId}
-              shotId={shotId}
-              recipes={recipes}
-              onAppliedJob={handleDerivedJob}
-            />
-          </div>
+          <div className="full lower-workspace">
+            <nav
+              className="lower-tabs"
+              role="tablist"
+              aria-label="補助機能"
+            >
+              {LOWER_TABS.map((item) => (
+                <button
+                  key={item.value}
+                  id={`lower-tab-${item.value}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={lowerTab === item.value}
+                  aria-controls={`lower-panel-${item.value}`}
+                  tabIndex={lowerTab === item.value ? 0 : -1}
+                  className={lowerTab === item.value ? "primary" : undefined}
+                  onClick={() => setLowerTab(item.value)}
+                  onKeyDown={(event) =>
+                    handleLowerTabKeyDown(event, item.value)
+                  }
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
 
-          <div className="full">
-            <ArtifactHistory
-              shotId={shotId}
-              refreshToken={historyToken}
-              onDerivedJob={handleDerivedJob}
-            />
+            <div
+              id="lower-panel-agent"
+              role="tabpanel"
+              aria-labelledby="lower-tab-agent"
+              hidden={lowerTab !== "agent"}
+            >
+              <AgentPanel
+                projectId={projectId}
+                sceneId={sceneId}
+                shotId={shotId}
+                recipes={recipes}
+                onAppliedJob={handleDerivedJob}
+              />
+            </div>
+
+            <div
+              id="lower-panel-history"
+              role="tabpanel"
+              aria-labelledby="lower-tab-history"
+              hidden={lowerTab !== "history"}
+            >
+              <ArtifactHistory
+                shotId={shotId}
+                refreshToken={historyToken}
+                onDerivedJob={handleDerivedJob}
+              />
+            </div>
           </div>
         </>
       )}
