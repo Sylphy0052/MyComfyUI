@@ -46,6 +46,10 @@ class Project(Base):
         CheckConstraint(
             "source_type in ('local','external')", name="ck_project_source_type"
         ),
+        CheckConstraint(
+            "sync_state in ('never','synced','outdated','conflicted','failed')",
+            name="ck_project_sync_state",
+        ),
         UniqueConstraint("name", name="uq_project_name"),
         Index("ix_project_lifecycle_last_used", "lifecycle", "last_used_at"),
     )
@@ -67,6 +71,14 @@ class Project(Base):
     external_id: Mapped[str | None] = mapped_column(
         String(PROJECT_ID_LENGTH), nullable=True
     )
+    source_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    source_snapshot_sha256: Mapped[str | None] = mapped_column(
+        String(SHA256_LENGTH), nullable=True
+    )
+    sync_state: Mapped[str] = mapped_column(Text, nullable=False, default="never")
+    auto_sync: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_synced_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     scene_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     shot_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     canon_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

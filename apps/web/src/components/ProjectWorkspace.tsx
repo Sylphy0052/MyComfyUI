@@ -10,6 +10,7 @@ import type {
   ProjectRecord,
 } from "../api/client";
 import { ProjectGenerationDefaultsEditor } from "./ProjectGenerationDefaultsEditor";
+import { ExternalProjectImporter, ProjectSyncPanel } from "./ProjectSyncPanel";
 
 type Lifecycle = ProjectRecord["lifecycle"];
 type ProjectStatus = ProjectRecord["status"];
@@ -90,6 +91,7 @@ export function ProjectWorkspace({
   const [listError, setListError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [editor, setEditor] = useState<"create" | "edit" | null>(null);
+  const [externalImporter, setExternalImporter] = useState(false);
   const [defaultsEditor, setDefaultsEditor] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [busy, setBusy] = useState(false);
@@ -279,9 +281,14 @@ export function ProjectWorkspace({
             <h2>Project</h2>
             <p className="muted">制作単位の作成、切替え、整理を行います。</p>
           </div>
-          <button type="button" className="primary" onClick={() => setEditor("create")}>
-            新規Project
-          </button>
+          <div className="row">
+            <button type="button" onClick={() => setExternalImporter(true)}>
+              外部作品をインポート
+            </button>
+            <button type="button" className="primary" onClick={() => setEditor("create")}>
+              新規Project
+            </button>
+          </div>
         </div>
         <nav className="project-lifecycle-tabs" aria-label="Projectの保管場所">
           {LIFECYCLES.map((item) => (
@@ -498,11 +505,25 @@ export function ProjectWorkspace({
                 </>
               )}
 
+              {selected.source_type === "external" && (
+                <ProjectSyncPanel
+                  key={selected.id}
+                  project={selected}
+                  onChanged={async (project) => {
+                    setFocusedId(project.id);
+                    await refresh();
+                  }}
+                />
+              )}
+
               <dl className="kv project-metadata">
                 <dt>ID</dt>
                 <dd className="mono">{selected.id}</dd>
                 <dt>source</dt>
                 <dd>{selected.source_type}</dd>
+                {selected.external_id && (
+                  <><dt>外部ID</dt><dd className="mono">{selected.external_id}</dd></>
+                )}
                 <dt>作成</dt>
                 <dd>{formatDate(selected.created_at)}</dd>
                 <dt>更新</dt>
@@ -519,6 +540,18 @@ export function ProjectWorkspace({
           onCancel={() => setEditor(null)}
           onSaved={async (project) => {
             setEditor(null);
+            setLifecycle("active");
+            setFocusedId(project.id);
+            await refresh();
+          }}
+        />
+      )}
+
+      {externalImporter && (
+        <ExternalProjectImporter
+          onCancel={() => setExternalImporter(false)}
+          onImported={async (project) => {
+            setExternalImporter(false);
             setLifecycle("active");
             setFocusedId(project.id);
             await refresh();

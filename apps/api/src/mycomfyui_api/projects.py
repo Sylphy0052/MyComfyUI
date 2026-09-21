@@ -1,15 +1,23 @@
-"""Projectの永続化とライフサイクルAPI。"""
+"""Projectの永続化、外部同期、ライフサイクルAPI。"""
 
-from typing import Annotated
+import hashlib
+import json
+import logging
+from typing import Annotated, Any, Awaitable, Callable
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from mycomfyui_api import schemas
+from mycomfyui_api.adapters.aimedia.client import (
+    AiMediaNotFound,
+    AiMediaUnavailable,
+    ReferenceSource,
+)
 from mycomfyui_api.db import get_session
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
@@ -22,6 +30,7 @@ from mycomfyui_api.models import (
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+logger = logging.getLogger(__name__)
 
 STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     "planning": frozenset({"active", "on_hold"}),
@@ -118,6 +127,11 @@ def _read(project: Project) -> schemas.ProjectRead:
         source_type=project.source_type,
         source=schemas.ProjectSource(source_locator=locator, revision=revision),
         external_id=project.external_id,
+        source_snapshot_sha256=project.source_snapshot_sha256,
+        sync_state=project.sync_state,
+        auto_sync=project.auto_sync,
+        last_synced_at=project.last_synced_at,
+        sync_error=project.sync_error,
         scene_count=project.scene_count,
         shot_count=project.shot_count,
         canon_count=project.canon_count,
@@ -251,6 +265,12 @@ async def create_project(payload: schemas.ProjectCreate, session: SessionDep):
         source_locator=None,
         source_revision=None,
         external_id=None,
+        source_snapshot={},
+        source_snapshot_sha256=None,
+        sync_state="never",
+        auto_sync=False,
+        last_synced_at=None,
+        sync_error=None,
         scene_count=0,
         shot_count=0,
         canon_count=0,
@@ -286,6 +306,360 @@ async def list_projects(
         offset=offset,
     )
     return schemas.ProjectList(items=[_read(project) for project in projects])
+
+
+def _reference_source(request: Request) -> ReferenceSource:
+    return request.app.state.reference_source
+
+
+def _items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+async def _source_call(
+    call: Callable[[], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    try:
+        return await call()
+    except AiMediaNotFound as error:
+        raise ApiError(
+            "EXTERNAL_PROJECT_NOT_FOUND",
+            str(error),
+            status_code=status.HTTP_404_NOT_FOUND,
+        ) from error
+    except AiMediaUnavailable as error:
+        raise ApiError(
+            "EXTERNAL_PROJECT_UNAVAILABLE",
+            "外部Projectへ接続できませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+
+
+async def _fetch_snapshot(
+    source: ReferenceSource, external_id: str
+) -> dict[str, Any]:
+    project = await _source_call(lambda: source.get_project(external_id))
+    scene_list = await _source_call(lambda: source.list_scenes(external_id))
+    scene_envelopes: dict[str, dict[str, Any]] = {}
+    shot_lists: dict[str, dict[str, Any]] = {}
+    shot_envelopes: dict[str, dict[str, Any]] = {}
+    for scene in _items(scene_list):
+        scene_id = scene.get("id")
+        if not isinstance(scene_id, str):
+            continue
+        scene_envelopes[scene_id] = await _source_call(
+            lambda scene_id=scene_id: source.get_scene(external_id, scene_id)
+        )
+        shots = await _source_call(
+            lambda scene_id=scene_id: source.list_shots(external_id, scene_id)
+        )
+        shot_lists[scene_id] = shots
+        for shot in _items(shots):
+            shot_id = shot.get("id")
+            if isinstance(shot_id, str):
+                shot_envelopes[shot_id] = await _source_call(
+                    lambda scene_id=scene_id, shot_id=shot_id: source.get_shot(
+                        external_id, scene_id, shot_id
+                    )
+                )
+    canon = await _source_call(lambda: source.list_canon(external_id))
+    return {
+        "project": project,
+        "scenes": scene_list,
+        "scene_envelopes": scene_envelopes,
+        "shots": shot_lists,
+        "shot_envelopes": shot_envelopes,
+        "canon": canon,
+    }
+
+
+def _snapshot_sha256(snapshot: dict[str, Any]) -> str:
+    content = json.dumps(
+        snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(content).hexdigest()
+
+
+def _revision(snapshot: dict[str, Any]) -> str:
+    project = snapshot.get("project", {})
+    source = project.get("source", {}) if isinstance(project, dict) else {}
+    revision = source.get("revision") if isinstance(source, dict) else None
+    return revision if isinstance(revision, str) and revision else "unknown"
+
+
+def _resource_map(snapshot: dict[str, Any]) -> dict[str, Any]:
+    resources: dict[str, Any] = {}
+    project = snapshot.get("project")
+    if isinstance(project, dict):
+        resources["project"] = project
+    scenes = snapshot.get("scene_envelopes")
+    if isinstance(scenes, dict):
+        resources.update({f"scenes/{key}": value for key, value in scenes.items()})
+    shots = snapshot.get("shot_envelopes")
+    if isinstance(shots, dict):
+        resources.update({f"shots/{key}": value for key, value in shots.items()})
+    canon = snapshot.get("canon")
+    if isinstance(canon, dict):
+        for item in _items(canon):
+            key = item.get("canon_id")
+            if isinstance(key, str):
+                resources[f"canon/{key}"] = item
+    return resources
+
+
+def _sync_changes(
+    project: Project, incoming: dict[str, Any]
+) -> list[schemas.ProjectSyncChange]:
+    previous = _resource_map(project.source_snapshot or {})
+    current = _resource_map(incoming)
+    changes: list[schemas.ProjectSyncChange] = []
+    for path in sorted(previous.keys() | current.keys()):
+        before = previous.get(path)
+        after = current.get(path)
+        if before == after:
+            continue
+        action = "added" if before is None else "deleted" if after is None else "changed"
+        conflict = False
+        if path == "project" and isinstance(before, dict) and isinstance(after, dict):
+            previous_title = before.get("title")
+            incoming_title = after.get("title")
+            conflict = (
+                isinstance(previous_title, str)
+                and project.name != previous_title
+                and incoming_title != previous_title
+            )
+        changes.append(
+            schemas.ProjectSyncChange(
+                path=path,
+                action=action,
+                conflict=conflict,
+                local_value=before,
+                external_value=after,
+            )
+        )
+    return changes
+
+
+def _preview(project: Project, snapshot: dict[str, Any]) -> schemas.ProjectSyncPreview:
+    changes = _sync_changes(project, snapshot)
+    return schemas.ProjectSyncPreview(
+        project_id=project.id,
+        source_revision=_revision(snapshot),
+        snapshot_sha256=_snapshot_sha256(snapshot),
+        changes=changes,
+        has_conflicts=any(change.conflict for change in changes),
+    )
+
+
+async def _mark_sync_failure(
+    session: AsyncSession, project: Project, error: ApiError
+) -> None:
+    project.sync_state = "failed"
+    project.sync_error = error.message
+    project.updated_at = schemas.now_iso()
+    await session.commit()
+
+
+async def _external_snapshot(
+    session: AsyncSession, project: Project, source: ReferenceSource
+) -> dict[str, Any]:
+    try:
+        return await _fetch_snapshot(source, project.external_id or project.id)
+    except ApiError as error:
+        await _mark_sync_failure(session, project, error)
+        raise
+
+
+@router.get(
+    "/external-candidates", response_model=schemas.ExternalProjectCandidateList
+)
+async def list_external_candidates(request: Request, session: SessionDep):
+    source = _reference_source(request)
+    payload = await _source_call(source.list_projects)
+    imported = {
+        external_id: project_id
+        for external_id, project_id in (
+            await session.execute(
+                select(Project.external_id, Project.id).where(
+                    Project.source_type == "external"
+                )
+            )
+        ).all()
+        if external_id is not None
+    }
+    candidates: list[schemas.ExternalProjectCandidate] = []
+    for item in _items(payload):
+        source_info = item.get("source")
+        if not isinstance(source_info, dict):
+            source_info = {}
+        external_id = item.get("id")
+        if not isinstance(external_id, str):
+            continue
+        candidates.append(
+            schemas.ExternalProjectCandidate(
+                id=external_id,
+                title=str(item.get("title") or external_id),
+                source_locator=str(source_info.get("source_locator") or "external"),
+                revision=str(source_info.get("revision") or "unknown"),
+                imported_project_id=imported.get(external_id),
+            )
+        )
+    return schemas.ExternalProjectCandidateList(items=candidates)
+
+
+@router.post(
+    "/import", response_model=schemas.ProjectRead, status_code=status.HTTP_201_CREATED
+)
+async def import_external_project(
+    payload: schemas.ExternalProjectImport, request: Request, session: SessionDep
+):
+    source = _reference_source(request)
+    snapshot = await _fetch_snapshot(source, payload.external_id)
+    source_project = snapshot["project"]
+    project_id = payload.project_id or payload.external_id
+    name = str(source_project.get("title") or payload.external_id)
+    repository = ProjectRepository(session)
+    await _ensure_unique(repository, project_id=project_id, name=name)
+    source_info = source_project.get("source")
+    if not isinstance(source_info, dict):
+        source_info = {}
+    scenes = _items(snapshot["scenes"])
+    shot_count = sum(len(_items(item)) for item in snapshot["shots"].values())
+    now = schemas.now_iso()
+    project = Project(
+        id=project_id,
+        name=name,
+        description=None,
+        status="active",
+        lifecycle="active",
+        tags=[],
+        favorite=False,
+        thumbnail_artifact_id=None,
+        generation_defaults=schemas.ProjectGenerationDefaults().model_dump(),
+        source_type="external",
+        source_locator=str(source_info.get("source_locator") or "external"),
+        source_revision=_revision(snapshot),
+        external_id=payload.external_id,
+        source_snapshot=snapshot,
+        source_snapshot_sha256=_snapshot_sha256(snapshot),
+        sync_state="synced",
+        auto_sync=payload.auto_sync,
+        last_synced_at=now,
+        sync_error=None,
+        scene_count=len(scenes),
+        shot_count=shot_count,
+        canon_count=len(_items(snapshot["canon"])),
+        created_at=now,
+        updated_at=now,
+        last_used_at=None,
+        archived_at=None,
+        deleted_at=None,
+    )
+    session.add(project)
+    await _commit(session)
+    return _read(project)
+
+
+@router.post("/{project_id}/sync/preview", response_model=schemas.ProjectSyncPreview)
+async def preview_external_sync(
+    project_id: schemas.AiMediaId, request: Request, session: SessionDep
+):
+    project = await _require_project(session, project_id)
+    if project.source_type != "external":
+        raise ApiError(
+            "PROJECT_HAS_NO_EXTERNAL_SOURCE",
+            "ローカルProjectは同期できません。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    snapshot = await _external_snapshot(session, project, _reference_source(request))
+    preview = _preview(project, snapshot)
+    project.sync_state = "conflicted" if preview.has_conflicts else (
+        "outdated" if preview.changes else "synced"
+    )
+    project.sync_error = None
+    await _commit(session)
+    return preview
+
+
+@router.post("/{project_id}/sync", response_model=schemas.ProjectRead)
+async def sync_external_project(
+    project_id: schemas.AiMediaId,
+    payload: schemas.ProjectSyncApply,
+    request: Request,
+    session: SessionDep,
+):
+    project = await _require_project(session, project_id)
+    if project.source_type != "external":
+        raise ApiError(
+            "PROJECT_HAS_NO_EXTERNAL_SOURCE",
+            "ローカルProjectは同期できません。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    snapshot = await _external_snapshot(session, project, _reference_source(request))
+    preview = _preview(project, snapshot)
+    resolutions = {item.path: item.choice for item in payload.resolutions}
+    unresolved = [
+        item.path for item in preview.changes if item.conflict and item.path not in resolutions
+    ]
+    if unresolved:
+        project.sync_state = "conflicted"
+        project.sync_error = "ローカル変更と外部変更が競合しています。"
+        await _commit(session)
+        raise ApiError(
+            "PROJECT_SYNC_CONFLICT",
+            project.sync_error,
+            status_code=status.HTTP_409_CONFLICT,
+            details={"paths": unresolved},
+        )
+    source_project = snapshot["project"]
+    if resolutions.get("project") == "external":
+        incoming_name = str(source_project.get("title") or project.name)
+        await _ensure_unique(
+            ProjectRepository(session),
+            project_id=project.id,
+            name=incoming_name,
+            current_id=project.id,
+        )
+        project.name = incoming_name
+    source_info = source_project.get("source")
+    if not isinstance(source_info, dict):
+        source_info = {}
+    now = schemas.now_iso()
+    project.source_locator = str(source_info.get("source_locator") or project.source_locator)
+    project.source_revision = _revision(snapshot)
+    project.source_snapshot = snapshot
+    project.source_snapshot_sha256 = preview.snapshot_sha256
+    project.sync_state = "synced"
+    project.sync_error = None
+    project.last_synced_at = now
+    project.updated_at = now
+    project.scene_count = len(_items(snapshot["scenes"]))
+    project.shot_count = sum(len(_items(item)) for item in snapshot["shots"].values())
+    project.canon_count = len(_items(snapshot["canon"]))
+    await _commit(session)
+    return _read(project)
+
+
+@router.patch("/{project_id}/sync-settings", response_model=schemas.ProjectRead)
+async def update_sync_settings(
+    project_id: schemas.AiMediaId,
+    payload: schemas.ProjectSyncSettings,
+    session: SessionDep,
+):
+    project = await _require_project(session, project_id)
+    if project.source_type != "external":
+        raise ApiError(
+            "PROJECT_HAS_NO_EXTERNAL_SOURCE",
+            "ローカルProjectには同期設定がありません。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    project.auto_sync = payload.auto_sync
+    project.updated_at = schemas.now_iso()
+    await _commit(session)
+    return _read(project)
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectRead)

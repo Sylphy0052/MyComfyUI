@@ -55,6 +55,15 @@ export type ProjectGenerationDefaults =
   components["schemas"]["ProjectGenerationDefaults"];
 export type ProjectGenerationDefaultsRead =
   components["schemas"]["ProjectGenerationDefaultsRead"];
+export type ExternalProjectCandidate =
+  components["schemas"]["ExternalProjectCandidate"];
+export type ExternalProjectCandidateList =
+  components["schemas"]["ExternalProjectCandidateList"];
+export type ExternalProjectImport =
+  components["schemas"]["ExternalProjectImport"];
+export type ProjectSyncPreview =
+  components["schemas"]["ProjectSyncPreview"];
+export type ProjectSyncApply = components["schemas"]["ProjectSyncApply"];
 export type ProjectDeletionImpact =
   components["schemas"]["ProjectDeletionImpact"];
 export type SceneCreate = components["schemas"]["SceneCreate"];
@@ -168,6 +177,33 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  listExternalProjectCandidates: () =>
+    request<ExternalProjectCandidateList>("/projects/external-candidates"),
+
+  importExternalProject: (payload: ExternalProjectImport) =>
+    request<ProjectRecord>("/projects/import", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  previewProjectSync: (projectId: string) =>
+    request<ProjectSyncPreview>(
+      `/projects/${encodeURIComponent(projectId)}/sync/preview`,
+      { method: "POST" },
+    ),
+
+  syncProject: (projectId: string, payload: ProjectSyncApply) =>
+    request<ProjectRecord>(`/projects/${encodeURIComponent(projectId)}/sync`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateProjectSyncSettings: (projectId: string, autoSync: boolean) =>
+    request<ProjectRecord>(
+      `/projects/${encodeURIComponent(projectId)}/sync-settings`,
+      { method: "PATCH", body: JSON.stringify({ auto_sync: autoSync }) },
+    ),
 
   updateProject: (projectId: string, payload: ProjectUpdate) =>
     request<ProjectRecord>(`/projects/${encodeURIComponent(projectId)}`, {
