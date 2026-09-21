@@ -6,11 +6,14 @@ import type {
   GenerationJob,
   GenerationManifest,
   JobLineage,
+  ProjectRecord,
+  AssignmentTarget,
 } from "../api/client";
 import type { SceneSummary, ShotSummary } from "../api/aimedia";
 import { ArtifactDetail } from "./ArtifactDetail";
 import { ArtifactPreview, mediaLabel } from "./ArtifactPreview";
 import { DECISION_LABEL, DECISION_OPTIONS } from "./CandidateGallery";
+import { AssignmentPicker } from "./AssignmentPicker";
 
 const KIND_OPTIONS = [
   { value: "image", label: "画像" },
@@ -48,6 +51,8 @@ interface Props {
   shots: ShotSummary[];
   shotId: string | null;
   onSelectShot: (shotId: string | null) => void;
+  projects: ProjectRecord[];
+  onAssignmentsChanged: () => Promise<void>;
 }
 
 function describe(error: unknown): string {
@@ -67,6 +72,8 @@ export function AssetBrowser({
   shots,
   shotId,
   onSelectShot,
+  projects,
+  onAssignmentsChanged,
 }: Props) {
   const [kind, setKind] = useState("");
   const [decision, setDecision] = useState("");
@@ -92,6 +99,9 @@ export function AssetBrowser({
   const [listFailed, setListFailed] = useState(false);
   const [busyArtifactId, setBusyArtifactId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchTag, setBatchTag] = useState("");
+  const [batchBusy, setBatchBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -114,6 +124,9 @@ export function AssetBrowser({
         if (!active) return;
         setListFailed(false);
         setArtifacts(list);
+        setSelectedIds((current) =>
+          current.filter((id) => list.some((item) => item.id === id)),
+        );
         setSelectedArtifactId((current) =>
           current && list.some((item) => item.id === current)
             ? current
@@ -241,9 +254,35 @@ export function AssetBrowser({
 
   const lineageActive = lineageArtifactId !== null || lineageJobId !== null;
 
+  const operateSelected = async (
+    operation: "move" | "copy" | "unassign" | "tag",
+    target?: AssignmentTarget,
+    tag?: string,
+  ) => {
+    if (selectedIds.length === 0) return;
+    setBatchBusy(true);
+    setError(null);
+    try {
+      await api.operateArtifacts({
+        artifact_ids: selectedIds,
+        operation,
+        target,
+        tag,
+      });
+      setSelectedIds([]);
+      setBatchTag("");
+      setReloadToken((current) => current + 1);
+      await onAssignmentsChanged();
+    } catch (cause) {
+      setError(describe(cause));
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
   return (
     <section className="panel asset-browser">
-      <h2>資産ブラウザ</h2>
+      <h2>{projectId ? "資産ブラウザ" : "資産ブラウザ・Inbox"}</h2>
       {error && (
         <div className="error">
           <div>{error}</div>
@@ -252,6 +291,58 @@ export function AssetBrowser({
           </button>
         </div>
       )}
+
+      <div className="panel stack assignment-batch">
+        <div className="row spread">
+          <strong>一括操作</strong>
+          <span className="muted">{selectedIds.length}件選択中</span>
+        </div>
+        <AssignmentPicker
+          projects={projects}
+          disabled={batchBusy || selectedIds.length === 0}
+          onMove={(target) => operateSelected("move", target)}
+          onCopy={(target) => operateSelected("copy", target)}
+        />
+        <div className="row">
+          <input
+            value={batchTag}
+            disabled={batchBusy || selectedIds.length === 0}
+            onChange={(event) => setBatchTag(event.target.value)}
+            placeholder="一括付与するタグ"
+          />
+          <button
+            type="button"
+            disabled={
+              batchBusy || selectedIds.length === 0 || !batchTag.trim()
+            }
+            onClick={() =>
+              void operateSelected("tag", undefined, batchTag.trim())
+            }
+          >
+            タグ付与
+          </button>
+          <button
+            type="button"
+            disabled={batchBusy || selectedIds.length === 0}
+            onClick={() => void operateSelected("unassign")}
+          >
+            Inboxへ移動
+          </button>
+          <button
+            type="button"
+            disabled={batchBusy || artifacts.length === 0}
+            onClick={() =>
+              setSelectedIds(
+                selectedIds.length === artifacts.length
+                  ? []
+                  : artifacts.map((artifact) => artifact.id),
+              )
+            }
+          >
+            {selectedIds.length === artifacts.length ? "選択解除" : "すべて選択"}
+          </button>
+        </div>
+      </div>
 
       <div className="filters">
         <div>
@@ -399,6 +490,20 @@ export function AssetBrowser({
                     artifact.id === selectedArtifactId ? " current" : ""
                   }`}
                 >
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(artifact.id)}
+                      onChange={(event) =>
+                        setSelectedIds((current) =>
+                          event.target.checked
+                            ? [...current, artifact.id]
+                            : current.filter((id) => id !== artifact.id),
+                        )
+                      }
+                    />
+                    一括操作に選択
+                  </label>
                   <ArtifactPreview artifact={artifact} compact />
                   <figcaption>
                     <span className="row">

@@ -658,6 +658,12 @@ export function App() {
               manifest={manifest}
               onSelect={setSelectedJobId}
               onCancel={cancel}
+              projects={projects}
+              unassigned={!projectId}
+              onAssignmentChanged={async () => {
+                await refreshJobs();
+                setHistoryToken((current) => current + 1);
+              }}
             />
           </div>
 
@@ -713,6 +719,10 @@ export function App() {
                 unassigned={!projectId}
                 refreshToken={historyToken}
                 onDerivedJob={handleDerivedJob}
+                projects={projects}
+                onAssignmentsChanged={async () => {
+                  setHistoryToken((current) => current + 1);
+                }}
               />
             </div>
           </div>
@@ -730,6 +740,10 @@ export function App() {
               shots={shots}
               shotId={shotId}
               onSelectShot={setShotId}
+              projects={projects}
+              onAssignmentsChanged={async () => {
+                setHistoryToken((current) => current + 1);
+              }}
             />
           </div>
           <div className="full">

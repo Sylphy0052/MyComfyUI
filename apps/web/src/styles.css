@@ -370,6 +370,18 @@ details summary {
   color: var(--muted);
 }
 
+.assignment-batch {
+  margin-bottom: 12px;
+}
+
+.assignment-picker .filters {
+  margin-bottom: 0;
+}
+
+.assignment-batch > .row input {
+  flex: 1 1 220px;
+}
+
 button.badge {
   width: auto;
   padding: 1px 8px;

@@ -424,6 +424,12 @@ class VoiceExecutor:
         session = self._session_factory()
         try:
             created_at = schemas.now_iso()
+            job = await session.get(GenerationJob, context.job_id)
+            assignment = (
+                (job.assigned_project_id, job.assigned_scene_id, job.assigned_shot_id)
+                if job is not None
+                else (None, None, None)
+            )
             for item in produced:
                 artifact_id = schemas.new_id()
                 session.add(
@@ -437,6 +443,9 @@ class VoiceExecutor:
                         media_type=AUDIO_MEDIA_TYPE,
                         availability="complete",
                         parent_artifact_id=None,
+                        assigned_project_id=assignment[0],
+                        assigned_scene_id=assignment[1],
+                        assigned_shot_id=assignment[2],
                         created_at=created_at,
                         decision="undecided",
                         decision_at=None,

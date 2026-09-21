@@ -733,6 +733,9 @@ def _build_job_records(
         state="queued",
         scene_ref=resolved.scene_ref,
         shot_ref=resolved.shot_ref,
+        assigned_project_id=payload.project_id,
+        assigned_scene_id=payload.scene_id,
+        assigned_shot_id=payload.shot_id,
         recipe_id=payload.recipe_id,
         manifest_id=manifest_id,
         parent_job_id=_resolve_parent_job_id(payload, prepared),
@@ -748,6 +751,9 @@ def _build_job_records(
         media_type=WORKFLOW_MEDIA_TYPE,
         availability="complete",
         parent_artifact_id=None,
+        assigned_project_id=payload.project_id,
+        assigned_scene_id=payload.scene_id,
+        assigned_shot_id=payload.shot_id,
         created_at=created_at,
         decision="undecided",
         decision_at=None,
@@ -887,8 +893,8 @@ async def list_generation_jobs(
 ):
     """キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。
 
-    `project_id`、`scene_id`、`shot_id`は不変参照と突き合わせる。`unassigned`は
-    Project参照を持たないJobだけへ絞る。
+    `project_id`、`scene_id`、`shot_id`は現在の整理先と突き合わせる。`unassigned`は
+    現在Projectに所属しないJobだけへ絞る。生成時参照とManifestは所属変更で変えない。
     """
     if unassigned and any(
         value is not None for value in (project_id, scene_id, shot_id)
@@ -902,17 +908,13 @@ async def list_generation_jobs(
     if state is not None:
         query = query.where(GenerationJob.state == state)
     if project_id is not None:
-        query = query.where(
-            GenerationJob.scene_ref["project_id"].as_string() == project_id
-        )
+        query = query.where(GenerationJob.assigned_project_id == project_id)
     if unassigned:
-        query = query.where(
-            GenerationJob.scene_ref["project_id"].as_string().is_(None)
-        )
+        query = query.where(GenerationJob.assigned_project_id.is_(None))
     if scene_id is not None:
-        query = query.where(GenerationJob.scene_ref["id"].as_string() == scene_id)
+        query = query.where(GenerationJob.assigned_scene_id == scene_id)
     if shot_id is not None:
-        query = query.where(GenerationJob.shot_ref["id"].as_string() == shot_id)
+        query = query.where(GenerationJob.assigned_shot_id == shot_id)
     result = await session.execute(query.limit(limit).offset(offset))
     return result.scalars().all()
 
@@ -920,6 +922,92 @@ async def list_generation_jobs(
 @router.get("/generation-jobs/{job_id}", response_model=schemas.GenerationJobRead)
 async def get_generation_job(job_id: str, session: SessionDep):
     return await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+
+
+async def _validate_assignment_target(
+    session: AsyncSession,
+    source: ReferenceSource,
+    target: schemas.AssignmentTarget,
+) -> tuple[str | None, str | None, str | None]:
+    if target.project_id is None:
+        return None, None, None
+    project = await session.get(Project, target.project_id)
+    if project is None or project.lifecycle == "trashed":
+        raise ApiError(
+            "PROJECT_NOT_FOUND",
+            "割当て先Projectがありません。",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"project_id": target.project_id},
+        )
+    if project.lifecycle != "active":
+        raise ApiError(
+            "PROJECT_NOT_ACTIVE",
+            "割当て先Projectはアクティブではありません。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"project_id": project.id, "lifecycle": project.lifecycle},
+        )
+    if target.scene_id is None:
+        return project.id, None, None
+    if project.source_type == "local":
+        await get_local_scene(session, project.id, target.scene_id)
+        if target.shot_id is not None:
+            await get_local_shot(session, project.id, target.scene_id, target.shot_id)
+    else:
+        external_id = project.external_id or project.id
+        try:
+            await source.get_scene(external_id, target.scene_id)
+            if target.shot_id is not None:
+                await source.get_shot(external_id, target.scene_id, target.shot_id)
+        except AiMediaNotFound as error:
+            raise ApiError(
+                "REFERENCE_NOT_FOUND",
+                str(error),
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                details=target.model_dump(),
+            ) from error
+        except AiMediaUnavailable as error:
+            raise ApiError(
+                "REFERENCE_UNAVAILABLE",
+                "割当て先の外部Scene・Shotを確認できませんでした。",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            ) from error
+    return project.id, target.scene_id, target.shot_id
+
+
+def _set_assignment(
+    item: GenerationJob | Artifact,
+    target: tuple[str | None, str | None, str | None],
+) -> None:
+    item.assigned_project_id, item.assigned_scene_id, item.assigned_shot_id = target
+
+
+@router.patch(
+    "/generation-jobs/{job_id}/assignment",
+    response_model=schemas.GenerationJobRead,
+)
+async def update_job_assignment(
+    job_id: str,
+    payload: schemas.JobAssignmentUpdate,
+    session: SessionDep,
+    source: ReferenceSourceDep,
+):
+    """完了済みJobの現在所属を変更する。生成時参照とManifestは更新しない。"""
+    job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    if job.state in ("queued", "running", "cancelling"):
+        raise ApiError(
+            "ACTIVE_JOB_ASSIGNMENT_CONFLICT",
+            "待機中・実行中・取消中のJobは所属を変更できません。完了後に再実行してください。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"job_id": job.id, "state": job.state},
+        )
+    target = await _validate_assignment_target(session, source, payload)
+    _set_assignment(job, target)
+    if payload.include_artifacts:
+        artifacts = await session.scalars(select(Artifact).where(Artifact.job_id == job.id))
+        for artifact in artifacts:
+            _set_assignment(artifact, target)
+    await session.commit()
+    return job
 
 
 @router.get(
@@ -1111,16 +1199,123 @@ async def _collect_job_lineage(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_artifact(payload: schemas.ArtifactCreate, session: SessionDep):
+    job = await _get_or_404(session, GenerationJob, "GenerationJob", payload.job_id)
     artifact = Artifact(
         id=schemas.new_id(),
         created_at=schemas.now_iso(),
         decision="undecided",
         decision_at=None,
+        assigned_project_id=job.assigned_project_id,
+        assigned_scene_id=job.assigned_scene_id,
+        assigned_shot_id=job.assigned_shot_id,
         **payload.model_dump(),
     )
     session.add(artifact)
     await _commit(session)
     return await _artifact_read(session, artifact)
+
+
+@router.post("/artifacts/batch-operation", response_model=list[schemas.ArtifactRead])
+async def operate_artifacts(
+    payload: schemas.ArtifactBatchOperation,
+    session: SessionDep,
+    source: ReferenceSourceDep,
+):
+    """Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。"""
+    rows = list(
+        await session.scalars(
+            select(Artifact).where(Artifact.id.in_(payload.artifact_ids))
+        )
+    )
+    if len(rows) != len(payload.artifact_ids):
+        found = {row.id for row in rows}
+        raise ApiError(
+            "ARTIFACT_NOT_FOUND",
+            "指定したArtifactの一部がありません。",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={
+                "missing_ids": [
+                    item for item in payload.artifact_ids if item not in found
+                ]
+            },
+        )
+    ordered = {row.id: row for row in rows}
+    rows = [ordered[item] for item in payload.artifact_ids]
+    target: tuple[str | None, str | None, str | None] | None = None
+    if payload.operation in ("move", "copy"):
+        target = await _validate_assignment_target(session, source, payload.target)
+    elif payload.operation == "unassign":
+        target = (None, None, None)
+
+    affected: list[Artifact] = []
+    if payload.operation in ("move", "unassign"):
+        assert target is not None
+        for artifact in rows:
+            _set_assignment(artifact, target)
+        affected = rows
+    elif payload.operation == "copy":
+        assert target is not None
+        tag_rows = await session.execute(
+            select(ArtifactTag.artifact_id, ArtifactTag.tag).where(
+                ArtifactTag.artifact_id.in_(payload.artifact_ids)
+            )
+        )
+        tags_by_id: dict[str, list[str]] = {}
+        for artifact_id, tag in tag_rows:
+            tags_by_id.setdefault(artifact_id, []).append(tag)
+        now = schemas.now_iso()
+        for original in rows:
+            copied = Artifact(
+                id=schemas.new_id(),
+                job_id=original.job_id,
+                kind=original.kind,
+                relative_path=original.relative_path,
+                sha256=original.sha256,
+                byte_size=original.byte_size,
+                media_type=original.media_type,
+                availability=original.availability,
+                parent_artifact_id=original.id,
+                assigned_project_id=target[0],
+                assigned_scene_id=target[1],
+                assigned_shot_id=target[2],
+                created_at=now,
+                decision=original.decision,
+                decision_at=original.decision_at,
+            )
+            session.add(copied)
+            for tag in tags_by_id.get(original.id, []):
+                session.add(
+                    ArtifactTag(
+                        id=schemas.new_id(),
+                        artifact_id=copied.id,
+                        tag=tag,
+                        created_at=now,
+                    )
+                )
+            affected.append(copied)
+    else:
+        existing = set(
+            await session.scalars(
+                select(ArtifactTag.artifact_id).where(
+                    ArtifactTag.artifact_id.in_(payload.artifact_ids),
+                    ArtifactTag.tag == payload.tag,
+                )
+            )
+        )
+        now = schemas.now_iso()
+        for artifact in rows:
+            if artifact.id not in existing:
+                session.add(
+                    ArtifactTag(
+                        id=schemas.new_id(),
+                        artifact_id=artifact.id,
+                        tag=payload.tag,
+                        created_at=now,
+                    )
+                )
+        affected = rows
+    await session.commit()
+    return await _artifact_reads(session, affected)
 
 
 def _artifact_filters(
@@ -1138,7 +1333,7 @@ def _artifact_filters(
 ) -> Select[tuple[Artifact]]:
     """Artifactの絞り込み条件を組み立てる。条件はすべてANDで重ねる。
 
-    Projectコンテキストは作成元Jobの不変参照と突き合わせる。
+    ProjectコンテキストはArtifactの現在の整理先と突き合わせる。
     `tags`を複数指定したときは、すべてのタグが付いたArtifactだけを返す。資産を絞り
     込む用途では和集合より積集合が要る。
     """
@@ -1150,20 +1345,14 @@ def _artifact_filters(
         or shot_id is not None
         or unassigned
     ):
-        jobs = select(GenerationJob.id)
         if project_id is not None:
-            jobs = jobs.where(
-                GenerationJob.scene_ref["project_id"].as_string() == project_id
-            )
+            query = query.where(Artifact.assigned_project_id == project_id)
         if unassigned:
-            jobs = jobs.where(
-                GenerationJob.scene_ref["project_id"].as_string().is_(None)
-            )
+            query = query.where(Artifact.assigned_project_id.is_(None))
         if scene_id is not None:
-            jobs = jobs.where(GenerationJob.scene_ref["id"].as_string() == scene_id)
+            query = query.where(Artifact.assigned_scene_id == scene_id)
         if shot_id is not None:
-            jobs = jobs.where(GenerationJob.shot_ref["id"].as_string() == shot_id)
-        query = query.where(Artifact.job_id.in_(jobs))
+            query = query.where(Artifact.assigned_shot_id == shot_id)
     if kind is not None:
         query = query.where(Artifact.kind == kind)
     if decision is not None:
@@ -1244,8 +1433,8 @@ async def list_artifacts(
 ):
     """Artifact履歴の一覧。既定は作成の新しい順に返す。
 
-    Projectコンテキストは作成元Jobの不変参照と突き合わせる。`unassigned`は
-    Project参照を持たないArtifactだけへ絞る。
+    Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
+    現在のProject所属を持たないArtifactだけへ絞る。
     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
 
     `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
@@ -1958,6 +2147,9 @@ async def _create_derived_job(
             state="queued",
             scene_ref=dict(scene_ref),
             shot_ref=dict(shot_ref),
+            assigned_project_id=origin_job.assigned_project_id,
+            assigned_scene_id=origin_job.assigned_scene_id,
+            assigned_shot_id=origin_job.assigned_shot_id,
             recipe_id=origin_job.recipe_id,
             manifest_id=manifest_id,
             parent_job_id=origin_job.id,
@@ -1973,6 +2165,9 @@ async def _create_derived_job(
             media_type=WORKFLOW_MEDIA_TYPE,
             availability="complete",
             parent_artifact_id=parent_artifact_id,
+            assigned_project_id=origin_job.assigned_project_id,
+            assigned_scene_id=origin_job.assigned_scene_id,
+            assigned_shot_id=origin_job.assigned_shot_id,
             created_at=created_at,
             decision="undecided",
             decision_at=None,
@@ -2476,7 +2671,7 @@ async def _fetch_envelopes(
 async def _context_artifacts(session: AsyncSession, scene_id: str) -> list[Artifact]:
     """入力へ載せる既存Artifactを引く。Scene配下の完成済み画像だけを対象にする。"""
     jobs = select(GenerationJob.id).where(
-        GenerationJob.scene_ref["id"].as_string() == scene_id
+        GenerationJob.assigned_scene_id == scene_id
     )
     query = (
         select(Artifact)

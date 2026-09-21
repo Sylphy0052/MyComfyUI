@@ -7,7 +7,10 @@ import type {
   GenerationJob,
   GenerationManifest,
   JobLineage,
+  ProjectRecord,
+  AssignmentTarget,
 } from "../api/client";
+import { AssignmentPicker } from "./AssignmentPicker";
 import { ArtifactDetail } from "./ArtifactDetail";
 import { CanonWarning } from "./CanonWarning";
 
@@ -25,6 +28,8 @@ interface Props {
   /** Job を投入したときに値を変え、履歴を取り直させる。 */
   refreshToken: number;
   onDerivedJob: (job: GenerationJob) => void;
+  projects: ProjectRecord[];
+  onAssignmentsChanged: () => Promise<void>;
 }
 
 function describe(error: unknown): string {
@@ -41,6 +46,8 @@ export function ArtifactHistory({
   unassigned,
   refreshToken,
   onDerivedJob,
+  projects,
+  onAssignmentsChanged,
 }: Props) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(
@@ -50,6 +57,7 @@ export function ArtifactHistory({
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [assignmentToken, setAssignmentToken] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -74,7 +82,7 @@ export function ArtifactHistory({
     return () => {
       active = false;
     };
-  }, [shotId, unassigned, includeRecords, refreshToken]);
+  }, [shotId, unassigned, includeRecords, refreshToken, assignmentToken]);
 
   const selected = useMemo(
     () => artifacts.find((item) => item.id === selectedArtifactId) ?? null,
@@ -127,9 +135,23 @@ export function ArtifactHistory({
     }
   };
 
+  const changeAssignment = async (
+    artifact: Artifact,
+    operation: "move" | "copy",
+    target: AssignmentTarget,
+  ) => {
+    await api.operateArtifacts({
+      artifact_ids: [artifact.id],
+      operation,
+      target,
+    });
+    setAssignmentToken((current) => current + 1);
+    await onAssignmentsChanged();
+  };
+
   return (
     <section className="panel history">
-      <h2>Artifact履歴</h2>
+      <h2>{unassigned ? "Artifact履歴・Inbox" : "Artifact履歴"}</h2>
       {error && (
         <div className="error">
           <div>{error}</div>
@@ -193,6 +215,22 @@ export function ArtifactHistory({
               >
                 現在のCanonで再生成
               </button>
+            </div>
+
+            <div className="stack">
+              <h2>Artifactの所属</h2>
+              <AssignmentPicker
+                projects={projects}
+                initialProjectId={detail.artifact.assigned_project_id}
+                initialSceneId={detail.artifact.assigned_scene_id}
+                initialShotId={detail.artifact.assigned_shot_id}
+                onMove={(target) =>
+                  changeAssignment(detail.artifact, "move", target)
+                }
+                onCopy={(target) =>
+                  changeAssignment(detail.artifact, "copy", target)
+                }
+              />
             </div>
 
             <ArtifactDetail

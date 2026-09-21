@@ -1,4 +1,13 @@
-import type { GenerationJob, GenerationManifest } from "../api/client";
+import { useState } from "react";
+
+import { api } from "../api/client";
+import type {
+  AssignmentTarget,
+  GenerationJob,
+  GenerationManifest,
+  ProjectRecord,
+} from "../api/client";
+import { AssignmentPicker } from "./AssignmentPicker";
 
 const STATE_LABEL: Record<string, string> = {
   queued: "待機中",
@@ -10,6 +19,7 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 const CANCELLABLE = new Set(["queued", "running"]);
+const ASSIGNMENT_LOCKED = new Set(["queued", "running", "cancelling"]);
 
 /** 実行基盤の内部情報と、別に表示済みの項目。実行パラメータ欄には出さない。 */
 const HIDDEN_PARAMETERS = new Set([
@@ -31,6 +41,9 @@ interface Props {
   manifest: GenerationManifest | null;
   onSelect: (jobId: string) => void;
   onCancel: (jobId: string) => void;
+  projects: ProjectRecord[];
+  unassigned: boolean;
+  onAssignmentChanged: () => Promise<void>;
 }
 
 export function JobQueue({
@@ -39,13 +52,26 @@ export function JobQueue({
   manifest,
   onSelect,
   onCancel,
+  projects,
+  unassigned,
+  onAssignmentChanged,
 }: Props) {
+  const [includeArtifacts, setIncludeArtifacts] = useState(true);
   const selected = jobs.find((job) => job.id === selectedJobId) ?? null;
+
+  const moveJob = async (target: AssignmentTarget) => {
+    if (!selected) return;
+    await api.updateJobAssignment(selected.id, {
+      ...target,
+      include_artifacts: includeArtifacts,
+    });
+    await onAssignmentChanged();
+  };
 
   return (
     <div>
       <section className="panel">
-        <h2>キュー</h2>
+        <h2>{unassigned ? "InboxのJob" : "キュー"}</h2>
         <ul className="list">
           {jobs.map((job) => (
             <li key={job.id}>
@@ -64,7 +90,11 @@ export function JobQueue({
           ))}
         </ul>
         {jobs.length === 0 && (
-          <p className="muted">このShotのJobはまだありません。</p>
+          <p className="muted">
+            {unassigned
+              ? "未所属のJobはありません。"
+              : "この範囲のJobはまだありません。"}
+          </p>
         )}
       </section>
 
@@ -99,7 +129,46 @@ export function JobQueue({
               <dd>{selected.finished_at ?? "-"}</dd>
               <dt>親Job</dt>
               <dd className="mono">{selected.parent_job_id ?? "-"}</dd>
+              <dt>現在の所属</dt>
+              <dd className="mono">
+                {selected.assigned_project_id ?? "Inbox"}
+                {selected.assigned_scene_id
+                  ? ` / ${selected.assigned_scene_id}`
+                  : ""}
+                {selected.assigned_shot_id
+                  ? ` / ${selected.assigned_shot_id}`
+                  : ""}
+              </dd>
             </dl>
+
+            <div className="stack">
+              <h2>所属変更</h2>
+              {ASSIGNMENT_LOCKED.has(selected.state) ? (
+                <p className="muted">
+                  待機中・実行中・取消中のJobは、完了後に所属を変更できます。
+                </p>
+              ) : (
+                <>
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={includeArtifacts}
+                      onChange={(event) =>
+                        setIncludeArtifacts(event.target.checked)
+                      }
+                    />
+                    このJobのArtifactも一緒に移動する
+                  </label>
+                  <AssignmentPicker
+                    projects={projects}
+                    initialProjectId={selected.assigned_project_id}
+                    initialSceneId={selected.assigned_scene_id}
+                    initialShotId={selected.assigned_shot_id}
+                    onMove={moveJob}
+                  />
+                </>
+              )}
+            </div>
 
             {manifest && (
               <>

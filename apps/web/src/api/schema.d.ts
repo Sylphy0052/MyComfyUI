@@ -206,8 +206,8 @@ export interface paths {
          * List Artifacts
          * @description Artifact履歴の一覧。既定は作成の新しい順に返す。
          *
-         *     Projectコンテキストは作成元Jobの不変参照と突き合わせる。`unassigned`は
-         *     Project参照を持たないArtifactだけへ絞る。
+         *     Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
+         *     現在のProject所属を持たないArtifactだけへ絞る。
          *     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
          *
          *     `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
@@ -221,6 +221,26 @@ export interface paths {
         put?: never;
         /** Create Artifact */
         post: operations["create_artifact_api_v1_artifacts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/artifacts/batch-operation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Operate Artifacts
+         * @description Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。
+         */
+        post: operations["operate_artifacts_api_v1_artifacts_batch_operation_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -425,8 +445,8 @@ export interface paths {
          * List Generation Jobs
          * @description キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。
          *
-         *     `project_id`、`scene_id`、`shot_id`は不変参照と突き合わせる。`unassigned`は
-         *     Project参照を持たないJobだけへ絞る。
+         *     `project_id`、`scene_id`、`shot_id`は現在の整理先と突き合わせる。`unassigned`は
+         *     現在Projectに所属しないJobだけへ絞る。生成時参照とManifestは所属変更で変えない。
          */
         get: operations["list_generation_jobs_api_v1_generation_jobs_get"];
         put?: never;
@@ -506,6 +526,26 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generation-jobs/{job_id}/assignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Job Assignment
+         * @description 完了済みJobの現在所属を変更する。生成時参照とManifestは更新しない。
+         */
+        patch: operations["update_job_assignment_api_v1_generation_jobs__job_id__assignment_patch"];
         trace?: never;
     };
     "/api/v1/generation-jobs/{job_id}/cancel": {
@@ -1358,6 +1398,19 @@ export interface components {
             /** Subject Type */
             subject_type: string;
         };
+        /** ArtifactBatchOperation */
+        ArtifactBatchOperation: {
+            /** Artifact Ids */
+            artifact_ids: string[];
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "move" | "copy" | "unassign" | "tag";
+            /** Tag */
+            tag?: string | null;
+            target?: components["schemas"]["AssignmentTarget"] | null;
+        };
         /** ArtifactCreate */
         ArtifactCreate: {
             /**
@@ -1448,6 +1501,12 @@ export interface components {
          *     すると、空配列が「タグ無し」なのか「この経路では返していない」のか区別できない。
          */
         ArtifactRead: {
+            /** Assigned Project Id */
+            assigned_project_id: string | null;
+            /** Assigned Scene Id */
+            assigned_scene_id: string | null;
+            /** Assigned Shot Id */
+            assigned_shot_id: string | null;
             /** Availability */
             availability: string;
             /** Byte Size */
@@ -1482,6 +1541,18 @@ export interface components {
         ArtifactTagCreate: {
             /** Tag */
             tag: string;
+        };
+        /**
+         * AssignmentTarget
+         * @description 現在の整理先。すべてNoneなら未所属へ戻す。
+         */
+        AssignmentTarget: {
+            /** Project Id */
+            project_id?: string | null;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Shot Id */
+            shot_id?: string | null;
         };
         /**
          * CanonStatusRead
@@ -1562,6 +1633,12 @@ export interface components {
         };
         /** GenerationJobRead */
         GenerationJobRead: {
+            /** Assigned Project Id */
+            assigned_project_id: string | null;
+            /** Assigned Scene Id */
+            assigned_scene_id: string | null;
+            /** Assigned Shot Id */
+            assigned_shot_id: string | null;
             /** Cancel Requested At */
             cancel_requested_at: string | null;
             /** Failure Code */
@@ -1775,6 +1852,20 @@ export interface components {
             relative_path: string;
             /** Sha256 */
             sha256: string;
+        };
+        /** JobAssignmentUpdate */
+        JobAssignmentUpdate: {
+            /**
+             * Include Artifacts
+             * @default false
+             */
+            include_artifacts: boolean;
+            /** Project Id */
+            project_id?: string | null;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Shot Id */
+            shot_id?: string | null;
         };
         /**
          * JobLineageRead
@@ -2736,6 +2827,39 @@ export interface operations {
             };
         };
     };
+    operate_artifacts_api_v1_artifacts_batch_operation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactBatchOperation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_artifact_integrity_api_v1_artifacts_integrity_get: {
         parameters: {
             query?: {
@@ -3131,6 +3255,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArtifactRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_job_assignment_api_v1_generation_jobs__job_id__assignment_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobAssignmentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationJobRead"];
                 };
             };
             /** @description Validation Error */

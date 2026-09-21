@@ -464,6 +464,9 @@ class GenerationJobRead(ApiModel):
     state: str
     scene_ref: dict[str, Any]
     shot_ref: dict[str, Any]
+    assigned_project_id: str | None
+    assigned_scene_id: str | None
+    assigned_shot_id: str | None
     recipe_id: str
     manifest_id: str
     parent_job_id: str | None
@@ -549,10 +552,53 @@ class ArtifactRead(ApiModel):
     media_type: str
     availability: str
     parent_artifact_id: str | None
+    assigned_project_id: str | None
+    assigned_scene_id: str | None
+    assigned_shot_id: str | None
     created_at: str
     decision: str
     decision_at: str | None
     tags: list[str] = Field(default_factory=list)
+
+
+class AssignmentTarget(ApiModel):
+    """現在の整理先。すべてNoneなら未所属へ戻す。"""
+
+    project_id: AiMediaId | None = None
+    scene_id: AiMediaId | None = None
+    shot_id: AiMediaId | None = None
+
+    @model_validator(mode="after")
+    def _validate_hierarchy(self) -> "AssignmentTarget":
+        if self.project_id is None and (self.scene_id is not None or self.shot_id is not None):
+            raise ValueError("Scene・Shotの割当てにはproject_idが必要です。")
+        if self.shot_id is not None and self.scene_id is None:
+            raise ValueError("Shotの割当てにはscene_idが必要です。")
+        return self
+
+
+class JobAssignmentUpdate(AssignmentTarget):
+    include_artifacts: bool = False
+
+
+ArtifactBatchOperationType = Literal["move", "copy", "unassign", "tag"]
+
+
+class ArtifactBatchOperation(ApiModel):
+    artifact_ids: list[ResourceId] = Field(min_length=1, max_length=200)
+    operation: ArtifactBatchOperationType
+    target: AssignmentTarget | None = None
+    tag: ArtifactTagValue | None = None
+
+    @model_validator(mode="after")
+    def _validate_operation(self) -> "ArtifactBatchOperation":
+        if len(set(self.artifact_ids)) != len(self.artifact_ids):
+            raise ValueError("artifact_idsを重複させられません。")
+        if self.operation in ("move", "copy") and self.target is None:
+            raise ValueError(f"{self.operation}にはtargetが必要です。")
+        if self.operation == "tag" and self.tag is None:
+            raise ValueError("tag操作にはtagが必要です。")
+        return self
 
 
 class ArtifactDecisionUpdate(ApiModel):
