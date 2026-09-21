@@ -183,20 +183,27 @@ export function VideoPanel({
     setReferences([]);
     setFirstFrame(null);
     setGuideAudio(null);
-  }, [shotId]);
+  }, [projectId, shotId]);
 
   useEffect(() => {
-    if (!shotId) {
-      setImageArtifacts([]);
-      setAudioArtifacts([]);
-      return;
-    }
     let active = true;
     (async () => {
       try {
         const [images, audios] = await Promise.all([
-          api.listArtifacts({ shotId, kind: "image", limit: 50 }),
-          api.listArtifacts({ shotId, kind: "audio", limit: 50 }),
+          api.listArtifacts({
+            projectId: projectId ?? undefined,
+            shotId: shotId ?? undefined,
+            unassigned: !projectId,
+            kind: "image",
+            limit: 50,
+          }),
+          api.listArtifacts({
+            projectId: projectId ?? undefined,
+            shotId: shotId ?? undefined,
+            unassigned: !projectId,
+            kind: "audio",
+            limit: 50,
+          }),
         ]);
         if (!active) return;
         setImageArtifacts(images);
@@ -208,7 +215,7 @@ export function VideoPanel({
     return () => {
       active = false;
     };
-  }, [shotId]);
+  }, [projectId, shotId]);
 
   useEffect(() => {
     if (!succeededVideoJobIds) {
@@ -406,7 +413,7 @@ export function VideoPanel({
   };
 
   const submit = async () => {
-    if (!projectId || !sceneId || !shotId || !recipe) return;
+    if (!recipe) return;
     const inputs = buildInputs();
     if (!inputs) return;
 
@@ -430,7 +437,7 @@ export function VideoPanel({
   };
 
   const runPreview = async () => {
-    if (!projectId || !sceneId || !shotId || !recipe) return;
+    if (!recipe) return;
     const inputs = buildInputs();
     if (!inputs) return;
 
@@ -720,7 +727,7 @@ export function VideoPanel({
         <div>
           <button
             type="button"
-            disabled={submitting || previewing || !shotId || !recipeId}
+            disabled={submitting || previewing || !recipeId}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -728,7 +735,7 @@ export function VideoPanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || previewing || !shotId || !recipeId}
+            disabled={submitting || previewing || !recipeId}
             onClick={submit}
           >
             {submitting ? "投入中..." : "動画生成を投入"}

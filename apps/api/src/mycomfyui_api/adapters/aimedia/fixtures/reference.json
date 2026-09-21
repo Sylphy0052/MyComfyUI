@@ -2,7 +2,7 @@
   "projects": [
     {
       "id": "hirohito",
-      "title": "hitohito",
+      "title": "hirohito",
       "source": {
         "source_locator": "https://github.com/Sylphy0052/novel-writer",
         "revision": "6a3d861b6119d17050f4b4ebeefce77314b9d970"

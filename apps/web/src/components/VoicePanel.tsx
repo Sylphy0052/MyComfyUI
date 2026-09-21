@@ -31,6 +31,8 @@ const EMPTY_BINDING: VoiceBinding = {
   fileName: null,
 };
 
+const STANDALONE_VOICE_ID = "standalone";
+
 /** 読み検証の実施状況。`verified` 以外は一致可否を判定していない。 */
 const STATUS_LABEL: Record<string, string> = {
   verified: "検証済み",
@@ -81,6 +83,8 @@ export function VoicePanel({
   const [profile, setProfile] = useState("default");
   const [verifyWithAsr, setVerifyWithAsr] = useState(true);
   const [padToDuration, setPadToDuration] = useState(true);
+  const [standaloneText, setStandaloneText] = useState("");
+  const [standaloneDuration, setStandaloneDuration] = useState("5");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -93,8 +97,11 @@ export function VoicePanel({
 
   const dialogue = useMemo(() => shot?.data.dialogue ?? [], [shot]);
   const voiceIds = useMemo(
-    () => [...new Set(dialogue.map((line) => line.voice_id))],
-    [dialogue],
+    () =>
+      shotId
+        ? [...new Set(dialogue.map((line) => line.voice_id))]
+        : [STANDALONE_VOICE_ID],
+    [dialogue, shotId],
   );
   const voiceJobs = useMemo(
     () => jobs.filter((job) => job.kind === "voice"),
@@ -197,8 +204,7 @@ export function VoicePanel({
     const voices: Record<string, unknown> = {};
     for (const voiceId of voiceIds) {
       const binding = bindings[voiceId] ?? EMPTY_BINDING;
-      if (!binding.canonId) {
-        // どの Voice Canon で生成したかを残さない Job は作らない。
+      if (projectId && !binding.canonId) {
         setError(`${voiceId}のVoice Canonを選んでください。`);
         return null;
       }
@@ -217,7 +223,7 @@ export function VoicePanel({
         return null;
       }
       voices[voiceId] = {
-        canon_id: binding.canonId,
+        ...(binding.canonId ? { canon_id: binding.canonId } : {}),
         reference_relative_path: binding.relativePath,
         // Voice Canon の source_sha256 と突き合わせる値。取り込んだファイルの
         // 内容 hash をそのまま使う。実行前に実ファイルと照合される。
@@ -231,17 +237,43 @@ export function VoicePanel({
       setError("seedは整数で入力してください。");
       return null;
     }
+    const standalone = !shotId;
+    const duration = Number.parseFloat(standaloneDuration);
+    if (standalone && !standaloneText.trim()) {
+      setError("読む台詞を入力してください。");
+      return null;
+    }
+    if (
+      standalone &&
+      (!Number.isFinite(duration) || duration < 1 || duration > 15)
+    ) {
+      setError("目標尺は1秒以上15秒以下で入力してください。");
+      return null;
+    }
     return {
       profile,
       seed: parsedSeed,
       verify_with_asr: verifyWithAsr,
       pad_to_duration: padToDuration,
       voices,
+      ...(standalone
+        ? {
+            dialogue: [
+              {
+                speaker: null,
+                voice_id: STANDALONE_VOICE_ID,
+                text: standaloneText.trim(),
+                reading: null,
+                start_sec: 0,
+              },
+            ],
+            duration_sec: duration,
+          }
+        : {}),
     };
   };
 
   const submit = async () => {
-    if (!projectId || !sceneId || !shotId) return;
     const recipe = recipes.find((item) => item.id === recipeId);
     if (!recipe) return;
     const inputs = buildInputs();
@@ -268,7 +300,6 @@ export function VoicePanel({
   };
 
   const runPreview = async () => {
-    if (!projectId || !sceneId || !shotId) return;
     const recipe = recipes.find((item) => item.id === recipeId);
     if (!recipe) return;
     const inputs = buildInputs();
@@ -320,7 +351,7 @@ export function VoicePanel({
           : ""}
       </p>
 
-      {dialogue.length === 0 ? (
+      {voiceIds.length === 0 ? (
         <p className="muted">
           選んだShotに台詞がありません。音声Jobは投入できません。
         </p>
@@ -341,46 +372,77 @@ export function VoicePanel({
             </select>
           </div>
 
-          <h3 className="muted">台詞</h3>
-          <ul className="list plain">
-            {dialogue.map((line, index) => (
-              <li key={`${line.voice_id}-${index}`}>
-                <span className="row">
-                  <strong>{line.speaker}</strong>
-                  <span className="muted">{line.voice_id}</span>
-                  {line.start_sec !== null && line.start_sec !== undefined && (
-                    <span className="muted">{line.start_sec}秒〜</span>
-                  )}
-                </span>
-                <span>{line.text}</span>
-                <span className="muted">
-                  {line.reading ? `読み: ${line.reading}` : "読みの指定なし"}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {!shotId ? (
+            <div className="stack">
+              <label htmlFor="voice-standalone-text">読む台詞</label>
+              <textarea
+                id="voice-standalone-text"
+                value={standaloneText}
+                onChange={(event) => setStandaloneText(event.target.value)}
+              />
+              <label htmlFor="voice-standalone-duration">目標尺（秒）</label>
+              <input
+                id="voice-standalone-duration"
+                type="number"
+                min="1"
+                max="15"
+                step="0.1"
+                value={standaloneDuration}
+                onChange={(event) => setStandaloneDuration(event.target.value)}
+              />
+            </div>
+          ) : (
+            <>
+              <h3 className="muted">台詞</h3>
+              <ul className="list plain">
+                {dialogue.map((line, index) => (
+                  <li key={`${line.voice_id}-${index}`}>
+                    <span className="row">
+                      <strong>{line.speaker}</strong>
+                      <span className="muted">{line.voice_id}</span>
+                      {line.start_sec !== null &&
+                        line.start_sec !== undefined && (
+                          <span className="muted">{line.start_sec}秒〜</span>
+                        )}
+                    </span>
+                    <span>{line.text}</span>
+                    <span className="muted">
+                      {line.reading
+                        ? `読み: ${line.reading}`
+                        : "読みの指定なし"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
-          <h3 className="muted">Voice Canonと参照音声</h3>
+          <h3 className="muted">
+            {projectId ? "Voice Canonと参照音声" : "参照音声"}
+          </h3>
           {voiceIds.map((voiceId) => {
             const binding = bindings[voiceId] ?? EMPTY_BINDING;
             return (
               <div key={voiceId} className="stack">
-                <label htmlFor={`canon-${voiceId}`}>{voiceId}</label>
-                <select
-                  id={`canon-${voiceId}`}
-                  value={binding.canonId}
-                  onChange={(event) =>
-                    update(voiceId, { canonId: event.target.value })
-                  }
-                >
-                  <option value="">Voice Canonを選ぶ</option>
-                  {canon.map((item) => (
-                    <option key={item.canon_id} value={item.canon_id}>
-                      {item.display_name ?? item.canon_id}
-                    </option>
-                  ))}
-                </select>
+                <label htmlFor={`reference-${voiceId}`}>{voiceId}</label>
+                {projectId && (
+                  <select
+                    id={`canon-${voiceId}`}
+                    value={binding.canonId}
+                    onChange={(event) =>
+                      update(voiceId, { canonId: event.target.value })
+                    }
+                  >
+                    <option value="">Voice Canonを選ぶ</option>
+                    {canon.map((item) => (
+                      <option key={item.canon_id} value={item.canon_id}>
+                        {item.display_name ?? item.canon_id}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <input
+                  id={`reference-${voiceId}`}
                   type="file"
                   accept="audio/wav"
                   onChange={(event) => {
@@ -391,11 +453,13 @@ export function VoicePanel({
                 <p className="muted mono">
                   {binding.fileName
                     ? `${binding.fileName} / sha256=${binding.sha256}`
-                    : "参照音声は未取り込み。Voice Canonのsource_sha256と一致するwavを選ぶ。"}
+                    : projectId
+                      ? "参照音声は未取り込み。Voice Canonのsource_sha256と一致するwavを選ぶ。"
+                      : "参照音声は未取り込み。話者の特徴が分かるwavを選ぶ。"}
                 </p>
                 <textarea
                   aria-label={`${voiceId}の参照テキスト`}
-                  placeholder="参照音声の書き起こし (Voice Canonのtranscript)"
+                  placeholder="参照音声の書き起こし"
                   value={binding.transcript}
                   onChange={(event) =>
                     update(voiceId, { transcript: event.target.value })
@@ -453,7 +517,7 @@ export function VoicePanel({
               checked={padToDuration}
               onChange={(event) => setPadToDuration(event.target.checked)}
             />
-            Shotの尺へ無音パディングする
+            {shotId ? "Shotの尺" : "目標尺"}へ無音パディングする
           </label>
 
           {error && <p className="error">{error}</p>}
@@ -461,7 +525,7 @@ export function VoicePanel({
           <div>
             <button
               type="button"
-              disabled={submitting || previewing || !shotId || !recipeId}
+              disabled={submitting || previewing || !recipeId}
               onClick={runPreview}
             >
               {previewing ? "確認中..." : "投入前に確認"}
@@ -469,7 +533,7 @@ export function VoicePanel({
             <button
               type="button"
               className="primary"
-              disabled={submitting || previewing || !shotId || !recipeId}
+              disabled={submitting || previewing || !recipeId}
               onClick={submit}
             >
               {submitting ? "投入中..." : "音声生成を投入"}

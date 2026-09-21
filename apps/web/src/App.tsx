@@ -125,6 +125,13 @@ export function App() {
   // Job を投入・派生させたときに値を変え、Artifact 履歴を取り直させる。
   const [historyToken, setHistoryToken] = useState(0);
 
+  const jobScope = useMemo<Parameters<typeof api.listJobs>[0]>(() => {
+    if (!projectId) return { unassigned: true };
+    if (shotId) return { projectId, sceneId: sceneId ?? undefined, shotId };
+    if (sceneId) return { projectId, sceneId };
+    return { projectId };
+  }, [projectId, sceneId, shotId]);
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -214,27 +221,18 @@ export function App() {
   }, [projectId, sceneId, shotId]);
 
   const refreshJobs = useCallback(async () => {
-    if (!shotId) {
-      setJobs([]);
-      return;
-    }
-    const list = await api.listJobs({ shotId });
+    const list = await api.listJobs(jobScope);
     setJobs(list);
-  }, [shotId]);
+  }, [jobScope]);
 
   useEffect(() => {
-    if (!shotId) {
-      setJobs([]);
-      setSelectedJobId(null);
-      return;
-    }
     let active = true;
     let issued = 0;
     let applied = 0;
     const tick = async () => {
       const sequence = ++issued;
       try {
-        const list = await api.listJobs({ shotId });
+        const list = await api.listJobs(jobScope);
         // 遅れて届いた古い応答で、新しい状態を上書きしない。
         if (active && sequence > applied) {
           applied = sequence;
@@ -250,7 +248,7 @@ export function App() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [shotId]);
+  }, [jobScope]);
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -325,7 +323,6 @@ export function App() {
   }, [artifactsByJob]);
 
   const submit = async (recipe: Recipe, inputs: Record<string, unknown>) => {
-    if (!projectId || !sceneId || !shotId) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -349,7 +346,6 @@ export function App() {
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
   const preview = async (recipe: Recipe, inputs: Record<string, unknown>) => {
-    if (!projectId || !sceneId || !shotId) return;
     setPreviewing(true);
     setError(null);
     try {
@@ -446,7 +442,7 @@ export function App() {
       <header>
         <h1>MyComfyUI</h1>
         <span className="muted">
-          Scene/Shotから画像・音声・動画・音楽・合成の生成を投入し、進捗と候補を確認する。
+          Projectの有無を選び、画像・音声・動画・音楽・合成の生成を投入する。
         </span>
         <nav className="row">
           {VIEWS.map((item) => (
@@ -528,7 +524,7 @@ export function App() {
             >
               <GenerationForm
                 recipes={recipes}
-                disabled={!shotId}
+                disabled={false}
                 submitting={submitting}
                 onSubmit={submit}
                 onPreview={preview}
@@ -666,6 +662,7 @@ export function App() {
             >
               <ArtifactHistory
                 shotId={shotId}
+                unassigned={!projectId}
                 refreshToken={historyToken}
                 onDerivedJob={handleDerivedJob}
               />
@@ -678,6 +675,7 @@ export function App() {
         <>
           <div className="full">
             <AssetBrowser
+              projectId={projectId}
               scenes={scenes}
               sceneId={sceneId}
               onSelectScene={setSceneId}

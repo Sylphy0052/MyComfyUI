@@ -145,10 +145,17 @@ export const api = {
         `/shots/${encodeURIComponent(shotId)}`,
     ),
 
-  listJobs: (params: { sceneId?: string; shotId?: string }) => {
+  listJobs: (params: {
+    projectId?: string;
+    sceneId?: string;
+    shotId?: string;
+    unassigned?: boolean;
+  }) => {
     const query = new URLSearchParams();
+    if (params.projectId) query.set("project_id", params.projectId);
     if (params.sceneId) query.set("scene_id", params.sceneId);
     if (params.shotId) query.set("shot_id", params.shotId);
+    if (params.unassigned) query.set("unassigned", "true");
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request<GenerationJob[]>(`/generation-jobs${suffix}`);
   },
@@ -158,9 +165,9 @@ export const api = {
   // 画面が送るのは ID だけとする (Issue #9)。
   createJob: (payload: {
     kind: string;
-    project_id: string;
-    scene_id: string;
-    shot_id: string;
+    project_id?: string | null;
+    scene_id?: string | null;
+    shot_id?: string | null;
     recipe_id: string;
     inputs: Record<string, unknown>;
   }) =>
@@ -172,9 +179,9 @@ export const api = {
   // 投入前の確認。Job も Manifest も Artifact も作らない (Issue #41)。
   previewJob: (payload: {
     kind: string;
-    project_id: string;
-    scene_id: string;
-    shot_id: string;
+    project_id?: string | null;
+    scene_id?: string | null;
+    shot_id?: string | null;
     recipe_id: string;
     inputs: Record<string, unknown>;
   }) =>
@@ -208,8 +215,10 @@ export const api = {
   // tag は複数指定でき、すべてのタグが付いた Artifact だけが返る (AND)。
   // lineage_* は祖先と子孫の両方向を辿った結果へ絞る。
   listArtifacts: (params: {
+    projectId?: string;
     sceneId?: string;
     shotId?: string;
+    unassigned?: boolean;
     jobId?: string;
     kind?: string;
     decision?: string;
@@ -221,8 +230,10 @@ export const api = {
     offset?: number;
   }) => {
     const query = new URLSearchParams();
+    if (params.projectId) query.set("project_id", params.projectId);
     if (params.sceneId) query.set("scene_id", params.sceneId);
     if (params.shotId) query.set("shot_id", params.shotId);
+    if (params.unassigned) query.set("unassigned", "true");
     if (params.jobId) query.set("job_id", params.jobId);
     if (params.kind) query.set("kind", params.kind);
     if (params.decision) query.set("decision", params.decision);
@@ -241,8 +252,10 @@ export const api = {
   // ときは truncated が true になる。include_canon を false にすると参照 API を
   // 引かず、canon_available も false になる。
   listArtifactIntegrity: (params: {
+    projectId?: string;
     sceneId?: string;
     shotId?: string;
+    unassigned?: boolean;
     jobId?: string;
     kind?: string;
     tags?: string[];
@@ -252,8 +265,10 @@ export const api = {
     offset?: number;
   }) => {
     const query = new URLSearchParams();
+    if (params.projectId) query.set("project_id", params.projectId);
     if (params.sceneId) query.set("scene_id", params.sceneId);
     if (params.shotId) query.set("shot_id", params.shotId);
+    if (params.unassigned) query.set("unassigned", "true");
     if (params.jobId) query.set("job_id", params.jobId);
     if (params.kind) query.set("kind", params.kind);
     for (const tag of params.tags ?? []) query.append("tag", tag);

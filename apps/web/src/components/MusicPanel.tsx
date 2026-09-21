@@ -150,7 +150,6 @@ export function MusicPanel({
   };
 
   const submit = async () => {
-    if (!projectId || !sceneId || !shotId) return;
     const recipe = recipes.find((item) => item.id === recipeId);
     if (!recipe) return;
     const inputs = buildInputs();
@@ -176,7 +175,6 @@ export function MusicPanel({
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
   const runPreview = async () => {
-    if (!projectId || !sceneId || !shotId) return;
     const recipe = recipes.find((item) => item.id === recipeId);
     if (!recipe) return;
     const inputs = buildInputs();
@@ -211,8 +209,7 @@ export function MusicPanel({
       <h2>音楽生成</h2>
 
       <p className="muted">
-        BGMはScene単位で作るが、Application APIの要求はshot_idを必須にしているため、
-        選択中のShotのIDをそのまま送る。
+        Projectなしでは汎用BGMとして、Project選択時は現在のScene/Shotに紐づけて作る。
       </p>
 
       <div className="stack">
@@ -291,7 +288,7 @@ export function MusicPanel({
         <div className="row">
           <button
             type="button"
-            disabled={submitting || previewing || !shotId || !recipeId}
+            disabled={submitting || previewing || !recipeId}
             onClick={runPreview}
           >
             {previewing ? "確認中..." : "投入前に確認"}
@@ -299,7 +296,7 @@ export function MusicPanel({
           <button
             type="button"
             className="primary"
-            disabled={submitting || previewing || !shotId || !recipeId}
+            disabled={submitting || previewing || !recipeId}
             onClick={submit}
           >
             {submitting ? "投入中..." : "音楽生成を投入"}
