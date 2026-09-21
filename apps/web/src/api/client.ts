@@ -13,6 +13,11 @@ export type GenerationJob = components["schemas"]["GenerationJobRead"];
 export type GenerationManifest =
   components["schemas"]["GenerationManifestRead"];
 export type Artifact = components["schemas"]["ArtifactRead"];
+export type ExternalImagePreview =
+  components["schemas"]["ExternalImagePreviewRead"];
+export type ArtifactImport = components["schemas"]["ArtifactImportRead"];
+export type ExternalImageImport =
+  components["schemas"]["ExternalImageImportRead"];
 export type ArtifactDecision =
   components["schemas"]["ArtifactDecisionUpdate"]["decision"];
 export type JobState = GenerationJob["state"];
@@ -585,6 +590,34 @@ export const api = {
   listJobArtifacts: (jobId: string) =>
     request<Artifact[]>(
       `/generation-jobs/${encodeURIComponent(jobId)}/artifacts`,
+    ),
+
+  previewExternalImageImport: (payload: {
+    file_name: string;
+    content_base64: string;
+    media_type: string;
+  }) =>
+    request<ExternalImagePreview>("/external-images/import/preview", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  confirmExternalImageImport: (payload: {
+    preview_token: string;
+    file_name: string;
+    content_base64: string;
+    media_type: string;
+    expected_sha256: string;
+    assignment: AssignmentTarget;
+  }) =>
+    request<ExternalImageImport>("/external-images/import", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getArtifactImport: (artifactId: string) =>
+    request<ArtifactImport>(
+      `/artifacts/${encodeURIComponent(artifactId)}/import`,
     ),
 
   getManifest: (manifestId: string) =>

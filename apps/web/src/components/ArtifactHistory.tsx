@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   Artifact,
+  ArtifactImport,
   CanonStatus,
   GenerationJob,
   GenerationManifest,
@@ -55,6 +56,11 @@ export function ArtifactHistory({
   );
   const [includeRecords, setIncludeRecords] = useState(false);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [importDetail, setImportDetail] = useState<ArtifactImport | null>(null);
+  const [importLookup, setImportLookup] = useState<{
+    artifactId: string;
+    state: "loading" | "found" | "not-found" | "failed";
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [assignmentToken, setAssignmentToken] = useState(0);
@@ -88,6 +94,8 @@ export function ArtifactHistory({
     () => artifacts.find((item) => item.id === selectedArtifactId) ?? null,
     [artifacts, selectedArtifactId],
   );
+  const selectedDetail =
+    detail?.artifact.id === selected?.id ? detail : null;
 
   const loadDetail = useCallback(async (artifact: Artifact) => {
     if (!artifact.job_id) return null;
@@ -119,15 +127,46 @@ export function ArtifactHistory({
     };
   }, [selected, loadDetail, refreshToken]);
 
+  useEffect(() => {
+    if (!selected || selected.job_id) {
+      setImportDetail(null);
+      setImportLookup(null);
+      return;
+    }
+    let active = true;
+    setImportDetail(null);
+    setImportLookup({ artifactId: selected.id, state: "loading" });
+    api
+      .getArtifactImport(selected.id)
+      .then((result) => {
+        if (active) {
+          setImportDetail(result);
+          setImportLookup({ artifactId: selected.id, state: "found" });
+        }
+      })
+      .catch((cause) => {
+        if (!active) return;
+        if (!(cause instanceof ApiError && cause.code === "RESOURCE_NOT_FOUND")) {
+          setError(describe(cause));
+          setImportLookup({ artifactId: selected.id, state: "failed" });
+        } else {
+          setImportLookup({ artifactId: selected.id, state: "not-found" });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [selected]);
+
   const derive = async (mode: "replay" | "regenerate") => {
-    if (!detail) return;
+    if (!selectedDetail) return;
     setBusy(true);
     setError(null);
     try {
       const job =
         mode === "replay"
-          ? await api.replayJob(detail.job.id)
-          : await api.regenerateJob(detail.job.id);
+          ? await api.replayJob(selectedDetail.job.id)
+          : await api.regenerateJob(selectedDetail.job.id);
       onDerivedJob(job);
     } catch (cause) {
       setError(describe(cause));
@@ -196,15 +235,18 @@ export function ArtifactHistory({
           </p>
         )}
 
-        {detail && (
+        {selectedDetail && (
           <div className="stack">
-            <CanonWarning status={detail.canonStatus} job={detail.job} />
+            <CanonWarning
+              status={selectedDetail.canonStatus}
+              job={selectedDetail.job}
+            />
 
             <div className="row">
               <button
                 type="button"
                 className="primary"
-                disabled={busy || !detail.canonStatus.replayable}
+                disabled={busy || !selectedDetail.canonStatus.replayable}
                 onClick={() => derive("replay")}
               >
                 当時の条件で再実行
@@ -222,30 +264,63 @@ export function ArtifactHistory({
               <h2>Artifactの所属</h2>
               <AssignmentPicker
                 projects={projects}
-                initialProjectId={detail.artifact.assigned_project_id}
-                initialSceneId={detail.artifact.assigned_scene_id}
-                initialShotId={detail.artifact.assigned_shot_id}
+                initialProjectId={selectedDetail.artifact.assigned_project_id}
+                initialSceneId={selectedDetail.artifact.assigned_scene_id}
+                initialShotId={selectedDetail.artifact.assigned_shot_id}
                 onMove={(target) =>
-                  changeAssignment(detail.artifact, "move", target)
+                  changeAssignment(selectedDetail.artifact, "move", target)
                 }
                 onCopy={(target) =>
-                  changeAssignment(detail.artifact, "copy", target)
+                  changeAssignment(selectedDetail.artifact, "copy", target)
                 }
               />
             </div>
 
             <ArtifactDetail
-              artifact={detail.artifact}
-              job={detail.job}
-              manifest={detail.manifest}
-              lineage={detail.lineage}
+              artifact={selectedDetail.artifact}
+              job={selectedDetail.job}
+              manifest={selectedDetail.manifest}
+              lineage={selectedDetail.lineage}
             />
           </div>
         )}
         {selected && !selected.job_id && (
           <div className="stack">
-            <h3>移行したArtifact</h3>
-            <p className="muted">元のGeneration Jobを含まない可搬packageから取り込みました。ファイルと所属は利用できますが、再実行と生成時の詳細表示はできません。</p>
+            <h3>
+              {importDetail?.artifact_id === selected.id
+                ? "外部画像"
+                : importLookup?.artifactId === selected.id &&
+                    importLookup.state === "loading"
+                  ? "外部来歴を確認中"
+                  : importLookup?.artifactId === selected.id &&
+                      importLookup.state === "failed"
+                    ? "外部来歴"
+                  : "移行したArtifact"}
+            </h3>
+            {importDetail?.artifact_id === selected.id ? (
+              <>
+                <p>元ファイル:{importDetail.original_file_name}</p>
+                <p>形式:{importDetail.source_format}</p>
+                <details>
+                  <summary>取込メタデータ</summary>
+                  <pre>{JSON.stringify(importDetail.raw_metadata, null, 2)}</pre>
+                </details>
+                <details>
+                  <summary>Recipe下書き（実行不可）</summary>
+                  <pre>{JSON.stringify(importDetail.recipe_draft, null, 2)}</pre>
+                </details>
+              </>
+            ) : importLookup?.artifactId === selected.id &&
+              importLookup.state === "loading" ? (
+              <p className="muted">外部来歴を確認中です。</p>
+            ) : importLookup?.artifactId === selected.id &&
+              importLookup.state === "failed" ? (
+              <p className="error">外部来歴を取得できませんでした。</p>
+            ) : (
+              <p className="muted">
+                元のGeneration Jobを含まない可搬packageから取り込みました。ファイルと所属は利用できますが、再実行と生成時の詳細表示はできません。
+              </p>
+            )}
             <a href={api.artifactContentUrl(selected.id)} target="_blank" rel="noreferrer">Artifactを開く</a>
             <AssignmentPicker
               projects={projects}

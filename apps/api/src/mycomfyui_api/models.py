@@ -388,7 +388,7 @@ class GenerationManifest(Base):
 
 
 class Artifact(Base):
-    """Stored file reference produced by (or diagnostic to) a GenerationJob."""
+    """GenerationJob、外部取込、可搬packageに由来する保存ファイル参照。"""
 
     __tablename__ = "artifact"
     __table_args__ = (
@@ -427,6 +427,35 @@ class Artifact(Base):
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     decision: Mapped[str] = mapped_column(Text, nullable=False, default="undecided")
     decision_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ArtifactImport(Base):
+    """外部画像Artifactの取込元と、非実行のRecipe下書き。"""
+
+    __tablename__ = "artifact_import"
+
+    artifact_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("artifact.id"), primary_key=True
+    )
+    original_file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    source_format: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_metadata: Mapped[dict] = mapped_column(JSON, nullable=False)
+    recipe_draft: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class ImageImportPreview(Base):
+    """confirmをpreview済みの同一画像へ限定する短寿命token。"""
+
+    __tablename__ = "image_import_preview"
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(SHA256_LENGTH), nullable=False)
+    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    media_type: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[str] = mapped_column(Text, nullable=False)
+    consumed_at: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ArtifactTag(Base):

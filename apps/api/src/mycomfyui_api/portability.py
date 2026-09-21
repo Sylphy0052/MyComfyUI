@@ -4,6 +4,7 @@ import base64
 import binascii
 import hashlib
 import json
+import shutil
 from pathlib import PurePosixPath
 from typing import Annotated, Any
 from urllib.parse import urlsplit, urlunsplit
@@ -13,14 +14,16 @@ from fastapi import APIRouter, Depends
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
-from mycomfyui_api import schemas, storage
+from mycomfyui_api import image_imports, schemas, storage
 from mycomfyui_api.adapters.comfyui.client import ComfyUIError
 from mycomfyui_api.adapters.comfyui.factory import create_comfyui_client
 from mycomfyui_api.db import get_session
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
     Artifact,
+    ArtifactImport,
     Project,
     ProjectScene,
     ProjectShot,
@@ -326,6 +329,14 @@ async def _package(
         scene_ids = {item.id for item in scenes}
         shot_ids = {item.id for item in shots}
         artifact_ids = {item.id for item in rows}
+        import_rows = list(
+            await session.scalars(
+                select(ArtifactImport).where(
+                    ArtifactImport.artifact_id.in_(artifact_ids)
+                )
+            )
+        )
+        imports_by_id = {item.artifact_id: item for item in import_rows}
         for row in rows:
             content = None
             availability = row.availability
@@ -357,6 +368,13 @@ async def _package(
                     ),
                     created_at=row.created_at,
                     decision=row.decision,
+                    import_info=(
+                        schemas.PortableArtifactImport.model_validate(
+                            imports_by_id[row.id]
+                        )
+                        if row.id in imports_by_id
+                        else None
+                    ),
                     content_base64=content,
                 )
             )
@@ -645,6 +663,21 @@ def _decode_artifact(item: schemas.PortableArtifact, settings: Settings) -> byte
     return content
 
 
+def _read_external_image(path, expected_size: int) -> bytes:
+    """可搬packageが参照する既存画像を、取込上限を越えて読まない。"""
+    try:
+        with path.open("rb") as stream:
+            content = stream.read(image_imports.MAX_IMAGE_BYTES + 1)
+    except OSError as error:
+        raise storage.StorageError("外部画像を読み出せません。") from error
+    if len(content) != expected_size:
+        raise _error(
+            "PROJECT_PACKAGE_ARTIFACT_MISMATCH",
+            "外部画像の実ファイルサイズが記録と一致しません。",
+        )
+    return content
+
+
 def _restore_local_overrides(
     overrides: schemas.ProjectLocalOverrides,
     input_files: list[schemas.PortableInputFile],
@@ -719,7 +752,118 @@ async def _import_package(
     request: schemas.ProjectPackageImport,
     settings: Settings,
 ) -> Project:
+    """通常取込と同じlock内でquota確認からcommitまでを完了する。"""
+    async with image_imports.CONFIRM_LOCK:
+        return await _import_package_locked(session, request, settings)
+
+
+async def _import_package_locked(
+    session: AsyncSession,
+    request: schemas.ProjectPackageImport,
+    settings: Settings,
+) -> Project:
     package, _ = await _preflight(session, request, settings)
+    decoded_contents = {
+        item.id: _decode_artifact(item, settings)
+        for item in package.artifacts
+        if item.content_base64 is not None
+    }
+    existing_rows = await session.execute(
+        select(Artifact.relative_path, Artifact.byte_size)
+        .join(ArtifactImport, ArtifactImport.artifact_id == Artifact.id)
+        .where(Artifact.availability == "complete")
+    )
+    existing_paths = dict(existing_rows.all())
+    incoming_paths: dict[str, int] = {}
+    for item in package.artifacts:
+        if item.import_info is None:
+            continue
+        if item.id in decoded_contents:
+            incoming_paths.setdefault(f"embedded:{item.sha256}", item.byte_size)
+            continue
+        mapped = _mapped_path(item.relative_path, request.path_remap)
+        if _path_exists(mapped, settings) and mapped not in existing_paths:
+            incoming_paths.setdefault(f"existing:{mapped}", item.byte_size)
+    existing_import_bytes = sum(existing_paths.values())
+    incoming_import_bytes = sum(incoming_paths.values())
+    if (
+        existing_import_bytes + incoming_import_bytes
+        > settings.external_image_import_quota_bytes
+    ):
+        raise _error(
+            "IMAGE_IMPORT_QUOTA_EXCEEDED",
+            "外部画像の保存上限を超えます。",
+            details={
+                "used_bytes": existing_import_bytes,
+                "incoming_bytes": incoming_import_bytes,
+                "quota_bytes": settings.external_image_import_quota_bytes,
+            },
+            http_status=507,
+        )
+    embedded_import_bytes = sum(
+        size for key, size in incoming_paths.items() if key.startswith("embedded:")
+    )
+    if embedded_import_bytes:
+        free_bytes = (
+            await run_in_threadpool(shutil.disk_usage, settings.data_root)
+        ).free
+        if free_bytes - embedded_import_bytes < 512 * 1024 * 1024:
+            raise _error(
+                "INSUFFICIENT_STORAGE",
+                "Artifact storeの空き容量が不足しています。",
+                http_status=507,
+            )
+    external_paths_by_sha: dict[str, str] = {}
+    for item in package.artifacts:
+        if item.import_info is None:
+            continue
+        if item.byte_size > image_imports.MAX_IMAGE_BYTES:
+            raise _error(
+                "PROJECT_PACKAGE_ARTIFACT_INVALID",
+                "外部画像が取込上限を超えています。",
+            )
+        data = decoded_contents.get(item.id)
+        if data is None:
+            mapped = _mapped_path(item.relative_path, request.path_remap)
+            try:
+                path = storage.resolve_artifact(mapped, settings)
+                data = await run_in_threadpool(
+                    _read_external_image, path, item.byte_size
+                )
+            except (OSError, storage.StorageError):
+                # 実体を含まないincomplete Artifactは来歴だけを復元できる。
+                continue
+        if len(data) != item.byte_size or hashlib.sha256(data).hexdigest() != item.sha256:
+            raise _error(
+                "PROJECT_PACKAGE_ARTIFACT_MISMATCH",
+                "外部画像のサイズまたはSHA-256が一致しません。",
+            )
+        try:
+            async with image_imports.PARSE_SEMAPHORE:
+                parsed = await run_in_threadpool(
+                    image_imports.parse_image_bytes,
+                    item.import_info.original_file_name,
+                    data,
+                    item.media_type,
+                )
+        except image_imports.ImageImportError as error:
+            raise _error(
+                "PROJECT_PACKAGE_ARTIFACT_INVALID",
+                "外部画像を正常にデコードできません。",
+            ) from error
+        if parsed.source_format != item.import_info.source_format:
+            raise _error(
+                "PROJECT_PACKAGE_ARTIFACT_INVALID",
+                "外部画像の形式と来歴が一致しません。",
+            )
+        if (
+            parsed.metadata != item.import_info.raw_metadata
+            or parsed.recipe_draft != item.import_info.recipe_draft
+        ):
+            raise _error(
+                "PROJECT_PACKAGE_ARTIFACT_INVALID",
+                "外部画像の埋込情報と来歴が一致しません。",
+            )
     project_id = request.project_id or str(uuid4())
     name = request.name or package.project.name
     await _ensure_project_identity(session, project_id, name)
@@ -771,21 +915,32 @@ async def _import_package(
         relative_path = _mapped_path(item.relative_path, request.path_remap)
         availability = item.availability
         if item.content_base64 is not None:
-            content = _decode_artifact(item, settings)
-            suffix = PurePosixPath(relative_path).name
-            relative_path = f"artifacts/imported/{project_id}/{artifact_ids[item.id]}-{suffix}"
-            target = settings.data_root / relative_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                with target.open("xb") as stream:
-                    stream.write(content)
-            except FileExistsError as error:
-                raise _error("PROJECT_PACKAGE_FILE_CONFLICT", "Artifactの移行先に同名ファイルがあります。", http_status=409) from error
+            content = decoded_contents[item.id]
+            shared_path = (
+                external_paths_by_sha.get(item.sha256)
+                if item.import_info is not None
+                else None
+            )
+            if shared_path is not None:
+                relative_path = shared_path
+            else:
+                suffix = PurePosixPath(relative_path).name
+                relative_path = f"artifacts/imported/{project_id}/{artifact_ids[item.id]}-{suffix}"
+                target = settings.data_root / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    with target.open("xb") as stream:
+                        stream.write(content)
+                except FileExistsError as error:
+                    raise _error("PROJECT_PACKAGE_FILE_CONFLICT", "Artifactの移行先に同名ファイルがあります。", http_status=409) from error
+                if item.import_info is not None:
+                    external_paths_by_sha[item.sha256] = relative_path
             availability = "complete"
         elif not _path_exists(relative_path, settings):
             availability = "incomplete"
+        new_artifact_id = artifact_ids[item.id]
         session.add(Artifact(
-            id=artifact_ids[item.id], job_id=None, kind=item.kind, relative_path=relative_path,
+            id=new_artifact_id, job_id=None, kind=item.kind, relative_path=relative_path,
             sha256=item.sha256, byte_size=item.byte_size, media_type=item.media_type,
             availability=availability,
             parent_artifact_id=artifact_ids.get(item.parent_artifact_id) if item.parent_artifact_id else None,
@@ -794,6 +949,17 @@ async def _import_package(
             assigned_shot_id=shot_ids.get(item.assigned_shot_id) if item.assigned_shot_id else None,
             created_at=item.created_at, decision=item.decision, decision_at=None,
         ))
+        if item.import_info is not None:
+            session.add(
+                ArtifactImport(
+                    artifact_id=new_artifact_id,
+                    original_file_name=item.import_info.original_file_name,
+                    source_format=item.import_info.source_format,
+                    raw_metadata=item.import_info.raw_metadata,
+                    recipe_draft=item.import_info.recipe_draft,
+                    created_at=item.import_info.created_at,
+                )
+            )
     await session.commit()
     return project
 

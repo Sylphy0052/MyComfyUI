@@ -338,6 +338,23 @@ export interface paths {
         patch: operations["update_artifact_decision_api_v1_artifacts__artifact_id__decision_patch"];
         trace?: never;
     };
+    "/api/v1/artifacts/{artifact_id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Artifact Import */
+        get: operations["get_artifact_import_api_v1_artifacts__artifact_id__import_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/artifacts/{artifact_id}/tags": {
         parameters: {
             query?: never;
@@ -428,6 +445,46 @@ export interface paths {
         get: operations["get_voice_backend_health_api_v1_backends_voice_health_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/external-images/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm External Image Import
+         * @description previewで確認した内容だけを外部Artifactとして確定する。
+         */
+        post: operations["confirm_external_image_import_api_v1_external_images_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/external-images/import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview External Image Import
+         * @description 画像を保存せず検証し、非実行のRecipe下書きと警告を返す。
+         */
+        post: operations["preview_external_image_import_api_v1_external_images_import_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1888,6 +1945,25 @@ export interface components {
              */
             decision: "undecided" | "accepted" | "rejected";
         };
+        /** ArtifactImportRead */
+        ArtifactImportRead: {
+            /** Artifact Id */
+            artifact_id: string;
+            /** Created At */
+            created_at: string;
+            /** Original File Name */
+            original_file_name: string;
+            /** Raw Metadata */
+            raw_metadata: {
+                [key: string]: string;
+            };
+            /** Recipe Draft */
+            recipe_draft: {
+                [key: string]: unknown;
+            };
+            /** Source Format */
+            source_format: string;
+        };
         /**
          * ArtifactIntegrityEntry
          * @description 整合性を欠いたArtifact 1件。理由が1つも無いArtifactは一覧へ出さない。
@@ -2043,6 +2119,63 @@ export interface components {
             reason?: string | null;
             /** Version */
             version?: string | null;
+        };
+        /** ExternalImageImportConfirm */
+        ExternalImageImportConfirm: {
+            assignment?: components["schemas"]["AssignmentTarget"];
+            /** Content Base64 */
+            content_base64: string;
+            /** Expected Sha256 */
+            expected_sha256: string;
+            /** File Name */
+            file_name: string;
+            /** Media Type */
+            media_type: string;
+            /** Preview Token */
+            preview_token: string;
+        };
+        /** ExternalImageImportRead */
+        ExternalImageImportRead: {
+            artifact: components["schemas"]["ArtifactRead"];
+            import_info: components["schemas"]["ArtifactImportRead"];
+        };
+        /** ExternalImagePreviewCreate */
+        ExternalImagePreviewCreate: {
+            /** Content Base64 */
+            content_base64: string;
+            /** File Name */
+            file_name: string;
+            /** Media Type */
+            media_type: string;
+        };
+        /** ExternalImagePreviewRead */
+        ExternalImagePreviewRead: {
+            /** Byte Size */
+            byte_size: number;
+            /** File Name */
+            file_name: string;
+            /** Height */
+            height: number;
+            /** Media Type */
+            media_type: string;
+            /** Metadata */
+            metadata: {
+                [key: string]: string;
+            };
+            /** Preview Token */
+            preview_token: string;
+            /** Recipe Draft */
+            recipe_draft: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /** Source Format */
+            source_format: string;
+            /** Warnings */
+            warnings: string[];
+            /** Width */
+            width: number;
         };
         /** ExternalProjectCandidate */
         ExternalProjectCandidate: {
@@ -2607,6 +2740,7 @@ export interface components {
             decision: "undecided" | "accepted" | "rejected";
             /** Id */
             id: string;
+            import_info?: components["schemas"]["PortableArtifactImport"] | null;
             /**
              * Kind
              * @enum {string}
@@ -2620,6 +2754,26 @@ export interface components {
             relative_path: string;
             /** Sha256 */
             sha256: string;
+        };
+        /** PortableArtifactImport */
+        PortableArtifactImport: {
+            /** Created At */
+            created_at: string;
+            /** Original File Name */
+            original_file_name: string;
+            /** Raw Metadata */
+            raw_metadata: {
+                [key: string]: string;
+            };
+            /** Recipe Draft */
+            recipe_draft: {
+                [key: string]: unknown;
+            };
+            /**
+             * Source Format
+             * @enum {string}
+             */
+            source_format: "png" | "jpeg" | "webp";
         };
         /** PortableInputFile */
         PortableInputFile: {
@@ -4176,6 +4330,37 @@ export interface operations {
             };
         };
     };
+    get_artifact_import_api_v1_artifacts__artifact_id__import_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactImportRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     add_artifact_tag_api_v1_artifacts__artifact_id__tags_post: {
         parameters: {
             query?: never;
@@ -4277,6 +4462,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VoiceBackendHealthRead"];
+                };
+            };
+        };
+    };
+    confirm_external_image_import_api_v1_external_images_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalImageImportConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalImageImportRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_external_image_import_api_v1_external_images_import_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalImagePreviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalImagePreviewRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -68,7 +68,7 @@ def _safe_name(name: str) -> str:
     ComfyUIの出力ファイル名は外部由来のため、`..`や区切り文字をそのまま信用しない。
     """
     candidate = name.replace("\\", "/").split("/")[-1].strip()
-    if not candidate or candidate in (".", ".."):
+    if not candidate or candidate in (".", "..") or "\x00" in candidate:
         raise StorageError(f"保存できないファイル名です: {name!r}")
     return candidate
 
