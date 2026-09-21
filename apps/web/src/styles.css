@@ -311,6 +311,22 @@ details summary {
   width: 100%;
 }
 
+.lower-workspace {
+  min-width: 0;
+}
+
+.lower-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 6px;
+  max-width: 420px;
+  margin-bottom: 12px;
+}
+
+.lower-tabs button {
+  width: 100%;
+}
+
 .gallery video,
 .gallery audio {
   width: 100%;
