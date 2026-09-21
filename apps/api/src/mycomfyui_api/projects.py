@@ -1,5 +1,6 @@
 """Projectの永続化、外部同期、ライフサイクルAPI。"""
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -12,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from mycomfyui_api import schemas
+from mycomfyui_api import schemas, storage
 from mycomfyui_api.adapters.aimedia.client import (
     AiMediaNotFound,
     AiMediaUnavailable,
@@ -688,10 +689,42 @@ async def update_local_overrides(
             status_code=status.HTTP_409_CONFLICT,
             details={"project_id": project_id, "lifecycle": project.lifecycle},
         )
+    await asyncio.to_thread(_validate_local_reference_images, payload)
     project.local_overrides = payload.model_dump(mode="json")
     project.updated_at = schemas.now_iso()
     await _commit(session)
     return payload
+
+
+def _validate_local_reference_images(payload: schemas.ProjectLocalOverrides) -> None:
+    verified: dict[str, tuple[int, str]] = {}
+    for character in payload.characters:
+        for reference in character.reference_images:
+            actual = verified.get(reference.relative_path)
+            if actual is None:
+                try:
+                    path = storage.resolve_input(reference.relative_path)
+                    byte_size = path.stat().st_size
+                    digest = hashlib.sha256()
+                    with path.open("rb") as stream:
+                        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                except (OSError, storage.StorageError) as error:
+                    raise ApiError(
+                        "PROJECT_REFERENCE_IMAGE_INVALID",
+                        "登録する参照画像を入力cacheから確認できません。",
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        details={"relative_path": reference.relative_path},
+                    ) from error
+                actual = (byte_size, digest.hexdigest())
+                verified[reference.relative_path] = actual
+            if actual != (reference.byte_size, reference.sha256):
+                raise ApiError(
+                    "PROJECT_REFERENCE_IMAGE_MISMATCH",
+                    "参照画像のサイズまたはSHA-256が入力cacheと一致しません。",
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    details={"relative_path": reference.relative_path},
+                )
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectRead)

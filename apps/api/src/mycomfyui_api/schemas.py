@@ -19,7 +19,7 @@ from mycomfyui_api.adapters.agent.proposals import (
 )
 from mycomfyui_api.approvals import OperationEffect
 from mycomfyui_api.settings import AgentProviderId
-from mycomfyui_api.storage import ARTIFACTS_DIR_NAME
+from mycomfyui_api.storage import ARTIFACTS_DIR_NAME, INPUTS_DIR_NAME
 
 GenerationKind = Literal["image", "video", "voice", "music", "compose"]
 ArtifactKind = Literal["image", "video", "audio", "workflow", "log"]
@@ -302,7 +302,12 @@ class ProjectReferenceImage(ApiModel):
     @field_validator("relative_path")
     @classmethod
     def _safe_relative_path(cls, value: str) -> str:
-        return _reject_unsafe_path(value)
+        candidate = _reject_unsafe_path(value)
+        if not candidate.replace("\\", "/").startswith(f"{INPUTS_DIR_NAME}/"):
+            raise ValueError(
+                f"relative_pathは{INPUTS_DIR_NAME}/配下を指す必要があります。"
+            )
+        return candidate
 
     @field_validator("media_type")
     @classmethod
@@ -393,6 +398,22 @@ class ProjectCloneRequest(ApiModel):
     include_artifact_references: bool = False
 
 
+class PortableProjectReferenceImage(ProjectReferenceImage):
+    content_base64: str | None = None
+
+
+class PortableProjectCharacterProfile(ProjectCharacterProfile):
+    reference_images: list[PortableProjectReferenceImage] = Field(
+        default_factory=list, max_length=20
+    )
+
+
+class PortableProjectLocalOverrides(ProjectLocalOverrides):
+    characters: list[PortableProjectCharacterProfile] = Field(
+        default_factory=list, max_length=100
+    )
+
+
 class PortableProject(ApiModel):
     id: str
     name: str
@@ -401,7 +422,9 @@ class PortableProject(ApiModel):
     tags: list[str]
     favorite: bool
     generation_defaults: ProjectGenerationDefaults
-    local_overrides: ProjectLocalOverrides = Field(default_factory=ProjectLocalOverrides)
+    local_overrides: PortableProjectLocalOverrides = Field(
+        default_factory=PortableProjectLocalOverrides
+    )
     source_type: ProjectSourceType
     source_locator: str | None = None
     source_revision: str | None = None
@@ -496,6 +519,16 @@ class ProjectPackage(ApiModel):
         known_artifacts = set(artifact_ids)
         if any(item.scene_id not in known_scenes for item in self.shots):
             raise ValueError("Shotがpackage内にないSceneを参照しています。")
+        if any(
+            resource_id not in known_scenes
+            for resource_id in self.project.local_overrides.scene_prompts
+        ):
+            raise ValueError("プロンプトがpackage内にないSceneを参照しています。")
+        if any(
+            resource_id not in known_shots
+            for resource_id in self.project.local_overrides.shot_prompts
+        ):
+            raise ValueError("プロンプトがpackage内にないShotを参照しています。")
         for item in self.artifacts:
             if item.parent_artifact_id and item.parent_artifact_id not in known_artifacts:
                 raise ValueError("Artifactがpackage内にない親Artifactを参照しています。")

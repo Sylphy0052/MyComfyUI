@@ -2521,7 +2521,7 @@ export interface components {
             generation_defaults: components["schemas"]["ProjectGenerationDefaults"];
             /** Id */
             id: string;
-            local_overrides?: components["schemas"]["ProjectLocalOverrides"];
+            local_overrides?: components["schemas"]["PortableProjectLocalOverrides"];
             /** Name */
             name: string;
             /** Source Locator */
@@ -2540,6 +2540,45 @@ export interface components {
             status: "planning" | "active" | "on_hold" | "completed";
             /** Tags */
             tags: string[];
+        };
+        /** PortableProjectCharacterProfile */
+        PortableProjectCharacterProfile: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Reference Images */
+            reference_images?: components["schemas"]["PortableProjectReferenceImage"][];
+            /** Tags */
+            tags?: string[];
+        };
+        /** PortableProjectLocalOverrides */
+        PortableProjectLocalOverrides: {
+            /** Characters */
+            characters?: components["schemas"]["PortableProjectCharacterProfile"][];
+            /** Scene Prompts */
+            scene_prompts?: {
+                [key: string]: string;
+            };
+            /** Shot Prompts */
+            shot_prompts?: {
+                [key: string]: string;
+            };
+        };
+        /** PortableProjectReferenceImage */
+        PortableProjectReferenceImage: {
+            /** Byte Size */
+            byte_size: number;
+            /** Content Base64 */
+            content_base64?: string | null;
+            /** File Name */
+            file_name: string;
+            /** Media Type */
+            media_type: string;
+            /** Relative Path */
+            relative_path: string;
+            /** Sha256 */
+            sha256: string;
         };
         /** PortableScene */
         PortableScene: {

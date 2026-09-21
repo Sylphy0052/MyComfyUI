@@ -90,6 +90,9 @@ def _template_read(template: ProjectTemplate) -> schemas.ProjectTemplateRead:
 
 
 def _project_settings(project: Project) -> dict[str, Any]:
+    local_overrides = schemas.ProjectLocalOverrides.model_validate(
+        project.local_overrides or {}
+    )
     return {
         "description": project.description,
         "status": project.status,
@@ -98,8 +101,8 @@ def _project_settings(project: Project) -> dict[str, Any]:
         "generation_defaults": schemas.ProjectGenerationDefaults.model_validate(
             project.generation_defaults or {}
         ).model_dump(),
-        "local_overrides": schemas.ProjectLocalOverrides.model_validate(
-            project.local_overrides or {}
+        "local_overrides": local_overrides.model_copy(
+            update={"scene_prompts": {}, "shot_prompts": {}}
         ).model_dump(),
     }
 
@@ -188,6 +191,78 @@ def _external_structure(project: Project) -> tuple[list[schemas.PortableScene], 
     return scenes, shots
 
 
+def _reference_image_content(
+    reference: schemas.ProjectReferenceImage, settings: Settings
+) -> bytes:
+    try:
+        content = storage.resolve_input(reference.relative_path, settings).read_bytes()
+    except (OSError, storage.StorageError) as error:
+        raise _error(
+            "PROJECT_REFERENCE_IMAGE_MISSING",
+            "参照画像の実ファイルがありません。",
+            details={"relative_path": reference.relative_path},
+            http_status=404,
+        ) from error
+    if (
+        len(content) != reference.byte_size
+        or hashlib.sha256(content).hexdigest() != reference.sha256
+    ):
+        raise _error(
+            "PROJECT_REFERENCE_IMAGE_MISMATCH",
+            "参照画像のサイズまたはSHA-256が記録と一致しません。",
+            details={"relative_path": reference.relative_path},
+        )
+    return content
+
+
+def _portable_local_overrides(
+    project: Project,
+    settings: Settings,
+    *,
+    include_files: bool,
+    scene_ids: set[str],
+    shot_ids: set[str],
+) -> schemas.PortableProjectLocalOverrides:
+    overrides = schemas.ProjectLocalOverrides.model_validate(project.local_overrides or {})
+    characters: list[schemas.PortableProjectCharacterProfile] = []
+    for character in overrides.characters:
+        references: list[schemas.PortableProjectReferenceImage] = []
+        for reference in character.reference_images:
+            content = (
+                base64.b64encode(_reference_image_content(reference, settings)).decode(
+                    "ascii"
+                )
+                if include_files
+                else None
+            )
+            references.append(
+                schemas.PortableProjectReferenceImage(
+                    **reference.model_dump(), content_base64=content
+                )
+            )
+        characters.append(
+            schemas.PortableProjectCharacterProfile(
+                id=character.id,
+                name=character.name,
+                tags=character.tags,
+                reference_images=references,
+            )
+        )
+    return schemas.PortableProjectLocalOverrides(
+        characters=characters,
+        scene_prompts={
+            resource_id: prompt
+            for resource_id, prompt in overrides.scene_prompts.items()
+            if resource_id in scene_ids
+        },
+        shot_prompts={
+            resource_id: prompt
+            for resource_id, prompt in overrides.shot_prompts.items()
+            if resource_id in shot_ids
+        },
+    )
+
+
 async def _package(
     session: AsyncSession,
     project: Project,
@@ -269,6 +344,13 @@ async def _package(
     defaults = schemas.ProjectGenerationDefaults.model_validate(
         _without_secrets(project.generation_defaults or {})
     )
+    local_overrides = _portable_local_overrides(
+        project,
+        settings,
+        include_files=include_artifact_files,
+        scene_ids={item.id for item in scenes},
+        shot_ids={item.id for item in shots},
+    )
     recipe_ids = sorted(
         profile.recipe_id
         for profile in [defaults.image, defaults.video, defaults.music, defaults.voice, defaults.compose]
@@ -313,9 +395,7 @@ async def _package(
             tags=list(project.tags),
             favorite=project.favorite,
             generation_defaults=defaults,
-            local_overrides=schemas.ProjectLocalOverrides.model_validate(
-                project.local_overrides or {}
-            ),
+            local_overrides=local_overrides,
             source_type=project.source_type,
             source_locator=_safe_locator(project.source_locator),
             source_revision=project.source_revision,
@@ -388,11 +468,25 @@ async def _preflight(
     workflow_ids = dependencies.get("workflow_version_ids", [])
     known_recipes = set(await session.scalars(select(Recipe.id).where(Recipe.id.in_(recipe_ids)))) if recipe_ids else set()
     known_workflows = set(await session.scalars(select(WorkflowVersion.id).where(WorkflowVersion.id.in_(workflow_ids)))) if workflow_ids else set()
-    missing_files = [
+    artifact_missing_files = [
         item.relative_path
         for item in package.artifacts
         if item.availability == "complete" and item.content_base64 is None
         and not _path_exists(_mapped_path(item.relative_path, request.path_remap), settings)
+    ]
+    reference_images = [
+        reference
+        for character in package.project.local_overrides.characters
+        for reference in character.reference_images
+    ]
+    for reference in reference_images:
+        if reference.content_base64 is not None:
+            _decode_reference_image(reference, settings)
+    missing_reference_files = [
+        reference.relative_path
+        for reference in reference_images
+        if reference.content_base64 is None
+        and not _reference_image_exists(reference, settings)
     ]
     model_warnings: list[str] = []
     model_checks = dependencies.get("model_checks", [])
@@ -419,11 +513,11 @@ async def _preflight(
     preview = schemas.ProjectPackagePreflight(
         format_version=package.version,
         id_collisions=sorted(set(collisions)),
-        missing_files=missing_files,
+        missing_files=[*artifact_missing_files, *missing_reference_files],
         unavailable_recipes=sorted(set(recipe_ids) - known_recipes),
         unavailable_workflows=sorted(set(workflow_ids) - known_workflows),
         model_warnings=model_warnings,
-        can_import=True,
+        can_import=not missing_reference_files,
     )
     return package, preview
 
@@ -434,6 +528,43 @@ def _path_exists(path: str, settings: Settings) -> bool:
         return True
     except storage.StorageError:
         return False
+
+
+def _reference_image_exists(
+    reference: schemas.ProjectReferenceImage, settings: Settings
+) -> bool:
+    try:
+        _reference_image_content(reference, settings)
+        return True
+    except ApiError:
+        return False
+
+
+def _decode_reference_image(
+    reference: schemas.PortableProjectReferenceImage, settings: Settings
+) -> bytes:
+    try:
+        content = base64.b64decode(reference.content_base64 or "", validate=True)
+    except (ValueError, binascii.Error) as error:
+        raise _error(
+            "PROJECT_REFERENCE_IMAGE_INVALID",
+            "参照画像のbase64が不正です。",
+        ) from error
+    if len(content) > settings.max_image_bytes:
+        raise _error(
+            "PROJECT_PACKAGE_TOO_LARGE",
+            "参照画像が入力素材の上限を超えています。",
+            http_status=413,
+        )
+    if (
+        len(content) != reference.byte_size
+        or hashlib.sha256(content).hexdigest() != reference.sha256
+    ):
+        raise _error(
+            "PROJECT_REFERENCE_IMAGE_MISMATCH",
+            "参照画像のサイズまたはSHA-256が一致しません。",
+        )
+    return content
 
 
 def _decode_artifact(item: schemas.PortableArtifact, settings: Settings) -> bytes:
@@ -448,6 +579,64 @@ def _decode_artifact(item: schemas.PortableArtifact, settings: Settings) -> byte
     return content
 
 
+def _restore_local_overrides(
+    overrides: schemas.PortableProjectLocalOverrides,
+    settings: Settings,
+    scene_ids: dict[str, str],
+    shot_ids: dict[str, str],
+) -> schemas.ProjectLocalOverrides:
+    characters: list[schemas.ProjectCharacterProfile] = []
+    for character in overrides.characters:
+        references: list[schemas.ProjectReferenceImage] = []
+        for reference in character.reference_images:
+            if reference.content_base64 is not None:
+                content = _decode_reference_image(reference, settings)
+                try:
+                    stored = storage.write_input(reference.file_name, content, settings)
+                except storage.StorageError as error:
+                    raise _error(
+                        "PROJECT_REFERENCE_IMAGE_WRITE_FAILED",
+                        "参照画像を入力cacheへ復元できません。",
+                        http_status=503,
+                    ) from error
+                relative_path = stored.relative_path
+                sha256 = stored.sha256
+                byte_size = stored.byte_size
+            else:
+                _reference_image_content(reference, settings)
+                relative_path = reference.relative_path
+                sha256 = reference.sha256
+                byte_size = reference.byte_size
+            references.append(
+                schemas.ProjectReferenceImage(
+                    file_name=reference.file_name,
+                    relative_path=relative_path,
+                    sha256=sha256,
+                    byte_size=byte_size,
+                    media_type=reference.media_type,
+                )
+            )
+        characters.append(
+            schemas.ProjectCharacterProfile(
+                id=character.id,
+                name=character.name,
+                tags=character.tags,
+                reference_images=references,
+            )
+        )
+    return schemas.ProjectLocalOverrides(
+        characters=characters,
+        scene_prompts={
+            scene_ids[resource_id]: prompt
+            for resource_id, prompt in overrides.scene_prompts.items()
+        },
+        shot_prompts={
+            shot_ids[resource_id]: prompt
+            for resource_id, prompt in overrides.shot_prompts.items()
+        },
+    )
+
+
 async def _import_package(
     session: AsyncSession,
     request: schemas.ProjectPackageImport,
@@ -457,6 +646,11 @@ async def _import_package(
     project_id = request.project_id or str(uuid4())
     name = request.name or package.project.name
     await _ensure_project_identity(session, project_id, name)
+    scene_ids = {item.id: str(uuid4()) for item in package.scenes}
+    shot_ids = {item.id: str(uuid4()) for item in package.shots}
+    local_overrides = _restore_local_overrides(
+        package.project.local_overrides, settings, scene_ids, shot_ids
+    )
     project = _new_project(
         project_id,
         name,
@@ -466,26 +660,11 @@ async def _import_package(
             "tags": package.project.tags,
             "favorite": package.project.favorite,
             "generation_defaults": package.project.generation_defaults.model_dump(),
-            "local_overrides": package.project.local_overrides.model_dump(),
+            "local_overrides": local_overrides.model_dump(),
         },
     )
     session.add(project)
     now = schemas.now_iso()
-    scene_ids = {item.id: str(uuid4()) for item in package.scenes}
-    shot_ids = {item.id: str(uuid4()) for item in package.shots}
-    overrides = package.project.local_overrides
-    project.local_overrides = overrides.model_copy(
-        update={
-            "scene_prompts": {
-                scene_ids.get(resource_id, resource_id): prompt
-                for resource_id, prompt in overrides.scene_prompts.items()
-            },
-            "shot_prompts": {
-                shot_ids.get(resource_id, resource_id): prompt
-                for resource_id, prompt in overrides.shot_prompts.items()
-            },
-        }
-    ).model_dump(mode="json")
     artifact_ids = {item.id: str(uuid4()) for item in package.artifacts}
     for item in package.scenes:
         session.add(ProjectScene(
