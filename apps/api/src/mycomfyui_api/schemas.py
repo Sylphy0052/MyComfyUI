@@ -292,6 +292,83 @@ class ProjectSyncPreview(ApiModel):
     has_conflicts: bool
 
 
+class ProjectReferenceImage(ApiModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    relative_path: str = Field(min_length=1, max_length=1_000)
+    sha256: Sha256
+    byte_size: int = Field(gt=0)
+    media_type: str = Field(pattern=r"^image/")
+
+    @field_validator("relative_path")
+    @classmethod
+    def _safe_relative_path(cls, value: str) -> str:
+        return _reject_unsafe_path(value)
+
+    @field_validator("media_type")
+    @classmethod
+    def _safe_media_type(cls, value: str) -> str:
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES or not media_type.startswith("image/"):
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        return media_type
+
+
+class ProjectCharacterProfile(ApiModel):
+    id: ResourceId
+    name: ProjectName
+    tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
+    reference_images: list[ProjectReferenceImage] = Field(
+        default_factory=list, max_length=20
+    )
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("人物・キャラクターのタグを重複させられません。")
+        return value
+
+    @field_validator("reference_images")
+    @classmethod
+    def _unique_references(
+        cls, value: list[ProjectReferenceImage]
+    ) -> list[ProjectReferenceImage]:
+        paths = [item.relative_path for item in value]
+        if len(set(paths)) != len(paths):
+            raise ValueError("同じ参照画像を重複して登録できません。")
+        return value
+
+
+class ProjectLocalOverrides(ApiModel):
+    characters: list[ProjectCharacterProfile] = Field(
+        default_factory=list, max_length=100
+    )
+    scene_prompts: dict[str, str] = Field(default_factory=dict)
+    shot_prompts: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("characters")
+    @classmethod
+    def _unique_characters(
+        cls, value: list[ProjectCharacterProfile]
+    ) -> list[ProjectCharacterProfile]:
+        ids = [item.id for item in value]
+        if len(set(ids)) != len(ids):
+            raise ValueError("人物・キャラクターのIDを重複させられません。")
+        return value
+
+    @field_validator("scene_prompts", "shot_prompts")
+    @classmethod
+    def _validate_prompts(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 10_000:
+            raise ValueError("プロンプトを10,000件より多く登録できません。")
+        for resource_id, prompt in value.items():
+            if not resource_id or len(resource_id) > 128:
+                raise ValueError("Scene・Shot IDは1〜128文字で指定してください。")
+            if len(prompt) > 10_000:
+                raise ValueError("プロンプトは10,000文字以内で指定してください。")
+        return value
+
+
 class ProjectTemplateCreate(ApiModel):
     name: ProjectName
     description: str | None = Field(default=None, max_length=10_000)
@@ -324,6 +401,7 @@ class PortableProject(ApiModel):
     tags: list[str]
     favorite: bool
     generation_defaults: ProjectGenerationDefaults
+    local_overrides: ProjectLocalOverrides = Field(default_factory=ProjectLocalOverrides)
     source_type: ProjectSourceType
     source_locator: str | None = None
     source_revision: str | None = None

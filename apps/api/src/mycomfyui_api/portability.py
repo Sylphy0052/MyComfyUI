@@ -98,6 +98,9 @@ def _project_settings(project: Project) -> dict[str, Any]:
         "generation_defaults": schemas.ProjectGenerationDefaults.model_validate(
             project.generation_defaults or {}
         ).model_dump(),
+        "local_overrides": schemas.ProjectLocalOverrides.model_validate(
+            project.local_overrides or {}
+        ).model_dump(),
     }
 
 
@@ -114,6 +117,9 @@ def _new_project(project_id: str, name: str, settings: dict[str, Any]) -> Projec
         thumbnail_artifact_id=None,
         generation_defaults=schemas.ProjectGenerationDefaults.model_validate(
             settings.get("generation_defaults", {})
+        ).model_dump(),
+        local_overrides=schemas.ProjectLocalOverrides.model_validate(
+            settings.get("local_overrides", {})
         ).model_dump(),
         source_type="local",
         source_locator=None,
@@ -307,6 +313,9 @@ async def _package(
             tags=list(project.tags),
             favorite=project.favorite,
             generation_defaults=defaults,
+            local_overrides=schemas.ProjectLocalOverrides.model_validate(
+                project.local_overrides or {}
+            ),
             source_type=project.source_type,
             source_locator=_safe_locator(project.source_locator),
             source_revision=project.source_revision,
@@ -457,12 +466,26 @@ async def _import_package(
             "tags": package.project.tags,
             "favorite": package.project.favorite,
             "generation_defaults": package.project.generation_defaults.model_dump(),
+            "local_overrides": package.project.local_overrides.model_dump(),
         },
     )
     session.add(project)
     now = schemas.now_iso()
     scene_ids = {item.id: str(uuid4()) for item in package.scenes}
     shot_ids = {item.id: str(uuid4()) for item in package.shots}
+    overrides = package.project.local_overrides
+    project.local_overrides = overrides.model_copy(
+        update={
+            "scene_prompts": {
+                scene_ids.get(resource_id, resource_id): prompt
+                for resource_id, prompt in overrides.scene_prompts.items()
+            },
+            "shot_prompts": {
+                shot_ids.get(resource_id, resource_id): prompt
+                for resource_id, prompt in overrides.shot_prompts.items()
+            },
+        }
+    ).model_dump(mode="json")
     artifact_ids = {item.id: str(uuid4()) for item in package.artifacts}
     for item in package.scenes:
         session.add(ProjectScene(

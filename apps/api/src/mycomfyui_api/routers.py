@@ -541,6 +541,7 @@ async def _resolve_generation_defaults(
 ]:
     """Recipeと入力をProject、Scene、Shot、実行時指定の順で上書きする。"""
     project_profile = schemas.ProjectGenerationProfile()
+    local_overrides = schemas.ProjectLocalOverrides()
     if payload.project_id is not None:
         project = await session.get(Project, payload.project_id)
         if project is not None:
@@ -548,6 +549,9 @@ async def _resolve_generation_defaults(
                 project.generation_defaults or {}
             )
             project_profile = getattr(defaults, payload.kind)
+            local_overrides = schemas.ProjectLocalOverrides.model_validate(
+                project.local_overrides or {}
+            )
     scene_profile = _profile_from_data(resolved.scene_data, payload.kind)
     shot_profile = _profile_from_data(resolved.shot_data, payload.kind)
 
@@ -595,6 +599,17 @@ async def _resolve_generation_defaults(
             value = getattr(profile, name)
             if value not in (None, [], ""):
                 preferences[name] = value
+    if payload.kind in ("image", "video"):
+        if payload.scene_id is not None and local_overrides.scene_prompts.get(
+            payload.scene_id
+        ):
+            inputs["positive_prompt"] = local_overrides.scene_prompts[payload.scene_id]
+            input_origins["positive_prompt"] = "scene"
+        if payload.shot_id is not None and local_overrides.shot_prompts.get(
+            payload.shot_id
+        ):
+            inputs["positive_prompt"] = local_overrides.shot_prompts[payload.shot_id]
+            input_origins["positive_prompt"] = "shot"
     if not payload.use_inherited_defaults:
         for name, value in payload.inputs.items():
             inputs[name] = value

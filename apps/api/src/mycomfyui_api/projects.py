@@ -261,6 +261,7 @@ async def create_project(payload: schemas.ProjectCreate, session: SessionDep):
         favorite=payload.favorite,
         thumbnail_artifact_id=payload.thumbnail_artifact_id,
         generation_defaults=schemas.ProjectGenerationDefaults().model_dump(),
+        local_overrides=schemas.ProjectLocalOverrides().model_dump(),
         source_type="local",
         source_locator=None,
         source_revision=None,
@@ -539,6 +540,7 @@ async def import_external_project(
         favorite=False,
         thumbnail_artifact_id=None,
         generation_defaults=schemas.ProjectGenerationDefaults().model_dump(),
+        local_overrides=schemas.ProjectLocalOverrides().model_dump(),
         source_type="external",
         source_locator=str(source_info.get("source_locator") or "external"),
         source_revision=_revision(snapshot),
@@ -660,6 +662,36 @@ async def update_sync_settings(
     project.updated_at = schemas.now_iso()
     await _commit(session)
     return _read(project)
+
+
+@router.get(
+    "/{project_id}/local-overrides", response_model=schemas.ProjectLocalOverrides
+)
+async def get_local_overrides(project_id: schemas.AiMediaId, session: SessionDep):
+    project = await _require_project(session, project_id)
+    return schemas.ProjectLocalOverrides.model_validate(project.local_overrides or {})
+
+
+@router.put(
+    "/{project_id}/local-overrides", response_model=schemas.ProjectLocalOverrides
+)
+async def update_local_overrides(
+    project_id: schemas.AiMediaId,
+    payload: schemas.ProjectLocalOverrides,
+    session: SessionDep,
+):
+    project = await _require_project(session, project_id)
+    if project.lifecycle != "active":
+        raise ApiError(
+            "PROJECT_NOT_ACTIVE",
+            "ローカル設定を変更するにはProjectを復元してください。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"project_id": project_id, "lifecycle": project.lifecycle},
+        )
+    project.local_overrides = payload.model_dump(mode="json")
+    project.updated_at = schemas.now_iso()
+    await _commit(session)
+    return payload
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectRead)
