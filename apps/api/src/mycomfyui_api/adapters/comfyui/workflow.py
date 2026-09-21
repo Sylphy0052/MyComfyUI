@@ -153,6 +153,7 @@ ANIMA_TXT2IMG = WorkflowBinding(
         "negative_prompt": VariableRef("negative_prompt", "text", "str"),
         "width": VariableRef("latent", "width", "positive_int"),
         "height": VariableRef("latent", "height", "positive_int"),
+        "batch_size": VariableRef("latent", "batch_size", "positive_int"),
         "seed": VariableRef("ksampler", "seed", "seed"),
         "steps": VariableRef("ksampler", "steps", "positive_int"),
         "cfg": VariableRef("ksampler", "cfg", "positive_float"),

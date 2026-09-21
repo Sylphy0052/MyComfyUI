@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { ApiError, GenerationPreview, Recipe } from "../api/client";
+import { api } from "../api/client";
+import type {
+  AgentProvider,
+  AgentProviderId,
+  ApiError,
+  GenerationPreview,
+  Recipe,
+} from "../api/client";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 
@@ -54,6 +61,7 @@ interface Props {
     recipe: Recipe | null,
     inputs: Record<string, unknown>,
     useInheritedDefaults: boolean,
+    batchCount: number,
   ) => void;
   // 投入前の確認もAPIを直接呼ばず、Appから受け取った関数へ委ねる。
   onPreview: (
@@ -94,6 +102,12 @@ export function GenerationForm({
   const [modelsValid, setModelsValid] = useState(false);
   const [invalid, setInvalid] = useState<string | null>(null);
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
+  const [description, setDescription] = useState("");
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [providerId, setProviderId] = useState<AgentProviderId | "">("");
+  const [assisting, setAssisting] = useState(false);
+  const [assistError, setAssistError] = useState<string | null>(null);
+  const [batchCount, setBatchCount] = useState("1");
 
   useEffect(() => {
     if (!recipeId && recipes.length > 0) {
@@ -106,6 +120,10 @@ export function GenerationForm({
       setValues(initialValues(recipe, toFieldSpecs(recipe)));
     }
   }, [recipe]);
+
+  useEffect(() => {
+    void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
 
   /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
   const buildInputs = (): Record<string, unknown> | null => {
@@ -121,8 +139,8 @@ export function GenerationForm({
         continue;
       }
       if (field.type === "integer") {
-        const parsed = Number.parseInt(raw, 10);
-        if (!Number.isFinite(parsed)) {
+        const parsed = Number(raw);
+        if (!Number.isInteger(parsed)) {
           setInvalid(`${field.label}は整数で入力してください。`);
           return null;
         }
@@ -143,8 +161,13 @@ export function GenerationForm({
   };
 
   const submit = () => {
+    const parsedBatchCount = Number(batchCount);
+    if (!Number.isInteger(parsedBatchCount) || parsedBatchCount < 1 || parsedBatchCount > 20) {
+      setInvalid("バッチ数は1以上20以下の整数で入力してください。");
+      return;
+    }
     if (useInheritedDefaults) {
-      onSubmit(null, {}, true);
+      onSubmit(null, {}, true, parsedBatchCount);
       return;
     }
     if (!recipe) {
@@ -154,7 +177,31 @@ export function GenerationForm({
     if (!inputs) {
       return;
     }
-    onSubmit(recipe, inputs, false);
+    onSubmit(recipe, inputs, false, parsedBatchCount);
+  };
+
+  const assist = async () => {
+    if (!description.trim()) {
+      setAssistError("画像の説明を入力してください。");
+      return;
+    }
+    setAssisting(true);
+    setAssistError(null);
+    try {
+      const result = await api.assistImagePrompt({
+        instruction: description,
+        provider_id: providerId || null,
+      });
+      setValues((current) => ({
+        ...current,
+        positive_prompt: result.positive_prompt,
+        negative_prompt: result.negative_prompt,
+      }));
+    } catch (cause) {
+      setAssistError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setAssisting(false);
+    }
   };
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
@@ -177,6 +224,45 @@ export function GenerationForm({
     <section className="panel">
       <h2>生成</h2>
       <div className="stack">
+        <div>
+          <label htmlFor="image-description">画像の説明</label>
+          <textarea
+            id="image-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
+          />
+          <p className="muted">日本語で説明するとAIがPromptとNegativeを補完します。</p>
+        </div>
+        <div className="row">
+          <label htmlFor="prompt-provider">AI</label>
+          <select
+            id="prompt-provider"
+            value={providerId}
+            onChange={(event) =>
+              setProviderId(event.target.value as AgentProviderId | "")
+            }
+          >
+            <option value="">既定のAI</option>
+            {providers.map((provider) => (
+              <option
+                key={provider.id}
+                value={provider.id}
+                disabled={!provider.available}
+              >
+                {provider.label}{provider.available ? "" : " (利用不可)"}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={assisting}
+            onClick={() => void assist()}
+          >
+            {assisting ? "補完中..." : "Promptを補完"}
+          </button>
+        </div>
+        {assistError && <p className="error">{assistError}</p>}
         <button
           type="button"
           disabled={!projectId}
@@ -242,6 +328,19 @@ export function GenerationForm({
             {field.help && <p className="muted">{field.help}</p>}
           </div>
         ))}
+
+        <div>
+          <label htmlFor="batch-count">バッチ数</label>
+          <input
+            id="batch-count"
+            type="number"
+            min="1"
+            max="20"
+            value={batchCount}
+            onChange={(event) => setBatchCount(event.target.value)}
+          />
+          <p className="muted">バッチサイズ×バッチ数が合計生成枚数です。</p>
+        </div>
 
         {invalid && <p className="error">{invalid}</p>}
         {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}

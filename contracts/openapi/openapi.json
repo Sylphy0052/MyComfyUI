@@ -2346,6 +2346,92 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ImagePromptAssistCreate": {
+        "additionalProperties": false,
+        "description": "SceneやShotに紐付けない画像prompt補完の要求。",
+        "properties": {
+          "instruction": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Instruction",
+            "type": "string"
+          },
+          "provider_id": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude_code",
+                  "codex",
+                  "qwen",
+                  "stub"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Id"
+          }
+        },
+        "required": [
+          "instruction"
+        ],
+        "title": "ImagePromptAssistCreate",
+        "type": "object"
+      },
+      "ImagePromptAssistRead": {
+        "additionalProperties": false,
+        "description": "構造化検証済みの画像prompt補完結果。",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "negative_prompt": {
+            "maxLength": 4000,
+            "title": "Negative Prompt",
+            "type": "string"
+          },
+          "positive_prompt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Positive Prompt",
+            "type": "string"
+          },
+          "provider_id": {
+            "enum": [
+              "claude_code",
+              "codex",
+              "qwen",
+              "stub"
+            ],
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "rationale": {
+            "maxLength": 2000,
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "positive_prompt",
+          "negative_prompt",
+          "rationale",
+          "provider_id",
+          "model"
+        ],
+        "title": "ImagePromptAssistRead",
+        "type": "object"
+      },
       "ImageReferenceCreate": {
         "additionalProperties": false,
         "description": "参照画像とガイド音声の取り込み要求。\n\nH3の`LoadImage`と`LoadAudio`はComfyUI側のinputにあるファイルしか参照できない。\n手元の素材を入力cacheへ取り込み、Job投入時にその参照を指定する。",
@@ -7601,6 +7687,45 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/v1/image-prompt-assists": {
+      "post": {
+        "description": "日本語の説明を、SceneやShotに依存しない画像promptへ補完する。\n\nProviderへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。\nJob、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は\n利用者が明示的に投入するまで始まらない。",
+        "operationId": "assist_image_prompt_api_v1_image_prompt_assists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImagePromptAssistCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagePromptAssistRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assist Image Prompt"
       }
     },
     "/api/v1/image-references": {
