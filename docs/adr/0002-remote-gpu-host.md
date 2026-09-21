@@ -113,7 +113,6 @@ Remote PCの準備手順は[Remote GPUホストの準備](../operations/remote-g
 - Remote PCが落ちている、またはネットワークが切れている場合、Jobは既存の失敗分類のまま`BACKEND_UNAVAILABLE`(`backend_start`、再試行可)または`BACKEND_DISCONNECTED`(`response_disconnect`、再試行可)になる。新しい失敗コードを追加しない。
 - モデル資産はRemote PCから読める場所へ置く。1つのディレクトリへ物理的に集める必要はなく、`extra_model_paths.yaml`で参照を足す構成でもよい。Recipeが指すモデル名がRemote PC上の実ファイル名と一致しない場合、`MODEL_NOT_FOUND`で失敗する。在庫確認は`/object_info`で行う。
 - Phase 3(#12)のi2v/ref2vでは参照画像をComfyUIへ渡す必要がある。手元構成ならファイルパスで渡せたが、Remote構成では`POST /upload/image`による送信経路が要る。現在のComfyUI Adapterはこの経路を持たない。
-- Phase 6(#15)のTauri版でも、Application APIはsidecarとして手元PCで動く。Backendの接続先設定だけがデスクトップ設定へ加わる。
 
 ## 不採用
 

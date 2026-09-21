@@ -61,7 +61,7 @@ echo "alembic_version: $(sqlite3 "${DATA_A}/db/mycomfyui.sqlite3" 'select versio
 
 echo "== 2. 許可originを設定していないときのCORS =="
 CORS_NONE="$(curl -sS -o /dev/null -D - -X OPTIONS \
-  -H "Origin: http://tauri.localhost" \
+  -H "Origin: http://web.example.test" \
   -H "Access-Control-Request-Method: GET" \
   "${URL_A}/api/v1/health" | grep -ci "access-control-allow-origin" || true)"
 if [ "${CORS_NONE}" = "0" ]; then
@@ -75,12 +75,12 @@ trap - EXIT
 
 echo "== 3. 許可originを設定したときのCORS =="
 LOG_B="${WORK}/b.log"
-PID_B="$(start_api "${DATA_A}" "${LOG_B}" --allow-origin http://tauri.localhost)"
+PID_B="$(start_api "${DATA_A}" "${LOG_B}" --allow-origin http://web.example.test)"
 trap 'kill "${PID_B}" 2>/dev/null || true' EXIT
 URL_B="$(wait_for_url "${LOG_B}")"
 wait_for_health "${URL_B}" || { echo "NG: healthが応答しない"; cat "${LOG_B}"; exit 1; }
 ALLOWED="$(curl -sS -o /dev/null -D - -X OPTIONS \
-  -H "Origin: http://tauri.localhost" \
+  -H "Origin: http://web.example.test" \
   -H "Access-Control-Request-Method: GET" \
   "${URL_B}/api/v1/health" | grep -i "access-control-allow-origin" || true)"
 DENIED="$(curl -sS -o /dev/null -D - -X OPTIONS \

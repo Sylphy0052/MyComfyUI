@@ -1,6 +1,6 @@
-# Application APIをsidecarとして起動する
+# Application APIを起動する
 
-デスクトップ版では、Application APIをTauriのexternal binary(sidecar)として起動する。Web版と同じ実行経路を使い、API側にデスクトップ専用の分岐は置かない。違いは起動時に渡す引数と環境変数だけである。
+Application APIはソースから、または配布用の実行ファイルとして起動できる。Web UIはApplication APIと同一originで配信する。
 
 ## 起動エントリ
 
@@ -10,11 +10,11 @@
 # 開発時。uvicornのreloaderを使う従来のコマンド。
 npm run api:dev
 
-# 起動エントリ経由。sidecarと同じ引数を手元で試せる。
-npm run api:serve -- --port 0 --allow-origin http://tauri.localhost
+# 起動エントリ経由。
+npm run api:serve -- --port 0
 
-# 固めた実行ファイル。Tauriが起動するのはこの形。
-./mycomfyui-api --port 0 --data-root /path/to/data --allow-origin http://tauri.localhost
+# 固めた実行ファイル。
+./mycomfyui-api --port 0 --data-root /path/to/data
 ```
 
 `npm run api:dev`は従来どおり`uvicorn mycomfyui_api.main:app --reload`を呼ぶ。起動エントリを追加しても、開発時の起動方法は変わらない。
@@ -37,7 +37,7 @@ npm run api:serve -- --port 0 --allow-origin http://tauri.localhost
 MYCOMFYUI_API_LISTENING http://127.0.0.1:53421
 ```
 
-sidecarを起動する側はこの行を読んでAPIの接続先を決める。書式を変えると読む側が壊れるため、変更するときは読む側も一緒に直す。読んだ接続先をWeb UIへ渡す手順は[web-api-base-url.md](./web-api-base-url.md)に置く。
+起動元はこの行で待ち受け先を確認できる。書式を変えると起動を監視する処理が壊れるため、変更時は利用者をあわせて直す。
 
 socketはこの行を出す前に確保してある。行が出た時点でportは確定しており、あとは`GET /api/v1/health`が200を返すまで待てばよい。
 
@@ -68,15 +68,15 @@ migrationの置き場は次の順で決まる。
 
 `--allow-origin`で渡したoriginにだけCORSのheaderを返す。何も渡さなければheaderを一切返さない。開発時はViteのproxyが`/api`を同一originへ寄せるため、設定は要らない。
 
-認証を持たないAPIのため、cookieと認証headerの送出(`allow_credentials`)は許さない。Tauri側のWebViewのoriginは実装時に確定するため、ここでは固定値を書かない。
+認証を持たないAPIのため、cookieと認証headerの送出(`allow_credentials`)は許さない。
 
-APIは現時点でWebSocketのendpointを持たない。進捗はUI側の定期取得で受けている。[ADR 0001](../adr/0001-application-stack-and-boundaries.md)は進捗通知にWebSocketを使うと書いており、実装と食い違う。どちらへ寄せるかはIssue #67で決める。WebSocketを追加するときは、同じ許可originの設定でOriginを検証する。
+APIは現時点でWebSocketのendpointを持たない。進捗はUI側の定期取得で受けている。[ADR 0001](../adr/0001-application-stack-and-boundaries.md)は進捗通知にWebSocketを使うと書いており、実装と食い違う。WebSocketを追加するときは、同じ許可originの設定でOriginを検証する。
 
 ## 単一実行ファイルへ固める
 
 PyInstallerで固める。選定の理由は次のとおり。
 
-- Tauriのsidecarは実行ファイル1つを置く形が前提で、onefileの出力をそのまま使える。
+- 実行ファイル1つで配布できる。
 - Pythonとpipだけで動く。候補に挙げたNuitkaはC++コンパイラを要求するため、ビルド環境を1つ増やす。
 - `fugashi`と`unidic-lite`のように辞書データを持つ依存を`--collect-all`で同梱できる。
 
@@ -110,10 +110,6 @@ uv run --project apps/api --with pyinstaller pyinstaller \
 `--add-data`と`--paths`と入口のファイルは絶対パスで渡す。相対パスは`--specpath`からの相対として解かれるため、`--specpath`を移すと見つからなくなる。
 
 WSL2(Ubuntu, Python 3.12)での実測は約81MBで、ビルドに1分ほどかかる。
-
-Windows向けの実行ファイルはWindows上で作る。PyInstallerはクロスビルドを行わない。区切り文字も`--add-data "...;migrations"`とセミコロンに変わる。
-
-Tauriのsidecarは`<name>-<target triple>`の名前で置く。Windows向けなら`mycomfyui-api-x86_64-pc-windows-msvc.exe`である。
 
 ## 受入の確認
 
