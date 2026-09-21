@@ -89,6 +89,20 @@ class Project(Base):
     deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ProjectTemplate(Base):
+    """Project作成時に再利用する設定テンプレート。"""
+
+    __tablename__ = "project_template"
+    __table_args__ = (UniqueConstraint("name", name="uq_project_template_name"),)
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    name: Mapped[str] = mapped_column(Text(collation="NOCASE"), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class ProjectScene(Base):
     """ローカルProjectが所有するScene。"""
 
@@ -342,8 +356,8 @@ class Artifact(Base):
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
-    job_id: Mapped[str] = mapped_column(
-        String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=False
+    job_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=True
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)

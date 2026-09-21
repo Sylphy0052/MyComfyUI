@@ -902,8 +902,15 @@
             "type": "string"
           },
           "job_id": {
-            "title": "Job Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
           },
           "kind": {
             "title": "Kind",
@@ -2126,6 +2133,380 @@
         "title": "PlannedOperation",
         "type": "object"
       },
+      "PortableArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "assigned_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Scene Id"
+          },
+          "assigned_shot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Shot Id"
+          },
+          "availability": {
+            "enum": [
+              "complete",
+              "incomplete"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "byte_size": {
+            "minimum": 0.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Base64"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "default": "undecided",
+            "enum": [
+              "undecided",
+              "accepted",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "audio",
+              "workflow",
+              "log"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "parent_artifact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Artifact Id"
+          },
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "relative_path",
+          "sha256",
+          "byte_size",
+          "media_type",
+          "availability",
+          "created_at"
+        ],
+        "title": "PortableArtifact",
+        "type": "object"
+      },
+      "PortableProject": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "favorite": {
+            "title": "Favorite",
+            "type": "boolean"
+          },
+          "generation_defaults": {
+            "$ref": "#/components/schemas/ProjectGenerationDefaults"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_locator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Locator"
+          },
+          "source_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Revision"
+          },
+          "source_type": {
+            "enum": [
+              "local",
+              "external"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "planning",
+              "active",
+              "on_hold",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "status",
+          "tags",
+          "favorite",
+          "generation_defaults",
+          "source_type"
+        ],
+        "title": "PortableProject",
+        "type": "object"
+      },
+      "PortableScene": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "production_status": {
+            "default": "not_started",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "has_candidates",
+              "accepted",
+              "completed"
+            ],
+            "title": "Production Status",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "sequence",
+          "summary"
+        ],
+        "title": "PortableScene",
+        "type": "object"
+      },
+      "PortableShot": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_sec": {
+            "default": 5,
+            "exclusiveMinimum": 0.0,
+            "title": "Duration Sec",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "production_status": {
+            "default": "not_started",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "has_candidates",
+              "accepted",
+              "completed"
+            ],
+            "title": "Production Status",
+            "type": "string"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "scene_id",
+          "sequence",
+          "summary"
+        ],
+        "title": "PortableShot",
+        "type": "object"
+      },
+      "ProjectCloneRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "include_artifact_references": {
+            "default": false,
+            "title": "Include Artifact References",
+            "type": "boolean"
+          },
+          "include_structure": {
+            "default": true,
+            "title": "Include Structure",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ProjectCloneRequest",
+        "type": "object"
+      },
       "ProjectCreate": {
         "additionalProperties": false,
         "description": "ローカルProjectの作成。`id`は省略時に採番し、作成後は変更できない。",
@@ -2471,6 +2852,173 @@
           "items"
         ],
         "title": "ProjectList",
+        "type": "object"
+      },
+      "ProjectPackage": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/PortableArtifact"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "dependencies": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Dependencies",
+            "type": "object"
+          },
+          "exported_at": {
+            "title": "Exported At",
+            "type": "string"
+          },
+          "format": {
+            "const": "mycomfyui.project",
+            "default": "mycomfyui.project",
+            "title": "Format",
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/PortableProject"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/PortableScene"
+            },
+            "title": "Scenes",
+            "type": "array"
+          },
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/PortableShot"
+            },
+            "title": "Shots",
+            "type": "array"
+          },
+          "version": {
+            "const": 1,
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "exported_at",
+          "project"
+        ],
+        "title": "ProjectPackage",
+        "type": "object"
+      },
+      "ProjectPackageImport": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "package": {
+            "additionalProperties": true,
+            "title": "Package",
+            "type": "object"
+          },
+          "path_remap": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Path Remap",
+            "type": "object"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "required": [
+          "package"
+        ],
+        "title": "ProjectPackageImport",
+        "type": "object"
+      },
+      "ProjectPackagePreflight": {
+        "additionalProperties": false,
+        "properties": {
+          "can_import": {
+            "title": "Can Import",
+            "type": "boolean"
+          },
+          "format_version": {
+            "title": "Format Version",
+            "type": "integer"
+          },
+          "id_collisions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Id Collisions",
+            "type": "array"
+          },
+          "missing_files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Files",
+            "type": "array"
+          },
+          "model_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Model Warnings",
+            "type": "array"
+          },
+          "unavailable_recipes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Recipes",
+            "type": "array"
+          },
+          "unavailable_workflows": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Workflows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "format_version",
+          "id_collisions",
+          "missing_files",
+          "unavailable_recipes",
+          "unavailable_workflows",
+          "model_warnings",
+          "can_import"
+        ],
+        "title": "ProjectPackagePreflight",
         "type": "object"
       },
       "ProjectProgress": {
@@ -2901,6 +3449,111 @@
           "auto_sync"
         ],
         "title": "ProjectSyncSettings",
+        "type": "object"
+      },
+      "ProjectTemplateCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ProjectTemplateCreate",
+        "type": "object"
+      },
+      "ProjectTemplateInstantiate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ProjectTemplateInstantiate",
+        "type": "object"
+      },
+      "ProjectTemplateRead": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "id",
+          "settings",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectTemplateRead",
         "type": "object"
       },
       "ProjectUpdate": {
@@ -6102,6 +6755,424 @@
           }
         },
         "summary": "Create Image Reference"
+      }
+    },
+    "/api/v1/project-portability/import": {
+      "post": {
+        "operationId": "import_project_api_v1_project_portability_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPackageImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Project",
+        "tags": [
+          "project-portability"
+        ]
+      }
+    },
+    "/api/v1/project-portability/import/preview": {
+      "post": {
+        "operationId": "preview_import_api_v1_project_portability_import_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPackageImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPackagePreflight"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Import",
+        "tags": [
+          "project-portability"
+        ]
+      }
+    },
+    "/api/v1/project-portability/projects/{project_id}/backup": {
+      "get": {
+        "operationId": "backup_project_api_v1_project_portability_projects__project_id__backup_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPackage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backup Project",
+        "tags": [
+          "project-portability"
+        ]
+      }
+    },
+    "/api/v1/project-portability/projects/{project_id}/clone": {
+      "post": {
+        "operationId": "clone_project_api_v1_project_portability_projects__project_id__clone_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCloneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clone Project",
+        "tags": [
+          "project-portability"
+        ]
+      }
+    },
+    "/api/v1/project-portability/projects/{project_id}/export": {
+      "get": {
+        "operationId": "export_project_api_v1_project_portability_projects__project_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_structure",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Structure",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_artifacts",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Artifacts",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_artifact_files",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Artifact Files",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPackage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Project",
+        "tags": [
+          "project-portability"
+        ]
+      }
+    },
+    "/api/v1/project-portability/projects/{project_id}/templates": {
+      "post": {
+        "operationId": "create_template_api_v1_project_portability_projects__project_id__templates_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTemplateRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Template",
+        "tags": [
+          "project-portability"
+        ]
+      }
+    },
+    "/api/v1/project-portability/restore": {
+      "post": {
+        "operationId": "restore_backup_api_v1_project_portability_restore_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPackageImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Backup",
+        "tags": [
+          "project-portability"
+        ]
+      }
+    },
+    "/api/v1/project-portability/templates": {
+      "get": {
+        "operationId": "list_templates_api_v1_project_portability_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectTemplateRead"
+                  },
+                  "title": "Response List Templates Api V1 Project Portability Templates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Templates",
+        "tags": [
+          "project-portability"
+        ]
+      }
+    },
+    "/api/v1/project-portability/templates/{template_id}/instantiate": {
+      "post": {
+        "operationId": "instantiate_template_api_v1_project_portability_templates__template_id__instantiate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTemplateInstantiate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Instantiate Template",
+        "tags": [
+          "project-portability"
+        ]
       }
     },
     "/api/v1/projects": {

@@ -291,6 +291,153 @@ class ProjectSyncPreview(ApiModel):
     has_conflicts: bool
 
 
+class ProjectTemplateCreate(ApiModel):
+    name: ProjectName
+    description: str | None = Field(default=None, max_length=10_000)
+
+
+class ProjectTemplateRead(ProjectTemplateCreate):
+    id: str
+    settings: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+
+class ProjectTemplateInstantiate(ApiModel):
+    name: ProjectName
+    project_id: AiMediaId | None = None
+
+
+class ProjectCloneRequest(ApiModel):
+    name: ProjectName
+    project_id: AiMediaId | None = None
+    include_structure: bool = True
+    include_artifact_references: bool = False
+
+
+class PortableProject(ApiModel):
+    id: str
+    name: str
+    description: str | None
+    status: ProjectStatus
+    tags: list[str]
+    favorite: bool
+    generation_defaults: ProjectGenerationDefaults
+    source_type: ProjectSourceType
+    source_locator: str | None = None
+    source_revision: str | None = None
+    external_id: str | None = None
+
+
+class PortableScene(ApiModel):
+    id: str
+    sequence: int
+    summary: str
+    notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    production_status: ProductionStatus = "not_started"
+
+
+class PortableShot(ApiModel):
+    id: str
+    scene_id: str
+    sequence: int
+    duration_sec: float = Field(default=5, gt=0)
+    summary: str
+    notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    production_status: ProductionStatus = "not_started"
+
+
+class PortableArtifact(ApiModel):
+    id: str
+    kind: ArtifactKind
+    relative_path: str
+    sha256: Sha256
+    byte_size: int = Field(ge=0)
+    media_type: str
+    availability: Availability
+    parent_artifact_id: str | None = None
+    assigned_scene_id: str | None = None
+    assigned_shot_id: str | None = None
+    created_at: str
+    decision: ArtifactDecision = "undecided"
+    content_base64: str | None = None
+
+    @field_validator("relative_path")
+    @classmethod
+    def _validate_relative_path(cls, value: str) -> str:
+        candidate = _reject_unsafe_path(value)
+        if not candidate.replace("\\", "/").startswith(f"{ARTIFACTS_DIR_NAME}/"):
+            raise ValueError(f"relative_pathは{ARTIFACTS_DIR_NAME}/配下を指す必要があります。")
+        return candidate
+
+    @field_validator("media_type")
+    @classmethod
+    def _validate_media_type(cls, value: str) -> str:
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES:
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        if media_type in ALLOWED_MEDIA_TYPES or media_type.startswith(ALLOWED_MEDIA_TYPE_PREFIXES):
+            return value
+        raise ValueError(f"扱えないmedia_typeです: {value}")
+
+
+class ProjectPackage(ApiModel):
+    format: Literal["mycomfyui.project"] = "mycomfyui.project"
+    version: Literal[1] = 1
+    exported_at: str
+    project: PortableProject
+    scenes: list[PortableScene] = Field(default_factory=list)
+    shots: list[PortableShot] = Field(default_factory=list)
+    artifacts: list[PortableArtifact] = Field(default_factory=list)
+    dependencies: dict[str, list[str]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_references(self) -> "ProjectPackage":
+        scene_ids = [item.id for item in self.scenes]
+        shot_ids = [item.id for item in self.shots]
+        artifact_ids = [item.id for item in self.artifacts]
+        for label, values in (
+            ("Scene", scene_ids),
+            ("Shot", shot_ids),
+            ("Artifact", artifact_ids),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"{label}のIDがpackage内で重複しています。")
+
+        known_scenes = set(scene_ids)
+        known_shots = set(shot_ids)
+        known_artifacts = set(artifact_ids)
+        if any(item.scene_id not in known_scenes for item in self.shots):
+            raise ValueError("Shotがpackage内にないSceneを参照しています。")
+        for item in self.artifacts:
+            if item.parent_artifact_id and item.parent_artifact_id not in known_artifacts:
+                raise ValueError("Artifactがpackage内にない親Artifactを参照しています。")
+            if item.assigned_scene_id and item.assigned_scene_id not in known_scenes:
+                raise ValueError("Artifactがpackage内にないSceneを参照しています。")
+            if item.assigned_shot_id and item.assigned_shot_id not in known_shots:
+                raise ValueError("Artifactがpackage内にないShotを参照しています。")
+        return self
+
+
+class ProjectPackageImport(ApiModel):
+    package: dict[str, Any]
+    name: ProjectName | None = None
+    project_id: AiMediaId | None = None
+    path_remap: dict[str, str] = Field(default_factory=dict)
+
+
+class ProjectPackagePreflight(ApiModel):
+    format_version: int
+    id_collisions: list[str]
+    missing_files: list[str]
+    unavailable_recipes: list[str]
+    unavailable_workflows: list[str]
+    model_warnings: list[str]
+    can_import: bool
+
+
 class ExternalProjectCandidate(ApiModel):
     id: str
     title: str
@@ -646,7 +793,7 @@ class ArtifactRead(ApiModel):
     """
 
     id: str
-    job_id: str
+    job_id: str | None
     kind: str
     relative_path: str
     sha256: str

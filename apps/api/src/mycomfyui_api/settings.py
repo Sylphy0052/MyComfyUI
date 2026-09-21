@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     compose_timeout_seconds: float = Field(default=600.0, gt=0)
     #: 取り込む参照画像とガイド音声の上限バイト数。
     max_image_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
+    #: Artifact実体込みProject packageの受入上限。base64化後の本文には別途余裕を足す。
+    project_package_max_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
     #: APIがbindするhost。認証を持たないため、loopback以外へ広げると同一LANの
     #: 別端末から操作できてしまう。既定はloopbackのままにする。
     api_host: str = "127.0.0.1"
