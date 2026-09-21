@@ -1,0 +1,11 @@
+# このファイルは設定項目の例だけを示す。コピー先はOS標準の設定ディレクトリに置く。
+# 利用者固有の絶対パス、APIキー、Cookie、tokenはGit管理しない。
+
+# DB、生成物、入力cache、ログをまとめて保存するMyComfyUI専用ディレクトリ。
+# data_root = "/absolute/path/to/MyComfyUI"
+
+# 既存作品を読取り専用で取得するai-media参照API。未設定時は同梱fixtureを使う。
+# aimedia_base_url = "http://127.0.0.1:8001"
+
+# 参照API未提供時に検証用JSONを明示的に差し替える場合だけ指定する。
+# aimedia_fixture_path = "/absolute/path/to/reference.json"

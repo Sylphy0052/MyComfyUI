@@ -47,6 +47,18 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="DBと資産の保存先。空のディレクトリを渡すと起動時にDBを作る。",
     )
     parser.add_argument(
+        "--config-file",
+        help="ユーザー設定TOML。省略時はOS標準の設定ディレクトリのconfig.tomlを読む。",
+    )
+    parser.add_argument(
+        "--aimedia-base-url",
+        help="既存作品を参照するai-media APIのURL。未指定時はfixtureを使う。",
+    )
+    parser.add_argument(
+        "--aimedia-fixture-path",
+        help="ai-media API未接続時に使う参照fixtureのJSONファイル。",
+    )
+    parser.add_argument(
         "--allow-origin",
         action="append",
         metavar="ORIGIN",
@@ -65,8 +77,14 @@ def _apply_overrides(args: argparse.Namespace) -> None:
 
     渡されなかった項目は環境変数と`Settings`の既定値をそのまま使う。
     """
+    if args.config_file is not None:
+        os.environ["MYCOMFYUI_CONFIG_FILE"] = args.config_file
     if args.data_root is not None:
         os.environ["MYCOMFYUI_DATA_ROOT"] = args.data_root
+    if args.aimedia_base_url is not None:
+        os.environ["MYCOMFYUI_AIMEDIA_BASE_URL"] = args.aimedia_base_url
+    if args.aimedia_fixture_path is not None:
+        os.environ["MYCOMFYUI_AIMEDIA_FIXTURE_PATH"] = args.aimedia_fixture_path
     if args.host is not None:
         os.environ["MYCOMFYUI_API_HOST"] = args.host
     if args.port is not None:
