@@ -2,7 +2,7 @@
 
 ## 結論
 
-個人向けの統合制作環境として、まずローカルで動くWeb UIを作る。Windowsアプリは同じUIとローカルAPIをTauriで包む第2段階とし、初期からデスクトップ専用UIを作らない。
+個人向けの統合制作環境として、ローカルで動くWeb UIを提供する。Windowsアプリは提供しない。
 
 初期版は「Scene/Shotから画像を生成し、Artifactと生成履歴を管理する」ことに絞る。音声、動画、音楽は計画から外さず、画像生成の実行境界と履歴管理が安定してから順に追加する。
 
@@ -108,9 +108,8 @@ Web UI
 |Application API|Python 3.12、FastAPI、Uvicorn、Pydantic 2、uv|
 |永続化|SQLite、SQLAlchemy 2、aiosqlite、Alembic|
 |画面との契約|REST/OpenAPIを状態の正本とし、WebSocketを進捗通知に使う|
-|Windowsアプリ|Phase 6でTauri 2を追加し、Application APIをPython sidecarとして起動する|
 
-Web版とTauri版は同じHTTP/WebSocket契約を使う。UI、Application API、生成Backendのプロセスと依存環境を分け、SQLiteはApplication APIだけが読み書きする。採用理由、開発時の起動構成、リポジトリ構成、バージョン方針、不採用案は[ADR 0001](adr/0001-application-stack-and-boundaries.md)に記録する。
+Web UI、Application API、生成Backendのプロセスと依存環境を分け、SQLiteはApplication APIだけが読み書きする。採用理由、開発時の起動構成、リポジトリ構成、バージョン方針、不採用案は[ADR 0001](adr/0001-application-stack-and-boundaries.md)に記録する。
 
 ## ai-media参照契約
 
@@ -180,11 +179,6 @@ CodexとClaude CodeのCLI/API利用形態、Qwenのローカル推論サーバ�
 - Codex、Claude Code、Qwenの選択と接続設定を実装する。
 - Shot構成、プロンプト、ワークフロー、バッチ生成計画、資産整理を承認付きで実行できるようにする。
 - MuseTalkはH3動画と外部音声の合成で不足するShotが確認されてから追加する。
-
-### Phase 6:Windowsアプリ化
-
-- Web UIとローカルAPIを維持したままTauriでWindowsアプリを提供する。
-- ローカルプロセス起動、保存先選択、通知、更新をデスクトップ機能として追加する。
 
 ## 初期版の成功条件
 

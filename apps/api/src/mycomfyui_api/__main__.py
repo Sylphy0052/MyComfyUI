@@ -1,8 +1,7 @@
 """Application APIを起動するエントリ。
 
-`python -m mycomfyui_api`でも、固めた実行ファイルをTauriのsidecarとして起動しても
-同じ経路を通る。API側にデスクトップ向けの分岐は置かず、違いはここで受ける引数と
-環境変数だけに寄せる。
+`python -m mycomfyui_api`と固めた実行ファイルは同じ経路を通る。起動時の設定は
+ここで受ける引数と環境変数だけに寄せる。
 
 引数は`MYCOMFYUI_`接頭辞の環境変数へ移してから`Settings`を1度だけ読む。設定の
 読み取り口を2つに増やさないため、引数の値も必ず環境変数を経由させる。
@@ -19,8 +18,8 @@ from pydantic import ValidationError
 
 from mycomfyui_api.settings import get_settings
 
-#: 待ち受け先を親プロセスへ渡すための行頭。portに0を渡したとき、実際に割り当て
-#: られたportはこの行からしか判らない。書式を変えると読む側が壊れる。
+#: 待ち受け先を起動元へ渡すための行頭。portに0を渡したとき、実際に割り当て
+#: られたportはこの行からしか判らない。書式を変えると利用者が壊れる。
 LISTENING_PREFIX = "MYCOMFYUI_API_LISTENING"
 
 #: 設定の値が不正で起動できなかったときの終了コード。

@@ -1,7 +1,7 @@
 """起動時にAlembicのmigrationを適用する。
 
 `alembic upgrade head`をCLIから打つ運用はリポジトリの`alembic.ini`に依存する。
-sidecarとして配布する実行ファイルには`alembic.ini`もリポジトリも無いため、
+配布用の実行ファイルには`alembic.ini`もリポジトリも無いため、
 Configをコード側で組んでmigrationの置き場だけを渡す。接続先は`migrations/env.py`
 が`Settings`から解決するため、ここでは指定しない。
 """

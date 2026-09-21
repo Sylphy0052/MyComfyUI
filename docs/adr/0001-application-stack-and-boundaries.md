@@ -8,7 +8,7 @@
 
 MyComfyUIはReact 19、TypeScript、ViteによるSPAと、Python 3.12、FastAPIによるローカルApplication APIで構成する。永続化にはSQLite、SQLAlchemy 2、Alembicを使う。画面とAPIはREST/JSONとWebSocketだけで接続し、Pythonモジュール、DB、生成Backendへ画面から直接アクセスしない。
 
-初期版はローカルWebアプリとして提供する。Phase 6では同じSPAをTauri 2で包み、Application APIをPython sidecarとして起動する。Tauri化のためにAPIをRustへ移植せず、URLや起動方法が変わってもREST/WebSocketの契約を維持する。
+MyComfyUIはローカルWebアプリとして提供し、Windowsアプリは提供しない。Web UIとApplication APIは同一originで配信し、REST/WebSocketの契約を維持する。
 
 ## 背景
 
@@ -18,8 +18,7 @@ MyComfyUIはReact 19、TypeScript、ViteによるSPAと、Python 3.12、FastAPI�
 
 次の制約を満たす構成を選ぶ。
 
-- Web UIを先に開発し、確定前のデスクトップ配布作業を持ち込まない。
-- Windowsアプリ化後も画面と業務ロジックの境界を変えない。
+- Web UIとApplication APIの境界を維持する。
 - 長時間ジョブの進捗を通知し、切断後に状態を復元できる。
 - 生成Backendごとのvenvとプロセスを分離する。
 - スキーマ変更を追跡し、既存の生成履歴を保全する。
@@ -30,12 +29,11 @@ MyComfyUIはReact 19、TypeScript、ViteによるSPAと、Python 3.12、FastAPI�
 |領域|採用技術|方針|
 |---|---|---|
 |Web UI|React 19、TypeScript、Vite|クライアントサイドSPAとして実装する|
-|JavaScript管理|Node.js 24 LTS、npm workspaces、`package-lock.json`|ルートからWeb UIと将来のTauri UI依存を管理する|
+|JavaScript管理|Node.js 24 LTS、npm workspaces、`package-lock.json`|ルートからWeb UIの依存を管理する|
 |Application API|Python 3.12、FastAPI、Uvicorn、Pydantic 2|HTTP/WebSocket、入力検証、プロセス調停を担当する|
 |Python管理|uv、`uv.lock`|Application API専用venvを再現する|
 |DB|SQLite、SQLAlchemy 2、aiosqlite|Application APIだけが読み書きする|
 |Migration|Alembic|Schema変更を順序付きMigrationとして管理する|
-|デスクトップ|Tauri 2|Phase 6でSPAのshellとPython sidecarの起動を担当する|
 
 Reactのルーター、UIコンポーネント、フォーム、クライアント状態管理は、必要になるIssueで既存依存との重複を確認して選ぶ。このADRではアプリケーション境界に影響する技術だけを固定する。
 
@@ -62,7 +60,7 @@ Reactのルーター、UIコンポーネント、フォーム、クライアン�
 
 ## DB方針
 
-- SQLiteファイルはApplication APIだけが開く。Web UI、Tauri shell、生成Backendは直接参照しない。
+- SQLiteファイルはApplication APIだけが開く。Web UIと生成Backendは直接参照しない。
 - SQLAlchemy 2のAsync APIとaiosqliteを使い、FastAPIの非同期Endpointから同じ呼出形式で扱う。
 - SQLiteの書込みは並列化せず、Transactionを短く保つ。WAL、foreign key、busy timeoutを接続時に有効化する。
 - 起動時の`create_all`をMigrationの代用にしない。Alembicの適用後にだけApplication APIを起動する。
@@ -73,7 +71,7 @@ aiosqliteはSQLite処理自体を非同期I/Oへ変えるものではない。�
 ## プロセス境界
 
 ```text
-WebブラウザまたはTauri WebView
+Webブラウザ
   └─ REST/WebSocket
        └─ MyComfyUI Application API
             ├─ SQLite
@@ -107,12 +105,6 @@ WebブラウザまたはTauri WebView
 
 Viteの静的buildをApplication APIから配信し、単一のloopback originで動作させる。APIは既定で`127.0.0.1`だけへbindし、外部公開用の`0.0.0.0`を既定値にしない。CORSとWebSocketのOriginは開発用Viteと配布UIのoriginだけを許可する。
 
-### Tauri版配布時
-
-Tauri 2が静的UIを表示し、Application APIをexternal binaryのsidecarとして起動する。Python APIは配布用実行ファイルへ固め、Tauriのtarget tripleごとに同梱する。Tauriは空きloopback portと許可originをAPIへ渡し、UIへAPI base URLを提供する。
-
-業務ロジック、DB、Backend AdapterはPython sidecarに残す。TauriのRust側はウィンドウ、通知、保存先選択、更新、sidecar lifecycleなど、デスクトップ固有機能だけを担当する。
-
 ## リポジトリ構成
 
 ```text
@@ -124,7 +116,6 @@ apps/
   web/
     package.json
     src/
-  desktop/                 # Phase 6で追加
 contracts/
   ai-media/
   events/
@@ -141,7 +132,7 @@ package-lock.json
 var/                       # 開発用、Git管理外
 ```
 
-- JavaScript workspaceはルートで管理する。Tauri導入までは`apps/web`だけを含める。
+- JavaScript workspaceはルートで管理し、`apps/web`だけを含める。
 - Python lockfileはApplication APIに閉じ、生成Backendの環境と混ぜない。
 - `contracts/`には外部境界のSchemaだけを置き、ORM modelを置かない。
 - `var/`は開発用DB、ログ、Artifactに限定する。本番の保存先はOS標準のユーザーデータ領域を使い、詳細は資産保存Issueで決定する。
@@ -164,26 +155,23 @@ var/                       # 開発用、Git管理外
 - Pythonは既存`ai-media`と揃えた3.12系に固定し、`.python-version`と`requires-python >=3.12,<3.13`を一致させる。
 - Python packageは互換範囲を`pyproject.toml`で宣言し、`uv.lock`で解決結果を固定する。通常セットアップは`uv sync --locked`を使う。
 - React、FastAPI、Pydantic、SQLAlchemyなどのmajor更新は自動適用せず、Migrationと契約差分を確認するIssueで行う。
-- Tauri導入時はTauri 2系を採用し、Rust crateは`Cargo.lock`、JavaScript packageは`package-lock.json`で固定する。
 
 ## 不採用とした選択肢
 
 |選択肢|不採用理由|
 |---|---|
-|Tauriから開発を始める|APIと画面の設計確定前に、Rust toolchain、署名、sidecar packagingの問題が混ざる|
-|Electron|Node.js runtimeを同梱する必要がなく、Phase 6で必要なshell機能はTauriで満たせる|
+|デスクトップアプリ|Windowsアプリは提供せず、ローカルWebアプリに統一する|
 |Next.js|SSRとserver routeを必要とせず、ローカルApplication APIと責務が重複する|
 |Application APIをRustで実装する|ComfyUIなどPython中心の既存環境とのAdapter実装が二重化し、初期版の速度を落とす|
 |`ai-media`をPython packageとして直接importする|依存、DB Schema、リリース周期が結合し、参照専用境界を維持できない|
 |全Backendを一つのvenvへ統合する|CUDA、PyTorch、Python versionの競合を招き、個別の再起動と障害分離ができない|
-|Web UIまたはTauriからSQLiteを直接読む|書込み規則、Migration、監査、再実行の不変条件を迂回する|
+|Web UIからSQLiteを直接読む|書込み規則、Migration、監査、再実行の不変条件を迂回する|
 |GraphQL|初期版の単一ローカルclientにはOpenAPI以上の柔軟性が不要で、契約と運用が増える|
 |WebSocketだけでCommandと状態を扱う|切断時の再送、冪等性、状態復元が複雑になる|
 
 ## 影響
 
 - Phase 0ではApplication APIとWeb UIの基盤、OpenAPI/Event Schemaの生成手順が必要になる。
-- Phase 6ではPython sidecarのbuild、target triple別配置、lifecycle管理が追加されるが、画面とAPIの業務契約は変更しない。
 - SQLiteの単一writer特性を前提にジョブ状態更新を設計する。複数ユーザーやremote server対応が必要になった場合は、認証とDBを別ADRで再検討する。
 - 開発時にNode.jsとPythonの2プロセスが必要になるが、生成Backendの依存をApplication APIへ持ち込まずに済む。
 
@@ -196,4 +184,3 @@ var/                       # 開発用、Git管理外
 - [SQLAlchemy SQLite](https://docs.sqlalchemy.org/en/20/dialects/sqlite.html)
 - [Alembic Tutorial](https://alembic.sqlalchemy.org/en/latest/tutorial.html)
 - [uv Project Structure](https://docs.astral.sh/uv/concepts/projects/layout/)
-- [Tauri Sidecars](https://v2.tauri.app/develop/sidecar/)
