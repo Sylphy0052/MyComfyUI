@@ -2717,6 +2717,16 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
             "素材が上限を超えています。",
             {"byte_size": len(data), "limit": settings.max_image_bytes},
         )
+    media_type = payload.media_type
+    if media_type.startswith("image/"):
+        detected = storage.detect_image_media_type(data[:32])
+        declared = "image/jpeg" if media_type == "image/jpg" else media_type
+        if detected is None or detected != declared:
+            raise _validation_error(
+                "画像の実形式とmedia_typeが一致しません。",
+                {"declared": media_type, "detected": detected},
+            )
+        media_type = detected
     try:
         stored = storage.write_input(payload.file_name, data, settings)
     except storage.StorageError as error:
@@ -2730,7 +2740,7 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
         relative_path=stored.relative_path,
         sha256=stored.sha256,
         byte_size=stored.byte_size,
-        media_type=payload.media_type,
+        media_type=media_type,
     )
 
 

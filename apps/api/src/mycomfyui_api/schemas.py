@@ -398,22 +398,6 @@ class ProjectCloneRequest(ApiModel):
     include_artifact_references: bool = False
 
 
-class PortableProjectReferenceImage(ProjectReferenceImage):
-    content_base64: str | None = None
-
-
-class PortableProjectCharacterProfile(ProjectCharacterProfile):
-    reference_images: list[PortableProjectReferenceImage] = Field(
-        default_factory=list, max_length=20
-    )
-
-
-class PortableProjectLocalOverrides(ProjectLocalOverrides):
-    characters: list[PortableProjectCharacterProfile] = Field(
-        default_factory=list, max_length=100
-    )
-
-
 class PortableProject(ApiModel):
     id: str
     name: str
@@ -422,9 +406,7 @@ class PortableProject(ApiModel):
     tags: list[str]
     favorite: bool
     generation_defaults: ProjectGenerationDefaults
-    local_overrides: PortableProjectLocalOverrides = Field(
-        default_factory=PortableProjectLocalOverrides
-    )
+    local_overrides: ProjectLocalOverrides = Field(default_factory=ProjectLocalOverrides)
     source_type: ProjectSourceType
     source_locator: str | None = None
     source_revision: str | None = None
@@ -491,6 +473,12 @@ class PortableArtifact(ApiModel):
         raise ValueError(f"扱えないmedia_typeです: {value}")
 
 
+class PortableInputFile(ApiModel):
+    sha256: Sha256
+    byte_size: int = Field(gt=0)
+    content_base64: str = Field(min_length=1)
+
+
 class ProjectPackage(ApiModel):
     format: Literal["mycomfyui.project"] = "mycomfyui.project"
     version: Literal[1] = 1
@@ -499,6 +487,7 @@ class ProjectPackage(ApiModel):
     scenes: list[PortableScene] = Field(default_factory=list)
     shots: list[PortableShot] = Field(default_factory=list)
     artifacts: list[PortableArtifact] = Field(default_factory=list)
+    input_files: list[PortableInputFile] = Field(default_factory=list)
     dependencies: dict[str, list[str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -517,18 +506,18 @@ class ProjectPackage(ApiModel):
         known_scenes = set(scene_ids)
         known_shots = set(shot_ids)
         known_artifacts = set(artifact_ids)
+        input_hashes = [item.sha256 for item in self.input_files]
+        if len(input_hashes) != len(set(input_hashes)):
+            raise ValueError("入力素材のSHA-256がpackage内で重複しています。")
+        reference_hashes = {
+            reference.sha256
+            for character in self.project.local_overrides.characters
+            for reference in character.reference_images
+        }
+        if any(sha256 not in reference_hashes for sha256 in input_hashes):
+            raise ValueError("人物参照画像から参照されない入力素材が含まれています。")
         if any(item.scene_id not in known_scenes for item in self.shots):
             raise ValueError("Shotがpackage内にないSceneを参照しています。")
-        if any(
-            resource_id not in known_scenes
-            for resource_id in self.project.local_overrides.scene_prompts
-        ):
-            raise ValueError("プロンプトがpackage内にないSceneを参照しています。")
-        if any(
-            resource_id not in known_shots
-            for resource_id in self.project.local_overrides.shot_prompts
-        ):
-            raise ValueError("プロンプトがpackage内にないShotを参照しています。")
         for item in self.artifacts:
             if item.parent_artifact_id and item.parent_artifact_id not in known_artifacts:
                 raise ValueError("Artifactがpackage内にない親Artifactを参照しています。")

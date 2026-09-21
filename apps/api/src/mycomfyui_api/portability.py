@@ -212,7 +212,24 @@ def _reference_image_content(
             "参照画像のサイズまたはSHA-256が記録と一致しません。",
             details={"relative_path": reference.relative_path},
         )
+    _validate_reference_media_type(reference, content)
     return content
+
+
+def _validate_reference_media_type(
+    reference: schemas.ProjectReferenceImage, content: bytes
+) -> None:
+    detected = storage.detect_image_media_type(content[:32])
+    if detected != reference.media_type:
+        raise _error(
+            "PROJECT_REFERENCE_IMAGE_MEDIA_TYPE_MISMATCH",
+            "参照画像の実形式とmedia_typeが一致しません。",
+            details={
+                "relative_path": reference.relative_path,
+                "declared": reference.media_type,
+                "detected": detected,
+            },
+        )
 
 
 def _portable_local_overrides(
@@ -220,46 +237,49 @@ def _portable_local_overrides(
     settings: Settings,
     *,
     include_files: bool,
-    scene_ids: set[str],
-    shot_ids: set[str],
-) -> schemas.PortableProjectLocalOverrides:
+    include_structure: bool,
+) -> tuple[schemas.ProjectLocalOverrides, list[schemas.PortableInputFile]]:
     overrides = schemas.ProjectLocalOverrides.model_validate(project.local_overrides or {})
-    characters: list[schemas.PortableProjectCharacterProfile] = []
-    for character in overrides.characters:
-        references: list[schemas.PortableProjectReferenceImage] = []
-        for reference in character.reference_images:
-            content = (
-                base64.b64encode(_reference_image_content(reference, settings)).decode(
-                    "ascii"
+    input_files: list[schemas.PortableInputFile] = []
+    if include_files:
+        included_hashes: set[str] = set()
+        total_size = 0
+        for character in overrides.characters:
+            for reference in character.reference_images:
+                if reference.sha256 in included_hashes:
+                    continue
+                content = _reference_image_content(reference, settings)
+                total_size += len(content)
+                if total_size > settings.project_package_max_bytes:
+                    raise _error(
+                        "PROJECT_PACKAGE_TOO_LARGE",
+                        "人物参照画像の合計がProject package上限を超えています。",
+                        details={
+                            "byte_size": total_size,
+                            "limit": settings.project_package_max_bytes,
+                        },
+                        http_status=413,
+                    )
+                input_files.append(
+                    schemas.PortableInputFile(
+                        sha256=reference.sha256,
+                        byte_size=reference.byte_size,
+                        content_base64=base64.b64encode(content).decode("ascii"),
+                    )
                 )
-                if include_files
-                else None
-            )
-            references.append(
-                schemas.PortableProjectReferenceImage(
-                    **reference.model_dump(), content_base64=content
-                )
-            )
-        characters.append(
-            schemas.PortableProjectCharacterProfile(
-                id=character.id,
-                name=character.name,
-                tags=character.tags,
-                reference_images=references,
-            )
-        )
-    return schemas.PortableProjectLocalOverrides(
-        characters=characters,
-        scene_prompts={
-            resource_id: prompt
-            for resource_id, prompt in overrides.scene_prompts.items()
-            if resource_id in scene_ids
-        },
-        shot_prompts={
-            resource_id: prompt
-            for resource_id, prompt in overrides.shot_prompts.items()
-            if resource_id in shot_ids
-        },
+                included_hashes.add(reference.sha256)
+    return (
+        overrides.model_copy(
+            update={
+                "scene_prompts": (
+                    dict(overrides.scene_prompts) if include_structure else {}
+                ),
+                "shot_prompts": (
+                    dict(overrides.shot_prompts) if include_structure else {}
+                ),
+            }
+        ),
+        input_files,
     )
 
 
@@ -344,12 +364,11 @@ async def _package(
     defaults = schemas.ProjectGenerationDefaults.model_validate(
         _without_secrets(project.generation_defaults or {})
     )
-    local_overrides = _portable_local_overrides(
+    local_overrides, input_files = _portable_local_overrides(
         project,
         settings,
         include_files=include_artifact_files,
-        scene_ids={item.id for item in scenes},
-        shot_ids={item.id for item in shots},
+        include_structure=include_structure,
     )
     recipe_ids = sorted(
         profile.recipe_id
@@ -404,6 +423,7 @@ async def _package(
         scenes=scenes,
         shots=shots,
         artifacts=artifacts,
+        input_files=input_files,
         dependencies={
             "recipe_ids": recipe_ids,
             "workflow_version_ids": workflow_ids,
@@ -479,13 +499,29 @@ async def _preflight(
         for character in package.project.local_overrides.characters
         for reference in character.reference_images
     ]
+    if sum(item.byte_size for item in package.input_files) > settings.project_package_max_bytes:
+        raise _error(
+            "PROJECT_PACKAGE_TOO_LARGE",
+            "人物参照画像の合計がProject package上限を超えています。",
+            http_status=413,
+        )
+    input_files = {
+        item.sha256: _decode_input_file(item, settings)
+        for item in package.input_files
+    }
     for reference in reference_images:
-        if reference.content_base64 is not None:
-            _decode_reference_image(reference, settings)
+        content = input_files.get(reference.sha256)
+        if content is not None:
+            if len(content) != reference.byte_size:
+                raise _error(
+                    "PROJECT_REFERENCE_IMAGE_MISMATCH",
+                    "参照画像のサイズが登録内容と一致しません。",
+                )
+            _validate_reference_media_type(reference, content)
     missing_reference_files = [
         reference.relative_path
         for reference in reference_images
-        if reference.content_base64 is None
+        if reference.sha256 not in input_files
         and not _reference_image_exists(reference, settings)
     ]
     model_warnings: list[str] = []
@@ -540,11 +576,11 @@ def _reference_image_exists(
         return False
 
 
-def _decode_reference_image(
-    reference: schemas.PortableProjectReferenceImage, settings: Settings
+def _decode_input_file(
+    item: schemas.PortableInputFile, settings: Settings
 ) -> bytes:
     try:
-        content = base64.b64decode(reference.content_base64 or "", validate=True)
+        content = base64.b64decode(item.content_base64, validate=True)
     except (ValueError, binascii.Error) as error:
         raise _error(
             "PROJECT_REFERENCE_IMAGE_INVALID",
@@ -557,8 +593,8 @@ def _decode_reference_image(
             http_status=413,
         )
     if (
-        len(content) != reference.byte_size
-        or hashlib.sha256(content).hexdigest() != reference.sha256
+        len(content) != item.byte_size
+        or hashlib.sha256(content).hexdigest() != item.sha256
     ):
         raise _error(
             "PROJECT_REFERENCE_IMAGE_MISMATCH",
@@ -580,17 +616,21 @@ def _decode_artifact(item: schemas.PortableArtifact, settings: Settings) -> byte
 
 
 def _restore_local_overrides(
-    overrides: schemas.PortableProjectLocalOverrides,
+    overrides: schemas.ProjectLocalOverrides,
+    input_files: list[schemas.PortableInputFile],
     settings: Settings,
     scene_ids: dict[str, str],
     shot_ids: dict[str, str],
 ) -> schemas.ProjectLocalOverrides:
+    files_by_sha256 = {item.sha256: item for item in input_files}
     characters: list[schemas.ProjectCharacterProfile] = []
     for character in overrides.characters:
         references: list[schemas.ProjectReferenceImage] = []
         for reference in character.reference_images:
-            if reference.content_base64 is not None:
-                content = _decode_reference_image(reference, settings)
+            input_file = files_by_sha256.get(reference.sha256)
+            if input_file is not None:
+                content = _decode_input_file(input_file, settings)
+                _validate_reference_media_type(reference, content)
                 try:
                     stored = storage.write_input(reference.file_name, content, settings)
                 except storage.StorageError as error:
@@ -627,11 +667,11 @@ def _restore_local_overrides(
     return schemas.ProjectLocalOverrides(
         characters=characters,
         scene_prompts={
-            scene_ids[resource_id]: prompt
+            scene_ids.get(resource_id, resource_id): prompt
             for resource_id, prompt in overrides.scene_prompts.items()
         },
         shot_prompts={
-            shot_ids[resource_id]: prompt
+            shot_ids.get(resource_id, resource_id): prompt
             for resource_id, prompt in overrides.shot_prompts.items()
         },
     )
@@ -649,7 +689,11 @@ async def _import_package(
     scene_ids = {item.id: str(uuid4()) for item in package.scenes}
     shot_ids = {item.id: str(uuid4()) for item in package.shots}
     local_overrides = _restore_local_overrides(
-        package.project.local_overrides, settings, scene_ids, shot_ids
+        package.project.local_overrides,
+        package.input_files,
+        settings,
+        scene_ids,
+        shot_ids,
     )
     project = _new_project(
         project_id,

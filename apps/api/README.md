@@ -130,7 +130,8 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 `local-overrides`は外部原文を書き換えず、MyComfyUIのProjectへ保存する。人物・
 キャラクターtagと参照画像、Scene・Shotごとの生成プロンプトを持ち、外部同期後も保持する。
 参照画像は先に`POST /api/v1/image-references`で入力cacheへ取り込み、応答の相対パス、
-SHA-256、バイト数、media_typeを登録する。PUT時に入力cacheの実ファイルと照合する。
+SHA-256、バイト数、media_typeを登録する。PUT時に入力cacheの実ファイル、magic bytes、
+サイズ、SHA-256と照合する。
 
 Scene・Shotプロンプトは画像・動画生成の`positive_prompt`として継承する。SceneよりShotを
 優先し、生成時に入力した値があればローカル設定より実行時入力を優先する。

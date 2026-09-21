@@ -697,7 +697,7 @@ async def update_local_overrides(
 
 
 def _validate_local_reference_images(payload: schemas.ProjectLocalOverrides) -> None:
-    verified: dict[str, tuple[int, str]] = {}
+    verified: dict[str, tuple[int, str, str | None]] = {}
     for character in payload.characters:
         for reference in character.reference_images:
             actual = verified.get(reference.relative_path)
@@ -707,6 +707,8 @@ def _validate_local_reference_images(payload: schemas.ProjectLocalOverrides) -> 
                     byte_size = path.stat().st_size
                     digest = hashlib.sha256()
                     with path.open("rb") as stream:
+                        header = stream.read(32)
+                        digest.update(header)
                         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                             digest.update(chunk)
                 except (OSError, storage.StorageError) as error:
@@ -716,14 +718,29 @@ def _validate_local_reference_images(payload: schemas.ProjectLocalOverrides) -> 
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         details={"relative_path": reference.relative_path},
                     ) from error
-                actual = (byte_size, digest.hexdigest())
+                actual = (
+                    byte_size,
+                    digest.hexdigest(),
+                    storage.detect_image_media_type(header),
+                )
                 verified[reference.relative_path] = actual
-            if actual != (reference.byte_size, reference.sha256):
+            if actual[:2] != (reference.byte_size, reference.sha256):
                 raise ApiError(
                     "PROJECT_REFERENCE_IMAGE_MISMATCH",
                     "参照画像のサイズまたはSHA-256が入力cacheと一致しません。",
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     details={"relative_path": reference.relative_path},
+                )
+            if actual[2] != reference.media_type:
+                raise ApiError(
+                    "PROJECT_REFERENCE_IMAGE_MEDIA_TYPE_MISMATCH",
+                    "参照画像の実形式とmedia_typeが一致しません。",
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    details={
+                        "relative_path": reference.relative_path,
+                        "declared": reference.media_type,
+                        "detected": actual[2],
+                    },
                 )
 
 
