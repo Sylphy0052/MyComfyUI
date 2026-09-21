@@ -56,6 +56,7 @@ class Project(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     lifecycle: Mapped[str] = mapped_column(Text, nullable=False)
     tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    favorite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     thumbnail_artifact_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=True
     )

@@ -1790,6 +1790,11 @@
             ],
             "title": "Description"
           },
+          "favorite": {
+            "default": false,
+            "title": "Favorite",
+            "type": "boolean"
+          },
           "id": {
             "anyOf": [
               {
@@ -1973,6 +1978,10 @@
             ],
             "title": "External Id"
           },
+          "favorite": {
+            "title": "Favorite",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2065,6 +2074,7 @@
           "status",
           "lifecycle",
           "tags",
+          "favorite",
           "thumbnail_artifact_id",
           "source_type",
           "source",
@@ -2115,6 +2125,17 @@
               }
             ],
             "title": "Description"
+          },
+          "favorite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Favorite"
           },
           "name": {
             "anyOf": [
@@ -4930,6 +4951,32 @@
                 }
               ],
               "title": "Source Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "favorite_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Favorite Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "last_used",
+              "enum": [
+                "name",
+                "created",
+                "updated",
+                "last_used"
+              ],
+              "title": "Sort",
+              "type": "string"
             }
           },
           {

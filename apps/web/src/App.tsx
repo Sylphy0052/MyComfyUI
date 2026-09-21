@@ -8,10 +8,10 @@ import type {
   GenerationJob,
   GenerationManifest,
   GenerationPreview,
+  ProjectRecord,
   Recipe,
 } from "./api/client";
 import type {
-  Project,
   SceneEnvelope,
   SceneSummary,
   ShotEnvelope,
@@ -27,6 +27,7 @@ import { GenerationForm } from "./components/GenerationForm";
 import { IntegrityList } from "./components/IntegrityList";
 import { JobQueue } from "./components/JobQueue";
 import { MusicPanel } from "./components/MusicPanel";
+import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { SceneBrowser } from "./components/SceneBrowser";
 import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
@@ -38,11 +39,12 @@ import { WorkflowRegistry } from "./components/WorkflowRegistry";
  */
 const POLL_INTERVAL_MS = 2000;
 
-type View = "generate" | "assets" | "workflows";
+type View = "projects" | "generate" | "assets" | "workflows";
 type GenerationTab = "image" | "video" | "music" | "voice" | "compose";
 type LowerTab = "agent" | "history";
 
 const VIEWS: { value: View; label: string }[] = [
+  { value: "projects", label: "Project" },
   { value: "generate", label: "生成" },
   { value: "assets", label: "資産ブラウザ" },
   { value: "workflows", label: "Workflow" },
@@ -99,7 +101,7 @@ export function App() {
     useState<GenerationTab>("image");
   const [lowerTab, setLowerTab] = useState<LowerTab>("agent");
 
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [sceneId, setSceneId] = useState<string | null>(null);
@@ -131,6 +133,33 @@ export function App() {
     if (sceneId) return { projectId, sceneId };
     return { projectId };
   }, [projectId, sceneId, shotId]);
+
+  const selectProject = useCallback((nextProjectId: string | null) => {
+    setProjectId(nextProjectId);
+    if (!nextProjectId) return;
+    void api
+      .touchProject(nextProjectId)
+      .then((updated) => {
+        setProjects((current) =>
+          current
+            .map((project) =>
+              project.id === updated.id ? updated : project,
+            )
+            .sort((left, right) => {
+              if (left.favorite !== right.favorite) return left.favorite ? -1 : 1;
+              return (right.last_used_at ?? "").localeCompare(
+                left.last_used_at ?? "",
+              );
+            }),
+        );
+      })
+      .catch((cause) => setError(describe(cause)));
+  }, []);
+
+  const useProject = useCallback((nextProjectId: string | null) => {
+    setProjectId(nextProjectId);
+    if (nextProjectId) setView("generate");
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -470,13 +499,22 @@ export function App() {
         </div>
       )}
 
+      {view === "projects" && (
+        <ProjectWorkspace
+          selectedProjectId={projectId}
+          onSelectProject={useProject}
+          onActiveProjectsChanged={setProjects}
+        />
+      )}
+
       {view === "generate" && (
         <>
           <div>
             <SceneBrowser
               projects={projects}
               projectId={projectId}
-              onSelectProject={setProjectId}
+              onSelectProject={selectProject}
+              onManageProjects={() => setView("projects")}
               scenes={scenes}
               sceneId={sceneId}
               onSelectScene={setSceneId}

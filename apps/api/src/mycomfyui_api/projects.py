@@ -46,6 +46,8 @@ class ProjectRepository:
         lifecycle: str,
         query: str | None,
         source_type: str | None,
+        favorite_only: bool,
+        sort: str,
         limit: int,
         offset: int,
     ) -> list[Project]:
@@ -60,8 +62,16 @@ class ProjectRepository:
             )
         if source_type:
             statement = statement.where(Project.source_type == source_type)
+        if favorite_only:
+            statement = statement.where(Project.favorite.is_(True))
+        sort_columns = {
+            "name": (Project.name.asc(),),
+            "created": (Project.created_at.desc(),),
+            "updated": (Project.updated_at.desc(),),
+            "last_used": (Project.last_used_at.desc(), Project.updated_at.desc()),
+        }
         statement = statement.order_by(
-            Project.last_used_at.desc(), Project.updated_at.desc(), Project.id.asc()
+            Project.favorite.desc(), *sort_columns[sort], Project.id.asc()
         )
         result = await self.session.scalars(statement.limit(limit).offset(offset))
         return list(result)
@@ -94,6 +104,7 @@ def _read(project: Project) -> schemas.ProjectRead:
         status=project.status,
         lifecycle=project.lifecycle,
         tags=list(project.tags or []),
+        favorite=project.favorite,
         thumbnail_artifact_id=project.thumbnail_artifact_id,
         source_type=project.source_type,
         source=schemas.ProjectSource(source_locator=locator, revision=revision),
@@ -225,6 +236,7 @@ async def create_project(payload: schemas.ProjectCreate, session: SessionDep):
         status=payload.status,
         lifecycle="active",
         tags=list(payload.tags),
+        favorite=payload.favorite,
         thumbnail_artifact_id=payload.thumbnail_artifact_id,
         source_type="local",
         source_locator=None,
@@ -250,6 +262,8 @@ async def list_projects(
     lifecycle: schemas.ProjectLifecycle = "active",
     q: Annotated[str | None, Query(max_length=200)] = None,
     source_type: schemas.ProjectSourceType | None = None,
+    favorite_only: bool = False,
+    sort: schemas.ProjectSort = "last_used",
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
@@ -257,6 +271,8 @@ async def list_projects(
         lifecycle=lifecycle,
         query=q,
         source_type=source_type,
+        favorite_only=favorite_only,
+        sort=sort,
         limit=limit,
         offset=offset,
     )
@@ -307,6 +323,14 @@ async def update_project(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
         project.tags = list(payload.tags)
+    if "favorite" in fields:
+        if payload.favorite is None:
+            raise ApiError(
+                "PROJECT_FAVORITE_REQUIRED",
+                "favoriteをnullにできません。",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        project.favorite = payload.favorite
     if "thumbnail_artifact_id" in fields:
         await _ensure_thumbnail(session, payload.thumbnail_artifact_id)
         project.thumbnail_artifact_id = payload.thumbnail_artifact_id
