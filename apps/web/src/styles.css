@@ -296,6 +296,21 @@ details summary {
   margin-left: auto;
 }
 
+.generation-workspace {
+  min-width: 0;
+}
+
+.generation-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.generation-tabs button {
+  width: 100%;
+}
+
 .gallery video,
 .gallery audio {
   width: 100%;
