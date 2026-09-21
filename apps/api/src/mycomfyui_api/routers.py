@@ -1849,15 +1849,19 @@ async def list_artifact_integrity(
             reason="include_canonがfalseのため、Canon更新は判定していません。",
         )
     )
-    job_findings: dict[str, list[schemas.ArtifactIntegrityFinding]] = {}
+    job_findings: dict[str | None, list[schemas.ArtifactIntegrityFinding]] = {}
     found: list[tuple[Artifact, list[schemas.ArtifactIntegrityFinding]]] = []
     for artifact in candidates:
         if artifact.job_id not in job_findings:
-            job_findings[artifact.job_id] = await _job_integrity_findings(
-                session,
-                source,
-                artifact.job_id,
-                canon_state=canon_state,
+            job_findings[artifact.job_id] = (
+                [_integrity_finding("reference_broken", "移行したArtifactには作成元Jobがありません。")]
+                if artifact.job_id is None
+                else await _job_integrity_findings(
+                    session,
+                    source,
+                    artifact.job_id,
+                    canon_state=canon_state,
+                )
             )
         # hashの取り直しは1件あたりのファイル全体を読む同期I/Oになる。対象が最大
         # `limit`件続くため、そのまま呼ぶとイベントループを塞いで他の要求が止まる。

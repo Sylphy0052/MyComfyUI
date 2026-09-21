@@ -35,6 +35,7 @@ from mycomfyui_api.queue import (
     recover_interrupted_jobs,
 )
 from mycomfyui_api.projects import router as project_router
+from mycomfyui_api.portability import router as portability_router
 from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
 from mycomfyui_api.settings import get_settings
@@ -113,7 +114,11 @@ def _max_request_bytes() -> int:
     通してしまうと、上限を超える本文でも丸ごとメモリへ載ってからでないと断れない。
     """
     settings = get_settings()
-    largest = max(settings.voice_max_audio_bytes, settings.max_image_bytes)
+    largest = max(
+        settings.voice_max_audio_bytes,
+        settings.max_image_bytes,
+        settings.project_package_max_bytes,
+    )
     encoded = (largest + 2) // 3 * 4
     return encoded + REQUEST_BODY_MARGIN_BYTES
 
@@ -126,6 +131,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_error_handler)
     app.include_router(router)
     app.include_router(project_router)
+    app.include_router(portability_router)
     app.include_router(structure_router)
     app.include_router(reference_router)
     # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求

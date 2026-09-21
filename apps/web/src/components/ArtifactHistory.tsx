@@ -90,6 +90,7 @@ export function ArtifactHistory({
   );
 
   const loadDetail = useCallback(async (artifact: Artifact) => {
+    if (!artifact.job_id) return null;
     const job = await api.getJob(artifact.job_id);
     const [manifest, canonStatus, lineage] = await Promise.all([
       api.getManifest(job.manifest_id),
@@ -238,6 +239,21 @@ export function ArtifactHistory({
               job={detail.job}
               manifest={detail.manifest}
               lineage={detail.lineage}
+            />
+          </div>
+        )}
+        {selected && !selected.job_id && (
+          <div className="stack">
+            <h3>移行したArtifact</h3>
+            <p className="muted">元のGeneration Jobを含まない可搬packageから取り込みました。ファイルと所属は利用できますが、再実行と生成時の詳細表示はできません。</p>
+            <a href={api.artifactContentUrl(selected.id)} target="_blank" rel="noreferrer">Artifactを開く</a>
+            <AssignmentPicker
+              projects={projects}
+              initialProjectId={selected.assigned_project_id}
+              initialSceneId={selected.assigned_scene_id}
+              initialShotId={selected.assigned_shot_id}
+              onMove={(target) => changeAssignment(selected, "move", target)}
+              onCopy={(target) => changeAssignment(selected, "copy", target)}
             />
           </div>
         )}

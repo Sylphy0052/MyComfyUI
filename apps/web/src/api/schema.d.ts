@@ -746,6 +746,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/project-portability/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Project */
+        post: operations["import_project_api_v1_project_portability_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/project-portability/import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Import */
+        post: operations["preview_import_api_v1_project_portability_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/project-portability/projects/{project_id}/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backup Project */
+        get: operations["backup_project_api_v1_project_portability_projects__project_id__backup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/project-portability/projects/{project_id}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clone Project */
+        post: operations["clone_project_api_v1_project_portability_projects__project_id__clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/project-portability/projects/{project_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Project */
+        get: operations["export_project_api_v1_project_portability_projects__project_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/project-portability/projects/{project_id}/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Template */
+        post: operations["create_template_api_v1_project_portability_projects__project_id__templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/project-portability/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Backup */
+        post: operations["restore_backup_api_v1_project_portability_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/project-portability/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_project_portability_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/project-portability/templates/{template_id}/instantiate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Instantiate Template */
+        post: operations["instantiate_template_api_v1_project_portability_templates__template_id__instantiate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -1623,7 +1776,7 @@ export interface components {
             /** Id */
             id: string;
             /** Job Id */
-            job_id: string;
+            job_id: string | null;
             /** Kind */
             kind: string;
             /** Media Type */
@@ -2062,6 +2215,137 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** PortableArtifact */
+        PortableArtifact: {
+            /** Assigned Scene Id */
+            assigned_scene_id?: string | null;
+            /** Assigned Shot Id */
+            assigned_shot_id?: string | null;
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "complete" | "incomplete";
+            /** Byte Size */
+            byte_size: number;
+            /** Content Base64 */
+            content_base64?: string | null;
+            /** Created At */
+            created_at: string;
+            /**
+             * Decision
+             * @default undecided
+             * @enum {string}
+             */
+            decision: "undecided" | "accepted" | "rejected";
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "image" | "video" | "audio" | "workflow" | "log";
+            /** Media Type */
+            media_type: string;
+            /** Parent Artifact Id */
+            parent_artifact_id?: string | null;
+            /** Relative Path */
+            relative_path: string;
+            /** Sha256 */
+            sha256: string;
+        };
+        /** PortableProject */
+        PortableProject: {
+            /** Description */
+            description: string | null;
+            /** External Id */
+            external_id?: string | null;
+            /** Favorite */
+            favorite: boolean;
+            generation_defaults: components["schemas"]["ProjectGenerationDefaults"];
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Source Locator */
+            source_locator?: string | null;
+            /** Source Revision */
+            source_revision?: string | null;
+            /**
+             * Source Type
+             * @enum {string}
+             */
+            source_type: "local" | "external";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "planning" | "active" | "on_hold" | "completed";
+            /** Tags */
+            tags: string[];
+        };
+        /** PortableScene */
+        PortableScene: {
+            /** Id */
+            id: string;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Production Status
+             * @default not_started
+             * @enum {string}
+             */
+            production_status: "not_started" | "in_progress" | "has_candidates" | "accepted" | "completed";
+            /** Sequence */
+            sequence: number;
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags?: string[];
+        };
+        /** PortableShot */
+        PortableShot: {
+            /**
+             * Duration Sec
+             * @default 5
+             */
+            duration_sec: number;
+            /** Id */
+            id: string;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Production Status
+             * @default not_started
+             * @enum {string}
+             */
+            production_status: "not_started" | "in_progress" | "has_candidates" | "accepted" | "completed";
+            /** Scene Id */
+            scene_id: string;
+            /** Sequence */
+            sequence: number;
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags?: string[];
+        };
+        /** ProjectCloneRequest */
+        ProjectCloneRequest: {
+            /**
+             * Include Artifact References
+             * @default false
+             */
+            include_artifact_references: boolean;
+            /**
+             * Include Structure
+             * @default true
+             */
+            include_structure: boolean;
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id?: string | null;
+        };
         /**
          * ProjectCreate
          * @description ローカルProjectの作成。`id`は省略時に採番し、作成後は変更できない。
@@ -2169,6 +2453,66 @@ export interface components {
         ProjectList: {
             /** Items */
             items: components["schemas"]["ProjectRead"][];
+        };
+        /** ProjectPackage */
+        ProjectPackage: {
+            /** Artifacts */
+            artifacts?: components["schemas"]["PortableArtifact"][];
+            /** Dependencies */
+            dependencies?: {
+                [key: string]: string[];
+            };
+            /** Exported At */
+            exported_at: string;
+            /**
+             * Format
+             * @default mycomfyui.project
+             * @constant
+             */
+            format: "mycomfyui.project";
+            project: components["schemas"]["PortableProject"];
+            /** Scenes */
+            scenes?: components["schemas"]["PortableScene"][];
+            /** Shots */
+            shots?: components["schemas"]["PortableShot"][];
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version: 1;
+        };
+        /** ProjectPackageImport */
+        ProjectPackageImport: {
+            /** Name */
+            name?: string | null;
+            /** Package */
+            package: {
+                [key: string]: unknown;
+            };
+            /** Path Remap */
+            path_remap?: {
+                [key: string]: string;
+            };
+            /** Project Id */
+            project_id?: string | null;
+        };
+        /** ProjectPackagePreflight */
+        ProjectPackagePreflight: {
+            /** Can Import */
+            can_import: boolean;
+            /** Format Version */
+            format_version: number;
+            /** Id Collisions */
+            id_collisions: string[];
+            /** Missing Files */
+            missing_files: string[];
+            /** Model Warnings */
+            model_warnings: string[];
+            /** Unavailable Recipes */
+            unavailable_recipes: string[];
+            /** Unavailable Workflows */
+            unavailable_workflows: string[];
         };
         /** ProjectProgress */
         ProjectProgress: {
@@ -2306,6 +2650,37 @@ export interface components {
         ProjectSyncSettings: {
             /** Auto Sync */
             auto_sync: boolean;
+        };
+        /** ProjectTemplateCreate */
+        ProjectTemplateCreate: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name: string;
+        };
+        /** ProjectTemplateInstantiate */
+        ProjectTemplateInstantiate: {
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id?: string | null;
+        };
+        /** ProjectTemplateRead */
+        ProjectTemplateRead: {
+            /** Created At */
+            created_at: string;
+            /** Description */
+            description?: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Settings */
+            settings: {
+                [key: string]: unknown;
+            };
+            /** Updated At */
+            updated_at: string;
         };
         /**
          * ProjectUpdate
@@ -3835,6 +4210,296 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageReferenceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_project_api_v1_project_portability_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPackageImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_import_api_v1_project_portability_import_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPackageImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectPackagePreflight"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backup_project_api_v1_project_portability_projects__project_id__backup_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectPackage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clone_project_api_v1_project_portability_projects__project_id__clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectCloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_project_api_v1_project_portability_projects__project_id__export_get: {
+        parameters: {
+            query?: {
+                include_structure?: boolean;
+                include_artifacts?: boolean;
+                include_artifact_files?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectPackage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_template_api_v1_project_portability_projects__project_id__templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectTemplateRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_backup_api_v1_project_portability_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPackageImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_templates_api_v1_project_portability_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectTemplateRead"][];
+                };
+            };
+        };
+    };
+    instantiate_template_api_v1_project_portability_templates__template_id__instantiate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectTemplateInstantiate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
                 };
             };
             /** @description Validation Error */

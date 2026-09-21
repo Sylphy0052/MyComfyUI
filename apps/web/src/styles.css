@@ -573,6 +573,31 @@ button[aria-pressed="true"] {
   margin: 0;
 }
 
+.project-portability-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 0.75rem;
+}
+
+.project-portability-panel h3,
+.project-portability-panel h4,
+.project-package-dialog h3 {
+  margin-top: 0;
+}
+
+.portability-form,
+.package-import-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--panel-border);
+}
+
+.project-package-dialog {
+  max-height: calc(100vh - 4rem);
+  overflow: auto;
+}
+
 .sync-preview {
   padding: 10px;
   background: #181b21;

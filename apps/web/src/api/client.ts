@@ -76,6 +76,10 @@ export type ProjectProgress = components["schemas"]["ProjectProgress"];
 export type AssignmentTarget = components["schemas"]["AssignmentTarget"];
 export type ArtifactBatchOperation =
   components["schemas"]["ArtifactBatchOperation"];
+export type ProjectTemplate = components["schemas"]["ProjectTemplateRead"];
+export type ProjectPackage = components["schemas"]["ProjectPackage"];
+export type ProjectPackagePreflight =
+  components["schemas"]["ProjectPackagePreflight"];
 
 /**
  * API が返す共通 Envelope。表示文言ではなく code で種別を判定する (ADR 0001)。
@@ -253,6 +257,82 @@ export const api = {
       `/projects/${encodeURIComponent(projectId)}?confirm=${String(confirm)}`,
       { method: "DELETE" },
     ),
+
+  listProjectTemplates: () =>
+    request<ProjectTemplate[]>("/project-portability/templates"),
+
+  createProjectTemplate: (
+    projectId: string,
+    payload: { name: string; description?: string | null },
+  ) =>
+    request<ProjectTemplate>(
+      `/project-portability/projects/${encodeURIComponent(projectId)}/templates`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  instantiateProjectTemplate: (
+    templateId: string,
+    payload: { name: string; project_id?: string | null },
+  ) =>
+    request<ProjectRecord>(
+      `/project-portability/templates/${encodeURIComponent(templateId)}/instantiate`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  cloneProject: (
+    projectId: string,
+    payload: {
+      name: string;
+      project_id?: string | null;
+      include_structure: boolean;
+      include_artifact_references: boolean;
+    },
+  ) =>
+    request<ProjectRecord>(
+      `/project-portability/projects/${encodeURIComponent(projectId)}/clone`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  exportProjectPackage: (
+    projectId: string,
+    options?: { includeStructure?: boolean; includeArtifacts?: boolean; includeArtifactFiles?: boolean },
+  ) => {
+    const backup = options?.includeArtifactFiles === true;
+    const query = new URLSearchParams();
+    if (!backup) {
+      query.set("include_structure", String(options?.includeStructure ?? true));
+      query.set("include_artifacts", String(options?.includeArtifacts ?? true));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<ProjectPackage>(
+      `/project-portability/projects/${encodeURIComponent(projectId)}/${backup ? "backup" : "export"}${suffix}`,
+    );
+  },
+
+  previewProjectPackage: (payload: {
+    package: Record<string, unknown>;
+    name?: string | null;
+    project_id?: string | null;
+    path_remap?: Record<string, string>;
+  }) =>
+    request<ProjectPackagePreflight>("/project-portability/import/preview", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  importProjectPackage: (
+    payload: {
+      package: Record<string, unknown>;
+      name?: string | null;
+      project_id?: string | null;
+      path_remap?: Record<string, string>;
+    },
+    restore = false,
+  ) =>
+    request<ProjectRecord>(`/project-portability/${restore ? "restore" : "import"}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   listScenes: (projectId: string) =>
     request<SceneList>(`/projects/${encodeURIComponent(projectId)}/scenes`),

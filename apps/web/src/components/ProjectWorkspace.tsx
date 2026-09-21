@@ -10,6 +10,7 @@ import type {
   ProjectRecord,
 } from "../api/client";
 import { ProjectGenerationDefaultsEditor } from "./ProjectGenerationDefaultsEditor";
+import { ProjectPackageDialog, ProjectPortabilityPanel } from "./ProjectPortability";
 import { ExternalProjectImporter, ProjectSyncPanel } from "./ProjectSyncPanel";
 
 type Lifecycle = ProjectRecord["lifecycle"];
@@ -92,6 +93,7 @@ export function ProjectWorkspace({
   const [refreshToken, setRefreshToken] = useState(0);
   const [editor, setEditor] = useState<"create" | "edit" | null>(null);
   const [externalImporter, setExternalImporter] = useState(false);
+  const [packageDialog, setPackageDialog] = useState(false);
   const [defaultsEditor, setDefaultsEditor] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [busy, setBusy] = useState(false);
@@ -282,6 +284,9 @@ export function ProjectWorkspace({
             <p className="muted">制作単位の作成、切替え、整理を行います。</p>
           </div>
           <div className="row">
+            <button type="button" onClick={() => setPackageDialog(true)}>
+              再利用・復元
+            </button>
             <button type="button" onClick={() => setExternalImporter(true)}>
               外部作品をインポート
             </button>
@@ -516,6 +521,17 @@ export function ProjectWorkspace({
                 />
               )}
 
+              {selected.lifecycle !== "trashed" && (
+                <ProjectPortabilityPanel
+                  project={selected}
+                  onCreated={async (project) => {
+                    setLifecycle("active");
+                    setFocusedId(project.id);
+                    await refresh();
+                  }}
+                />
+              )}
+
               <dl className="kv project-metadata">
                 <dt>ID</dt>
                 <dd className="mono">{selected.id}</dd>
@@ -552,6 +568,18 @@ export function ProjectWorkspace({
           onCancel={() => setExternalImporter(false)}
           onImported={async (project) => {
             setExternalImporter(false);
+            setLifecycle("active");
+            setFocusedId(project.id);
+            await refresh();
+          }}
+        />
+      )}
+
+      {packageDialog && (
+        <ProjectPackageDialog
+          onCancel={() => setPackageDialog(false)}
+          onCreated={async (project) => {
+            setPackageDialog(false);
             setLifecycle("active");
             setFocusedId(project.id);
             await refresh();
