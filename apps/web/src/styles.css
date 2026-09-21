@@ -559,6 +559,89 @@ button[aria-pressed="true"] {
   margin-top: 18px !important;
 }
 
+.project-operations {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.project-operations details {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.project-operations summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.operation-section {
+  margin-top: 10px;
+}
+
+.operation-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.batch-targets {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.batch-targets label {
+  display: block;
+  color: var(--text);
+  padding: 4px;
+}
+
+.batch-targets input {
+  width: auto;
+  margin-right: 6px;
+}
+
+.batch-preview,
+.batch-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.batch-card p {
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.compact-list {
+  margin-top: 6px !important;
+  font-size: 12px;
+}
+
+.compact-list li {
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.operation-metrics {
+  grid-template-columns: repeat(4, minmax(100px, 1fr));
+}
+
+.operation-metrics .metric strong {
+  font-size: 18px;
+}
+
+.statistics-breakdowns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
 .project-sync-panel {
   display: grid;
   gap: 10px;

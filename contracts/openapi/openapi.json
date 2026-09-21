@@ -1028,6 +1028,33 @@
         "title": "AssignmentTarget",
         "type": "object"
       },
+      "BatchTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "scene_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          }
+        },
+        "required": [
+          "scene_id"
+        ],
+        "title": "BatchTarget",
+        "type": "object"
+      },
       "CanonStatusRead": {
         "additionalProperties": false,
         "description": "Canon更新警告と、Exact Replayの可否。\n\n記録済みのManifestとArtifactは更新しない。`replayable`が`False`のとき、\n`blocking`に当時条件を再現できない参照が入る。",
@@ -1227,6 +1254,384 @@
           "external_id"
         ],
         "title": "ExternalProjectImport",
+        "type": "object"
+      },
+      "GenerationBatchCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "input_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Input Refs",
+            "type": "array"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "voice",
+              "music",
+              "compose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/BatchTarget"
+            },
+            "maxItems": 200,
+            "minItems": 2,
+            "title": "Targets",
+            "type": "array"
+          },
+          "use_inherited_defaults": {
+            "default": false,
+            "title": "Use Inherited Defaults",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "targets"
+        ],
+        "title": "GenerationBatchCreate",
+        "type": "object"
+      },
+      "GenerationBatchItemRead": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "planning_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planning Error"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scene_id",
+          "shot_id",
+          "job_id",
+          "state",
+          "attempts",
+          "planning_error"
+        ],
+        "title": "GenerationBatchItemRead",
+        "type": "object"
+      },
+      "GenerationBatchPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationBatchPreviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "job_count": {
+            "title": "Job Count",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "voice",
+              "music",
+              "compose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recipe_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recipe Ids",
+            "type": "array"
+          },
+          "reference_dependencies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reference Dependencies",
+            "type": "array"
+          },
+          "workflow_dependencies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Workflow Dependencies",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "job_count",
+          "recipe_ids",
+          "workflow_dependencies",
+          "reference_dependencies",
+          "items"
+        ],
+        "title": "GenerationBatchPreview",
+        "type": "object"
+      },
+      "GenerationBatchPreviewItem": {
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "model": {
+            "additionalProperties": true,
+            "title": "Model",
+            "type": "object"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "parent_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Job Id"
+          },
+          "recipe_id": {
+            "title": "Recipe Id",
+            "type": "string"
+          },
+          "recipe_origin": {
+            "enum": [
+              "runtime",
+              "shot",
+              "scene",
+              "project",
+              "recipe_default",
+              "workflow_default",
+              "adapter"
+            ],
+            "title": "Recipe Origin",
+            "type": "string"
+          },
+          "resolved_inputs": {
+            "additionalProperties": true,
+            "title": "Resolved Inputs",
+            "type": "object"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "seed_auto": {
+            "title": "Seed Auto",
+            "type": "boolean"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          },
+          "workflow_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version Id"
+          }
+        },
+        "required": [
+          "scene_id",
+          "shot_id",
+          "recipe_id",
+          "recipe_origin",
+          "engine",
+          "model",
+          "seed",
+          "seed_auto",
+          "parameters",
+          "resolved_inputs",
+          "workflow_name",
+          "workflow_version_id",
+          "parent_job_id"
+        ],
+        "title": "GenerationBatchPreviewItem",
+        "type": "object"
+      },
+      "GenerationBatchRead": {
+        "additionalProperties": false,
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationBatchItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "voice",
+              "music",
+              "compose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "kind",
+          "state",
+          "counts",
+          "items",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GenerationBatchRead",
         "type": "object"
       },
       "GenerationJobCreate": {
@@ -2353,6 +2758,17 @@
       "PortableScene": {
         "additionalProperties": false,
         "properties": {
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2367,6 +2783,23 @@
               }
             ],
             "title": "Notes"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "production_status": {
             "default": "not_started",
@@ -2394,6 +2827,17 @@
             },
             "title": "Tags",
             "type": "array"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todo"
           }
         },
         "required": [
@@ -2407,6 +2851,17 @@
       "PortableShot": {
         "additionalProperties": false,
         "properties": {
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
           "duration_sec": {
             "default": 5,
             "exclusiveMinimum": 0.0,
@@ -2427,6 +2882,23 @@
               }
             ],
             "title": "Notes"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "production_status": {
             "default": "not_started",
@@ -2458,6 +2930,17 @@
             },
             "title": "Tags",
             "type": "array"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todo"
           }
         },
         "required": [
@@ -2505,6 +2988,57 @@
           "name"
         ],
         "title": "ProjectCloneRequest",
+        "type": "object"
+      },
+      "ProjectCostSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "actual_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Usd"
+          },
+          "estimated_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Usd"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "ProjectCostSummary",
         "type": "object"
       },
       "ProjectCreate": {
@@ -3313,6 +3847,73 @@
         "title": "ProjectSource",
         "type": "object"
       },
+      "ProjectStatistics": {
+        "additionalProperties": false,
+        "properties": {
+          "by_model": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticsBreakdown"
+            },
+            "title": "By Model",
+            "type": "array"
+          },
+          "by_recipe": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticsBreakdown"
+            },
+            "title": "By Recipe",
+            "type": "array"
+          },
+          "by_workflow": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticsBreakdown"
+            },
+            "title": "By Workflow",
+            "type": "array"
+          },
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/ProjectCostSummary"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "jobs": {
+            "title": "Jobs",
+            "type": "integer"
+          },
+          "processing_seconds": {
+            "title": "Processing Seconds",
+            "type": "number"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "jobs",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "processing_seconds",
+          "by_model",
+          "by_workflow",
+          "by_recipe",
+          "cost"
+        ],
+        "title": "ProjectStatistics",
+        "type": "object"
+      },
       "ProjectSyncApply": {
         "additionalProperties": false,
         "properties": {
@@ -3902,6 +4503,18 @@
       "SceneCreate": {
         "additionalProperties": false,
         "properties": {
+          "due_date": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
           "notes": {
             "anyOf": [
               {
@@ -3913,6 +4526,23 @@
               }
             ],
             "title": "Notes"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "production_status": {
             "default": "not_started",
@@ -3941,6 +4571,18 @@
             "maxItems": 50,
             "title": "Tags",
             "type": "array"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todo"
           }
         },
         "required": [
@@ -3952,6 +4594,18 @@
       "SceneUpdate": {
         "additionalProperties": false,
         "properties": {
+          "due_date": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
           "notes": {
             "anyOf": [
               {
@@ -3963,6 +4617,23 @@
               }
             ],
             "title": "Notes"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "production_status": {
             "anyOf": [
@@ -4011,6 +4682,18 @@
               }
             ],
             "title": "Tags"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todo"
           }
         },
         "title": "SceneUpdate",
@@ -4019,6 +4702,18 @@
       "ShotCreate": {
         "additionalProperties": false,
         "properties": {
+          "due_date": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
           "duration_sec": {
             "default": 5,
             "exclusiveMinimum": 0.0,
@@ -4037,6 +4732,23 @@
               }
             ],
             "title": "Notes"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
           },
           "production_status": {
             "default": "not_started",
@@ -4065,6 +4777,18 @@
             "maxItems": 50,
             "title": "Tags",
             "type": "array"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todo"
           }
         },
         "required": [
@@ -4076,6 +4800,18 @@
       "ShotUpdate": {
         "additionalProperties": false,
         "properties": {
+          "due_date": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
           "duration_sec": {
             "anyOf": [
               {
@@ -4101,6 +4837,23 @@
             ],
             "title": "Notes"
           },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
           "production_status": {
             "anyOf": [
               {
@@ -4148,9 +4901,60 @@
               }
             ],
             "title": "Tags"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todo"
           }
         },
         "title": "ShotUpdate",
+        "type": "object"
+      },
+      "StatisticsBreakdown": {
+        "additionalProperties": false,
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "jobs": {
+            "title": "Jobs",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "processing_seconds": {
+            "title": "Processing Seconds",
+            "type": "number"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "jobs",
+          "succeeded",
+          "failed",
+          "processing_seconds"
+        ],
+        "title": "StatisticsBreakdown",
         "type": "object"
       },
       "StructureDeletionImpact": {
@@ -7598,6 +8402,307 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/batches": {
+      "get": {
+        "operationId": "list_batches_api_v1_projects__project_id__batches_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GenerationBatchRead"
+                  },
+                  "title": "Response List Batches Api V1 Projects  Project Id  Batches Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Batches",
+        "tags": [
+          "project-operations"
+        ]
+      },
+      "post": {
+        "operationId": "create_batch_api_v1_projects__project_id__batches_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationBatchCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationBatchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Batch",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/preview": {
+      "post": {
+        "operationId": "preview_batch_api_v1_projects__project_id__batches_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationBatchCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationBatchPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Batch",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}": {
+      "get": {
+        "operationId": "get_batch_api_v1_projects__project_id__batches__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationBatchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Batch",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/cancel-pending": {
+      "post": {
+        "operationId": "cancel_pending_batch_jobs_api_v1_projects__project_id__batches__batch_id__cancel_pending_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationBatchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Pending Batch Jobs",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/retry-failed": {
+      "post": {
+        "operationId": "retry_failed_batch_jobs_api_v1_projects__project_id__batches__batch_id__retry_failed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationBatchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Failed Batch Jobs",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/canon": {
       "get": {
         "description": "Canon descriptorを一覧する。`kind`を指定すると種別で絞り込む。\n\n上流の契約に`kind`クエリは無いため、絞り込みはMyComfyUI側で行う。参照APIには\nVoice Canon専用のEndpointが無く、画面は`CanonList`から絞り込む形になる。",
@@ -8741,6 +9846,130 @@
         "summary": "Get Shot Deletion Impact",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/statistics": {
+      "get": {
+        "operationId": "project_statistics_api_v1_projects__project_id__statistics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recipe_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Recipe Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflow_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Version Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatistics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Statistics",
+        "tags": [
+          "project-operations"
         ]
       }
     },

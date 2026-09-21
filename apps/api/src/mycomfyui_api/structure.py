@@ -117,6 +117,9 @@ async def scene_summary(session: AsyncSession, scene: ProjectScene) -> dict[str,
         "notes": scene.notes,
         "tags": list(scene.tags or []),
         "production_status": scene.production_status,
+        "todo": scene.todo,
+        "due_date": scene.due_date,
+        "priority": scene.priority,
         "shot_count": shot_count,
     }
     return {**data, "reference": _reference(scene.project_id, f"scenes/{scene.id}", data)}
@@ -132,6 +135,9 @@ def shot_summary(shot: ProjectShot) -> dict[str, Any]:
         "notes": shot.notes,
         "tags": list(shot.tags or []),
         "production_status": shot.production_status,
+        "todo": shot.todo,
+        "due_date": shot.due_date,
+        "priority": shot.priority,
     }
     return {
         **data,
@@ -291,7 +297,8 @@ async def create_scene(project_id: schemas.AiMediaId, payload: schemas.SceneCrea
     scene = ProjectScene(
         id=schemas.new_id(), project_id=project_id, sequence=sequence,
         summary=payload.summary, notes=payload.notes, tags=list(payload.tags),
-        production_status=payload.production_status, created_at=now, updated_at=now,
+        production_status=payload.production_status, todo=payload.todo,
+        due_date=payload.due_date, priority=payload.priority, created_at=now, updated_at=now,
         deleted_at=None,
     )
     session.add(scene)
@@ -359,6 +366,7 @@ async def create_shot(project_id: schemas.AiMediaId, scene_id: schemas.ResourceI
         id=schemas.new_id(), project_id=project_id, scene_id=scene_id,
         sequence=sequence, duration_sec=payload.duration_sec, summary=payload.summary,
         notes=payload.notes, tags=list(payload.tags), production_status=payload.production_status,
+        todo=payload.todo, due_date=payload.due_date, priority=payload.priority,
         created_at=now, updated_at=now, deleted_at=None,
     )
     session.add(shot)

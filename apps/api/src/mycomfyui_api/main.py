@@ -36,6 +36,7 @@ from mycomfyui_api.queue import (
 )
 from mycomfyui_api.projects import router as project_router
 from mycomfyui_api.portability import router as portability_router
+from mycomfyui_api.operations import router as operations_router
 from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
 from mycomfyui_api.settings import get_settings
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(router)
     app.include_router(project_router)
     app.include_router(portability_router)
+    app.include_router(operations_router)
     app.include_router(structure_router)
     app.include_router(reference_router)
     # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
