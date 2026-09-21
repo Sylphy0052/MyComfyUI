@@ -6,6 +6,7 @@ import type {
   Artifact,
   GenerationJob,
   ProjectDeletionImpact,
+  ProjectProgress,
   ProjectRecord,
 } from "../api/client";
 
@@ -23,6 +24,7 @@ interface ProjectHome {
   impact: ProjectDeletionImpact;
   jobs: GenerationJob[];
   artifacts: Artifact[];
+  progress: ProjectProgress;
 }
 
 interface PendingAction {
@@ -162,12 +164,13 @@ export function ProjectWorkspace({
     setHomeError(null);
     (async () => {
       try {
-        const [impact, jobs, artifacts] = await Promise.all([
+        const [impact, jobs, artifacts, progress] = await Promise.all([
           api.getProjectDeletionImpact(selected.id),
           api.listJobs({ projectId: selected.id }),
           api.listArtifacts({ projectId: selected.id, limit: 6 }),
+          api.getProjectProgress(selected.id),
         ]);
-        if (active) setHome({ impact, jobs, artifacts });
+        if (active) setHome({ impact, jobs, artifacts, progress });
       } catch (cause) {
         if (active) setHomeError(describe(cause));
       } finally {
@@ -449,6 +452,26 @@ export function ProjectWorkspace({
                     <Metric label="実行中Job" value={home.impact.active_job_count} />
                     <Metric label="失敗Job" value={failedJobs} tone={failedJobs ? "danger" : undefined} />
                   </div>
+                  {selected.source_type === "local" && (
+                    <>
+                      <h3>制作進捗</h3>
+                      <div className="progress-grid">
+                        {[
+                          ["未着手", "not_started"],
+                          ["制作中", "in_progress"],
+                          ["候補あり", "has_candidates"],
+                          ["採用済み", "accepted"],
+                          ["完了", "completed"],
+                        ].map(([label, key]) => (
+                          <div key={key} className="metric">
+                            <span>{label}</span>
+                            <strong>{home.progress.scenes[key] ?? 0}/{home.progress.shots[key] ?? 0}</strong>
+                            <span>Scene / Shot</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   <h3>最近の生成物</h3>
                   {home.artifacts.length === 0 ? (
                     <p className="muted">このProjectの生成物はまだありません。</p>

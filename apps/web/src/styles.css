@@ -467,6 +467,36 @@ button[aria-pressed="true"] {
   margin-top: 16px;
 }
 
+.progress-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(90px, 1fr));
+  gap: 8px;
+}
+
+.structure-list li {
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.structure-actions {
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.structure-actions button {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+
+.structure-detail {
+  margin-top: 8px;
+}
+
+.structure-detail p {
+  margin: 0;
+}
+
 .metric {
   display: flex;
   flex-direction: column;

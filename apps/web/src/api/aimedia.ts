@@ -21,6 +21,9 @@ export interface SceneSummary {
   sequence: number;
   summary: string;
   shot_count: number;
+  notes?: string | null;
+  tags?: string[];
+  production_status?: ProductionStatus;
   reference: ImmutableReference;
 }
 
@@ -34,6 +37,9 @@ export interface ShotSummary {
   sequence: number;
   duration_sec: number;
   summary: string;
+  notes?: string | null;
+  tags?: string[];
+  production_status?: ProductionStatus;
   reference: ImmutableReference;
 }
 
@@ -43,13 +49,20 @@ export interface ShotList {
 
 export interface Provenance {
   resource: ImmutableReference;
-  schema: { name: string; reference: ImmutableReference };
-  references: {
+  schema?: { name: string; reference: ImmutableReference };
+  references?: {
     json_pointer: string;
     declared_path: string;
     reference: ImmutableReference;
   }[];
 }
+
+export type ProductionStatus =
+  | "not_started"
+  | "in_progress"
+  | "has_candidates"
+  | "accepted"
+  | "completed";
 
 /** SceneのBGM。Shot単位では作らない。 */
 export interface MusicGenerationSpec {
@@ -67,6 +80,9 @@ export interface SceneData {
   id: string;
   project_id: string;
   summary: string;
+  notes?: string | null;
+  tags?: string[];
+  production_status?: ProductionStatus;
   location?: { id: string; display_name?: string | null };
   time_of_day?: string;
   season?: string | null;
@@ -107,6 +123,9 @@ export interface ShotData {
   sequence: number;
   duration_sec: number;
   summary: string;
+  notes?: string | null;
+  tags?: string[];
+  production_status?: ProductionStatus;
   camera?: {
     framing: string;
     angle?: string;

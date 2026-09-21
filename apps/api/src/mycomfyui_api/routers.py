@@ -52,6 +52,7 @@ from mycomfyui_api.models import (
     GenerationJob,
     GenerationManifest,
     Project,
+    ProjectShot,
     Recipe,
     VoiceVerification,
     Workflow,
@@ -60,6 +61,13 @@ from mycomfyui_api.models import (
 from mycomfyui_api.queue import FAILURE_CODE_INTERRUPTED, JobQueueWorker
 from mycomfyui_api.references import get_reference_source
 from mycomfyui_api.settings import get_settings
+from mycomfyui_api.structure import (
+    get_local_scene,
+    get_local_shot,
+    scene_envelope as local_scene_envelope,
+    shot_envelope as local_shot_envelope,
+    shot_summary as local_shot_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +316,7 @@ async def create_generation_job(
     _validate_recipe_matches(recipe, payload)
     await _validate_project_context(session, payload.project_id)
     resolved = await _resolve_references(
-        source, payload.project_id, payload.scene_id, payload.shot_id
+        session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
     # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
@@ -349,7 +357,7 @@ async def preview_generation_job(
     _validate_recipe_matches(recipe, payload)
     await _validate_project_context(session, payload.project_id)
     resolved = await _resolve_references(
-        source, payload.project_id, payload.scene_id, payload.shot_id
+        session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
     prepared = await _prepare_execution(recipe, payload, source, resolved, session)
     defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
@@ -510,6 +518,7 @@ async def _validate_project_context(
 
 
 async def _resolve_references(
+    session: AsyncSession,
     source: ReferenceSource,
     project_id: str | None,
     scene_id: str | None,
@@ -530,10 +539,32 @@ async def _resolve_references(
     shot_envelope: Any = None
 
     try:
-        if scene_id is not None and project_id is not None:
-            scene_envelope = await source.get_scene(project_id, scene_id)
-        if shot_id is not None and scene_id is not None and project_id is not None:
-            shot_envelope = await source.get_shot(project_id, scene_id, shot_id)
+        project = await session.get(Project, project_id) if project_id is not None else None
+        if project_id is not None and project is None:
+            raise ApiError(
+                "PROJECT_NOT_FOUND",
+                "Projectがありません。",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                details={"project_id": project_id},
+            )
+        if project is not None and project.source_type == "local":
+            if scene_id is not None:
+                scene = await get_local_scene(session, project_id, scene_id)
+                scene_envelope = await local_scene_envelope(session, scene)
+            if shot_id is not None and scene_id is not None:
+                shot_envelope = local_shot_envelope(
+                    await get_local_shot(session, project_id, scene_id, shot_id)
+                )
+        else:
+            external_id = (
+                project.external_id
+                if project is not None and project.external_id is not None
+                else project_id
+            )
+            if scene_id is not None and external_id is not None:
+                scene_envelope = await source.get_scene(external_id, scene_id)
+            if shot_id is not None and scene_id is not None and external_id is not None:
+                shot_envelope = await source.get_shot(external_id, scene_id, shot_id)
     except AiMediaNotFound as error:
         raise ApiError(
             "REFERENCE_NOT_FOUND",
@@ -1348,7 +1379,9 @@ async def _job_integrity_findings(
     ]
     if not canon_state.available:
         return findings
-    current, failure = await _current_references(source, job, manifest.input_refs)
+    current, failure = await _current_references(
+        session, source, job, manifest.input_refs
+    )
     if current is None:
         message = failure.message if failure is not None else "参照を解決できません。"
         if failure is not None and failure.code == "REFERENCE_UNAVAILABLE":
@@ -1679,6 +1712,7 @@ def _reference_ids(job: GenerationJob) -> tuple[str | None, str | None, str | No
 
 
 async def _current_references(
+    session: AsyncSession,
     source: ReferenceSource,
     job: GenerationJob,
     recorded: list[Any] | None = None,
@@ -1695,9 +1729,11 @@ async def _current_references(
     """
     try:
         project_id, scene_id, shot_id = _reference_ids(job)
-        resolved = await _resolve_references(source, project_id, scene_id, shot_id)
+        resolved = await _resolve_references(
+            session, source, project_id, scene_id, shot_id
+        )
         selected = (
-            await _current_selected_canon(source, project_id, recorded or [])
+            await _current_selected_canon(session, source, project_id, recorded or [])
             if project_id is not None
             else []
         )
@@ -1707,13 +1743,24 @@ async def _current_references(
 
 
 async def _current_selected_canon(
-    source: ReferenceSource, project_id: str, recorded: list[Any]
+    session: AsyncSession,
+    source: ReferenceSource,
+    project_id: str,
+    recorded: list[Any],
 ) -> list[dict[str, Any]]:
     """記録済みの`input_refs`にある、入力として選んだCanonを現在の参照で引き直す。
 
     参照元から消えたCanonは現在側に並べない。呼び出し元の突き合わせで`missing`に
     なり、再実行できないことが利用者へ伝わる。
     """
+    project = await session.get(Project, project_id)
+    if project is not None and project.source_type == "local":
+        return []
+    external_id = (
+        project.external_id
+        if project is not None and project.external_id is not None
+        else project_id
+    )
     entries: list[dict[str, Any]] = []
     for reference in recorded:
         if not isinstance(reference, dict):
@@ -1726,7 +1773,7 @@ async def _current_selected_canon(
         if not isinstance(canon_id, str):
             continue
         try:
-            descriptor = await source.get_canon(project_id, canon_id)
+            descriptor = await source.get_canon(external_id, canon_id)
         except AiMediaNotFound:
             continue
         except AiMediaUnavailable as error:
@@ -1854,7 +1901,9 @@ async def get_job_canon_status(
     """
     job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
     manifest = await _get_manifest(session, job)
-    current, failure = await _current_references(source, job, manifest.input_refs)
+    current, failure = await _current_references(
+        session, source, job, manifest.input_refs
+    )
     if current is None:
         return schemas.CanonStatusRead(
             job_id=job.id,
@@ -1971,7 +2020,9 @@ async def replay_generation_job(
     workflow_artifact = await _get_workflow_artifact(session, manifest)
     workflow_body = _read_workflow_snapshot(workflow_artifact)
 
-    current, failure = await _current_references(source, job, manifest.input_refs)
+    current, failure = await _current_references(
+        session, source, job, manifest.input_refs
+    )
     if current is None:
         # 参照IDの欠落と上流の不調では原因が違う。解決を試みたときの分類をそのまま返す。
         raise failure or ApiError(
@@ -2022,7 +2073,7 @@ async def regenerate_generation_job(
     workflow_body = _read_workflow_snapshot(workflow_artifact)
 
     project_id, scene_id, shot_id = _reference_ids(job)
-    resolved = await _resolve_references(source, project_id, scene_id, shot_id)
+    resolved = await _resolve_references(session, source, project_id, scene_id, shot_id)
     # 利用者素材のcache参照は参照APIで解決できないため、記録済みの値を引き継ぐ。
     cached = [
         dict(ref)
@@ -2033,7 +2084,9 @@ async def regenerate_generation_job(
     # 現在の参照で引き直す。ここで拾わないと、派生Jobの履歴からどのCanonで生成したかが
     # 消える。
     selected = (
-        await _current_selected_canon(source, project_id, manifest.input_refs or [])
+        await _current_selected_canon(
+            session, source, project_id, manifest.input_refs or []
+        )
         if project_id is not None
         else []
     )
@@ -2363,7 +2416,11 @@ def _resolve_agent_provider(
 
 
 async def _fetch_envelopes(
-    source: ReferenceSource, project_id: str, scene_id: str, shot_id: str | None
+    session: AsyncSession,
+    source: ReferenceSource,
+    project_id: str,
+    scene_id: str,
+    shot_id: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """提案の入力に使うScene/Shotを参照APIから取得する。
 
@@ -2371,12 +2428,30 @@ async def _fetch_envelopes(
     現在の内容を読めないまま提案すると、どの内容に対する提案か後から説明できない。
     """
     try:
-        scene_envelope = await source.get_scene(project_id, scene_id)
-        shot_envelope = (
-            await source.get_shot(project_id, scene_id, shot_id)
-            if shot_id is not None
-            else None
-        )
+        project = await session.get(Project, project_id)
+        if project is not None and project.source_type == "local":
+            scene_envelope = await local_scene_envelope(
+                session, await get_local_scene(session, project_id, scene_id)
+            )
+            shot_envelope = (
+                local_shot_envelope(
+                    await get_local_shot(session, project_id, scene_id, shot_id)
+                )
+                if shot_id is not None
+                else None
+            )
+        else:
+            external_id = (
+                project.external_id
+                if project is not None and project.external_id is not None
+                else project_id
+            )
+            scene_envelope = await source.get_scene(external_id, scene_id)
+            shot_envelope = (
+                await source.get_shot(external_id, scene_id, shot_id)
+                if shot_id is not None
+                else None
+            )
     except AiMediaNotFound as error:
         raise ApiError(
             "REFERENCE_NOT_FOUND",
@@ -2416,7 +2491,7 @@ async def _context_artifacts(session: AsyncSession, scene_id: str) -> list[Artif
 
 
 async def _fetch_shot_list(
-    source: ReferenceSource, project_id: str, scene_id: str
+    session: AsyncSession, source: ReferenceSource, project_id: str, scene_id: str
 ) -> list[dict[str, Any]]:
     """バッチ生成計画の入力に使うScene配下のShot一覧を参照APIから取得する。
 
@@ -2424,7 +2499,25 @@ async def _fetch_shot_list(
     いないShotを対象にした計画を許すことになる。
     """
     try:
-        document = await source.list_shots(project_id, scene_id)
+        project = await session.get(Project, project_id)
+        if project is not None and project.source_type == "local":
+            await get_local_scene(session, project_id, scene_id)
+            rows = await session.scalars(
+                select(ProjectShot)
+                .where(
+                    ProjectShot.project_id == project_id,
+                    ProjectShot.scene_id == scene_id,
+                    ProjectShot.deleted_at.is_(None),
+                )
+                .order_by(ProjectShot.sequence, ProjectShot.id)
+            )
+            return [local_shot_summary(row) for row in rows]
+        external_id = (
+            project.external_id
+            if project is not None and project.external_id is not None
+            else project_id
+        )
+        document = await source.list_shots(external_id, scene_id)
     except AiMediaNotFound as error:
         raise ApiError(
             "REFERENCE_NOT_FOUND",
@@ -2879,10 +2972,10 @@ async def create_agent_proposal(
         recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
         _validate_agent_recipe(recipe, payload.kind)
     scene_envelope, shot_envelope = await _fetch_envelopes(
-        source, payload.project_id, payload.scene_id, payload.shot_id
+        session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
     shot_items = (
-        await _fetch_shot_list(source, payload.project_id, payload.scene_id)
+        await _fetch_shot_list(session, source, payload.project_id, payload.scene_id)
         if payload.kind == "batch_generation_plan"
         else None
     )
