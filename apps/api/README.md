@@ -10,7 +10,7 @@
 
 ## 設定
 
-設定は環境変数から読む。接頭辞は `MYCOMFYUI_` とする。リポジトリ直下の `.env` も読み込む。
+設定はOS標準の利用者設定ディレクトリにあるTOML、環境変数、起動時引数から読む。接頭辞は`MYCOMFYUI_`とする。リポジトリ直下の`.env`も読み込む。保存先と既存作品参照の詳細は[保存先と既存作品参照の設定](../../docs/operations/configuration.md)を参照する。
 
 ```bash
 cp .env.example .env
@@ -35,9 +35,9 @@ cp .env.example .env
 |`MYCOMFYUI_COMPOSE_TIMEOUT_SECONDS`|`600`|合成 1 件の実行上限(秒)|
 |`MYCOMFYUI_MAX_IMAGE_BYTES`|`33554432`|取り込む参照画像とガイド音声の上限バイト数|
 
-`.env.example` には上の変数を既定値で載せている。コピーしただけでも起動するため、
-環境に合わせて必要な値だけを書き換える。`MYCOMFYUI_DATA_ROOT` はコメントアウトしており、
-未設定のまま OS 標準の利用者データ領域を使う。
+`.env.example`には上の変数を既定値で載せている。コピーしただけでも起動するため、
+環境に合わせて必要な値だけを書き換える。`MYCOMFYUI_DATA_ROOT`はコメントアウトしており、
+未設定のままOS標準の利用者データ領域を使う。
 
 SQLite は `<data_root>/db/mycomfyui.sqlite3` へ作成する。接続時に WAL、外部キー、busy timeout を有効にする。
 設定値に API キーなどの秘密情報を置かない。データベース、ログ、API 応答にも保存しない。

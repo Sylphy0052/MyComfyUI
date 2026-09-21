@@ -1,14 +1,33 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from platformdirs import user_data_path
+from platformdirs import user_config_path, user_data_path
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    TomlConfigSettingsSource,
+)
 
 #: 提案Providerの識別子。`claude_code`と`codex`はCLIをsubprocessで呼び、`qwen`は
 #: OpenAI互換HTTPで常駐する推論サーバーへ問い合わせ、`stub`は同梱fixtureを返す。
 AgentProviderId = Literal["claude_code", "codex", "qwen", "stub"]
+
+CONFIG_FILE_ENV = "MYCOMFYUI_CONFIG_FILE"
+
+
+def default_config_file() -> Path:
+    """OS標準の利用者設定ファイルを返す。"""
+    return user_config_path("MyComfyUI", appauthor=False) / "config.toml"
+
+
+def config_file() -> Path:
+    """起動時指定があればそれを、なければ既定の設定ファイルを返す。"""
+    override = os.environ.get(CONFIG_FILE_ENV)
+    return Path(override).expanduser() if override else default_config_file()
 
 
 class Settings(BaseSettings):
@@ -88,6 +107,24 @@ class Settings(BaseSettings):
     #: CORSのheaderを返さず、開発時のViteのproxyのように同一originからの呼び出し
     #: だけが通る。
     allowed_origins: str = ""
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """既定値、TOML、環境変数、起動時引数の優先順位を保つ。"""
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            TomlConfigSettingsSource(settings_cls, toml_file=config_file()),
+            file_secret_settings,
+        )
 
     @field_validator("api_host")
     @classmethod
