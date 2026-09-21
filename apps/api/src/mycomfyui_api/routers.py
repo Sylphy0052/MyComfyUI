@@ -632,6 +632,74 @@ async def _validate_project_context(
         )
 
 
+def _snapshot_entry(
+    project: Project | None, group: str, key: str
+) -> dict[str, Any] | None:
+    if project is None or not isinstance(project.source_snapshot, dict):
+        return None
+    values = project.source_snapshot.get(group)
+    if not isinstance(values, dict):
+        return None
+    value = values.get(key)
+    return value if isinstance(value, dict) else None
+
+
+async def _external_scene(
+    source: ReferenceSource, project: Project | None, external_id: str, scene_id: str
+) -> dict[str, Any]:
+    try:
+        return await source.get_scene(external_id, scene_id)
+    except AiMediaUnavailable:
+        cached = _snapshot_entry(project, "scene_envelopes", scene_id)
+        if cached is not None:
+            return cached
+        raise
+
+
+async def _external_shot(
+    source: ReferenceSource,
+    project: Project | None,
+    external_id: str,
+    scene_id: str,
+    shot_id: str,
+) -> dict[str, Any]:
+    try:
+        return await source.get_shot(external_id, scene_id, shot_id)
+    except AiMediaUnavailable:
+        cached = _snapshot_entry(project, "shot_envelopes", shot_id)
+        if cached is not None:
+            return cached
+        raise
+
+
+async def _external_shots(
+    source: ReferenceSource, project: Project | None, external_id: str, scene_id: str
+) -> dict[str, Any]:
+    try:
+        return await source.list_shots(external_id, scene_id)
+    except AiMediaUnavailable:
+        cached = _snapshot_entry(project, "shots", scene_id)
+        if cached is not None:
+            return cached
+        raise
+
+
+async def _external_canon(
+    source: ReferenceSource, project: Project | None, external_id: str, canon_id: str
+) -> dict[str, Any]:
+    try:
+        return await source.get_canon(external_id, canon_id)
+    except AiMediaUnavailable:
+        if project is not None and isinstance(project.source_snapshot, dict):
+            canon = project.source_snapshot.get("canon")
+            items = canon.get("items") if isinstance(canon, dict) else None
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict) and item.get("canon_id") == canon_id:
+                        return item
+        raise
+
+
 async def _resolve_references(
     session: AsyncSession,
     source: ReferenceSource,
@@ -677,9 +745,13 @@ async def _resolve_references(
                 else project_id
             )
             if scene_id is not None and external_id is not None:
-                scene_envelope = await source.get_scene(external_id, scene_id)
+                scene_envelope = await _external_scene(
+                    source, project, external_id, scene_id
+                )
             if shot_id is not None and scene_id is not None and external_id is not None:
-                shot_envelope = await source.get_shot(external_id, scene_id, shot_id)
+                shot_envelope = await _external_shot(
+                    source, project, external_id, scene_id, shot_id
+                )
     except AiMediaNotFound as error:
         raise ApiError(
             "REFERENCE_NOT_FOUND",
@@ -1078,9 +1150,11 @@ async def _validate_assignment_target(
     else:
         external_id = project.external_id or project.id
         try:
-            await source.get_scene(external_id, target.scene_id)
+            await _external_scene(source, project, external_id, target.scene_id)
             if target.shot_id is not None:
-                await source.get_shot(external_id, target.scene_id, target.shot_id)
+                await _external_shot(
+                    source, project, external_id, target.scene_id, target.shot_id
+                )
         except AiMediaNotFound as error:
             raise ApiError(
                 "REFERENCE_NOT_FOUND",
@@ -2085,7 +2159,9 @@ async def _current_selected_canon(
         if not isinstance(canon_id, str):
             continue
         try:
-            descriptor = await source.get_canon(external_id, canon_id)
+            descriptor = await _external_canon(
+                source, project, external_id, canon_id
+            )
         except AiMediaNotFound:
             continue
         except AiMediaUnavailable as error:
@@ -2764,9 +2840,11 @@ async def _fetch_envelopes(
                 if project is not None and project.external_id is not None
                 else project_id
             )
-            scene_envelope = await source.get_scene(external_id, scene_id)
+            scene_envelope = await _external_scene(
+                source, project, external_id, scene_id
+            )
             shot_envelope = (
-                await source.get_shot(external_id, scene_id, shot_id)
+                await _external_shot(source, project, external_id, scene_id, shot_id)
                 if shot_id is not None
                 else None
             )
@@ -2835,7 +2913,7 @@ async def _fetch_shot_list(
             if project is not None and project.external_id is not None
             else project_id
         )
-        document = await source.list_shots(external_id, scene_id)
+        document = await _external_shots(source, project, external_id, scene_id)
     except AiMediaNotFound as error:
         raise ApiError(
             "REFERENCE_NOT_FOUND",

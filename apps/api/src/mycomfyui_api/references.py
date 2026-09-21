@@ -73,6 +73,39 @@ async def _relay(call: Callable[[], Awaitable[dict[str, Any]]]) -> dict[str, Any
         ) from error
 
 
+async def _external_or_cached(
+    project: Project,
+    call: Callable[[], Awaitable[dict[str, Any]]],
+    cached: Callable[[dict[str, Any]], dict[str, Any] | None],
+) -> dict[str, Any]:
+    """参照元が停止中なら、最後に同期したスナップショットを返す。"""
+    try:
+        return await call()
+    except AiMediaNotFound as error:
+        raise ApiError(
+            "REFERENCE_NOT_FOUND",
+            str(error),
+            status_code=status.HTTP_404_NOT_FOUND,
+        ) from error
+    except AiMediaUnavailable as error:
+        snapshot = project.source_snapshot or {}
+        fallback = cached(snapshot)
+        if fallback is not None:
+            logger.info("外部参照を同期済みキャッシュから返します: %s", project.id)
+            return fallback
+        logger.warning("ai-media参照APIを利用できません。", exc_info=error)
+        raise ApiError(
+            "REFERENCE_UNAVAILABLE",
+            "ai-media参照APIを利用できませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from error
+
+
+def _cached_dict(snapshot: dict[str, Any], key: str) -> dict[str, Any] | None:
+    value = snapshot.get(key)
+    return value if isinstance(value, dict) else None
+
+
 async def _require_project(session: AsyncSession, project_id: str) -> Project:
     project = await session.get(Project, project_id)
     if project is None or project.lifecycle == "trashed":
@@ -111,7 +144,11 @@ async def list_scenes(
             .order_by(ProjectScene.sequence, ProjectScene.id)
         )
         return {"items": [await scene_summary(session, scene) for scene in scenes]}
-    return await _relay(lambda: source.list_scenes(_external_id(project)))
+    return await _external_or_cached(
+        project,
+        lambda: source.list_scenes(_external_id(project)),
+        lambda snapshot: _cached_dict(snapshot, "scenes"),
+    )
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}")
@@ -126,7 +163,13 @@ async def get_scene(
         return await scene_envelope(
             session, await get_local_scene(session, project_id, scene_id)
         )
-    return await _relay(lambda: source.get_scene(_external_id(project), scene_id))
+    return await _external_or_cached(
+        project,
+        lambda: source.get_scene(_external_id(project), scene_id),
+        lambda snapshot: (
+            _cached_dict(snapshot, "scene_envelopes") or {}
+        ).get(scene_id),
+    )
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}/shots")
@@ -149,7 +192,11 @@ async def list_shots(
             .order_by(ProjectShot.sequence, ProjectShot.id)
         )
         return {"items": [shot_summary(shot) for shot in shots]}
-    return await _relay(lambda: source.list_shots(_external_id(project), scene_id))
+    return await _external_or_cached(
+        project,
+        lambda: source.list_shots(_external_id(project), scene_id),
+        lambda snapshot: (_cached_dict(snapshot, "shots") or {}).get(scene_id),
+    )
 
 
 @router.get("/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}")
@@ -165,8 +212,12 @@ async def get_shot(
         return shot_envelope(
             await get_local_shot(session, project_id, scene_id, shot_id)
         )
-    return await _relay(
-        lambda: source.get_shot(_external_id(project), scene_id, shot_id)
+    return await _external_or_cached(
+        project,
+        lambda: source.get_shot(_external_id(project), scene_id, shot_id),
+        lambda snapshot: (_cached_dict(snapshot, "shot_envelopes") or {}).get(
+            shot_id
+        ),
     )
 
 
@@ -191,7 +242,11 @@ async def list_canon(
     project = await _require_project(session, project_id)
     if project.source_type == "local":
         return {"items": []}
-    payload = await _relay(lambda: source.list_canon(_external_id(project)))
+    payload = await _external_or_cached(
+        project,
+        lambda: source.list_canon(_external_id(project)),
+        lambda snapshot: _cached_dict(snapshot, "canon"),
+    )
     if kind is None:
         return payload
     items = payload.get("items")
@@ -215,4 +270,15 @@ async def get_canon(
     session: SessionDep,
 ) -> dict[str, Any]:
     project = await _require_project(session, project_id)
-    return await _relay(lambda: source.get_canon(_external_id(project), canon_id))
+    return await _external_or_cached(
+        project,
+        lambda: source.get_canon(_external_id(project), canon_id),
+        lambda snapshot: next(
+            (
+                item
+                for item in ((_cached_dict(snapshot, "canon") or {}).get("items") or [])
+                if isinstance(item, dict) and item.get("canon_id") == canon_id
+            ),
+            None,
+        ),
+    )

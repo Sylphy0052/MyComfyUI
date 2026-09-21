@@ -28,6 +28,7 @@ ArtifactDecision = Literal["undecided", "accepted", "rejected"]
 ProjectStatus = Literal["planning", "active", "on_hold", "completed"]
 ProjectLifecycle = Literal["active", "archived", "trashed"]
 ProjectSourceType = Literal["local", "external"]
+ProjectSyncState = Literal["never", "synced", "outdated", "conflicted", "failed"]
 ProjectSort = Literal["name", "created", "updated", "last_used"]
 GenerationDefaultOrigin = Literal[
     "runtime", "shot", "scene", "project", "recipe_default", "workflow_default", "adapter"
@@ -236,6 +237,11 @@ class ProjectRead(ApiModel):
     source_type: ProjectSourceType
     source: ProjectSource
     external_id: str | None
+    source_snapshot_sha256: str | None
+    sync_state: ProjectSyncState
+    auto_sync: bool
+    last_synced_at: str | None
+    sync_error: str | None
     scene_count: int
     shot_count: int
     canon_count: int
@@ -248,6 +254,53 @@ class ProjectRead(ApiModel):
 
 class ProjectList(ApiModel):
     items: list[ProjectRead]
+
+
+class ExternalProjectImport(ApiModel):
+    external_id: AiMediaId
+    project_id: AiMediaId | None = None
+    auto_sync: bool = False
+
+
+class ProjectSyncSettings(ApiModel):
+    auto_sync: bool
+
+
+class ProjectSyncResolution(ApiModel):
+    path: str = Field(min_length=1, max_length=500)
+    choice: Literal["local", "external"]
+
+
+class ProjectSyncApply(ApiModel):
+    resolutions: list[ProjectSyncResolution] = Field(default_factory=list)
+
+
+class ProjectSyncChange(ApiModel):
+    path: str
+    action: Literal["added", "changed", "deleted"]
+    conflict: bool = False
+    local_value: Any | None = None
+    external_value: Any | None = None
+
+
+class ProjectSyncPreview(ApiModel):
+    project_id: str
+    source_revision: str
+    snapshot_sha256: Sha256
+    changes: list[ProjectSyncChange]
+    has_conflicts: bool
+
+
+class ExternalProjectCandidate(ApiModel):
+    id: str
+    title: str
+    source_locator: str
+    revision: str
+    imported_project_id: str | None = None
+
+
+class ExternalProjectCandidateList(ApiModel):
+    items: list[ExternalProjectCandidate]
 
 
 class ProjectDeletionImpact(ApiModel):

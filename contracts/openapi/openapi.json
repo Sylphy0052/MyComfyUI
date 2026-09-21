@@ -1133,6 +1133,95 @@
         "title": "ComfyUIBackendHealthRead",
         "type": "object"
       },
+      "ExternalProjectCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "imported_project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imported Project Id"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "source_locator": {
+            "title": "Source Locator",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source_locator",
+          "revision"
+        ],
+        "title": "ExternalProjectCandidate",
+        "type": "object"
+      },
+      "ExternalProjectCandidateList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalProjectCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ExternalProjectCandidateList",
+        "type": "object"
+      },
+      "ExternalProjectImport": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_sync": {
+            "default": false,
+            "title": "Auto Sync",
+            "type": "boolean"
+          },
+          "external_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "External Id",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "required": [
+          "external_id"
+        ],
+        "title": "ExternalProjectImport",
+        "type": "object"
+      },
       "GenerationJobCreate": {
         "additionalProperties": false,
         "description": "Jobと実行時Manifestを同一トランザクションで作成する要求。\n\nWorkflow JSONはApplication APIがRecipeと`inputs`から組み立てる。Scene、Shot、\nCanonの不変参照も参照APIから解決して固定する。呼び出し元はManifestの中身も\nComfyUIのノードも参照の中身も組み立てない。",
@@ -2446,6 +2535,10 @@
             ],
             "title": "Archived At"
           },
+          "auto_sync": {
+            "title": "Auto Sync",
+            "type": "boolean"
+          },
           "canon_count": {
             "title": "Canon Count",
             "type": "integer"
@@ -2498,6 +2591,17 @@
             "title": "Id",
             "type": "string"
           },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
           "last_used_at": {
             "anyOf": [
               {
@@ -2533,6 +2637,17 @@
           "source": {
             "$ref": "#/components/schemas/ProjectSource"
           },
+          "source_snapshot_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Snapshot Sha256"
+          },
           "source_type": {
             "enum": [
               "local",
@@ -2549,6 +2664,28 @@
               "completed"
             ],
             "title": "Status",
+            "type": "string"
+          },
+          "sync_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Error"
+          },
+          "sync_state": {
+            "enum": [
+              "never",
+              "synced",
+              "outdated",
+              "conflicted",
+              "failed"
+            ],
+            "title": "Sync State",
             "type": "string"
           },
           "tags": {
@@ -2592,6 +2729,11 @@
           "source_type",
           "source",
           "external_id",
+          "source_snapshot_sha256",
+          "sync_state",
+          "auto_sync",
+          "last_synced_at",
+          "sync_error",
           "scene_count",
           "shot_count",
           "canon_count",
@@ -2621,6 +2763,144 @@
           "revision"
         ],
         "title": "ProjectSource",
+        "type": "object"
+      },
+      "ProjectSyncApply": {
+        "additionalProperties": false,
+        "properties": {
+          "resolutions": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectSyncResolution"
+            },
+            "title": "Resolutions",
+            "type": "array"
+          }
+        },
+        "title": "ProjectSyncApply",
+        "type": "object"
+      },
+      "ProjectSyncChange": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "added",
+              "changed",
+              "deleted"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "conflict": {
+            "default": false,
+            "title": "Conflict",
+            "type": "boolean"
+          },
+          "external_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Value"
+          },
+          "local_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Value"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "action"
+        ],
+        "title": "ProjectSyncChange",
+        "type": "object"
+      },
+      "ProjectSyncPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectSyncChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "has_conflicts": {
+            "title": "Has Conflicts",
+            "type": "boolean"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "snapshot_sha256": {
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "title": "Snapshot Sha256",
+            "type": "string"
+          },
+          "source_revision": {
+            "title": "Source Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "source_revision",
+          "snapshot_sha256",
+          "changes",
+          "has_conflicts"
+        ],
+        "title": "ProjectSyncPreview",
+        "type": "object"
+      },
+      "ProjectSyncResolution": {
+        "additionalProperties": false,
+        "properties": {
+          "choice": {
+            "enum": [
+              "local",
+              "external"
+            ],
+            "title": "Choice",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "choice"
+        ],
+        "title": "ProjectSyncResolution",
+        "type": "object"
+      },
+      "ProjectSyncSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_sync": {
+            "title": "Auto Sync",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "auto_sync"
+        ],
+        "title": "ProjectSyncSettings",
         "type": "object"
       },
       "ProjectUpdate": {
@@ -5997,6 +6277,68 @@
         ]
       }
     },
+    "/api/v1/projects/external-candidates": {
+      "get": {
+        "operationId": "list_external_candidates_api_v1_projects_external_candidates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalProjectCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List External Candidates",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/import": {
+      "post": {
+        "operationId": "import_external_project_api_v1_projects_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalProjectImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import External Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}": {
       "delete": {
         "operationId": "trash_project_api_v1_projects__project_id__delete",
@@ -7326,6 +7668,155 @@
           }
         },
         "summary": "Get Shot Deletion Impact",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/sync": {
+      "post": {
+        "operationId": "sync_external_project_api_v1_projects__project_id__sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectSyncApply"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync External Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/sync-settings": {
+      "patch": {
+        "operationId": "update_sync_settings_api_v1_projects__project_id__sync_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectSyncSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Sync Settings",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/sync/preview": {
+      "post": {
+        "operationId": "preview_external_sync_api_v1_projects__project_id__sync_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSyncPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview External Sync",
         "tags": [
           "projects"
         ]

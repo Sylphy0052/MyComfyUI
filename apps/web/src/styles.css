@@ -559,6 +559,42 @@ button[aria-pressed="true"] {
   margin-top: 18px !important;
 }
 
+.project-sync-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+
+.project-sync-panel h3,
+.project-sync-panel h4 {
+  margin: 0;
+}
+
+.sync-preview {
+  padding: 10px;
+  background: #181b21;
+  border-radius: 6px;
+}
+
+.sync-preview ul {
+  max-height: 240px;
+  overflow: auto;
+  padding-left: 20px;
+}
+
+.sync-preview li {
+  margin: 5px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.danger-text {
+  color: var(--danger);
+}
+
 .project-editor,
 .project-confirm {
   position: fixed;

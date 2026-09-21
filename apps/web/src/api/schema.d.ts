@@ -764,6 +764,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/external-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List External Candidates */
+        get: operations["list_external_candidates_api_v1_projects_external_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import External Project */
+        post: operations["import_external_project_api_v1_projects_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -1045,6 +1079,57 @@ export interface paths {
         get: operations["get_shot_deletion_impact_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__deletion_impact_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync External Project */
+        post: operations["sync_external_project_api_v1_projects__project_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/sync-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Sync Settings */
+        patch: operations["update_sync_settings_api_v1_projects__project_id__sync_settings_patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/sync/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview External Sync */
+        post: operations["preview_external_sync_api_v1_projects__project_id__sync_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1614,6 +1699,36 @@ export interface components {
             /** Version */
             version?: string | null;
         };
+        /** ExternalProjectCandidate */
+        ExternalProjectCandidate: {
+            /** Id */
+            id: string;
+            /** Imported Project Id */
+            imported_project_id?: string | null;
+            /** Revision */
+            revision: string;
+            /** Source Locator */
+            source_locator: string;
+            /** Title */
+            title: string;
+        };
+        /** ExternalProjectCandidateList */
+        ExternalProjectCandidateList: {
+            /** Items */
+            items: components["schemas"]["ExternalProjectCandidate"][];
+        };
+        /** ExternalProjectImport */
+        ExternalProjectImport: {
+            /**
+             * Auto Sync
+             * @default false
+             */
+            auto_sync: boolean;
+            /** External Id */
+            external_id: string;
+            /** Project Id */
+            project_id?: string | null;
+        };
         /**
          * GenerationJobCreate
          * @description Jobと実行時Manifestを同一トランザクションで作成する要求。
@@ -2072,6 +2187,8 @@ export interface components {
         ProjectRead: {
             /** Archived At */
             archived_at: string | null;
+            /** Auto Sync */
+            auto_sync: boolean;
             /** Canon Count */
             canon_count: number;
             /** Created At */
@@ -2087,6 +2204,8 @@ export interface components {
             generation_defaults: components["schemas"]["ProjectGenerationDefaults"];
             /** Id */
             id: string;
+            /** Last Synced At */
+            last_synced_at: string | null;
             /** Last Used At */
             last_used_at: string | null;
             /**
@@ -2101,6 +2220,8 @@ export interface components {
             /** Shot Count */
             shot_count: number;
             source: components["schemas"]["ProjectSource"];
+            /** Source Snapshot Sha256 */
+            source_snapshot_sha256: string | null;
             /**
              * Source Type
              * @enum {string}
@@ -2111,6 +2232,13 @@ export interface components {
              * @enum {string}
              */
             status: "planning" | "active" | "on_hold" | "completed";
+            /** Sync Error */
+            sync_error: string | null;
+            /**
+             * Sync State
+             * @enum {string}
+             */
+            sync_state: "never" | "synced" | "outdated" | "conflicted" | "failed";
             /** Tags */
             tags: string[];
             /** Thumbnail Artifact Id */
@@ -2126,6 +2254,58 @@ export interface components {
             revision: string;
             /** Source Locator */
             source_locator: string;
+        };
+        /** ProjectSyncApply */
+        ProjectSyncApply: {
+            /** Resolutions */
+            resolutions?: components["schemas"]["ProjectSyncResolution"][];
+        };
+        /** ProjectSyncChange */
+        ProjectSyncChange: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "added" | "changed" | "deleted";
+            /**
+             * Conflict
+             * @default false
+             */
+            conflict: boolean;
+            /** External Value */
+            external_value?: unknown | null;
+            /** Local Value */
+            local_value?: unknown | null;
+            /** Path */
+            path: string;
+        };
+        /** ProjectSyncPreview */
+        ProjectSyncPreview: {
+            /** Changes */
+            changes: components["schemas"]["ProjectSyncChange"][];
+            /** Has Conflicts */
+            has_conflicts: boolean;
+            /** Project Id */
+            project_id: string;
+            /** Snapshot Sha256 */
+            snapshot_sha256: string;
+            /** Source Revision */
+            source_revision: string;
+        };
+        /** ProjectSyncResolution */
+        ProjectSyncResolution: {
+            /**
+             * Choice
+             * @enum {string}
+             */
+            choice: "local" | "external";
+            /** Path */
+            path: string;
+        };
+        /** ProjectSyncSettings */
+        ProjectSyncSettings: {
+            /** Auto Sync */
+            auto_sync: boolean;
         };
         /**
          * ProjectUpdate
@@ -3738,6 +3918,59 @@ export interface operations {
             };
         };
     };
+    list_external_candidates_api_v1_projects_external_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalProjectCandidateList"];
+                };
+            };
+        };
+    };
+    import_external_project_api_v1_projects_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalProjectImport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_project_api_v1_projects__project_id__get: {
         parameters: {
             query?: never;
@@ -4568,6 +4801,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StructureDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_external_project_api_v1_projects__project_id__sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSyncApply"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_sync_settings_api_v1_projects__project_id__sync_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSyncSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_external_sync_api_v1_projects__project_id__sync_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSyncPreview"];
                 };
             };
             /** @description Validation Error */
