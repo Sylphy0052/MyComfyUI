@@ -10,7 +10,7 @@ sidecarを起動する側は、bundleを読み込む前に次のglobalを書き�
 window.__MYCOMFYUI_API_BASE_URL__ = "http://127.0.0.1:53421";
 ```
 
-値はoriginまでで足りる。画面側が`/api/v1`を足すため、末尾に`/api/v1`を付けない。末尾の`/`は落としてから扱う。Tauriでは`WebviewWindowBuilder`の初期化scriptのように、最初のscriptより前に走る経路で渡す。sidecarのportは[api-sidecar.md](./api-sidecar.md)の`MYCOMFYUI_API_LISTENING`の行から取る。
+値はoriginまでで足りる。画面側が`/api/v1`を足すため、末尾に`/api/v1`を付けない。末尾の`/`は落としてから扱う。Tauriでは`WebviewWindowBuilder`の初期化scriptのように、最初のscriptより前に走る経路で渡す。実際の注入は[desktop-shell.md](./desktop-shell.md)の手順で行う。sidecarのportは[api-sidecar.md](./api-sidecar.md)の`MYCOMFYUI_API_LISTENING`の行から取る。
 
 注入する側は、同じoriginをAPIの`--allow-origin`へも渡す。別originからの呼び出しになるため、CORSの許可がないとブラウザ側で止まる。
 

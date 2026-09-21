@@ -1,0 +1,14 @@
+{
+  "name": "@mycomfyui/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MyComfyUI のデスクトップシェル。Tauri 2 で Web UI を表示し、Application API を sidecar として起動する。",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5"
+  }
+}

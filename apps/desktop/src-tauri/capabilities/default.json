@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "画面へ渡す権限。sidecar の起動と停止は Rust 側だけで行うため、shell plugin の実行権限は画面へ渡さない。",
+  "windows": ["shell", "main"],
+  "permissions": ["core:default"]
+}

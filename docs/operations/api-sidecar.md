@@ -37,7 +37,7 @@ npm run api:serve -- --port 0 --allow-origin http://tauri.localhost
 MYCOMFYUI_API_LISTENING http://127.0.0.1:53421
 ```
 
-sidecarを起動する側はこの行を読んでAPIの接続先を決める。書式を変えると読む側が壊れるため、変更するときは読む側も一緒に直す。読んだ接続先をWeb UIへ渡す手順は[web-api-base-url.md](./web-api-base-url.md)に置く。
+sidecarを起動する側はこの行を読んでAPIの接続先を決める。書式を変えると読む側が壊れるため、変更するときは読む側も一緒に直す。読んだ接続先をWeb UIへ渡す手順は[web-api-base-url.md](./web-api-base-url.md)に、読む側の実装と起動の流れは[desktop-shell.md](./desktop-shell.md)に置く。
 
 socketはこの行を出す前に確保してある。行が出た時点でportは確定しており、あとは`GET /api/v1/health`が200を返すまで待てばよい。
 

@@ -16,6 +16,13 @@ __pycache__/
 node_modules/
 apps/web/dist/
 
+# Tauri
+# Rust のビルド成果物。Cargo.lock は追跡する。
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+# PyInstaller で固めた sidecar の置き場。実行ファイルは配布時に作る。
+apps/desktop/src-tauri/binaries/
+
 # Playwright MCP の作業出力
 .playwright-mcp/
 
