@@ -817,6 +817,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project Progress */
+        get: operations["get_project_progress_api_v1_projects__project_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/restore": {
         parameters: {
             query?: never;
@@ -844,7 +861,25 @@ export interface paths {
         /** List Scenes */
         get: operations["list_scenes_api_v1_projects__project_id__scenes_get"];
         put?: never;
-        post?: never;
+        /** Create Scene */
+        post: operations["create_scene_api_v1_projects__project_id__scenes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/scenes/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder Scenes */
+        post: operations["reorder_scenes_api_v1_projects__project_id__scenes_reorder_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -860,6 +895,25 @@ export interface paths {
         };
         /** Get Scene */
         get: operations["get_scene_api_v1_projects__project_id__scenes__scene_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Scene */
+        delete: operations["delete_scene_api_v1_projects__project_id__scenes__scene_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Scene */
+        patch: operations["update_scene_api_v1_projects__project_id__scenes__scene_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/scenes/{scene_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scene Deletion Impact */
+        get: operations["get_scene_deletion_impact_api_v1_projects__project_id__scenes__scene_id__deletion_impact_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -878,7 +932,25 @@ export interface paths {
         /** List Shots */
         get: operations["list_shots_api_v1_projects__project_id__scenes__scene_id__shots_get"];
         put?: never;
-        post?: never;
+        /** Create Shot */
+        post: operations["create_shot_api_v1_projects__project_id__scenes__scene_id__shots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/scenes/{scene_id}/shots/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder Shots */
+        post: operations["reorder_shots_api_v1_projects__project_id__scenes__scene_id__shots_reorder_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -894,6 +966,25 @@ export interface paths {
         };
         /** Get Shot */
         get: operations["get_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Shot */
+        delete: operations["delete_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Shot */
+        patch: operations["update_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Shot Deletion Impact */
+        get: operations["get_shot_deletion_impact_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__deletion_impact_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1781,6 +1872,19 @@ export interface components {
             /** Items */
             items: components["schemas"]["ProjectRead"][];
         };
+        /** ProjectProgress */
+        ProjectProgress: {
+            /** Project Id */
+            project_id: string;
+            /** Scenes */
+            scenes: {
+                [key: string]: number;
+            };
+            /** Shots */
+            shots: {
+                [key: string]: number;
+            };
+        };
         /** ProjectRead */
         ProjectRead: {
             /** Archived At */
@@ -1944,6 +2048,87 @@ export interface components {
             recorded: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** SceneCreate */
+        SceneCreate: {
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Production Status
+             * @default not_started
+             * @enum {string}
+             */
+            production_status: "not_started" | "in_progress" | "has_candidates" | "accepted" | "completed";
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags?: string[];
+        };
+        /** SceneUpdate */
+        SceneUpdate: {
+            /** Notes */
+            notes?: string | null;
+            /** Production Status */
+            production_status?: ("not_started" | "in_progress" | "has_candidates" | "accepted" | "completed") | null;
+            /** Summary */
+            summary?: string | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
+        /** ShotCreate */
+        ShotCreate: {
+            /**
+             * Duration Sec
+             * @default 5
+             */
+            duration_sec: number;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Production Status
+             * @default not_started
+             * @enum {string}
+             */
+            production_status: "not_started" | "in_progress" | "has_candidates" | "accepted" | "completed";
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags?: string[];
+        };
+        /** ShotUpdate */
+        ShotUpdate: {
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Notes */
+            notes?: string | null;
+            /** Production Status */
+            production_status?: ("not_started" | "in_progress" | "has_candidates" | "accepted" | "completed") | null;
+            /** Summary */
+            summary?: string | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
+        /** StructureDeletionImpact */
+        StructureDeletionImpact: {
+            /** Active Job Count */
+            active_job_count: number;
+            /** Artifact Count */
+            artifact_count: number;
+            /** Blockers */
+            blockers: string[];
+            /** Job Count */
+            job_count: number;
+            /** Requires Confirmation */
+            requires_confirmation: boolean;
+            /** Resource Id */
+            resource_id: string;
+            /** Shot Count */
+            shot_count: number;
+        };
+        /** StructureReorder */
+        StructureReorder: {
+            /** Ids */
+            ids: string[];
         };
         /** ValidationError */
         ValidationError: {
@@ -3531,6 +3716,37 @@ export interface operations {
             };
         };
     };
+    get_project_progress_api_v1_projects__project_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     restore_project_api_v1_projects__project_id__restore_post: {
         parameters: {
             query?: never;
@@ -3595,6 +3811,76 @@ export interface operations {
             };
         };
     };
+    create_scene_api_v1_projects__project_id__scenes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_scenes_api_v1_projects__project_id__scenes_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StructureReorder"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_scene_api_v1_projects__project_id__scenes__scene_id__get: {
         parameters: {
             query?: never;
@@ -3616,6 +3902,108 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scene_api_v1_projects__project_id__scenes__scene_id__delete: {
+        parameters: {
+            query?: {
+                confirm?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scene_api_v1_projects__project_id__scenes__scene_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scene_deletion_impact_api_v1_projects__project_id__scenes__scene_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructureDeletionImpact"];
                 };
             };
             /** @description Validation Error */
@@ -3663,6 +4051,78 @@ export interface operations {
             };
         };
     };
+    create_shot_api_v1_projects__project_id__scenes__scene_id__shots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShotCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_shots_api_v1_projects__project_id__scenes__scene_id__shots_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StructureReorder"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__get: {
         parameters: {
             query?: never;
@@ -3685,6 +4145,111 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__delete: {
+        parameters: {
+            query?: {
+                confirm?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+                shot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+                shot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShotUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_shot_deletion_impact_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+                shot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructureDeletionImpact"];
                 };
             };
             /** @description Validation Error */

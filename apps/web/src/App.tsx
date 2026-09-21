@@ -126,6 +126,7 @@ export function App() {
   const [busyArtifactId, setBusyArtifactId] = useState<string | null>(null);
   // Job を投入・派生させたときに値を変え、Artifact 履歴を取り直させる。
   const [historyToken, setHistoryToken] = useState(0);
+  const [structureToken, setStructureToken] = useState(0);
 
   const jobScope = useMemo<Parameters<typeof api.listJobs>[0]>(() => {
     if (!projectId) return { unassigned: true };
@@ -193,7 +194,11 @@ export function App() {
         const list = await api.listScenes(projectId);
         if (!active) return;
         setScenes(list.items);
-        setSceneId(list.items.length > 0 ? list.items[0].id : null);
+        setSceneId((current) =>
+          current && list.items.some((item) => item.id === current)
+            ? current
+            : (list.items[0]?.id ?? null),
+        );
       } catch (cause) {
         if (active) setError(describe(cause));
       }
@@ -201,7 +206,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, structureToken]);
 
   useEffect(() => {
     if (!projectId || !sceneId) {
@@ -220,7 +225,11 @@ export function App() {
         if (!active) return;
         setScene(envelope);
         setShots(shotList.items);
-        setShotId(shotList.items.length > 0 ? shotList.items[0].id : null);
+        setShotId((current) =>
+          current && shotList.items.some((item) => item.id === current)
+            ? current
+            : (shotList.items[0]?.id ?? null),
+        );
       } catch (cause) {
         if (active) setError(describe(cause));
       }
@@ -228,7 +237,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [projectId, sceneId]);
+  }, [projectId, sceneId, structureToken]);
 
   useEffect(() => {
     if (!projectId || !sceneId || !shotId) {
@@ -247,7 +256,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [projectId, sceneId, shotId]);
+  }, [projectId, sceneId, shotId, structureToken]);
 
   const refreshJobs = useCallback(async () => {
     const list = await api.listJobs(jobScope);
@@ -515,6 +524,7 @@ export function App() {
               projectId={projectId}
               onSelectProject={selectProject}
               onManageProjects={() => setView("projects")}
+              onStructureChanged={() => setStructureToken((value) => value + 1)}
               scenes={scenes}
               sceneId={sceneId}
               onSelectScene={setSceneId}

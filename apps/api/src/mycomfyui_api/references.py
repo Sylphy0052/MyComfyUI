@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -20,8 +21,16 @@ from mycomfyui_api.adapters.aimedia.client import (
 )
 from mycomfyui_api.db import get_session
 from mycomfyui_api.errors import ApiError
-from mycomfyui_api.models import Project
+from mycomfyui_api.models import Project, ProjectScene, ProjectShot
 from mycomfyui_api.schemas import CANON_ID_PATTERN, REFERENCE_ID_PATTERN
+from mycomfyui_api.structure import (
+    get_local_scene,
+    get_local_shot,
+    scene_envelope,
+    scene_summary,
+    shot_envelope,
+    shot_summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +102,15 @@ async def list_scenes(
 ) -> dict[str, Any]:
     project = await _require_project(session, project_id)
     if project.source_type == "local":
-        return {"items": []}
+        scenes = await session.scalars(
+            select(ProjectScene)
+            .where(
+                ProjectScene.project_id == project_id,
+                ProjectScene.deleted_at.is_(None),
+            )
+            .order_by(ProjectScene.sequence, ProjectScene.id)
+        )
+        return {"items": [await scene_summary(session, scene) for scene in scenes]}
     return await _relay(lambda: source.list_scenes(_external_id(project)))
 
 
@@ -105,6 +122,10 @@ async def get_scene(
     session: SessionDep,
 ) -> dict[str, Any]:
     project = await _require_project(session, project_id)
+    if project.source_type == "local":
+        return await scene_envelope(
+            session, await get_local_scene(session, project_id, scene_id)
+        )
     return await _relay(lambda: source.get_scene(_external_id(project), scene_id))
 
 
@@ -116,6 +137,18 @@ async def list_shots(
     session: SessionDep,
 ) -> dict[str, Any]:
     project = await _require_project(session, project_id)
+    if project.source_type == "local":
+        await get_local_scene(session, project_id, scene_id)
+        shots = await session.scalars(
+            select(ProjectShot)
+            .where(
+                ProjectShot.project_id == project_id,
+                ProjectShot.scene_id == scene_id,
+                ProjectShot.deleted_at.is_(None),
+            )
+            .order_by(ProjectShot.sequence, ProjectShot.id)
+        )
+        return {"items": [shot_summary(shot) for shot in shots]}
     return await _relay(lambda: source.list_shots(_external_id(project), scene_id))
 
 
@@ -128,6 +161,10 @@ async def get_shot(
     session: SessionDep,
 ) -> dict[str, Any]:
     project = await _require_project(session, project_id)
+    if project.source_type == "local":
+        return shot_envelope(
+            await get_local_shot(session, project_id, scene_id, shot_id)
+        )
     return await _relay(
         lambda: source.get_shot(_external_id(project), scene_id, shot_id)
     )

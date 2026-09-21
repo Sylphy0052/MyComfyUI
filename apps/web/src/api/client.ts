@@ -53,6 +53,13 @@ export type ProjectCreate = components["schemas"]["ProjectCreate"];
 export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 export type ProjectDeletionImpact =
   components["schemas"]["ProjectDeletionImpact"];
+export type SceneCreate = components["schemas"]["SceneCreate"];
+export type SceneUpdate = components["schemas"]["SceneUpdate"];
+export type ShotCreate = components["schemas"]["ShotCreate"];
+export type ShotUpdate = components["schemas"]["ShotUpdate"];
+export type StructureDeletionImpact =
+  components["schemas"]["StructureDeletionImpact"];
+export type ProjectProgress = components["schemas"]["ProjectProgress"];
 
 /**
  * API が返す共通 Envelope。表示文言ではなく code で種別を判定する (ADR 0001)。
@@ -198,6 +205,35 @@ export const api = {
       `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}`,
     ),
 
+  createScene: (projectId: string, payload: SceneCreate) =>
+    request<SceneEnvelope>(
+      `/projects/${encodeURIComponent(projectId)}/scenes`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  updateScene: (projectId: string, sceneId: string, payload: SceneUpdate) =>
+    request<SceneEnvelope>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    ),
+
+  reorderScenes: (projectId: string, ids: string[]) =>
+    request<SceneList>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/reorder`,
+      { method: "POST", body: JSON.stringify({ ids }) },
+    ),
+
+  getSceneDeletionImpact: (projectId: string, sceneId: string) =>
+    request<StructureDeletionImpact>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/deletion-impact`,
+    ),
+
+  deleteScene: (projectId: string, sceneId: string, confirm = false) =>
+    request<{ id: string; deleted_at: string }>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}?confirm=${String(confirm)}`,
+      { method: "DELETE" },
+    ),
+
   listShots: (projectId: string, sceneId: string) =>
     request<ShotList>(
       `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots`,
@@ -207,6 +243,54 @@ export const api = {
     request<ShotEnvelope>(
       `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}` +
         `/shots/${encodeURIComponent(shotId)}`,
+    ),
+
+  createShot: (projectId: string, sceneId: string, payload: ShotCreate) =>
+    request<ShotEnvelope>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  updateShot: (
+    projectId: string,
+    sceneId: string,
+    shotId: string,
+    payload: ShotUpdate,
+  ) =>
+    request<ShotEnvelope>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots/${encodeURIComponent(shotId)}`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    ),
+
+  reorderShots: (projectId: string, sceneId: string, ids: string[]) =>
+    request<ShotList>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots/reorder`,
+      { method: "POST", body: JSON.stringify({ ids }) },
+    ),
+
+  getShotDeletionImpact: (
+    projectId: string,
+    sceneId: string,
+    shotId: string,
+  ) =>
+    request<StructureDeletionImpact>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots/${encodeURIComponent(shotId)}/deletion-impact`,
+    ),
+
+  deleteShot: (
+    projectId: string,
+    sceneId: string,
+    shotId: string,
+    confirm = false,
+  ) =>
+    request<{ id: string; deleted_at: string }>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots/${encodeURIComponent(shotId)}?confirm=${String(confirm)}`,
+      { method: "DELETE" },
+    ),
+
+  getProjectProgress: (projectId: string) =>
+    request<ProjectProgress>(
+      `/projects/${encodeURIComponent(projectId)}/progress`,
     ),
 
   listJobs: (params: {

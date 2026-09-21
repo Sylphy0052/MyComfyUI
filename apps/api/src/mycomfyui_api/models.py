@@ -76,6 +76,63 @@ class Project(Base):
     deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ProjectScene(Base):
+    """ローカルProjectが所有するScene。"""
+
+    __tablename__ = "project_scene"
+    __table_args__ = (
+        CheckConstraint(
+            "production_status in ('not_started','in_progress','has_candidates','accepted','completed')",
+            name="ck_project_scene_production_status",
+        ),
+        Index("ix_project_scene_project", "project_id", "deleted_at", "sequence"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(PROJECT_ID_LENGTH), ForeignKey("project.id"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    production_status: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+    deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ProjectShot(Base):
+    """ローカルSceneが所有するShot。"""
+
+    __tablename__ = "project_shot"
+    __table_args__ = (
+        CheckConstraint(
+            "production_status in ('not_started','in_progress','has_candidates','accepted','completed')",
+            name="ck_project_shot_production_status",
+        ),
+        Index("ix_project_shot_scene", "scene_id", "deleted_at", "sequence"),
+        Index("ix_project_shot_project", "project_id", "deleted_at"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(PROJECT_ID_LENGTH), ForeignKey("project.id"), nullable=False
+    )
+    scene_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("project_scene.id"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_sec: Mapped[float] = mapped_column(Float, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    production_status: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+    deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Workflow(Base):
     """登録済みWorkflow。Recipeが参照する実行本体の識別単位。
 

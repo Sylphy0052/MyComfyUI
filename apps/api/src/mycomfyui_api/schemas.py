@@ -29,6 +29,9 @@ ProjectStatus = Literal["planning", "active", "on_hold", "completed"]
 ProjectLifecycle = Literal["active", "archived", "trashed"]
 ProjectSourceType = Literal["local", "external"]
 ProjectSort = Literal["name", "created", "updated", "last_used"]
+ProductionStatus = Literal[
+    "not_started", "in_progress", "has_candidates", "accepted", "completed"
+]
 ApprovalDecision = Literal["approved", "rejected", "expired"]
 JobState = Literal[
     "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
@@ -212,6 +215,91 @@ class ProjectDeletionImpact(ApiModel):
     shot_count: int
     requires_confirmation: bool
     blockers: list[str]
+
+
+class SceneCreate(ApiModel):
+    summary: str = Field(min_length=1, max_length=1_000)
+    notes: str | None = Field(default=None, max_length=10_000)
+    tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
+    production_status: ProductionStatus = "not_started"
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("Sceneのタグを重複させられません。")
+        return value
+
+
+class SceneUpdate(ApiModel):
+    summary: str | None = Field(default=None, min_length=1, max_length=1_000)
+    notes: str | None = Field(default=None, max_length=10_000)
+    tags: list[ArtifactTagValue] | None = Field(default=None, max_length=50)
+    production_status: ProductionStatus | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("Sceneのタグを重複させられません。")
+        return value
+
+
+class ShotCreate(ApiModel):
+    summary: str = Field(min_length=1, max_length=1_000)
+    duration_sec: float = Field(default=5, gt=0, le=3_600)
+    notes: str | None = Field(default=None, max_length=10_000)
+    tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
+    production_status: ProductionStatus = "not_started"
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("Shotのタグを重複させられません。")
+        return value
+
+
+class ShotUpdate(ApiModel):
+    summary: str | None = Field(default=None, min_length=1, max_length=1_000)
+    duration_sec: float | None = Field(default=None, gt=0, le=3_600)
+    notes: str | None = Field(default=None, max_length=10_000)
+    tags: list[ArtifactTagValue] | None = Field(default=None, max_length=50)
+    production_status: ProductionStatus | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("Shotのタグを重複させられません。")
+        return value
+
+
+class StructureReorder(ApiModel):
+    ids: list[ResourceId] = Field(min_length=1)
+
+    @field_validator("ids")
+    @classmethod
+    def _unique_ids(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("並び順のIDを重複させられません。")
+        return value
+
+
+class StructureDeletionImpact(ApiModel):
+    resource_id: str
+    shot_count: int
+    job_count: int
+    artifact_count: int
+    active_job_count: int
+    requires_confirmation: bool
+    blockers: list[str]
+
+
+class ProjectProgress(ApiModel):
+    project_id: str
+    scenes: dict[ProductionStatus, int]
+    shots: dict[ProductionStatus, int]
 
 
 class WorkflowVersionRead(ApiModel):
