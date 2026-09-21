@@ -26,7 +26,7 @@ function ReferenceView({ reference }: { reference: ImmutableReference }) {
 interface Props {
   projects: Project[];
   projectId: string | null;
-  onSelectProject: (projectId: string) => void;
+  onSelectProject: (projectId: string | null) => void;
   scenes: SceneSummary[];
   sceneId: string | null;
   onSelectScene: (sceneId: string) => void;
@@ -56,11 +56,9 @@ export function SceneBrowser({
         <h2>Project</h2>
         <select
           value={projectId ?? ""}
-          onChange={(event) => onSelectProject(event.target.value)}
+          onChange={(event) => onSelectProject(event.target.value || null)}
         >
-          <option value="" disabled>
-            選択してください
-          </option>
+          <option value="">なし</option>
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.title ?? project.id}

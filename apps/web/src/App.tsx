@@ -136,9 +136,6 @@ export function App() {
         if (!active) return;
         setProjects(projectList.items);
         setRecipes(recipeList);
-        if (projectList.items.length > 0) {
-          setProjectId(projectList.items[0].id);
-        }
       } catch (cause) {
         if (active) setError(describe(cause));
       }
@@ -149,7 +146,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) {
+      setScenes([]);
+      setSceneId(null);
+      return;
+    }
     let active = true;
     (async () => {
       try {
