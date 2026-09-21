@@ -26,6 +26,8 @@ export type AgentProposalKind =
   components["schemas"]["AgentProposalCreate"]["kind"];
 export type AgentProviderId =
   NonNullable<components["schemas"]["AgentProposalCreate"]["provider_id"]>;
+export type ImagePromptAssist =
+  components["schemas"]["ImagePromptAssistRead"];
 export type AgentProposalState = NonNullable<AgentProposal["state"]>;
 export type PlannedOperation = components["schemas"]["PlannedOperation"];
 export type ApprovalLog = components["schemas"]["ApprovalLogRead"];
@@ -705,6 +707,15 @@ export const api = {
     `${apiBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}/content`,
 
   listAgentProviders: () => request<AgentProvider[]>("/agent-providers"),
+
+  assistImagePrompt: (payload: {
+    instruction: string;
+    provider_id?: AgentProviderId | null;
+  }) =>
+    request<ImagePromptAssist>("/image-prompt-assists", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   // 提案の取得は生成 Job を投入しない。投入は承認後の適用だけが行う。
   createAgentProposal: (payload: {

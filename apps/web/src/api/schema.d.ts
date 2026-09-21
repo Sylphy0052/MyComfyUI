@@ -722,6 +722,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-prompt-assists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assist Image Prompt
+         * @description 日本語の説明を、SceneやShotに依存しない画像promptへ補完する。
+         *
+         *     Providerへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。
+         *     Job、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は
+         *     利用者が明示的に投入するまで始まらない。
+         */
+        post: operations["assist_image_prompt_api_v1_image_prompt_assists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/image-references": {
         parameters: {
             query?: never;
@@ -2384,6 +2408,35 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * ImagePromptAssistCreate
+         * @description SceneやShotに紐付けない画像prompt補完の要求。
+         */
+        ImagePromptAssistCreate: {
+            /** Instruction */
+            instruction: string;
+            /** Provider Id */
+            provider_id?: ("claude_code" | "codex" | "qwen" | "stub") | null;
+        };
+        /**
+         * ImagePromptAssistRead
+         * @description 構造化検証済みの画像prompt補完結果。
+         */
+        ImagePromptAssistRead: {
+            /** Model */
+            model: string | null;
+            /** Negative Prompt */
+            negative_prompt: string;
+            /** Positive Prompt */
+            positive_prompt: string;
+            /**
+             * Provider Id
+             * @enum {string}
+             */
+            provider_id: "claude_code" | "codex" | "qwen" | "stub";
+            /** Rationale */
+            rationale: string;
         };
         /**
          * ImageReferenceCreate
@@ -4546,6 +4599,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    assist_image_prompt_api_v1_image_prompt_assists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImagePromptAssistCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImagePromptAssistRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
