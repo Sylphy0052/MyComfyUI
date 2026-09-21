@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     #: Qwenを動かすOpenAI互換推論サーバーの接続先。Remote GPU Hostで動かす場合も
     #: ComfyUIとvoice-runnerと同じく、この値だけをRemote PCのURLへ変える。
     agent_qwen_base_url: str = "http://127.0.0.1:8000/v1"
-    #: 推論サーバーへ渡すモデル名。載せているモデルの名前に合わせる。
+    #: 推論サーバーへ渡すモデル名。画像タグ抽出も使う場合は視覚言語モデルを指定する。
     agent_qwen_model: str = "qwen3"
     #: 提案1件あたりの実行上限。ローカル推論はCLI経由より遅くなりうるため別に持つ。
     agent_qwen_timeout_seconds: float = Field(default=180.0, gt=0)

@@ -51,6 +51,32 @@ function initialValues(recipe: Recipe, fields: FieldSpec[]): Record<string, stri
   return values;
 }
 
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("画像を読み込めませんでした。"));
+    reader.onabort = () => reject(new Error("画像の読み込みが中断されました。"));
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("画像をBase64へ変換できませんでした。"));
+        return;
+      }
+      const separator = reader.result.indexOf(",");
+      if (separator < 0) {
+        reject(new Error("画像をBase64へ変換できませんでした。"));
+        return;
+      }
+      resolve(reader.result.slice(separator + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function describe(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 interface Props {
   projectId: string | null;
   recipes: Recipe[];
@@ -93,6 +119,10 @@ export function GenerationForm({
   const [values, setValues] = useState<Record<string, string>>({});
   const [invalid, setInvalid] = useState<string | null>(null);
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
+  const [tagImage, setTagImage] = useState<File | null>(null);
+  const [extractingTags, setExtractingTags] = useState(false);
+  const [tagError, setTagError] = useState<string | null>(null);
+  const [extractedTags, setExtractedTags] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [providerId, setProviderId] = useState<AgentProviderId | "">("");
@@ -211,6 +241,52 @@ export function GenerationForm({
     onPreview(recipe, inputs, false);
   };
 
+  const extractTags = async () => {
+    if (!tagImage) return;
+    if (!tagImage.type.startsWith("image/")) {
+      setTagError("画像形式を判別できません。対応する画像を選び直してください。");
+      return;
+    }
+    setExtractingTags(true);
+    setTagError(null);
+    try {
+      const result = await api.extractImageTags(
+        await toBase64(tagImage),
+        tagImage.type,
+      );
+      setExtractedTags(result.tags);
+    } catch (error) {
+      setExtractedTags([]);
+      setTagError(describe(error));
+    } finally {
+      setExtractingTags(false);
+    }
+  };
+
+  const appendTags = () => {
+    if (extractedTags.length === 0) return;
+    const current = values.positive_prompt?.trim() ?? "";
+    const existing = new Set(
+      current
+        .split(",")
+        .map((tag) => tag.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    );
+    const tagsToAdd: string[] = [];
+    for (const tag of extractedTags) {
+      const normalized = tag.toLocaleLowerCase();
+      if (existing.has(normalized)) continue;
+      existing.add(normalized);
+      tagsToAdd.push(tag);
+    }
+    const suffix = tagsToAdd.join(", ");
+    if (!suffix) return;
+    setValues({
+      ...values,
+      positive_prompt: current ? `${current}, ${suffix}` : suffix,
+    });
+  };
+
   return (
     <section className="panel">
       <h2>生成</h2>
@@ -309,6 +385,41 @@ export function GenerationForm({
               />
             )}
             {field.help && <p className="muted">{field.help}</p>}
+            {field.name === "positive_prompt" && (
+              <div className="tag-extractor">
+                <label htmlFor="tag-image">画像からタグを抽出</label>
+                <div className="row">
+                  <input
+                    id="tag-image"
+                    disabled={useInheritedDefaults || extractingTags}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      setTagImage(event.target.files?.[0] ?? null);
+                      setExtractedTags([]);
+                      setTagError(null);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={useInheritedDefaults || !tagImage || extractingTags}
+                    onClick={extractTags}
+                  >
+                    {extractingTags ? "抽出中..." : "タグを抽出"}
+                  </button>
+                </div>
+                <p className="muted">選んだ画像は設定済みのQwen互換AIへ送信して解析します。</p>
+                {tagError && <p className="error">{tagError}</p>}
+                {extractedTags.length > 0 && (
+                  <div className="row">
+                    <p className="tag-list">{extractedTags.join(", ")}</p>
+                    <button type="button" disabled={useInheritedDefaults} onClick={appendTags}>
+                      プロンプトへ追加
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
 

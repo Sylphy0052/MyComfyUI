@@ -91,6 +91,22 @@ textarea {
   resize: vertical;
 }
 
+.tag-extractor {
+  margin-top: 8px;
+}
+
+.tag-extractor input[type="file"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.tag-list {
+  margin: 0;
+  flex: 1;
+  font-size: 12px;
+  word-break: break-word;
+}
+
 button {
   cursor: pointer;
   width: auto;
