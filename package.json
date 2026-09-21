@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @mycomfyui/web",
+    "dev:all": "bash tools/start-dev.sh",
     "build": "npm run build --workspace @mycomfyui/web",
     "preview": "npm run preview --workspace @mycomfyui/web",
     "typecheck": "npm run typecheck --workspace @mycomfyui/web",
