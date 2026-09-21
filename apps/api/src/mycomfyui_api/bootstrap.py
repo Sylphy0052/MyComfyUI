@@ -53,6 +53,12 @@ DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
     },
     "width": {"type": "integer", "label": "幅", "control": "number"},
     "height": {"type": "integer", "label": "高さ", "control": "number"},
+    "batch_size": {
+        "type": "integer",
+        "label": "バッチサイズ",
+        "control": "number",
+        "help": "1回のJobで生成する枚数。",
+    },
     "steps": {"type": "integer", "label": "ステップ数", "control": "number"},
     "cfg": {"type": "number", "label": "CFG", "control": "number"},
     "seed": {
@@ -72,6 +78,7 @@ DEFAULT_VALUES: dict[str, Any] = {
     "negative_prompt": "",
     "width": 832,
     "height": 1216,
+    "batch_size": 1,
     "steps": 30,
     "cfg": 4.0,
     "seed": workflow_module.AUTO_SEED,
@@ -94,7 +101,12 @@ async def ensure_default_recipes(
     existing = result.scalars().all()
     for recipe in existing:
         reference = recipe.workflow_template_ref
-        if isinstance(reference, dict) and reference.get("sha256") == digest:
+        if (
+            isinstance(reference, dict)
+            and reference.get("sha256") == digest
+            and isinstance(recipe.input_schema, dict)
+            and "batch_size" in recipe.input_schema
+        ):
             return None
 
     # `existing`は作成日時の降順のため、先頭が直近の版になる。後継はそこへ結ぶ。

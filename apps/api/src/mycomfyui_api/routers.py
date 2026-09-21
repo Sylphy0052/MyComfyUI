@@ -3424,6 +3424,38 @@ async def create_agent_proposal(
     return _proposal_read(proposal)
 
 
+@router.post(
+    "/image-prompt-assists",
+    response_model=schemas.ImagePromptAssistRead,
+)
+async def assist_image_prompt(
+    payload: schemas.ImagePromptAssistCreate,
+    providers: AgentProvidersDep,
+):
+    """日本語の説明を、SceneやShotに依存しない画像promptへ補完する。
+
+    Providerへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。
+    Job、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は
+    利用者が明示的に投入するまで始まらない。
+    """
+    provider = _resolve_agent_provider(providers, payload.provider_id)
+    request = agent_base.ProposalRequest(
+        kind="image_prompt", instruction=payload.instruction, context={}
+    )
+    try:
+        result = await provider.propose(request)
+        output = proposals.validate_output("image_prompt", result.output)
+    except agent_base.AgentError as error:
+        raise _agent_error(error) from error
+    return schemas.ImagePromptAssistRead(
+        positive_prompt=output["positive_prompt"],
+        negative_prompt=output["negative_prompt"],
+        rationale=output["rationale"],
+        provider_id=provider.id,
+        model=result.model,
+    )
+
+
 @router.get("/agent-proposals", response_model=list[schemas.AgentProposalRead])
 async def list_agent_proposals(
     session: SessionDep,
