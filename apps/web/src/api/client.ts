@@ -2,7 +2,6 @@ import { apiBaseUrl } from "./base-url";
 import type { components } from "./schema";
 import type {
   CanonList,
-  ProjectList,
   SceneEnvelope,
   SceneList,
   ShotEnvelope,
@@ -49,6 +48,7 @@ export type ArtifactIntegrity = components["schemas"]["ArtifactIntegrityRead"];
 export type ArtifactIntegrityReason =
   components["schemas"]["ArtifactIntegrityFinding"]["reason"];
 export type ProjectRecord = components["schemas"]["ProjectRead"];
+export type ProjectList = components["schemas"]["ProjectList"];
 export type ProjectCreate = components["schemas"]["ProjectCreate"];
 export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 export type ProjectDeletionImpact =
@@ -133,11 +133,15 @@ export const api = {
     lifecycle?: "active" | "archived" | "trashed";
     query?: string;
     sourceType?: "local" | "external";
+    favoriteOnly?: boolean;
+    sort?: "name" | "created" | "updated" | "last_used";
   }) => {
     const query = new URLSearchParams();
     if (params?.lifecycle) query.set("lifecycle", params.lifecycle);
     if (params?.query) query.set("q", params.query);
     if (params?.sourceType) query.set("source_type", params.sourceType);
+    if (params?.favoriteOnly) query.set("favorite_only", "true");
+    if (params?.sort) query.set("sort", params.sort);
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request<ProjectList>(`/projects${suffix}`);
   },

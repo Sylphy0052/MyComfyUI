@@ -1,6 +1,8 @@
+import { useMemo, useState } from "react";
+
+import type { ProjectRecord } from "../api/client";
 import type {
   ImmutableReference,
-  Project,
   SceneEnvelope,
   SceneSummary,
   ShotEnvelope,
@@ -24,9 +26,10 @@ function ReferenceView({ reference }: { reference: ImmutableReference }) {
 }
 
 interface Props {
-  projects: Project[];
+  projects: ProjectRecord[];
   projectId: string | null;
   onSelectProject: (projectId: string | null) => void;
+  onManageProjects: () => void;
   scenes: SceneSummary[];
   sceneId: string | null;
   onSelectScene: (sceneId: string) => void;
@@ -41,6 +44,7 @@ export function SceneBrowser({
   projects,
   projectId,
   onSelectProject,
+  onManageProjects,
   scenes,
   sceneId,
   onSelectScene,
@@ -50,21 +54,48 @@ export function SceneBrowser({
   onSelectShot,
   shot,
 }: Props) {
+  const [projectQuery, setProjectQuery] = useState("");
+  const visibleProjects = useMemo(() => {
+    const query = projectQuery.trim().toLocaleLowerCase();
+    if (!query) return projects;
+    return projects.filter((project) =>
+      [project.name, project.id, ...project.tags].some((value) =>
+        value.toLocaleLowerCase().includes(query),
+      ),
+    );
+  }, [projectQuery, projects]);
+
   return (
     <div>
       <section className="panel">
         <h2>Project</h2>
+        <label htmlFor="generation-project-search">Project検索</label>
+        <input
+          id="generation-project-search"
+          type="search"
+          value={projectQuery}
+          placeholder="名前、ID、タグ"
+          onChange={(event) => setProjectQuery(event.target.value)}
+        />
+        <label htmlFor="generation-project" style={{ marginTop: 8 }}>
+          使用するProject
+        </label>
         <select
+          id="generation-project"
           value={projectId ?? ""}
           onChange={(event) => onSelectProject(event.target.value || null)}
         >
           <option value="">なし</option>
-          {projects.map((project) => (
+          {visibleProjects.map((project) => (
             <option key={project.id} value={project.id}>
-              {project.title ?? project.id}
+              {project.favorite ? "★ " : ""}
+              {project.name}
             </option>
           ))}
         </select>
+        <button type="button" onClick={onManageProjects} style={{ marginTop: 8 }}>
+          Projectを管理
+        </button>
       </section>
 
       <section className="panel">

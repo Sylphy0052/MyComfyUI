@@ -1737,6 +1737,11 @@ export interface components {
         ProjectCreate: {
             /** Description */
             description?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
             /** Id */
             id?: string | null;
             /** Name */
@@ -1790,6 +1795,8 @@ export interface components {
             description: string | null;
             /** External Id */
             external_id: string | null;
+            /** Favorite */
+            favorite: boolean;
             /** Id */
             id: string;
             /** Last Used At */
@@ -1839,6 +1846,8 @@ export interface components {
         ProjectUpdate: {
             /** Description */
             description?: string | null;
+            /** Favorite */
+            favorite?: boolean | null;
             /** Name */
             name?: string | null;
             /** Status */
@@ -3228,6 +3237,8 @@ export interface operations {
                 lifecycle?: "active" | "archived" | "trashed";
                 q?: string | null;
                 source_type?: ("local" | "external") | null;
+                favorite_only?: boolean;
+                sort?: "name" | "created" | "updated" | "last_used";
                 limit?: number;
                 offset?: number;
             };

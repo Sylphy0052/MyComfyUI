@@ -28,6 +28,7 @@ ArtifactDecision = Literal["undecided", "accepted", "rejected"]
 ProjectStatus = Literal["planning", "active", "on_hold", "completed"]
 ProjectLifecycle = Literal["active", "archived", "trashed"]
 ProjectSourceType = Literal["local", "external"]
+ProjectSort = Literal["name", "created", "updated", "last_used"]
 ApprovalDecision = Literal["approved", "rejected", "expired"]
 JobState = Literal[
     "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
@@ -140,6 +141,7 @@ class ProjectCreate(ApiModel):
     description: str | None = Field(default=None, max_length=10_000)
     status: ProjectStatus = "planning"
     tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
+    favorite: bool = False
     thumbnail_artifact_id: ResourceId | None = None
 
     @field_validator("tags")
@@ -157,6 +159,7 @@ class ProjectUpdate(ApiModel):
     description: str | None = Field(default=None, max_length=10_000)
     status: ProjectStatus | None = None
     tags: list[ArtifactTagValue] | None = Field(default=None, max_length=50)
+    favorite: bool | None = None
     thumbnail_artifact_id: ResourceId | None = None
 
     @field_validator("tags")
@@ -181,6 +184,7 @@ class ProjectRead(ApiModel):
     status: ProjectStatus
     lifecycle: ProjectLifecycle
     tags: list[str]
+    favorite: bool
     thumbnail_artifact_id: str | None
     source_type: ProjectSourceType
     source: ProjectSource

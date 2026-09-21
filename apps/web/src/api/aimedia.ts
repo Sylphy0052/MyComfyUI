@@ -15,18 +15,6 @@ export interface ImmutableReference {
   note?: string | null;
 }
 
-export interface Project {
-  id: string;
-  title: string | null;
-  source: { source_locator: string; revision: string };
-  scene_count: number;
-  canon_count: number;
-}
-
-export interface ProjectList {
-  items: Project[];
-}
-
 export interface SceneSummary {
   id: string;
   project_id: string;
