@@ -364,24 +364,39 @@ export function App() {
     recipe: Recipe | null,
     inputs: Record<string, unknown>,
     useInheritedDefaults: boolean,
+    batchCount: number,
   ) => {
     setSubmitting(true);
     setError(null);
+    const createdJobs: GenerationJob[] = [];
     try {
-      const job = await api.createJob({
-        kind: "image",
-        project_id: projectId,
-        scene_id: sceneId,
-        shot_id: shotId,
-        recipe_id: recipe?.id,
-        use_inherited_defaults: useInheritedDefaults,
-        inputs,
-      });
-      setSelectedJobId(job.id);
+      for (let index = 0; index < batchCount; index += 1) {
+        const job = await api.createJob({
+          kind: "image",
+          project_id: projectId,
+          scene_id: sceneId,
+          shot_id: shotId,
+          recipe_id: recipe?.id,
+          use_inherited_defaults: useInheritedDefaults,
+          inputs,
+        });
+        createdJobs.push(job);
+      }
+      const lastJob = createdJobs.at(-1);
+      if (lastJob) setSelectedJobId(lastJob.id);
       setHistoryToken((current) => current + 1);
       await refreshJobs();
     } catch (cause) {
-      setError(describe(cause));
+      if (createdJobs.length > 0) {
+        setSelectedJobId(createdJobs.at(-1)?.id ?? null);
+        setHistoryToken((current) => current + 1);
+        await refreshJobs();
+        setError(
+          `${createdJobs.length}/${batchCount}バッチを投入しました。残りの投入に失敗しました: ${describe(cause)}`,
+        );
+      } else {
+        setError(describe(cause));
+      }
     } finally {
       setSubmitting(false);
     }

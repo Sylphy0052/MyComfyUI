@@ -153,7 +153,7 @@ OUTPUT_MODELS: dict[AgentProposalKind, type[ProposalOutput]] = {
 #: 種別ごとの指示。Providerへ渡すsystem promptの本文へ埋め込む。
 KIND_DIRECTIVES: dict[AgentProposalKind, str] = {
     "image_prompt": (
-        "与えたShotの内容に沿う画像生成promptを1件提案する。"
+        "与えたShotまたは利用者説明に沿う画像生成promptを1件提案する。"
         "positive_promptは英語の語句列、negative_promptは避けたい要素とする。"
     ),
     "shot_breakdown": (
