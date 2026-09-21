@@ -1,6 +1,7 @@
 // リリースビルドでコンソールの窓を出さない。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod managed_sidecar;
 mod shell_ui;
 mod sidecar;
 
@@ -19,17 +20,7 @@ fn main() {
             // setup の中で待ち合わせるとウィンドウの生成が止まるため、起動は別タスクへ回す。
             tauri::async_runtime::spawn(async move {
                 match sidecar::start(&handle).await {
-                    Ok(base_url) => {
-                        if let Err(error) = shell_ui::open_main(&handle, &base_url) {
-                            shell_ui::open_error(
-                                &handle,
-                                &sidecar::StartupFailure {
-                                    title: "画面を表示できません".to_string(),
-                                    detail: error.to_string(),
-                                },
-                            );
-                        }
-                    }
+                    Ok(()) => {}
                     Err(failure) => shell_ui::open_error(&handle, &failure),
                 }
             });

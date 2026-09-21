@@ -22,9 +22,10 @@ Tauriはexternal binaryを`apps/desktop/src-tauri/binaries/`から読む。名�
 copy dist\mycomfyui-api.exe apps\desktop\src-tauri\binaries\mycomfyui-api-x86_64-pc-windows-msvc.exe
 ```
 
-開発中は固め直さずに済ませられる。`tools/make-sidecar-shim.sh`が`uv run`へ委譲する実行ファイルを置く。引数と標準出力は固めた実行ファイルと同じになる。
+開発中は固め直さずに済ませられる。依存を同期してから`tools/make-sidecar-shim.sh`を実行すると、仮想環境のPythonへ直接委譲する実行ファイルを置く。引数と標準出力は固めた実行ファイルと同じになる。Pythonを直接起動するため、シェルの終了時に子プロセスを残さない。
 
 ```bash
+uv sync --locked --project apps/api
 bash tools/make-sidecar-shim.sh
 ```
 
@@ -42,15 +43,15 @@ npm run desktop:build   # apps/webをbuildしてから配布物を作る
 ## 起動の流れ
 
 1. 「起動しています」の画面を出す。
-2. sidecarを`--port 0`で起動する。`--allow-origin`にはWebViewのoriginを渡す。開発時はViteのoriginも渡す。
+2. sidecarを`--host 127.0.0.1 --port 0`で起動する。環境変数に別のhostがあってもloopbackだけで待ち受ける。`--allow-origin`にはWebViewのoriginを渡す。開発時はViteのoriginも渡す。
 3. 標準出力の`MYCOMFYUI_API_LISTENING <url>`を待つ(上限60秒)。
 4. 受け取ったURLがhttp/httpsかつloopbackであることを確かめる。条件は[web-api-base-url.md](./web-api-base-url.md)と同じにしてある。
 5. `GET <url>/api/v1/health`が200を返すまで待つ(上限30秒)。
-6. Web UIのwindowを作る。bundleの読み込み前に`window.__MYCOMFYUI_API_BASE_URL__`へURLを書く。
+6. Web UIのwindowを作る。bundleの読み込み前に`window.__MYCOMFYUI_API_BASE_URL__`へURLを書き、起動中のwindowは非表示にする。
 
-どこかで失敗したら、同じwindowをエラー表示へ差し替える。終了コードの意味と、sidecarの標準出力・標準エラーの末尾30行を出す。終了コードの一覧は[api-sidecar.md](./api-sidecar.md)にある。
+どこかで失敗したら、起動済みのsidecarを止めてから同じwindowをエラー表示へ差し替える。終了コードの意味と、sidecarの標準出力・標準エラーの末尾30行を出す。終了コードの一覧は[api-sidecar.md](./api-sidecar.md)にある。
 
-起動後にsidecarが落ちた場合も同じエラー画面を出す。
+起動後にsidecarが落ちた場合は、非表示にした起動中のwindowを再表示して同じエラー画面を出す。
 
 ## 保存先
 
@@ -60,7 +61,7 @@ npm run desktop:build   # apps/webをbuildしてから配布物を作る
 
 アプリを終了すると、自分が起動したsidecarだけを止める。portやプロセス名で探して落とす処理は持たないため、利用者が別途起動したApplication APIやBackendは止まらない。
 
-停止は`CommandChild::kill()`による強制終了である。実行中のJobがあっても確認しない。終了時の実行中Jobの扱いはIssue #67で決める。
+停止は強制終了である。WindowsではsidecarをJob Objectへ所属させ、PyInstallerのonefileが起動した子プロセスを含むプロセスツリーを止める。Linuxでは直接起動したsidecarを止める。実行中の生成Jobがあっても確認しない。終了時の実行中Jobの扱いはIssue #67で決める。
 
 ## 権限
 

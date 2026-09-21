@@ -20,6 +20,7 @@ LOG="${WORK}/sidecar.log"
 
 # シェルが渡す引数と同じ並びにする(apps/desktop/src-tauri/src/sidecar.rs)。
 "${SIDECAR}" \
+  --host 127.0.0.1 \
   --port 0 \
   --data-root "${DATA_ROOT}" \
   --allow-origin http://tauri.localhost \

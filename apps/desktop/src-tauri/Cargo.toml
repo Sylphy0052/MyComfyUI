@@ -21,6 +21,16 @@ url = "2"
 # data_root を Web 版の既定と同じ場所へ解決する。tauri が使う版へ揃えて重複を避ける。
 dirs = "6"
 
+[target.'cfg(windows)'.dependencies]
+# PyInstallerの子プロセスを含めて停止するJob Objectの管理に使う。
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+
 [features]
 # Tauri CLI が `tauri dev` で付ける既定の feature。
 default = []

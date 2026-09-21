@@ -52,12 +52,19 @@ pub fn open_main(app: &AppHandle, base_url: &Url) -> tauri::Result<()> {
         "window.{API_BASE_URL_GLOBAL} = {};",
         serde_json::to_string(base).expect("待ち受け先をJSONへ変換できない")
     );
-    WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
+    let window = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
         .title("MyComfyUI")
         .inner_size(1280.0, 800.0)
         .initialization_script(script)
         .build()?;
-    close_shell(app);
+    let handle = app.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+            // shellは再利用のため非表示で残すので、主画面を閉じたらアプリ全体を終了する。
+            handle.exit(0);
+        }
+    });
+    hide_shell(app);
     Ok(())
 }
 
@@ -66,7 +73,8 @@ fn open_shell(app: &AppHandle, url: Url) -> tauri::Result<()> {
     // close() は破棄が非同期で、直後に同じラベルで build すると
     // `a webview with label already exists` になるため作り直さない。
     if let Some(window) = app.get_webview_window(SHELL_WINDOW) {
-        return window.navigate(url);
+        window.navigate(navigation_url(url))?;
+        return window.show();
     }
     WebviewWindowBuilder::new(app, SHELL_WINDOW, WebviewUrl::CustomProtocol(url))
         .title("MyComfyUI")
@@ -76,9 +84,25 @@ fn open_shell(app: &AppHandle, url: Url) -> tauri::Result<()> {
     Ok(())
 }
 
-fn close_shell(app: &AppHandle) {
+/// WebView2のnavigateは初回生成時と異なりcustom protocolを自動変換しない。
+fn navigation_url(url: Url) -> Url {
+    navigation_url_for_platform(url, cfg!(windows))
+}
+
+fn navigation_url_for_platform(url: Url, windows: bool) -> Url {
+    if windows {
+        let converted =
+            url.as_str()
+                .replacen(&format!("{SCHEME}://"), &format!("http://{SCHEME}."), 1);
+        Url::parse(&converted).expect("Windows用のシェル画面URLを組み立てられない")
+    } else {
+        url
+    }
+}
+
+fn hide_shell(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(SHELL_WINDOW) {
-        let _ = window.close();
+        let _ = window.hide();
     }
 }
 
@@ -113,5 +137,22 @@ mod tests {
         assert!(pairs.contains(&("state".to_string(), "error".to_string())));
         assert!(pairs.contains(&("title".to_string(), "題名".to_string())));
         assert!(pairs.contains(&("detail".to_string(), "詳細\n2行目".to_string())));
+    }
+
+    #[test]
+    fn windowsの再遷移用urlへ変換する() {
+        let url = shell_url("error", Some("題名"), Some("詳細"));
+        let converted = navigation_url_for_platform(url, true);
+        assert_eq!(converted.scheme(), "http");
+        assert_eq!(converted.host_str(), Some("mycomfyui.localhost"));
+        assert_eq!(converted.path(), "/shell.html");
+        assert_eq!(
+            converted
+                .query_pairs()
+                .find(|(key, _)| key == "state")
+                .unwrap()
+                .1,
+            "error"
+        );
     }
 }

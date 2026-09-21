@@ -5,18 +5,20 @@
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
-use tokio::time::{sleep, timeout, Instant};
+use tokio::time::{sleep, timeout};
 use url::{Host, Url};
+
+use crate::managed_sidecar::{self, ManagedChild};
 
 /// 実行ファイル名のみ。`tauri-plugin-shell` は dev 時に `target/debug/` 直下、
 /// バンドル時はバンドル直下からこの名前 (+ triple) を探すため、
@@ -31,6 +33,10 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(250);
 /// 失敗したときに画面へ出すログの行数。
 const LOG_LINES: usize = 30;
+const STARTING: u8 = 0;
+const READY: u8 = 1;
+const TERMINATED: u8 = 2;
+const STOPPING: u8 = 3;
 
 /// 起動できなかった理由。画面へそのまま出す。
 pub struct StartupFailure {
@@ -41,9 +47,10 @@ pub struct StartupFailure {
 /// sidecar のハンドルと直近のログ。`AppHandle` の管理下へ置く。
 #[derive(Default)]
 pub struct SidecarState {
-    child: Mutex<Option<CommandChild>>,
+    child: Mutex<Option<ManagedChild>>,
     log: Arc<Mutex<VecDeque<String>>>,
-    ready: Arc<AtomicBool>,
+    lifecycle: Arc<AtomicU8>,
+    transition: Arc<Mutex<()>>,
 }
 
 impl SidecarState {
@@ -79,47 +86,70 @@ fn data_root() -> Result<PathBuf, StartupFailure> {
         })
 }
 
-/// sidecar を起動し、health が返るまで待って base URL を返す。
-pub async fn start(app: &AppHandle) -> Result<Url, StartupFailure> {
+/// sidecar を起動し、health の確認後に Web UI を表示する。
+pub async fn start(app: &AppHandle) -> Result<(), StartupFailure> {
     let state = app.state::<SidecarState>();
-    let data_root = data_root()?;
+    let mut events = {
+        // spawnからchild登録までをstopと直列化し、起動中の終了操作でも取りこぼさない。
+        let _transition = state
+            .transition
+            .lock()
+            .expect("画面遷移のロックを取得できない");
+        if state.lifecycle.load(Ordering::SeqCst) == STOPPING {
+            return Err(StartupFailure {
+                title: "Application API を起動できません".to_string(),
+                detail: "アプリの終了処理が始まっています。".to_string(),
+            });
+        }
+        state.lifecycle.store(STARTING, Ordering::SeqCst);
+        state
+            .log
+            .lock()
+            .expect("ログのロックを取得できない")
+            .clear();
+        let data_root = data_root()?;
 
-    let mut args = vec![
-        "--port".to_string(),
-        "0".to_string(),
-        "--data-root".to_string(),
-        data_root.to_string_lossy().into_owned(),
-    ];
-    for origin in allowed_origins() {
-        args.push("--allow-origin".to_string());
-        args.push(origin);
-    }
+        let mut args = vec![
+            "--host".to_string(),
+            "127.0.0.1".to_string(),
+            "--port".to_string(),
+            "0".to_string(),
+            "--data-root".to_string(),
+            data_root.to_string_lossy().into_owned(),
+        ];
+        for origin in allowed_origins() {
+            args.push("--allow-origin".to_string());
+            args.push(origin);
+        }
 
-    let command = app
-        .shell()
-        .sidecar(SIDECAR_NAME)
-        .map_err(|error| StartupFailure {
+        let command = app
+            .shell()
+            .sidecar(SIDECAR_NAME)
+            .map_err(|error| StartupFailure {
+                title: "Application API を起動できません".to_string(),
+                detail: format!(
+                    "sidecar の実行ファイルを用意できませんでした。\n{error}\n\
+                     docs/operations/desktop-shell.md の手順で {SIDECAR_NAME} を置いてください。"
+                ),
+            })?
+            .args(args);
+
+        let (events, child) = managed_sidecar::spawn(command).map_err(|error| StartupFailure {
             title: "Application API を起動できません".to_string(),
-            detail: format!(
-                "sidecar の実行ファイルを用意できませんでした。\n{error}\n\
-                 docs/operations/desktop-shell.md の手順で {SIDECAR_NAME} を置いてください。"
-            ),
-        })?
-        .args(args);
-
-    let (mut events, child) = command.spawn().map_err(|error| StartupFailure {
-        title: "Application API を起動できません".to_string(),
-        detail: format!("sidecar のプロセスを開始できませんでした。\n{error}"),
-    })?;
-    state
-        .child
-        .lock()
-        .expect("sidecar のロックを取得できない")
-        .replace(child);
+            detail: format!("sidecar のプロセスを開始できませんでした。\n{error}"),
+        })?;
+        state
+            .child
+            .lock()
+            .expect("sidecar のロックを取得できない")
+            .replace(child);
+        events
+    };
 
     let (listening_tx, listening_rx) = oneshot::channel::<String>();
     let log = Arc::clone(&state.log);
-    let ready = Arc::clone(&state.ready);
+    let lifecycle = Arc::clone(&state.lifecycle);
+    let transition = Arc::clone(&state.transition);
     let handle = app.clone();
     // イベントの購読はアプリが終わるまで続ける。待ち受け先の通知だけを一度返し、
     // そのあとは異常終了を拾うために読み続ける。
@@ -150,13 +180,12 @@ pub async fn start(app: &AppHandle) -> Result<Url, StartupFailure> {
                             payload.code, payload.signal
                         ),
                     );
+                    // 起動完了の画面遷移と直列化し、エラー画面を後続のcloseで消さない。
+                    let _transition = transition.lock().expect("画面遷移のロックを取得できない");
                     // 起動後に落ちた場合だけここで知らせる。起動前の失敗は待ち側が拾う。
-                    if ready.load(Ordering::SeqCst) {
-                        let detail = format!(
-                            "{}\n\n{}",
-                            exit_code_hint(payload.code),
-                            recent(&log)
-                        );
+                    if lifecycle.swap(TERMINATED, Ordering::SeqCst) == READY {
+                        let detail =
+                            format!("{}\n\n{}", exit_code_hint(payload.code), recent(&log));
                         crate::shell_ui::open_error(
                             &handle,
                             &StartupFailure {
@@ -172,55 +201,83 @@ pub async fn start(app: &AppHandle) -> Result<Url, StartupFailure> {
         }
     });
 
-    let raw = match timeout(LISTENING_TIMEOUT, listening_rx).await {
-        Ok(Ok(raw)) => raw,
-        Ok(Err(_)) => {
-            return Err(failure_from_log(
-                "Application API が起動しませんでした",
-                "待ち受け先を知らせる前に sidecar が終了しました。",
+    let result = async {
+        let raw = match timeout(LISTENING_TIMEOUT, listening_rx).await {
+            Ok(Ok(raw)) => raw,
+            Ok(Err(_)) => {
+                return Err(failure_from_log(
+                    "Application API が起動しませんでした",
+                    "待ち受け先を知らせる前に sidecar が終了しました。",
+                    &state,
+                ))
+            }
+            Err(_) => {
+                return Err(failure_from_log(
+                    "Application API が起動しませんでした",
+                    &format!(
+                        "{}秒のあいだに待ち受け先が確定しませんでした。",
+                        LISTENING_TIMEOUT.as_secs()
+                    ),
+                    &state,
+                ))
+            }
+        };
+
+        let base_url = validate(&raw).map_err(|reason| {
+            failure_from_log(
+                "Application API の待ち受け先が不正です",
+                &format!("{reason} 受け取った値: {raw}"),
                 &state,
-            ))
-        }
-        Err(_) => {
+            )
+        })?;
+
+        if !wait_for_health(&base_url).await {
             return Err(failure_from_log(
-                "Application API が起動しませんでした",
+                "Application API が応答しません",
                 &format!(
-                    "{}秒のあいだに待ち受け先が確定しませんでした。",
-                    LISTENING_TIMEOUT.as_secs()
+                    "{} の health が{}秒のあいだ200を返しませんでした。",
+                    base_url,
+                    HEALTH_TIMEOUT.as_secs()
                 ),
                 &state,
-            ))
+            ));
         }
-    };
 
-    let base_url = validate(&raw).map_err(|reason| {
-        failure_from_log(
-            "Application API の待ち受け先が不正です",
-            &format!("{reason} 受け取った値: {raw}"),
-            &state,
-        )
-    })?;
-
-    if !wait_for_health(&base_url).await {
-        return Err(failure_from_log(
-            "Application API が応答しません",
-            &format!(
-                "{} の health が{}秒のあいだ200を返しませんでした。",
-                base_url,
-                HEALTH_TIMEOUT.as_secs()
-            ),
-            &state,
-        ));
+        let _transition = state
+            .transition
+            .lock()
+            .expect("画面遷移のロックを取得できない");
+        if state.lifecycle.load(Ordering::SeqCst) != STARTING {
+            return Err(failure_from_log(
+                "Application API が起動しませんでした",
+                "health の確認直後に sidecar が終了しました。",
+                &state,
+            ));
+        }
+        crate::shell_ui::open_main(app, &base_url).map_err(|error| StartupFailure {
+            title: "画面を表示できません".to_string(),
+            detail: error.to_string(),
+        })?;
+        state.lifecycle.store(READY, Ordering::SeqCst);
+        Ok(())
     }
+    .await;
 
-    state.ready.store(true, Ordering::SeqCst);
-    Ok(base_url)
+    if result.is_err() {
+        stop(app);
+    }
+    result
 }
 
 /// 自分が起動した sidecar だけを止める。port やプロセス名で探して落とさないため、
 /// 利用者が別途起動した Application API や Backend には触らない。
 pub fn stop(app: &AppHandle) {
     let state = app.state::<SidecarState>();
+    let _transition = state
+        .transition
+        .lock()
+        .expect("画面遷移のロックを取得できない");
+    state.lifecycle.store(STOPPING, Ordering::SeqCst);
     let child = state
         .child
         .lock()
@@ -259,10 +316,12 @@ fn failure_from_log(title: &str, reason: &str, state: &SidecarState) -> StartupF
 fn exit_code_hint(code: Option<i32>) -> String {
     match code {
         Some(20) => "設定の値が不正です。渡した保存先とportを確かめてください。".to_string(),
-        Some(21) => "指定したhostとportにbindできません。portの使用状況を確かめてください。"
-            .to_string(),
-        Some(3) => "Application API の起動処理が失敗しました。migration の失敗を含みます。"
-            .to_string(),
+        Some(21) => {
+            "指定したhostとportにbindできません。portの使用状況を確かめてください。".to_string()
+        }
+        Some(3) => {
+            "Application API の起動処理が失敗しました。migration の失敗を含みます。".to_string()
+        }
         Some(code) => format!("sidecar が終了コード {code} で終了しました。"),
         None => "sidecar が終了コードを返さずに終了しました。".to_string(),
     }
@@ -275,7 +334,9 @@ fn validate(raw: &str) -> Result<Url, String> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(format!("scheme が {} です。", url.scheme()));
     }
-    let host = url.host().ok_or_else(|| "host がありません。".to_string())?;
+    let host = url
+        .host()
+        .ok_or_else(|| "host がありません。".to_string())?;
     let loopback = match &host {
         Host::Domain(name) => name.eq_ignore_ascii_case("localhost"),
         Host::Ipv4(address) => address.is_loopback(),
@@ -288,16 +349,16 @@ fn validate(raw: &str) -> Result<Url, String> {
 }
 
 async fn wait_for_health(base_url: &Url) -> bool {
-    let deadline = Instant::now() + HEALTH_TIMEOUT;
-    loop {
-        if health_ok(base_url).await {
-            return true;
+    timeout(HEALTH_TIMEOUT, async {
+        loop {
+            if health_ok(base_url).await {
+                return;
+            }
+            sleep(HEALTH_INTERVAL).await;
         }
-        if Instant::now() >= deadline {
-            return false;
-        }
-        sleep(HEALTH_INTERVAL).await;
-    }
+    })
+    .await
+    .is_ok()
 }
 
 /// loopback の平文HTTPだけを相手にするため、状態行だけを見る。
@@ -310,9 +371,8 @@ async fn health_ok(base_url: &Url) -> bool {
     let Ok(mut stream) = TcpStream::connect((host, port)).await else {
         return false;
     };
-    let request = format!(
-        "GET /api/v1/health HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("GET /api/v1/health HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
     if stream.write_all(request.as_bytes()).await.is_err() {
         return false;
     }
