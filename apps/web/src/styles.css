@@ -195,16 +195,68 @@ ul.list li button[aria-pressed="true"] {
 
 .gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px;
+}
+
+.gallery.gallery-s {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.gallery.gallery-l {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
 }
 
 .gallery figure {
   margin: 0;
+  position: relative;
   background: #262a32;
   border: 1px solid var(--panel-border);
   border-radius: 6px;
   overflow: hidden;
+}
+
+/* 採否は枠線と不透明度だけでは判別しづらいため、サムネイル上にバッジで重ねる。 */
+.gallery figure .badge.decision {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(22, 24, 29, 0.85);
+}
+
+.gallery figure .badge.decision-accepted {
+  color: var(--ok);
+}
+
+.gallery figure .badge.decision-rejected {
+  color: var(--danger);
+}
+
+.gallery figure .badge.decision-undecided {
+  color: var(--muted);
+}
+
+.gallery-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.gallery-header h2 {
+  margin: 0;
+}
+
+.thumb-size {
+  display: flex;
+  gap: 4px;
+}
+
+.thumb-size button {
+  min-width: 32px;
+  padding: 2px 6px;
 }
 
 .gallery figure.accepted {
@@ -414,17 +466,159 @@ details summary {
 
 .generation-workspace {
   min-width: 0;
+  /* 画像タブの2カラム化は、ビューポートではなく中央カラムの実幅で判定する。 */
+  container-type: inline-size;
 }
 
+/* タブは塗りだけだとボタン列に見えるため、下線と背景でパネルと連結させる。 */
 .generation-tabs {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  display: flex;
+  gap: 4px;
   margin-bottom: 12px;
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .generation-tabs button {
-  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  margin-bottom: -1px;
+  padding: 8px 18px;
+  color: var(--muted);
+}
+
+.generation-tabs button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.generation-tabs button[aria-selected="true"],
+.generation-tabs button.primary {
+  background: var(--panel);
+  border-color: var(--panel-border);
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.image-workspace:not([hidden]) {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@container (max-width: 720px) {
+  .image-workspace:not([hidden]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 入力カラムは追従させ、結果を見ながら投入できるようにする。 */
+.image-input-column {
+  position: sticky;
+  top: 12px;
+  min-width: 0;
+  /* ヘッダとタブ列の分を引き、ページ最上部でも投入バーが画面内へ収まる高さにする。 */
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+
+.image-result-column {
+  min-width: 0;
+}
+
+/* 1カラムへ落ちた場合は、入力カラムの追従と内部スクロールを解除する。 */
+@container (max-width: 720px) {
+  .image-input-column {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+.image-subtabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.image-subtabs button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  margin-bottom: -1px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.image-subtabs button[aria-selected="true"],
+.image-subtabs button.primary {
+  background: var(--panel);
+  border-color: var(--panel-border);
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+/* 生成フォームは項目数が多いため、fieldsetで役割ごとに区切る。 */
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 10px 12px 12px;
+}
+
+.form-section > legend,
+.form-section > summary {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+}
+
+.form-section.collapsible > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0;
+}
+
+.form-section.collapsible > summary::before {
+  content: "▸ ";
+}
+
+.form-section.collapsible[open] > summary::before {
+  content: "▾ ";
+}
+
+.form-section.collapsible[open] > summary {
+  margin-bottom: 8px;
+}
+
+.form-section fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.form-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px -12px -12px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--panel-border);
+  border-radius: 0 0 8px 8px;
 }
 
 .lower-workspace {

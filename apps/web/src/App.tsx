@@ -43,6 +43,7 @@ const POLL_INTERVAL_MS = 2000;
 
 type View = "projects" | "generate" | "assets" | "workflows";
 type GenerationTab = "image" | "video" | "music" | "voice" | "compose";
+type ImageSubTab = "generate" | "derive" | "sweep";
 type LowerTab = "agent" | "history";
 
 const VIEWS: { value: View; label: string }[] = [
@@ -58,6 +59,12 @@ const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
   { value: "music", label: "音楽" },
   { value: "voice", label: "音声" },
   { value: "compose", label: "合成" },
+];
+
+const IMAGE_SUBTABS: { value: ImageSubTab; label: string }[] = [
+  { value: "generate", label: "生成" },
+  { value: "derive", label: "派生" },
+  { value: "sweep", label: "スイープ" },
 ];
 
 const LOWER_TABS: { value: LowerTab; label: string }[] = [
@@ -106,6 +113,7 @@ export function App() {
   const [view, setView] = useState<View>("generate");
   const [generationTab, setGenerationTab] =
     useState<GenerationTab>("image");
+  const [imageSubTab, setImageSubTab] = useState<ImageSubTab>("generate");
   const [lowerTab, setLowerTab] = useState<LowerTab>("agent");
 
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -558,6 +566,18 @@ export function App() {
     document.getElementById(`generation-tab-${nextTab}`)?.focus();
   };
 
+  const handleImageSubTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentTab: ImageSubTab,
+  ) => {
+    const nextTab = nextTabForKey(event.key, IMAGE_SUBTABS, currentTab);
+    if (!nextTab) return;
+
+    event.preventDefault();
+    setImageSubTab(nextTab);
+    document.getElementById(`image-subtab-${nextTab}`)?.focus();
+  };
+
   const handleLowerTabKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
     currentTab: LowerTab,
@@ -664,53 +684,107 @@ export function App() {
               role="tabpanel"
               aria-labelledby="generation-tab-image"
               hidden={generationTab !== "image"}
+              className="image-workspace"
             >
-              <GenerationForm
-                projectId={projectId}
-                recipes={txt2imgRecipes}
-                disabled={false}
-                submitting={submitting}
-                onSubmit={submit}
-                onPreview={preview}
-                previewing={previewing}
-                preview={previewResult}
-                previewError={previewError}
-              />
-              <CandidateGallery
-                candidates={visibleCandidates}
-                busyArtifactId={busyArtifactId}
-                onDecide={decide}
-                onDerive={setDerivationSourceArtifactId}
-                active={view === "generate" && generationTab === "image"}
-              />
-              {comparisonJobIds && (
-                <button type="button" onClick={() => {
-                  comparisonRequestSequence.current += 1;
-                  setComparisonJobIds(null);
-                  setComparisonArtifactsByJob({});
-                  setComparisonExperimentId(null);
-                }}>
-                  実験の比較絞込みを解除
-                </button>
-              )}
-              <ImageDerivationPanel
-                projectId={projectId}
-                sceneId={sceneId}
-                shotId={shotId}
-                recipes={derivationRecipes}
-                sourceArtifactId={derivationSourceArtifactId}
-                onSourceArtifactChange={setDerivationSourceArtifactId}
-                onSubmittedJob={handleDerivedJob}
-              />
-              <GenerationSweepPanel
-                projectId={projectId}
-                sceneId={sceneId}
-                shotId={shotId}
-                recipes={txt2imgRecipes}
-                onJobsChanged={() => { void refreshJobs().catch((cause) => setError(describe(cause))); }}
-                activeComparisonId={comparisonExperimentId}
-                onCompare={compareExperiment}
-              />
+              <div className="image-input-column">
+                <nav
+                  className="image-subtabs"
+                  role="tablist"
+                  aria-label="画像の入力種別"
+                >
+                  {IMAGE_SUBTABS.map((item) => (
+                    <button
+                      key={item.value}
+                      id={`image-subtab-${item.value}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={imageSubTab === item.value}
+                      aria-controls={`image-subpanel-${item.value}`}
+                      tabIndex={imageSubTab === item.value ? 0 : -1}
+                      className={imageSubTab === item.value ? "primary" : undefined}
+                      onClick={() => setImageSubTab(item.value)}
+                      onKeyDown={(event) =>
+                        handleImageSubTabKeyDown(event, item.value)
+                      }
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </nav>
+
+                <div
+                  id="image-subpanel-generate"
+                  role="tabpanel"
+                  aria-labelledby="image-subtab-generate"
+                  hidden={imageSubTab !== "generate"}
+                >
+                  <GenerationForm
+                    projectId={projectId}
+                    recipes={txt2imgRecipes}
+                    disabled={false}
+                    submitting={submitting}
+                    onSubmit={submit}
+                    onPreview={preview}
+                    previewing={previewing}
+                    preview={previewResult}
+                    previewError={previewError}
+                  />
+                </div>
+
+                <div
+                  id="image-subpanel-derive"
+                  role="tabpanel"
+                  aria-labelledby="image-subtab-derive"
+                  hidden={imageSubTab !== "derive"}
+                >
+                  <ImageDerivationPanel
+                    projectId={projectId}
+                    sceneId={sceneId}
+                    shotId={shotId}
+                    recipes={derivationRecipes}
+                    sourceArtifactId={derivationSourceArtifactId}
+                    onSourceArtifactChange={setDerivationSourceArtifactId}
+                    onSubmittedJob={handleDerivedJob}
+                  />
+                </div>
+
+                <div
+                  id="image-subpanel-sweep"
+                  role="tabpanel"
+                  aria-labelledby="image-subtab-sweep"
+                  hidden={imageSubTab !== "sweep"}
+                >
+                  <GenerationSweepPanel
+                    projectId={projectId}
+                    sceneId={sceneId}
+                    shotId={shotId}
+                    recipes={txt2imgRecipes}
+                    onJobsChanged={() => { void refreshJobs().catch((cause) => setError(describe(cause))); }}
+                    activeComparisonId={comparisonExperimentId}
+                    onCompare={compareExperiment}
+                  />
+                </div>
+              </div>
+
+              <div className="image-result-column">
+                <CandidateGallery
+                  candidates={visibleCandidates}
+                  busyArtifactId={busyArtifactId}
+                  onDecide={decide}
+                  onDerive={(artifactId) => {
+                    setDerivationSourceArtifactId(artifactId);
+                    setImageSubTab("derive");
+                  }}
+                  active={view === "generate" && generationTab === "image"}
+                  comparisonActive={comparisonJobIds !== null}
+                  onClearComparison={() => {
+                    comparisonRequestSequence.current += 1;
+                    setComparisonJobIds(null);
+                    setComparisonArtifactsByJob({});
+                    setComparisonExperimentId(null);
+                  }}
+                />
+              </div>
             </div>
 
             <div

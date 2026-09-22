@@ -22,6 +22,8 @@ interface FieldSpec {
   help: string | null;
 }
 
+const PROMPT_FIELD_NAMES = new Set(["positive_prompt", "negative_prompt"]);
+
 function toFieldSpecs(recipe: Recipe): FieldSpec[] {
   return Object.entries(recipe.input_schema).map(([name, raw]) => {
     const spec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
@@ -125,6 +127,15 @@ export function GenerationForm({
         ? toFieldSpecs(recipe).filter((field) => field.control !== "model")
         : [],
     [recipe],
+  );
+  // Prompt系はプロンプトのセクション、残りは出力設定のセクションへ振り分ける。
+  const promptFields = useMemo(
+    () => fields.filter((field) => PROMPT_FIELD_NAMES.has(field.name)),
+    [fields],
+  );
+  const parameterFields = useMemo(
+    () => fields.filter((field) => !PROMPT_FIELD_NAMES.has(field.name)),
+    [fields],
   );
   const [values, setValues] = useState<Record<string, string>>({});
   const [modelValues, setModelValues] = useState<Record<string, string>>({});
@@ -309,216 +320,224 @@ export function GenerationForm({
     );
   };
 
+  const renderField = (field: FieldSpec) => (
+    <div key={field.name}>
+      <label htmlFor={`field-${field.name}`}>
+        {field.label}
+        {field.required ? " *" : ""}
+      </label>
+      {field.control === "textarea" ? (
+        <textarea
+          id={`field-${field.name}`}
+          disabled={useInheritedDefaults}
+          value={values[field.name] ?? ""}
+          onChange={(event) => {
+            setValues({ ...values, [field.name]: event.target.value });
+            setTouchedFields((current) => new Set(current).add(field.name));
+          }}
+        />
+      ) : (
+        <input
+          id={`field-${field.name}`}
+          disabled={useInheritedDefaults}
+          type={field.control === "number" ? "number" : "text"}
+          value={values[field.name] ?? ""}
+          onChange={(event) => {
+            setValues({ ...values, [field.name]: event.target.value });
+            setTouchedFields((current) => new Set(current).add(field.name));
+          }}
+        />
+      )}
+      {field.help && <p className="muted">{field.help}</p>}
+      {field.name === "positive_prompt" && (
+        <div className="tag-extractor">
+          <label htmlFor="tag-image">画像からタグを抽出</label>
+          <div className="row">
+            <input
+              id="tag-image"
+              disabled={useInheritedDefaults || extractingTags}
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                setTagImage(event.target.files?.[0] ?? null);
+                setExtractedTags([]);
+                setTagError(null);
+              }}
+            />
+            <button
+              type="button"
+              disabled={useInheritedDefaults || !tagImage || extractingTags}
+              onClick={extractTags}
+            >
+              {extractingTags ? "抽出中..." : "タグを抽出"}
+            </button>
+          </div>
+          <p className="muted">選んだ画像は設定済みのQwen互換AIへ送信して解析します。</p>
+          {tagError && <p className="error">{tagError}</p>}
+          {extractedTags.length > 0 && (
+            <div className="row">
+              <p className="tag-list">{extractedTags.join(", ")}</p>
+              <button type="button" disabled={useInheritedDefaults} onClick={appendTags}>
+                プロンプトへ追加
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  // 投入操作はfieldsetの外にあるため、無効化はfieldsetのdisabled継承ではなくここで判断する。
+  const actionsDisabled =
+    disabled ||
+    submitting ||
+    previewing ||
+    !modelsValid ||
+    (!recipe && !useInheritedDefaults);
+
   return (
     <section className="panel">
       <h2>生成</h2>
       <div className="stack">
-        <div>
-          <label htmlFor="image-description">画像の説明</label>
-          <textarea
-            id="image-description"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
-          />
-          <p className="muted">日本語で説明するとAIがPromptとNegativeを補完します。</p>
-        </div>
-        <div className="row">
-          <label htmlFor="prompt-provider">AI</label>
-          <select
-            id="prompt-provider"
-            value={providerId}
-            onChange={(event) =>
-              setProviderId(event.target.value as AgentProviderId | "")
-            }
-          >
-            <option value="">既定のAI</option>
-            {providers.map((provider) => (
-              <option
-                key={provider.id}
-                value={provider.id}
-                disabled={!provider.available}
-              >
-                {provider.label}{provider.available ? "" : " (利用不可)"}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={assisting}
-            onClick={() => void assist()}
-          >
-            {assisting ? "補完中..." : "Promptを補完"}
-          </button>
-        </div>
-        {assistError && <p className="error">{assistError}</p>}
-        <button
-          type="button"
-          disabled={!projectId}
-          aria-pressed={useInheritedDefaults}
-          className={useInheritedDefaults ? "primary" : undefined}
-          onClick={() => setUseInheritedDefaults((value) => !value)}
-        >
-          {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
-        </button>
-        {useInheritedDefaults && (
-          <p className="muted">Project、Scene、Shotの設定だけで生成します。</p>
-        )}
-        <div>
-          <label htmlFor="recipe">プリセット</label>
-          <select
-            id="recipe"
-            value={recipeId}
-            disabled={useInheritedDefaults}
-            onChange={(event) => setRecipeId(event.target.value)}
-          >
-            {recipes.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <ModelSelector
-          recipe={recipe}
-          disabled={useInheritedDefaults}
-          values={modelValues}
-          onChange={setModelValues}
-          onValidityChange={setModelsValid}
-        />
-
-        <fieldset disabled={useInheritedDefaults}>
-          <LookProfileManager
-            kind="image"
-            recipe={recipe}
-            selectedIds={lookProfileIds}
-            onSelectionChange={setLookProfileIds}
-          />
+        <fieldset className="form-section">
+          <legend>プロンプト</legend>
+          <div>
+            <label htmlFor="image-description">画像の説明</label>
+            <textarea
+              id="image-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
+            />
+            <p className="muted">日本語で説明するとAIがPromptとNegativeを補完します。</p>
+          </div>
+          <div className="row">
+            <label htmlFor="prompt-provider">AI</label>
+            <select
+              id="prompt-provider"
+              value={providerId}
+              onChange={(event) =>
+                setProviderId(event.target.value as AgentProviderId | "")
+              }
+            >
+              <option value="">既定のAI</option>
+              {providers.map((provider) => (
+                <option
+                  key={provider.id}
+                  value={provider.id}
+                  disabled={!provider.available}
+                >
+                  {provider.label}{provider.available ? "" : " (利用不可)"}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={assisting}
+              onClick={() => void assist()}
+            >
+              {assisting ? "補完中..." : "Promptを補完"}
+            </button>
+          </div>
+          {assistError && <p className="error">{assistError}</p>}
+          {promptFields.map(renderField)}
         </fieldset>
 
-        {fields.map((field) => (
-          <div key={field.name}>
-            <label htmlFor={`field-${field.name}`}>
-              {field.label}
-              {field.required ? " *" : ""}
-            </label>
-            {field.control === "textarea" ? (
-              <textarea
-                id={`field-${field.name}`}
-                disabled={useInheritedDefaults}
-                value={values[field.name] ?? ""}
-                onChange={(event) =>
-                  {
-                    setValues({ ...values, [field.name]: event.target.value });
-                    setTouchedFields((current) => new Set(current).add(field.name));
-                  }
-                }
-              />
-            ) : (
-              <input
-                id={`field-${field.name}`}
-                disabled={useInheritedDefaults}
-                type={field.control === "number" ? "number" : "text"}
-                value={values[field.name] ?? ""}
-                onChange={(event) =>
-                  {
-                    setValues({ ...values, [field.name]: event.target.value });
-                    setTouchedFields((current) => new Set(current).add(field.name));
-                  }
-                }
-              />
-            )}
-            {field.help && <p className="muted">{field.help}</p>}
-            {field.name === "positive_prompt" && (
-              <div className="tag-extractor">
-                <label htmlFor="tag-image">画像からタグを抽出</label>
-                <div className="row">
-                  <input
-                    id="tag-image"
-                    disabled={useInheritedDefaults || extractingTags}
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => {
-                      setTagImage(event.target.files?.[0] ?? null);
-                      setExtractedTags([]);
-                      setTagError(null);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={useInheritedDefaults || !tagImage || extractingTags}
-                    onClick={extractTags}
-                  >
-                    {extractingTags ? "抽出中..." : "タグを抽出"}
-                  </button>
-                </div>
-                <p className="muted">選んだ画像は設定済みのQwen互換AIへ送信して解析します。</p>
-                {tagError && <p className="error">{tagError}</p>}
-                {extractedTags.length > 0 && (
-                  <div className="row">
-                    <p className="tag-list">{extractedTags.join(", ")}</p>
-                    <button type="button" disabled={useInheritedDefaults} onClick={appendTags}>
-                      プロンプトへ追加
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+        <fieldset className="form-section">
+          <legend>出力設定</legend>
+          <button
+            type="button"
+            disabled={!projectId}
+            aria-pressed={useInheritedDefaults}
+            className={useInheritedDefaults ? "primary" : undefined}
+            onClick={() => setUseInheritedDefaults((value) => !value)}
+          >
+            {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
+          </button>
+          {useInheritedDefaults && (
+            <p className="muted">Project、Scene、Shotの設定だけで生成します。</p>
+          )}
+          <div>
+            <label htmlFor="recipe">プリセット</label>
+            <select
+              id="recipe"
+              value={recipeId}
+              disabled={useInheritedDefaults}
+              onChange={(event) => setRecipeId(event.target.value)}
+            >
+              {recipes.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
           </div>
-        ))}
 
-        <div>
-          <label htmlFor="batch-count">バッチ数</label>
-          <input
-            id="batch-count"
-            type="number"
-            min="1"
-            max="20"
-            value={batchCount}
-            onChange={(event) => setBatchCount(event.target.value)}
+          <ModelSelector
+            recipe={recipe}
+            disabled={useInheritedDefaults}
+            values={modelValues}
+            onChange={setModelValues}
+            onValidityChange={setModelsValid}
           />
-          <p className="muted">バッチサイズ×バッチ数が合計生成枚数です。</p>
-        </div>
 
-        {invalid && <p className="error">{invalid}</p>}
-        {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
+          {parameterFields.map(renderField)}
+        </fieldset>
 
-        <div className="row">
-          <button
-            type="button"
-            disabled={
-              disabled ||
-              submitting ||
-              previewing ||
-              !modelsValid ||
-              (!recipe && !useInheritedDefaults)
-            }
-            onClick={runPreview}
-          >
-            {previewing ? "確認中..." : "投入前に確認"}
-          </button>
-          <button
-            type="button"
-            className="primary"
-            disabled={
-              disabled ||
-              submitting ||
-              previewing ||
-              !modelsValid ||
-              (!recipe && !useInheritedDefaults)
-            }
-            onClick={submit}
-          >
-            {submitting ? "投入中..." : "画像生成を投入"}
-          </button>
-        </div>
+        <details className="form-section collapsible">
+          <summary>ルックとバリエーション</summary>
+          <div className="stack">
+            <fieldset disabled={useInheritedDefaults}>
+              <LookProfileManager
+                kind="image"
+                recipe={recipe}
+                selectedIds={lookProfileIds}
+                onSelectionChange={setLookProfileIds}
+              />
+            </fieldset>
 
-        <ExecutionPreview
-          preview={preview}
-          error={previewError}
-          loading={previewing}
-        />
+            <div>
+              <label htmlFor="batch-count">バッチ数</label>
+              <input
+                id="batch-count"
+                type="number"
+                min="1"
+                max="20"
+                value={batchCount}
+                onChange={(event) => setBatchCount(event.target.value)}
+              />
+              <p className="muted">バッチサイズ×バッチ数が合計生成枚数です。</p>
+            </div>
+          </div>
+        </details>
+
+        <fieldset className="form-section">
+          <legend>確認と投入</legend>
+          {invalid && <p className="error">{invalid}</p>}
+          {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
+
+          <ExecutionPreview
+            preview={preview}
+            error={previewError}
+            loading={previewing}
+          />
+        </fieldset>
+      </div>
+
+      {/* 投入操作はフォームの長さに関わらず押せるよう、下端へ固定する。 */}
+      <div className="form-actions">
+        <button type="button" disabled={actionsDisabled} onClick={runPreview}>
+          {previewing ? "確認中..." : "投入前に確認"}
+        </button>
+        <button
+          type="button"
+          className="primary"
+          disabled={actionsDisabled}
+          onClick={submit}
+        >
+          {submitting ? "投入中..." : "画像生成を投入"}
+        </button>
+        <span className="muted">バッチ {batchCount || "1"}</span>
       </div>
     </section>
   );

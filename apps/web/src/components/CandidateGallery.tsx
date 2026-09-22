@@ -23,7 +23,15 @@ interface Props {
   onDecide: (artifactId: string, decision: ArtifactDecision) => void;
   onDerive?: (artifactId: string) => void;
   active?: boolean;
+  comparisonActive?: boolean;
+  onClearComparison?: () => void;
 }
+type ThumbSize = "s" | "m" | "l";
+const THUMB_SIZES: { value: ThumbSize; label: string }[] = [
+  { value: "s", label: "S" },
+  { value: "m", label: "M" },
+  { value: "l", label: "L" },
+];
 interface CandidateDetail { job: GenerationJob; manifest: GenerationManifest; lineage: JobLineage | null; }
 interface ViewTransform { zoom: number; x: number; y: number; }
 const INITIAL_TRANSFORM: ViewTransform = { zoom: 1, x: 0, y: 0 };
@@ -122,7 +130,8 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true, comparisonActive = false, onClearComparison }: Props) {
+  const [thumbSize, setThumbSize] = useState<ThumbSize>("m");
   const [leftId, setLeftId] = useState<string | null>(null);
   const [rightId, setRightId] = useState<string | null>(null);
   const [activeSide, setActiveSide] = useState<"A" | "B">("A");
@@ -363,7 +372,33 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
 
   return (
     <section className="panel">
-      <h2>候補比較</h2>
+      <div className="gallery-header">
+        <h2>候補比較</h2>
+        <div className="row">
+          {comparisonActive && onClearComparison && (
+            <button type="button" className="badge" onClick={onClearComparison}>
+              実験の比較絞込みを解除
+            </button>
+          )}
+          <div className="thumb-size" role="group" aria-label="サムネイルの表示サイズ">
+            {THUMB_SIZES.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={thumbSize === item.value}
+                onClick={() => setThumbSize(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      {comparisonActive && (
+        <p className="muted">
+          実験の比較で絞り込み中です。新しく投入した候補は、絞込みを解除するまで表示されません。
+        </p>
+      )}
       {error && <p className="error">{error}</p>}
       {candidates.length === 0 ? <p className="muted">成功したJobの画像がまだありません。</p> : <>
         {compare}
@@ -387,11 +422,14 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
         {detailArtifactId && selectedDetail && !selectedDetail.lineage && !selectedDetailError && (
           <p className="muted">lineageを取得中です。</p>
         )}
-        <div className="gallery">
+        <div className={`gallery gallery-${thumbSize}`}>
           {candidates.map(({ artifact }) => <figure key={artifact.id} className={artifact.decision}>
+            <span className={`badge decision decision-${artifact.decision}`}>
+              {DECISION_LABEL[artifact.decision] ?? artifact.decision}
+            </span>
             <ArtifactPreview artifact={artifact} />
             <figcaption>
-              <span className="row">{artifact.id === leftId && <span className="badge">A</span>}{artifact.id === rightId && <span className="badge">B</span>}<span className="muted">{DECISION_LABEL[artifact.decision] ?? artifact.decision}{artifact.decision_at ? ` / ${artifact.decision_at}` : ""}</span></span>
+              <span className="row">{artifact.id === leftId && <span className="badge">A</span>}{artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
               <span className="mono">{artifact.sha256.slice(0, 12)}</span>
               <div className="row">
                 <button type="button" onClick={() => setLeftId(artifact.id)}>Aへ</button>
