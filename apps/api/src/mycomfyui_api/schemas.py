@@ -1471,12 +1471,31 @@ AgentProposalState = Literal["proposed", "approved", "rejected", "applied", "fai
 AgentDecision = Literal["approved", "rejected"]
 
 
+class AgentBackendStatusRead(ApiModel):
+    """オンデマンドで起動するBackendの状態。状態照会口を設定したProviderだけが持つ。
+
+    接続先とプロセスの詳細は返さない。利用者が待ち時間と副作用を予想できる範囲に留める。
+    """
+
+    #: 推論要求を今すぐ受け付けられる。偽なら起動を待つ時間がかかる。
+    ready: bool
+    #: VRAMを解放したsleep状態。判別できない場合はnull。
+    sleeping: bool | None = None
+    #: 起動処理が進行中。
+    starting: bool = False
+    #: このProviderの起動で停止する別のBackendが現在動いている。
+    #: Remote GPU HostではComfyUIが該当し、Qwenを使うと生成が止まる。
+    conflicts_running: bool = False
+
+
 class AgentProviderRead(ApiModel):
     """利用可能なProvider。接続先と認証情報は返さない。"""
 
     id: str
     label: str
     available: bool
+    #: 常駐するProviderと、状態を読めないProviderではnull。
+    backend: AgentBackendStatusRead | None = None
 
 
 class AgentProposalCreate(ApiModel):

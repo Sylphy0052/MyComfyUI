@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     agent_qwen_model: str = "qwen3"
     #: 提案1件あたりの実行上限。ローカル推論はCLI経由より遅くなりうるため別に持つ。
     agent_qwen_timeout_seconds: float = Field(default=180.0, gt=0)
+    #: Backendを起動させずに状態だけを読む照会口。Remote GPU Hostでgpu-proxyを挟む構成で
+    #: 使う。未設定なら到達性の確認に推論サーバーの`/models`を使う。推論の接続先は
+    #: `agent_qwen_base_url`のままで、この値は状態の確認にしか使わない。
+    agent_qwen_status_url: str | None = None
+    #: 状態照会の打ち切り時間。照会口は起動を伴わず即座に返るため、提案本体より短くする。
+    agent_qwen_status_timeout_seconds: float = Field(default=2.0, gt=0)
     #: 承認の有効期限。超過した承認では副作用のある操作を実行しない。
     agent_approval_ttl_seconds: int = Field(default=1800, gt=0)
     #: stub Providerを常に失敗させる。Provider障害が他機能を止めないことの確認に使う。

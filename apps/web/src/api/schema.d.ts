@@ -1819,6 +1819,28 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AgentBackendStatusRead
+         * @description オンデマンドで起動するBackendの状態。状態照会口を設定したProviderだけが持つ。
+         *
+         *     接続先とプロセスの詳細は返さない。利用者が待ち時間と副作用を予想できる範囲に留める。
+         */
+        AgentBackendStatusRead: {
+            /**
+             * Conflicts Running
+             * @default false
+             */
+            conflicts_running: boolean;
+            /** Ready */
+            ready: boolean;
+            /** Sleeping */
+            sleeping?: boolean | null;
+            /**
+             * Starting
+             * @default false
+             */
+            starting: boolean;
+        };
+        /**
          * AgentProposalApplicationRead
          * @description 計画1stepの適用状態。適用先はここから辿る。
          */
@@ -1970,6 +1992,7 @@ export interface components {
         AgentProviderRead: {
             /** Available */
             available: boolean;
+            backend?: components["schemas"]["AgentBackendStatusRead"] | null;
             /** Id */
             id: string;
             /** Label */

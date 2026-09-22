@@ -26,7 +26,7 @@ from typing import Any
 
 import httpx
 
-from mycomfyui_api.adapters.agent import proposals
+from mycomfyui_api.adapters.agent import proposals, qwen_status
 from mycomfyui_api.adapters.agent.base import (
     AgentInvalidResponse,
     AgentUnavailable,
@@ -50,8 +50,8 @@ USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens")
 class QwenProvider:
     """推論サーバーへ1回問い合わせて提案を1件返す。
 
-    `transport`はhttpxのMockTransportを差し込むための拡張点であり、通常利用では
-    指定しない。
+    `transport`と`status_transport`はhttpxのMockTransportを差し込むための拡張点であり、
+    通常利用では指定しない。前者は推論サーバーへの経路、後者は状態照会口への経路を指す。
     """
 
     def __init__(
@@ -59,10 +59,12 @@ class QwenProvider:
         settings: Settings | None = None,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        status_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._base_url = self._settings.agent_qwen_base_url.rstrip("/")
         self._timeout = self._settings.agent_qwen_timeout_seconds
+        self._status_transport = status_transport
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=httpx.Timeout(self._timeout),
@@ -77,13 +79,41 @@ class QwenProvider:
     def label(self) -> str:
         return PROVIDER_LABEL
 
-    async def available(self) -> bool:
-        """推論サーバーへ到達できるかだけを返す。
+    async def backend_status(self) -> qwen_status.BackendStatus | None:
+        """Backendを起動させずに状態を読む。照会口が未設定ならNoneを返す。"""
+        return await qwen_status.fetch_status(
+            self._settings, transport=self._status_transport
+        )
 
-        モデルが載っているかは確かめない。`/models`が応答すればサーバーは起きており、
-        提案を試せる状態とみなす。未起動の環境ではここでFalseになり、提案取得を
-        要求するまで失敗しない。
+    async def describe(self) -> tuple[bool, qwen_status.BackendStatus | None]:
+        """可用性とBackendの状態を1回の照会で決める。
+
+        `available()`と`backend_status()`を別々に呼ぶと照会が2回走り、その間に状態が
+        変わると表示が食い違う。一覧を返すEndpointはこちらを使う。照会口を設定していない
+        構成では`available()`へ委ね、状態はNoneとする。
         """
+        if not self._settings.agent_qwen_status_url:
+            return await self.available(), None
+        status = await self.backend_status()
+        return status is not None, status
+
+    async def available(self) -> bool:
+        """提案を試せる状態かどうかを返す。
+
+        状態照会口を設定している場合、判定の基準は「今すぐ応答できるか」ではなく
+        「要求すれば応答させられるか」とする。gpu-proxyを挟む構成ではBackendを普段
+        停止させておき、リクエストの到来で起動するため、停止中を利用不可として扱うと
+        Providerを永久に選べなくなる。照会口が応答した時点で起動経路が生きていると
+        みなし、停止中でもTrueを返す。起動に要する待ち時間と、起動がComfyUIの停止を
+        伴うことは`backend_status()`の値で呼び出し元へ伝える。照会口へ到達できない
+        場合だけFalseとする。
+
+        照会口が未設定の場合は推論サーバーの`/models`へ到達できるかを見る。モデルが
+        載っているかは確かめない。この経路ではBackendが常駐している前提のため、
+        未起動ならFalseになり、提案取得を要求するまで失敗しない。
+        """
+        if self._settings.agent_qwen_status_url:
+            return await self.backend_status() is not None
         try:
             response = await self._client.get("/models", timeout=HEALTH_TIMEOUT_SECONDS)
         except httpx.HTTPError:
