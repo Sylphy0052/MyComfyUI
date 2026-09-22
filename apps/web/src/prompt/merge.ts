@@ -73,6 +73,8 @@ export interface PromptSegment {
  * 重み付けの括弧の内側にあるカンマでは区切らない。
  */
 export function splitPrompt(prompt: string): string[] {
+  // 型の上では string だが、API の応答が欠けた場合でも例外にしない。
+  if (!prompt) return [];
   const segments: string[] = [];
   let current = "";
   let depth = 0;
@@ -129,6 +131,7 @@ function isSentence(segment: string): boolean {
 export function classifySegment(segment: string): number {
   if (isSentence(segment)) return BLOCK_SENTENCE;
   const text = bareTag(segment);
+  // 絵師タグは `@` を前置する決まりなので、`@` の有無だけで判別する。
   if (text.startsWith("@")) return BLOCK_ARTIST;
   if (
     QUALITY_TAGS.has(text) ||
@@ -155,6 +158,13 @@ export function parsePrompt(prompt: string): PromptSegment[] {
   return splitPrompt(prompt).map(toSegment);
 }
 
+export interface MergeResult {
+  /** マージ後のプロンプト文字列。 */
+  readonly prompt: string;
+  /** 実際に追加されたセグメントの数。0 なら内容は変わっていない。 */
+  readonly added: number;
+}
+
 /**
  * 既存プロンプトへ追加分をマージする。
  *
@@ -162,15 +172,23 @@ export function parsePrompt(prompt: string): PromptSegment[] {
  * - 追加分は同じブロックの既存セグメントの直後へ入れる。該当ブロックが無ければ、
  *   自分より前のブロックの直後へ入れる。前のブロックも無ければ先頭へ置く。
  * - 既に同じセグメントがあるときは追加しない。追加分どうしの重複も1つにまとめる。
+ * - 既存が空のときは、追加分を並べ替えず原文のまま入れる。
  */
-export function mergePrompt(current: string, incoming: string): string {
+export function mergePrompt(current: string, incoming: string): MergeResult {
+  if (!current || !current.trim()) {
+    const prompt = (incoming ?? "").trim();
+    return { prompt, added: prompt ? splitPrompt(prompt).length : 0 };
+  }
+
   const segments = parsePrompt(current);
   const additions = parsePrompt(incoming);
   const seen = new Set(segments.map((segment) => segment.key));
+  let added = 0;
 
   for (const addition of additions) {
     if (seen.has(addition.key)) continue;
     seen.add(addition.key);
+    added += 1;
     let insertAt = -1;
     for (let index = 0; index < segments.length; index += 1) {
       if (segments[index].block <= addition.block) {
@@ -180,5 +198,7 @@ export function mergePrompt(current: string, incoming: string): string {
     segments.splice(insertAt + 1, 0, addition);
   }
 
-  return segments.map((segment) => segment.text).join(", ");
+  // 追加が無いときは既存の表記をそのまま返し、空白やカンマの書き方を変えない。
+  if (added === 0) return { prompt: current.trim(), added: 0 };
+  return { prompt: segments.map((segment) => segment.text).join(", "), added };
 }

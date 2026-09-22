@@ -250,8 +250,10 @@ export function GenerationForm({
       // 既に入力されているプロンプトは残し、補完結果をタグ順に沿って追記する。
       setValues((current) => ({
         ...current,
-        positive_prompt: mergePrompt(current.positive_prompt ?? "", result.positive_prompt),
-        negative_prompt: mergePrompt(current.negative_prompt ?? "", result.negative_prompt),
+        positive_prompt: mergePrompt(current.positive_prompt ?? "", result.positive_prompt)
+          .prompt,
+        negative_prompt: mergePrompt(current.negative_prompt ?? "", result.negative_prompt)
+          .prompt,
       }));
       setTouchedFields((current) => new Set(current).add("positive_prompt").add("negative_prompt"));
     } catch (cause) {
@@ -304,10 +306,10 @@ export function GenerationForm({
     const current = values.positive_prompt ?? "";
     // 既存のタグは並び順ごと残し、新しいタグだけをタグ順に沿って差し込む。
     const merged = mergePrompt(current, extractedTags.join(", "));
-    if (merged === current.trim()) return;
+    if (merged.added === 0) return;
     setValues({
       ...values,
-      positive_prompt: merged,
+      positive_prompt: merged.prompt,
     });
     setTouchedFields((currentFields) =>
       new Set(currentFields).add("positive_prompt")
