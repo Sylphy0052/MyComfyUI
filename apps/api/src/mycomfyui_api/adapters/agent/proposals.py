@@ -358,8 +358,11 @@ def _dedupe_key(value: str) -> str:
     if weighted is not None:
         stripped = weighted.group("tag")
     elif stripped.startswith("(") and stripped.endswith(")"):
-        # 重みを持たない強調括弧。中身が同じなら同じタグとして扱う。
-        stripped = stripped[1:-1]
+        # 重みを持たない強調括弧。中身が同じなら同じタグとして扱う。`(happy) (sad)`の
+        # ように括弧が2組並ぶ値は、外側だけ剥がすと壊れるためそのまま比べる。
+        inner = stripped[1:-1]
+        if "(" not in inner and ")" not in inner:
+            stripped = inner
     return stripped.strip().casefold()
 
 
@@ -470,8 +473,10 @@ def _record_dropped_items(data: dict[str, Any], dropped: int) -> None:
     logger.warning("prompt案の形が不足するstepを除外しました。件数=%s", dropped)
     note = f"{dropped}件は形が不足していたため計画から外した。"
     rationale = data.get("rationale") or ""
-    combined = f"{rationale}\n{note}".strip() if rationale else note
-    data["rationale"] = combined[:MAX_RATIONALE_LENGTH]
+    # 注記は必ず残す。末尾から切ると、説明が上限まで書かれているときに注記だけ消える。
+    room = MAX_RATIONALE_LENGTH - len(note) - 1
+    body = rationale[:room].rstrip() if room > 0 else ""
+    data["rationale"] = f"{body}\n{note}" if body else note
 
 
 def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
