@@ -11,6 +11,7 @@ Workflowテンプレートは人間がComfyUI GUIで作りAPI形式で書き出�
 import copy
 import hashlib
 import json
+import math
 import random
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -69,6 +70,7 @@ class LinkRef:
     source_role: str
     input_key: str
     expected_role: str
+    expected_output: int = 0
 
 
 @dataclass(frozen=True)
@@ -113,7 +115,7 @@ class WorkflowBinding:
     links: tuple[LinkRef, ...]
     variables: Mapping[str, VariableRef]
     model_slots: tuple[ModelSlot, ...]
-    prompt_variable: str
+    prompt_variable: str | None
     #: role名をキーにした、取り除けるノードの定義。
     optional_nodes: Mapping[str, OptionalNode] = field(default_factory=dict)
 
@@ -155,8 +157,8 @@ ANIMA_TXT2IMG = WorkflowBinding(
         "height": VariableRef("latent", "height", "positive_int"),
         "batch_size": VariableRef("latent", "batch_size", "positive_int"),
         "seed": VariableRef("ksampler", "seed", "seed"),
-        "steps": VariableRef("ksampler", "steps", "positive_int"),
-        "cfg": VariableRef("ksampler", "cfg", "positive_float"),
+        "steps": VariableRef("ksampler", "steps", "sampling_steps"),
+        "cfg": VariableRef("ksampler", "cfg", "guidance_scale"),
         "sampler_name": VariableRef("ksampler", "sampler_name", "str"),
         "scheduler": VariableRef("ksampler", "scheduler", "str"),
         "unet_name": VariableRef("unet_loader", "unet_name", "str", required=True),
@@ -168,6 +170,206 @@ ANIMA_TXT2IMG = WorkflowBinding(
         ModelSlot("unet_name", "UNETLoader", "unet_name"),
         ModelSlot("clip_name", "CLIPLoader", "clip_name"),
         ModelSlot("vae_name", "VAELoader", "vae_name"),
+    ),
+    prompt_variable="positive_prompt",
+)
+
+
+def _anima_derivation_loaders() -> dict[str, NodeRef]:
+    return {
+        "unet_loader": NodeRef("60", "UNETLoader", ("unet_name", "weight_dtype")),
+        "clip_loader": NodeRef("61", "CLIPLoader", ("clip_name", "type")),
+        "vae_loader": NodeRef("62", "VAELoader", ("vae_name",)),
+        "positive_prompt": NodeRef("6", "CLIPTextEncode", ("text",)),
+        "negative_prompt": NodeRef("7", "CLIPTextEncode", ("text",)),
+        "source_image": NodeRef("10", "LoadImage", ("image",)),
+        "ksampler": NodeRef(
+            "3",
+            "KSampler",
+            ("seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"),
+        ),
+        "vae_decode": NodeRef("8", "VAEDecode", ()),
+        "save_image": NodeRef("9", "SaveImage", ("filename_prefix",)),
+    }
+
+
+def _anima_derivation_variables() -> dict[str, VariableRef]:
+    return {
+        "positive_prompt": VariableRef("positive_prompt", "text", "str", required=True),
+        "negative_prompt": VariableRef("negative_prompt", "text", "str"),
+        "source_image": VariableRef("source_image", "image", "image_name", required=True),
+        "seed": VariableRef("ksampler", "seed", "seed"),
+        "steps": VariableRef("ksampler", "steps", "sampling_steps"),
+        "cfg": VariableRef("ksampler", "cfg", "guidance_scale"),
+        "denoise": VariableRef("ksampler", "denoise", "unit_float"),
+        "sampler_name": VariableRef("ksampler", "sampler_name", "str"),
+        "scheduler": VariableRef("ksampler", "scheduler", "str"),
+        "unet_name": VariableRef("unet_loader", "unet_name", "str", required=True),
+        "clip_name": VariableRef("clip_loader", "clip_name", "str", required=True),
+        "vae_name": VariableRef("vae_loader", "vae_name", "str", required=True),
+        "filename_prefix": VariableRef("save_image", "filename_prefix", "file_prefix"),
+    }
+
+
+_ANIMA_MODEL_SLOTS = (
+    ModelSlot("unet_name", "UNETLoader", "unet_name"),
+    ModelSlot("clip_name", "CLIPLoader", "clip_name"),
+    ModelSlot("vae_name", "VAELoader", "vae_name"),
+)
+
+
+ANIMA_IMG2IMG = WorkflowBinding(
+    name="anima_img2img",
+    nodes={
+        **_anima_derivation_loaders(),
+        "vae_encode": NodeRef("11", "VAEEncode", ()),
+    },
+    links=(
+        LinkRef("positive_prompt", "clip", "clip_loader"),
+        LinkRef("negative_prompt", "clip", "clip_loader"),
+        LinkRef("vae_encode", "pixels", "source_image"),
+        LinkRef("vae_encode", "vae", "vae_loader"),
+        LinkRef("ksampler", "model", "unet_loader"),
+        LinkRef("ksampler", "positive", "positive_prompt"),
+        LinkRef("ksampler", "negative", "negative_prompt"),
+        LinkRef("ksampler", "latent_image", "vae_encode"),
+        LinkRef("vae_decode", "samples", "ksampler"),
+        LinkRef("vae_decode", "vae", "vae_loader"),
+        LinkRef("save_image", "images", "vae_decode"),
+    ),
+    variables=_anima_derivation_variables(),
+    model_slots=_ANIMA_MODEL_SLOTS,
+    prompt_variable="positive_prompt",
+)
+
+
+ANIMA_INPAINT = WorkflowBinding(
+    name="anima_inpaint",
+    nodes={
+        **_anima_derivation_loaders(),
+        "mask_image": NodeRef("12", "LoadImageMask", ("image", "channel")),
+        "vae_encode": NodeRef(
+            "11", "VAEEncodeForInpaint", ("grow_mask_by",)
+        ),
+    },
+    links=(
+        LinkRef("positive_prompt", "clip", "clip_loader"),
+        LinkRef("negative_prompt", "clip", "clip_loader"),
+        LinkRef("vae_encode", "pixels", "source_image"),
+        LinkRef("vae_encode", "vae", "vae_loader"),
+        LinkRef("vae_encode", "mask", "mask_image"),
+        LinkRef("ksampler", "model", "unet_loader"),
+        LinkRef("ksampler", "positive", "positive_prompt"),
+        LinkRef("ksampler", "negative", "negative_prompt"),
+        LinkRef("ksampler", "latent_image", "vae_encode"),
+        LinkRef("vae_decode", "samples", "ksampler"),
+        LinkRef("vae_decode", "vae", "vae_loader"),
+        LinkRef("save_image", "images", "vae_decode"),
+    ),
+    variables={
+        **_anima_derivation_variables(),
+        "mask_image": VariableRef("mask_image", "image", "image_name", required=True),
+        "grow_mask_by": VariableRef("vae_encode", "grow_mask_by", "mask_grow"),
+    },
+    model_slots=_ANIMA_MODEL_SLOTS,
+    prompt_variable="positive_prompt",
+)
+
+
+IMAGE_UPSCALE = WorkflowBinding(
+    name="image_upscale",
+    nodes={
+        "source_image": NodeRef("10", "LoadImage", ("image",)),
+        "upscale_loader": NodeRef("11", "UpscaleModelLoader", ("model_name",)),
+        "upscale": NodeRef("12", "ImageUpscaleWithModel", ()),
+        "save_image": NodeRef("9", "SaveImage", ("filename_prefix",)),
+    },
+    links=(
+        LinkRef("upscale", "upscale_model", "upscale_loader"),
+        LinkRef("upscale", "image", "source_image"),
+        LinkRef("save_image", "images", "upscale"),
+    ),
+    variables={
+        "source_image": VariableRef("source_image", "image", "image_name", required=True),
+        "upscale_model_name": VariableRef(
+            "upscale_loader", "model_name", "str", required=True
+        ),
+        "filename_prefix": VariableRef("save_image", "filename_prefix", "file_prefix"),
+    },
+    model_slots=(
+        ModelSlot("upscale_model_name", "UpscaleModelLoader", "model_name"),
+    ),
+    prompt_variable=None,
+)
+
+
+SD15_CONTROLNET = WorkflowBinding(
+    name="sd15_controlnet",
+    nodes={
+        "checkpoint": NodeRef("1", "CheckpointLoaderSimple", ("ckpt_name",)),
+        "positive_prompt": NodeRef("6", "CLIPTextEncode", ("text",)),
+        "negative_prompt": NodeRef("7", "CLIPTextEncode", ("text",)),
+        "source_image": NodeRef("10", "LoadImage", ("image",)),
+        "canny": NodeRef("13", "Canny", ("low_threshold", "high_threshold")),
+        "latent": NodeRef("5", "EmptyLatentImage", ("width", "height", "batch_size")),
+        "control_loader": NodeRef("11", "ControlNetLoader", ("control_net_name",)),
+        "control_apply": NodeRef(
+            "12",
+            "ControlNetApplyAdvanced",
+            ("strength", "start_percent", "end_percent"),
+        ),
+        "ksampler": NodeRef(
+            "3", "KSampler", ("seed", "steps", "cfg", "sampler_name", "scheduler", "denoise")
+        ),
+        "vae_decode": NodeRef("8", "VAEDecode", ()),
+        "save_image": NodeRef("9", "SaveImage", ("filename_prefix",)),
+    },
+    links=(
+        LinkRef("positive_prompt", "clip", "checkpoint", 1),
+        LinkRef("negative_prompt", "clip", "checkpoint", 1),
+        LinkRef("control_apply", "positive", "positive_prompt"),
+        LinkRef("control_apply", "negative", "negative_prompt"),
+        LinkRef("control_apply", "control_net", "control_loader"),
+        LinkRef("canny", "image", "source_image"),
+        LinkRef("control_apply", "image", "canny"),
+        LinkRef("control_apply", "vae", "checkpoint", 2),
+        LinkRef("ksampler", "model", "checkpoint"),
+        LinkRef("ksampler", "positive", "control_apply", 0),
+        LinkRef("ksampler", "negative", "control_apply", 1),
+        LinkRef("ksampler", "latent_image", "latent"),
+        LinkRef("vae_decode", "samples", "ksampler"),
+        LinkRef("vae_decode", "vae", "checkpoint", 2),
+        LinkRef("save_image", "images", "vae_decode"),
+    ),
+    variables={
+        "positive_prompt": VariableRef("positive_prompt", "text", "str", required=True),
+        "negative_prompt": VariableRef("negative_prompt", "text", "str"),
+        "source_image": VariableRef("source_image", "image", "image_name", required=True),
+        "seed": VariableRef("ksampler", "seed", "seed"),
+        "steps": VariableRef("ksampler", "steps", "sampling_steps"),
+        "cfg": VariableRef("ksampler", "cfg", "guidance_scale"),
+        "denoise": VariableRef("ksampler", "denoise", "unit_float"),
+        "sampler_name": VariableRef("ksampler", "sampler_name", "str"),
+        "scheduler": VariableRef("ksampler", "scheduler", "str"),
+        "checkpoint_name": VariableRef("checkpoint", "ckpt_name", "str", required=True),
+        "filename_prefix": VariableRef("save_image", "filename_prefix", "file_prefix"),
+        "width": VariableRef("latent", "width", "image_dimension"),
+        "height": VariableRef("latent", "height", "image_dimension"),
+        "batch_size": VariableRef("latent", "batch_size", "image_batch"),
+        "control_net_name": VariableRef(
+            "control_loader", "control_net_name", "str", required=True
+        ),
+        "control_strength": VariableRef(
+            "control_apply", "strength", "control_strength"
+        ),
+        "control_start": VariableRef("control_apply", "start_percent", "unit_float"),
+        "control_end": VariableRef("control_apply", "end_percent", "unit_float"),
+        "canny_low": VariableRef("canny", "low_threshold", "unit_float"),
+        "canny_high": VariableRef("canny", "high_threshold", "unit_float"),
+    },
+    model_slots=(
+        ModelSlot("checkpoint_name", "CheckpointLoaderSimple", "ckpt_name"),
+        ModelSlot("control_net_name", "ControlNetLoader", "control_net_name"),
     ),
     prompt_variable="positive_prompt",
 )
@@ -212,7 +414,7 @@ _H3_COMMON_LINKS: tuple[LinkRef, ...] = (
     LinkRef("sampling", "guider", "guider"),
     LinkRef("sampling", "sampler", "sampler"),
     LinkRef("sampling", "sigmas", "scheduler"),
-    LinkRef("sampling", "latent_image", "h3"),
+    LinkRef("sampling", "latent_image", "h3", 1),
     LinkRef("video_decode", "samples", "sampling"),
     LinkRef("video_decode", "vae", "video_vae"),
     LinkRef("audio_decode", "samples", "sampling"),
@@ -222,7 +424,7 @@ _H3_COMMON_LINKS: tuple[LinkRef, ...] = (
     LinkRef("save_video", "video", "create_video"),
     LinkRef("add_guide", "positive", "h3"),
     LinkRef("add_guide", "audio_vae", "audio_vae"),
-    LinkRef("add_guide", "latent", "h3"),
+    LinkRef("add_guide", "latent", "h3", 1),
     LinkRef("add_guide", "audio", "guide_audio"),
 )
 
@@ -370,14 +572,14 @@ ACE_STEP_BGM = WorkflowBinding(
         "save_audio": NodeRef("7", "SaveAudio", ("filename_prefix",)),
     },
     links=(
-        LinkRef("positive_tags", "clip", "checkpoint"),
-        LinkRef("negative_tags", "clip", "checkpoint"),
+        LinkRef("positive_tags", "clip", "checkpoint", 1),
+        LinkRef("negative_tags", "clip", "checkpoint", 1),
         LinkRef("ksampler", "model", "checkpoint"),
         LinkRef("ksampler", "positive", "positive_tags"),
         LinkRef("ksampler", "negative", "negative_tags"),
         LinkRef("ksampler", "latent_image", "latent"),
         LinkRef("decode", "samples", "ksampler"),
-        LinkRef("decode", "vae", "checkpoint"),
+        LinkRef("decode", "vae", "checkpoint", 2),
         LinkRef("save_audio", "audio", "decode"),
     ),
     variables={
@@ -402,7 +604,16 @@ ACE_STEP_BGM = WorkflowBinding(
 #: 実行を許可するテンプレート。利用者入力から任意のJSONを実行させないためのallowlist。
 ALLOWED_TEMPLATES: dict[str, WorkflowBinding] = {
     binding.name: binding
-    for binding in (ANIMA_TXT2IMG, MINIMAX_H3_REF2V, MINIMAX_H3_I2V, ACE_STEP_BGM)
+    for binding in (
+        ANIMA_TXT2IMG,
+        ANIMA_IMG2IMG,
+        ANIMA_INPAINT,
+        SD15_CONTROLNET,
+        IMAGE_UPSCALE,
+        MINIMAX_H3_REF2V,
+        MINIMAX_H3_I2V,
+        ACE_STEP_BGM,
+    )
 }
 
 
@@ -472,10 +683,10 @@ def _validate_structure(workflow: dict[str, Any], binding: WorkflowBinding) -> N
             raise WorkflowError(
                 f"ノード{source.node_id}の{link.input_key}が接続されていません。"
             )
-        if value[0] != expected.node_id:
+        if value[0] != expected.node_id or len(value) < 2 or value[1] != link.expected_output:
             raise WorkflowError(
                 f"ノード{source.node_id}の{link.input_key}の接続元が違います: "
-                f"{value[0]!r} (期待: {expected.node_id})"
+                f"{value!r} (期待: [{expected.node_id!r}, {link.expected_output}])"
             )
 
     unknown = set(workflow) - {node.node_id for node in binding.nodes.values()}
@@ -539,12 +750,47 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
             raise WorkflowError(f"{name}は1以上で指定します。")
         return value
     if value_type == "positive_float":
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise WorkflowError(f"{name}は数値で指定します。")
-        if value <= 0:
+        number = _finite_number(name, value)
+        if number <= 0:
             raise WorkflowError(f"{name}は0より大きい値で指定します。")
-        return float(value)
+        return number
+    if value_type == "unit_float":
+        number = _finite_number(name, value)
+        if not 0 <= number <= 1:
+            raise WorkflowError(f"{name}は0以上1以下で指定します。")
+        return number
+    if value_type in ("image_dimension", "image_batch", "sampling_steps", "mask_grow"):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise WorkflowError(f"{name}は整数で指定します。")
+        bounds = {
+            "image_dimension": (64, 8192),
+            "image_batch": (1, 20),
+            "sampling_steps": (1, 1000),
+            "mask_grow": (0, 64),
+        }
+        minimum, maximum = bounds[value_type]
+        if not minimum <= value <= maximum:
+            raise WorkflowError(f"{name}は{minimum}以上{maximum}以下で指定します。")
+        return value
+    if value_type in ("guidance_scale", "control_strength"):
+        number = _finite_number(name, value)
+        maximum = 100.0 if value_type == "guidance_scale" else 10.0
+        if not 0 < number <= maximum:
+            raise WorkflowError(f"{name}は0より大きく{maximum}以下で指定します。")
+        return number
     raise WorkflowError(f"未知の値の種別です: {value_type}")
+
+
+def _finite_number(name: str, value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise WorkflowError(f"{name}は数値で指定します。")
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as error:
+        raise WorkflowError(f"{name}は有限の数値で指定します。") from error
+    if not math.isfinite(number):
+        raise WorkflowError(f"{name}は有限の数値で指定します。")
+    return number
 
 
 def resolve_seed(value: int | None) -> int:
@@ -660,7 +906,11 @@ def build_workflow(
         template_sha256=digest,
         workflow=workflow,
         seed=int(resolved.get("seed", 0)),
-        resolved_prompt=str(resolved[binding.prompt_variable]),
+        resolved_prompt=(
+            str(resolved[binding.prompt_variable])
+            if binding.prompt_variable is not None
+            else ""
+        ),
         model=model,
         parameters=parameters,
         resolved_values=dict(resolved),

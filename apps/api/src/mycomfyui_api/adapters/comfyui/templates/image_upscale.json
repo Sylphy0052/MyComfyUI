@@ -1,0 +1,6 @@
+{
+  "10": {"class_type": "LoadImage", "inputs": {"image": "input.png"}},
+  "11": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": "4x-UltraSharp.pth"}},
+  "12": {"class_type": "ImageUpscaleWithModel", "inputs": {"upscale_model": ["11", 0], "image": ["10", 0]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "mycomfyui", "images": ["12", 0]}}
+}

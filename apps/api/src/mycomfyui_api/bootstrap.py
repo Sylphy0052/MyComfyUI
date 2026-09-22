@@ -261,6 +261,169 @@ H3_REF2V_UNET = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
 H3_I2V_UNET = "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 ACE_STEP_CHECKPOINT = "ace_step_v1_3.5b.safetensors"
 
+IMAGE_IMG2IMG_RECIPE_NAME = "Anima img2img"
+IMAGE_INPAINT_RECIPE_NAME = "Anima inpaint"
+IMAGE_UPSCALE_RECIPE_NAME = "画像アップスケール"
+IMAGE_CONTROLNET_RECIPE_NAME = "SD1.5 参照画像制御(ControlNet)"
+
+_IMAGE_MODEL_SCHEMA: dict[str, Any] = {
+    name: dict(DEFAULT_INPUT_SCHEMA[name])
+    for name in ("unet_name", "clip_name", "vae_name")
+}
+_IMAGE_DERIVATION_SCHEMA: dict[str, Any] = {
+    **_IMAGE_MODEL_SCHEMA,
+    "source_image": {
+        "type": "object",
+        "required": True,
+        "label": "派生元画像",
+        "control": "artifact",
+    },
+    "positive_prompt": dict(DEFAULT_INPUT_SCHEMA["positive_prompt"]),
+    "negative_prompt": dict(DEFAULT_INPUT_SCHEMA["negative_prompt"]),
+    "steps": dict(DEFAULT_INPUT_SCHEMA["steps"]),
+    "cfg": dict(DEFAULT_INPUT_SCHEMA["cfg"]),
+    "denoise": {
+        "type": "number",
+        "label": "denoise",
+        "control": "number",
+        "help": "0で元画像を維持し、1に近いほど大きく変更する。",
+    },
+    "seed": dict(DEFAULT_INPUT_SCHEMA["seed"]),
+}
+
+IMAGE_IMG2IMG_SCHEMA = dict(_IMAGE_DERIVATION_SCHEMA)
+_IMAGE_DERIVATION_DEFAULTS: dict[str, Any] = {
+    name: DEFAULT_VALUES[name]
+    for name in (
+        "unet_name",
+        "clip_name",
+        "vae_name",
+        "filename_prefix",
+        "negative_prompt",
+        "steps",
+        "cfg",
+        "seed",
+    )
+}
+IMAGE_IMG2IMG_DEFAULTS: dict[str, Any] = {
+    **_IMAGE_DERIVATION_DEFAULTS,
+    "denoise": 0.65,
+}
+
+IMAGE_INPAINT_SCHEMA: dict[str, Any] = {
+    **_IMAGE_DERIVATION_SCHEMA,
+    "mask_image": {
+        "type": "object",
+        "required": True,
+        "label": "mask画像",
+        "control": "artifact",
+        "help": "赤channelを修正範囲として使う。",
+    },
+    "grow_mask_by": {
+        "type": "integer",
+        "label": "mask拡張(px)",
+        "control": "number",
+    },
+}
+IMAGE_INPAINT_DEFAULTS: dict[str, Any] = {
+    **_IMAGE_DERIVATION_DEFAULTS,
+    "denoise": 1.0,
+    "grow_mask_by": 6,
+}
+
+IMAGE_UPSCALE_SCHEMA: dict[str, Any] = {
+    "source_image": {
+        "type": "object",
+        "required": True,
+        "label": "派生元画像",
+        "control": "artifact",
+    },
+    "upscale_model_name": {
+        "type": "string",
+        "label": "アップスケールモデル",
+        "control": "model",
+    },
+}
+IMAGE_UPSCALE_DEFAULTS: dict[str, Any] = {
+    "upscale_model_name": "4x-UltraSharp.pth",
+    "filename_prefix": "mycomfyui",
+}
+
+IMAGE_CONTROLNET_SCHEMA: dict[str, Any] = {
+    "checkpoint_name": {
+        "type": "string",
+        "label": "Checkpoint",
+        "control": "model",
+    },
+    "source_image": {
+        "type": "object",
+        "required": True,
+        "label": "制御画像",
+        "control": "artifact",
+    },
+    "control_net_name": {
+        "type": "string",
+        "label": "ControlNetモデル",
+        "control": "model",
+    },
+    "positive_prompt": dict(DEFAULT_INPUT_SCHEMA["positive_prompt"]),
+    "negative_prompt": dict(DEFAULT_INPUT_SCHEMA["negative_prompt"]),
+    "width": dict(DEFAULT_INPUT_SCHEMA["width"]),
+    "height": dict(DEFAULT_INPUT_SCHEMA["height"]),
+    "batch_size": dict(DEFAULT_INPUT_SCHEMA["batch_size"]),
+    "steps": dict(DEFAULT_INPUT_SCHEMA["steps"]),
+    "cfg": dict(DEFAULT_INPUT_SCHEMA["cfg"]),
+    "denoise": {
+        "type": "number",
+        "label": "denoise",
+        "control": "number",
+    },
+    "seed": dict(DEFAULT_INPUT_SCHEMA["seed"]),
+    "control_strength": {
+        "type": "number",
+        "label": "制御強度",
+        "control": "number",
+    },
+    "control_start": {
+        "type": "number",
+        "label": "制御開始",
+        "control": "number",
+    },
+    "control_end": {
+        "type": "number",
+        "label": "制御終了",
+        "control": "number",
+    },
+    "canny_low": {
+        "type": "number",
+        "label": "Canny下限",
+        "control": "number",
+    },
+    "canny_high": {
+        "type": "number",
+        "label": "Canny上限",
+        "control": "number",
+    },
+}
+IMAGE_CONTROLNET_DEFAULTS: dict[str, Any] = {
+    "checkpoint_name": "v1-5-pruned-emaonly.safetensors",
+    "filename_prefix": "mycomfyui",
+    "negative_prompt": "",
+    "width": 512,
+    "height": 768,
+    "batch_size": 1,
+    "steps": 30,
+    "cfg": 7.0,
+    "seed": workflow_module.AUTO_SEED,
+    "denoise": 1.0,
+    "control_net_name": "control_v11p_sd15_canny_fp16.safetensors",
+    "control_strength": 0.8,
+    "control_start": 0.0,
+    "control_end": 1.0,
+    "canny_low": 0.4,
+    "canny_high": 0.8,
+}
+
 #: H3の共通の入力欄。参照画像と開始フレームだけがテンプレートごとに変わる。
 _H3_COMMON_SCHEMA: dict[str, Any] = {
     "clip_name": {
@@ -465,6 +628,34 @@ COMPOSE_DEFAULTS: dict[str, Any] = {"voices": []}
 
 #: 同梱テンプレートを使う既定Recipe。テンプレートのSHA-256で版を判定する。
 TEMPLATE_RECIPES: tuple[tuple[str, str, str, dict[str, Any], dict[str, Any]], ...] = (
+    (
+        IMAGE_IMG2IMG_RECIPE_NAME,
+        "image",
+        "anima_img2img",
+        IMAGE_IMG2IMG_SCHEMA,
+        IMAGE_IMG2IMG_DEFAULTS,
+    ),
+    (
+        IMAGE_INPAINT_RECIPE_NAME,
+        "image",
+        "anima_inpaint",
+        IMAGE_INPAINT_SCHEMA,
+        IMAGE_INPAINT_DEFAULTS,
+    ),
+    (
+        IMAGE_UPSCALE_RECIPE_NAME,
+        "image",
+        "image_upscale",
+        IMAGE_UPSCALE_SCHEMA,
+        IMAGE_UPSCALE_DEFAULTS,
+    ),
+    (
+        IMAGE_CONTROLNET_RECIPE_NAME,
+        "image",
+        "sd15_controlnet",
+        IMAGE_CONTROLNET_SCHEMA,
+        IMAGE_CONTROLNET_DEFAULTS,
+    ),
     (
         VIDEO_REF2V_RECIPE_NAME,
         "video",

@@ -79,6 +79,7 @@ class _JobContext:
     workflow: dict[str, object]
     #: 投入直前にComfyUIのinputへ置き、Workflowへ差し込む素材。
     uploads: tuple[dict[str, object], ...] = ()
+    parent_artifact_id: str | None = None
 
 
 class ComfyUIExecutor:
@@ -307,7 +308,7 @@ class ComfyUIExecutor:
                         ),
                     )
                 )
-            await self._create_artifacts(context.job_id, stored)
+            await self._create_artifacts(context, stored)
         except OutputNotFound as error:
             return self._discard(
                 stored,
@@ -403,6 +404,9 @@ class ComfyUIExecutor:
                 if isinstance(raw_uploads, list)
                 else ()
             )
+            primary_input = (manifest.parameters or {}).get(
+                "primary_input_artifact_id"
+            )
             return _JobContext(
                 job_id=job.id,
                 manifest_id=manifest.id,
@@ -410,6 +414,9 @@ class ComfyUIExecutor:
                 model=model,
                 workflow=workflow,
                 uploads=uploads,
+                parent_artifact_id=(
+                    primary_input if isinstance(primary_input, str) else None
+                ),
             )
 
     async def _record_engine_version(
@@ -466,7 +473,7 @@ class ComfyUIExecutor:
             )
 
     async def _create_artifacts(
-        self, job_id: str, stored: list[tuple[OutputRef, storage.StoredFile]]
+        self, context: _JobContext, stored: list[tuple[OutputRef, storage.StoredFile]]
     ) -> None:
         """保存済みファイルをArtifactとして記録する。
 
@@ -476,7 +483,7 @@ class ComfyUIExecutor:
         session = self._session_factory()
         try:
             created_at = schemas.now_iso()
-            job = await session.get(GenerationJob, job_id)
+            job = await session.get(GenerationJob, context.job_id)
             assignment = (
                 (job.assigned_project_id, job.assigned_scene_id, job.assigned_shot_id)
                 if job is not None
@@ -486,14 +493,14 @@ class ComfyUIExecutor:
                 session.add(
                     Artifact(
                         id=schemas.new_id(),
-                        job_id=job_id,
+                        job_id=context.job_id,
                         kind=ref.kind,
                         relative_path=item.relative_path,
                         sha256=item.sha256,
                         byte_size=item.byte_size,
                         media_type=_media_type(item.relative_path, ref.kind),
                         availability="complete",
-                        parent_artifact_id=None,
+                        parent_artifact_id=context.parent_artifact_id,
                         assigned_project_id=assignment[0],
                         assigned_scene_id=assignment[1],
                         assigned_shot_id=assignment[2],
@@ -509,7 +516,7 @@ class ComfyUIExecutor:
             except Exception:
                 logger.warning(
                     "Artifact記録後のsessionを閉じられませんでした。job_id=%s",
-                    job_id,
+                    context.job_id,
                     exc_info=True,
                 )
 

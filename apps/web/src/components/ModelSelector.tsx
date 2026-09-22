@@ -14,6 +14,7 @@ interface Props {
   values: Record<string, string>;
   onChange: (values: Record<string, string>) => void;
   onValidityChange: (valid: boolean) => void;
+  idPrefix?: string;
 }
 
 function describe(error: unknown): string {
@@ -30,6 +31,7 @@ export function ModelSelector({
   values,
   onChange,
   onValidityChange,
+  idPrefix = "model",
 }: Props) {
   const [inventory, setInventory] =
     useState<WorkflowModelOptions | null>(null);
@@ -129,11 +131,11 @@ export function ModelSelector({
         const available = options.includes(current);
         return (
           <div key={name}>
-            <label htmlFor={`model-${name}`}>
+            <label htmlFor={`${idPrefix}-${name}`}>
               {typeof field.label === "string" ? field.label : name}
             </label>
             <select
-              id={`model-${name}`}
+              id={`${idPrefix}-${name}`}
               value={available ? current : ""}
               disabled={disabled || loading || options.length === 0}
               onChange={(event) =>

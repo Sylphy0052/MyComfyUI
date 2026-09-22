@@ -25,6 +25,7 @@ import type { Candidate } from "./components/CandidateGallery";
 import { ComposePanel } from "./components/ComposePanel";
 import { GenerationForm } from "./components/GenerationForm";
 import { IntegrityList } from "./components/IntegrityList";
+import { ImageDerivationPanel } from "./components/ImageDerivationPanel";
 import { JobQueue } from "./components/JobQueue";
 import { MusicPanel } from "./components/MusicPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
@@ -94,6 +95,11 @@ function describe(error: unknown): string {
   return String(error);
 }
 
+function recipeTemplateName(recipe: Recipe): string {
+  const reference = recipe.workflow_template_ref as Record<string, unknown>;
+  return typeof reference?.name === "string" ? reference.name : "";
+}
+
 export function App() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>("generate");
@@ -127,6 +133,25 @@ export function App() {
   // Job を投入・派生させたときに値を変え、Artifact 履歴を取り直させる。
   const [historyToken, setHistoryToken] = useState(0);
   const [structureToken, setStructureToken] = useState(0);
+  const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
+    useState<string | null>(null);
+
+  const txt2imgRecipes = useMemo(
+    () => recipes.filter((recipe) => recipeTemplateName(recipe) === "anima_txt2img"),
+    [recipes],
+  );
+  const derivationRecipes = useMemo(
+    () => {
+      const allowed = new Set([
+        "anima_img2img",
+        "anima_inpaint",
+        "image_upscale",
+        "sd15_controlnet",
+      ]);
+      return recipes.filter((recipe) => allowed.has(recipeTemplateName(recipe)));
+    },
+    [recipes],
+  );
 
   const jobScope = useMemo<Parameters<typeof api.listJobs>[0]>(() => {
     if (!projectId) return { unassigned: true };
@@ -597,7 +622,7 @@ export function App() {
             >
               <GenerationForm
                 projectId={projectId}
-                recipes={recipes}
+                recipes={txt2imgRecipes}
                 disabled={false}
                 submitting={submitting}
                 onSubmit={submit}
@@ -610,6 +635,16 @@ export function App() {
                 candidates={candidates}
                 busyArtifactId={busyArtifactId}
                 onDecide={decide}
+                onDerive={setDerivationSourceArtifactId}
+              />
+              <ImageDerivationPanel
+                projectId={projectId}
+                sceneId={sceneId}
+                shotId={shotId}
+                recipes={derivationRecipes}
+                sourceArtifactId={derivationSourceArtifactId}
+                onSourceArtifactChange={setDerivationSourceArtifactId}
+                onSubmittedJob={handleDerivedJob}
               />
             </div>
 
@@ -769,6 +804,11 @@ export function App() {
               projects={projects}
               onAssignmentsChanged={async () => {
                 setHistoryToken((current) => current + 1);
+              }}
+              onDeriveArtifact={(artifactId) => {
+                setDerivationSourceArtifactId(artifactId);
+                setGenerationTab("image");
+                setView("generate");
               }}
             />
           </div>
