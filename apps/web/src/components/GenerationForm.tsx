@@ -22,6 +22,8 @@ interface FieldSpec {
   help: string | null;
 }
 
+const PROMPT_FIELD_NAMES = new Set(["positive_prompt", "negative_prompt"]);
+
 function toFieldSpecs(recipe: Recipe): FieldSpec[] {
   return Object.entries(recipe.input_schema).map(([name, raw]) => {
     const spec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
@@ -125,6 +127,15 @@ export function GenerationForm({
         ? toFieldSpecs(recipe).filter((field) => field.control !== "model")
         : [],
     [recipe],
+  );
+  // Prompt系はプロンプトのセクション、残りは出力設定のセクションへ振り分ける。
+  const promptFields = useMemo(
+    () => fields.filter((field) => PROMPT_FIELD_NAMES.has(field.name)),
+    [fields],
+  );
+  const parameterFields = useMemo(
+    () => fields.filter((field) => !PROMPT_FIELD_NAMES.has(field.name)),
+    [fields],
   );
   const [values, setValues] = useState<Record<string, string>>({});
   const [modelValues, setModelValues] = useState<Record<string, string>>({});
@@ -309,10 +320,86 @@ export function GenerationForm({
     );
   };
 
+  const renderField = (field: FieldSpec) => (
+    <div key={field.name}>
+      <label htmlFor={`field-${field.name}`}>
+        {field.label}
+        {field.required ? " *" : ""}
+      </label>
+      {field.control === "textarea" ? (
+        <textarea
+          id={`field-${field.name}`}
+          disabled={useInheritedDefaults}
+          value={values[field.name] ?? ""}
+          onChange={(event) => {
+            setValues({ ...values, [field.name]: event.target.value });
+            setTouchedFields((current) => new Set(current).add(field.name));
+          }}
+        />
+      ) : (
+        <input
+          id={`field-${field.name}`}
+          disabled={useInheritedDefaults}
+          type={field.control === "number" ? "number" : "text"}
+          value={values[field.name] ?? ""}
+          onChange={(event) => {
+            setValues({ ...values, [field.name]: event.target.value });
+            setTouchedFields((current) => new Set(current).add(field.name));
+          }}
+        />
+      )}
+      {field.help && <p className="muted">{field.help}</p>}
+      {field.name === "positive_prompt" && (
+        <div className="tag-extractor">
+          <label htmlFor="tag-image">画像からタグを抽出</label>
+          <div className="row">
+            <input
+              id="tag-image"
+              disabled={useInheritedDefaults || extractingTags}
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                setTagImage(event.target.files?.[0] ?? null);
+                setExtractedTags([]);
+                setTagError(null);
+              }}
+            />
+            <button
+              type="button"
+              disabled={useInheritedDefaults || !tagImage || extractingTags}
+              onClick={extractTags}
+            >
+              {extractingTags ? "抽出中..." : "タグを抽出"}
+            </button>
+          </div>
+          <p className="muted">選んだ画像は設定済みのQwen互換AIへ送信して解析します。</p>
+          {tagError && <p className="error">{tagError}</p>}
+          {extractedTags.length > 0 && (
+            <div className="row">
+              <p className="tag-list">{extractedTags.join(", ")}</p>
+              <button type="button" disabled={useInheritedDefaults} onClick={appendTags}>
+                プロンプトへ追加
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const actionsDisabled =
+    disabled ||
+    submitting ||
+    previewing ||
+    !modelsValid ||
+    (!recipe && !useInheritedDefaults);
+
   return (
     <section className="panel">
       <h2>生成</h2>
       <div className="stack">
+        <fieldset className="form-section">
+          <legend>プロンプト</legend>
         <div>
           <label htmlFor="image-description">画像の説明</label>
           <textarea
@@ -352,6 +439,11 @@ export function GenerationForm({
           </button>
         </div>
         {assistError && <p className="error">{assistError}</p>}
+        {promptFields.map(renderField)}
+        </fieldset>
+
+        <fieldset className="form-section">
+          <legend>出力設定</legend>
         <button
           type="button"
           disabled={!projectId}
@@ -388,137 +480,63 @@ export function GenerationForm({
           onValidityChange={setModelsValid}
         />
 
-        <fieldset disabled={useInheritedDefaults}>
-          <LookProfileManager
-            kind="image"
-            recipe={recipe}
-            selectedIds={lookProfileIds}
-            onSelectionChange={setLookProfileIds}
-          />
+        {parameterFields.map(renderField)}
         </fieldset>
 
-        {fields.map((field) => (
-          <div key={field.name}>
-            <label htmlFor={`field-${field.name}`}>
-              {field.label}
-              {field.required ? " *" : ""}
-            </label>
-            {field.control === "textarea" ? (
-              <textarea
-                id={`field-${field.name}`}
-                disabled={useInheritedDefaults}
-                value={values[field.name] ?? ""}
-                onChange={(event) =>
-                  {
-                    setValues({ ...values, [field.name]: event.target.value });
-                    setTouchedFields((current) => new Set(current).add(field.name));
-                  }
-                }
+        <details className="form-section collapsible">
+          <summary>ルックとバリエーション</summary>
+          <div className="stack">
+            <fieldset disabled={useInheritedDefaults}>
+              <LookProfileManager
+                kind="image"
+                recipe={recipe}
+                selectedIds={lookProfileIds}
+                onSelectionChange={setLookProfileIds}
               />
-            ) : (
+            </fieldset>
+
+            <div>
+              <label htmlFor="batch-count">バッチ数</label>
               <input
-                id={`field-${field.name}`}
-                disabled={useInheritedDefaults}
-                type={field.control === "number" ? "number" : "text"}
-                value={values[field.name] ?? ""}
-                onChange={(event) =>
-                  {
-                    setValues({ ...values, [field.name]: event.target.value });
-                    setTouchedFields((current) => new Set(current).add(field.name));
-                  }
-                }
+                id="batch-count"
+                type="number"
+                min="1"
+                max="20"
+                value={batchCount}
+                onChange={(event) => setBatchCount(event.target.value)}
               />
-            )}
-            {field.help && <p className="muted">{field.help}</p>}
-            {field.name === "positive_prompt" && (
-              <div className="tag-extractor">
-                <label htmlFor="tag-image">画像からタグを抽出</label>
-                <div className="row">
-                  <input
-                    id="tag-image"
-                    disabled={useInheritedDefaults || extractingTags}
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => {
-                      setTagImage(event.target.files?.[0] ?? null);
-                      setExtractedTags([]);
-                      setTagError(null);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={useInheritedDefaults || !tagImage || extractingTags}
-                    onClick={extractTags}
-                  >
-                    {extractingTags ? "抽出中..." : "タグを抽出"}
-                  </button>
-                </div>
-                <p className="muted">選んだ画像は設定済みのQwen互換AIへ送信して解析します。</p>
-                {tagError && <p className="error">{tagError}</p>}
-                {extractedTags.length > 0 && (
-                  <div className="row">
-                    <p className="tag-list">{extractedTags.join(", ")}</p>
-                    <button type="button" disabled={useInheritedDefaults} onClick={appendTags}>
-                      プロンプトへ追加
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+              <p className="muted">バッチサイズ×バッチ数が合計生成枚数です。</p>
+            </div>
           </div>
-        ))}
+        </details>
 
-        <div>
-          <label htmlFor="batch-count">バッチ数</label>
-          <input
-            id="batch-count"
-            type="number"
-            min="1"
-            max="20"
-            value={batchCount}
-            onChange={(event) => setBatchCount(event.target.value)}
+        <fieldset className="form-section">
+          <legend>確認と投入</legend>
+          {invalid && <p className="error">{invalid}</p>}
+          {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
+
+          <ExecutionPreview
+            preview={preview}
+            error={previewError}
+            loading={previewing}
           />
-          <p className="muted">バッチサイズ×バッチ数が合計生成枚数です。</p>
-        </div>
+        </fieldset>
+      </div>
 
-        {invalid && <p className="error">{invalid}</p>}
-        {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
-
-        <div className="row">
-          <button
-            type="button"
-            disabled={
-              disabled ||
-              submitting ||
-              previewing ||
-              !modelsValid ||
-              (!recipe && !useInheritedDefaults)
-            }
-            onClick={runPreview}
-          >
-            {previewing ? "確認中..." : "投入前に確認"}
-          </button>
-          <button
-            type="button"
-            className="primary"
-            disabled={
-              disabled ||
-              submitting ||
-              previewing ||
-              !modelsValid ||
-              (!recipe && !useInheritedDefaults)
-            }
-            onClick={submit}
-          >
-            {submitting ? "投入中..." : "画像生成を投入"}
-          </button>
-        </div>
-
-        <ExecutionPreview
-          preview={preview}
-          error={previewError}
-          loading={previewing}
-        />
+      {/* 投入操作はフォームの長さに関わらず押せるよう、下端へ固定する。 */}
+      <div className="form-actions">
+        <button type="button" disabled={actionsDisabled} onClick={runPreview}>
+          {previewing ? "確認中..." : "投入前に確認"}
+        </button>
+        <button
+          type="button"
+          className="primary"
+          disabled={actionsDisabled}
+          onClick={submit}
+        >
+          {submitting ? "投入中..." : "画像生成を投入"}
+        </button>
+        <span className="muted">バッチ {batchCount || "1"}</span>
       </div>
     </section>
   );
