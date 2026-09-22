@@ -3726,7 +3726,15 @@ def _generation_job_operation(
     positive_prompt: Any,
     negative_prompt: Any,
 ) -> dict[str, Any]:
-    """生成Jobの投入操作。prompt案とバッチ計画で同じ形にする。"""
+    """生成Jobの投入操作。prompt案とバッチ計画で同じ形にする。
+
+    negative promptは基準値へ提案の追加分を足して渡す。Providerにはショット固有の
+    要素だけを書かせるため、ここで基準値を補わないと品質系の除外が落ちる。
+    """
+    merged_negative = proposals.merge_negative_prompt(
+        proposals.DEFAULT_NEGATIVE_PROMPT,
+        negative_prompt if isinstance(negative_prompt, str) else "",
+    )
     return {
         "type": approvals.OPERATION_GENERATION_JOB_CREATE,
         "target": {
@@ -3739,7 +3747,7 @@ def _generation_job_operation(
             "kind": "image",
             "inputs": {
                 "positive_prompt": positive_prompt,
-                "negative_prompt": negative_prompt,
+                "negative_prompt": merged_negative,
             },
         },
     }
@@ -4126,7 +4134,11 @@ async def assist_image_prompt(
         raise _agent_error(error) from error
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],
-        negative_prompt=output["negative_prompt"],
+        tag_line=output.get("tag_line", ""),
+        natural_text=output.get("natural_text", ""),
+        negative_prompt=proposals.merge_negative_prompt(
+            proposals.DEFAULT_NEGATIVE_PROMPT, output.get("negative_prompt", "")
+        ),
         rationale=output["rationale"],
         provider_id=provider.id,
         model=result.model,

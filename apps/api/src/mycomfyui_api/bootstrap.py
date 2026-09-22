@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mycomfyui_api import schemas
+from mycomfyui_api.adapters.agent import proposals as agent_proposals
 from mycomfyui_api.adapters.comfyui import prepare as comfyui_prepare
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
@@ -90,7 +91,8 @@ DEFAULT_VALUES: dict[str, Any] = {
     "clip_name": "qwen_3_06b_base.safetensors",
     "vae_name": "qwen_image_vae.safetensors",
     "filename_prefix": "mycomfyui",
-    "negative_prompt": "",
+    #: Qwen-Image(Anima)公式のbaseline。prompt案の追加分はここへ足して使う。
+    "negative_prompt": agent_proposals.DEFAULT_NEGATIVE_PROMPT,
     "width": 832,
     "height": 1216,
     "batch_size": 1,
