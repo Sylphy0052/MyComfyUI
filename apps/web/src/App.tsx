@@ -636,6 +636,7 @@ export function App() {
                 busyArtifactId={busyArtifactId}
                 onDecide={decide}
                 onDerive={setDerivationSourceArtifactId}
+                active={view === "generate" && generationTab === "image"}
               />
               <ImageDerivationPanel
                 projectId={projectId}
