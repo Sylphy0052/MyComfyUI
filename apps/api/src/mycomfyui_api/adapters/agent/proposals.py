@@ -9,6 +9,7 @@ Providerへ流れないようにするためである。
 """
 
 import json
+import re
 from collections.abc import Iterable, Mapping
 from typing import Annotated, Any
 
@@ -333,14 +334,24 @@ def _normalize_tag(value: Any) -> str:
     return " ".join(value.replace(",", " ").split())
 
 
+#: 重み付きタグの書式。`(tag:1.2)`のように括弧と数値で囲んだ形だけを重みとみなす。
+#: コロンを単純に区切りとして扱うと、`:d`や`:3`のような表情タグを壊す。
+WEIGHTED_TAG_PATTERN = re.compile(r"^\((?P<tag>.+):\s*[0-9.]+\)$")
+
+
 def _dedupe_key(value: str) -> str:
     """重複判定に使うキー。重み括弧を外し、大文字小文字を無視する。
 
     `(blurry:1.2)`と`blurry`を別物として残すと、基準値と提案の追加分が二重に並ぶ。
     """
-    stripped = value.strip().strip("()[]{}").strip()
-    base = stripped.rsplit(":", 1)[0] if ":" in stripped else stripped
-    return base.strip().casefold()
+    stripped = value.strip()
+    weighted = WEIGHTED_TAG_PATTERN.match(stripped)
+    if weighted is not None:
+        stripped = weighted.group("tag")
+    elif stripped.startswith("(") and stripped.endswith(")"):
+        # 重みを持たない強調括弧。中身が同じなら同じタグとして扱う。
+        stripped = stripped[1:-1]
+    return stripped.strip().casefold()
 
 
 def _dedupe(values: Iterable[str]) -> list[str]:
