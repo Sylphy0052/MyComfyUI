@@ -158,6 +158,18 @@ export function parsePrompt(prompt: string): PromptSegment[] {
   return splitPrompt(prompt).map(toSegment);
 }
 
+/** 並び順を保ったまま、同じセグメントの2つ目以降を落とす。 */
+function dedupe(segments: PromptSegment[]): PromptSegment[] {
+  const seen = new Set<string>();
+  const unique: PromptSegment[] = [];
+  for (const segment of segments) {
+    if (seen.has(segment.key)) continue;
+    seen.add(segment.key);
+    unique.push(segment);
+  }
+  return unique;
+}
+
 export interface MergeResult {
   /** マージ後のプロンプト文字列。 */
   readonly prompt: string;
@@ -176,8 +188,12 @@ export interface MergeResult {
  */
 export function mergePrompt(current: string, incoming: string): MergeResult {
   if (!current || !current.trim()) {
-    const prompt = (incoming ?? "").trim();
-    return { prompt, added: prompt ? splitPrompt(prompt).length : 0 };
+    // 並べ替えはせず受け取った順のまま入れる。重複と空のセグメントだけを落とす。
+    const unique = dedupe(parsePrompt(incoming));
+    return {
+      prompt: unique.map((segment) => segment.text).join(", "),
+      added: unique.length,
+    };
   }
 
   const segments = parsePrompt(current);
