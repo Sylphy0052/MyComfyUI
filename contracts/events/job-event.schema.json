@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mycomfyui.local/contracts/events/job-event.schema.json",
+  "title": "MyComfyUI Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "occurred_at",
+    "resource_type",
+    "resource_id",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {"type": "integer", "minimum": 1},
+    "event_type": {
+      "enum": [
+        "connection.ready",
+        "connection.heartbeat",
+        "generation_job.state_changed"
+      ]
+    },
+    "occurred_at": {"type": "string"},
+    "resource_type": {"enum": ["connection", "generation_job"]},
+    "resource_id": {"type": "string", "minLength": 1, "maxLength": 36},
+    "payload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "maxProperties": 0
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["job_id", "state", "phase"],
+          "properties": {
+            "job_id": {"type": "string", "minLength": 1, "maxLength": 36},
+            "state": {
+              "enum": ["queued", "running", "cancelling", "succeeded", "failed", "cancelled"]
+            },
+            "phase": {"enum": ["queued", "running", "cancelling", "terminal"]}
+          }
+        }
+      ]
+    }
+  }
+}

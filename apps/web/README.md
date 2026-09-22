@@ -56,9 +56,9 @@ Recipe の `defaults` 側に固定されており、画面には出さない。
 
 ## 進捗の追い方
 
-Job の状態は `GET /api/v1/generation-jobs` を 2 秒間隔で取得して更新する。
-ADR 0001 が定める WebSocket 通知(`/api/v1/events`)は未実装で、#9 以降で追加する。
-REST で得られる状態を正本とする方針は変えない。
+Jobの状態変化は`WebSocket /api/v1/events`を再取得トリガーとして即時反映する。
+初回接続、再接続、通知受信時は`GET /api/v1/generation-jobs`から確定状態を取得する。
+接続中も15秒間隔で同期し、WebSocketを利用できない間は2秒間隔へ戻す。RESTで得られる状態を正本とする。
 
 ## 確認
 

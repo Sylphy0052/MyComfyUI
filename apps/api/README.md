@@ -97,6 +97,7 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |Job の取得・一覧|`GET /api/v1/generation-jobs/{job_id}` / `GET /api/v1/generation-jobs`|
 |Job の Artifact 一覧|`GET /api/v1/generation-jobs/{job_id}/artifacts`|
 |Job の取消要求|`POST /api/v1/generation-jobs/{job_id}/cancel`|
+|Job 状態の通知|`WebSocket /api/v1/events`|
 |Canon 更新警告と再現可否|`GET /api/v1/generation-jobs/{job_id}/canon-status`|
 |Exact Replay|`POST /api/v1/generation-jobs/{job_id}/replay`|
 |Regenerate with Current Canon|`POST /api/v1/generation-jobs/{job_id}/regenerate`|
@@ -113,6 +114,8 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |Artifact の採否記録|`PATCH /api/v1/artifacts/{artifact_id}/decision`|
 |ApprovalLog の作成・取得|`POST /api/v1/approval-logs` / `GET /api/v1/approval-logs/{approval_log_id}`|
 |ai-media 参照(読取専用)|`GET /api/v1/projects` 以下|
+
+`WebSocket /api/v1/events`は`queued`、`running`、`cancelling`、終端状態の変化を通知する。通知は画面がRESTを再取得するトリガーであり、状態の正本ではない。切断中もJobは継続し、再接続時は`GET /api/v1/generation-jobs`で復元する。イベント本文は`contracts/events/job-event.schema.json`に従う。
 
 ### ai-media 参照
 
@@ -614,5 +617,5 @@ Recipe の変更は新しい Recipe として作成し、必要なら `supersede
 
 ## 対象外
 
-LoRA、latent hires fix、IPAdapter、進捗のWebSocket中継、認証、削除APIは
+LoRA、latent hires fix、IPAdapter、認証、削除APIは
 本APIの対象外とする。複数GPUへの分散、優先度付きスケジューリング、クラウドキューも対象外とする。

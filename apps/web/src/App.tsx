@@ -35,11 +35,9 @@ import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
 
-/**
- * 進捗は REST の定期取得で追う。WebSocket 通知は #9 以降で追加する。
- * REST で得られる状態を正本とする方針は ADR 0001 のとおり。
- */
+/** WebSocketは再取得トリガーだけに使い、RESTで得られる状態を正本とする。 */
 const POLL_INTERVAL_MS = 2000;
+const CONNECTED_POLL_INTERVAL_MS = 15000;
 
 type View = "projects" | "generate" | "assets" | "workflows";
 type GenerationTab = "image" | "video" | "music" | "voice" | "compose";
@@ -142,6 +140,8 @@ export function App() {
   // Job を投入・派生させたときに値を変え、Artifact 履歴を取り直させる。
   const [historyToken, setHistoryToken] = useState(0);
   const [structureToken, setStructureToken] = useState(0);
+  const [eventsConnected, setEventsConnected] = useState(false);
+  const jobsRequestSequence = useRef(0);
   const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
     useState<string | null>(null);
   const [comparisonJobIds, setComparisonJobIds] = useState<string[] | null>(null);
@@ -299,34 +299,107 @@ export function App() {
   }, [projectId, sceneId, shotId, structureToken]);
 
   const refreshJobs = useCallback(async () => {
+    const sequence = ++jobsRequestSequence.current;
     const list = await api.listJobs(jobScope);
-    setJobs(list);
+    if (sequence === jobsRequestSequence.current) setJobs(list);
   }, [jobScope]);
+
+  const refreshJobsRef = useRef(refreshJobs);
+  useEffect(() => { refreshJobsRef.current = refreshJobs; }, [refreshJobs]);
+
+  useEffect(() => {
+    let stopped = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let refreshTimer: number | null = null;
+    let stableTimer: number | null = null;
+    let retryDelay = 500;
+
+    const scheduleRefresh = () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void refreshJobsRef.current().catch((cause) => setError(describe(cause)));
+      }, 100);
+    };
+    const retryLater = () => {
+      const jittered = retryDelay * (0.75 + Math.random() * 0.5);
+      reconnectTimer = window.setTimeout(connect, jittered);
+      retryDelay = Math.min(retryDelay * 2, 10000);
+    };
+    const connect = () => {
+      if (stopped) return;
+      const url = new URL("/api/v1/events", window.location.href);
+      url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      try {
+        socket = new WebSocket(url);
+      } catch {
+        // 生成時点で弾かれると以降のイベントが来ない。ここで次を予約しないと
+        // 再接続が止まり、通知経路が復帰しなくなる。
+        retryLater();
+        return;
+      }
+      socket.onopen = () => {
+        setEventsConnected(true);
+        scheduleRefresh();
+        // 5秒つながり続けたら再接続間隔を初期値へ戻す。すぐ切れる接続では
+        // 戻さず、バックオフを伸ばしたまま次の再接続へ入る。
+        stableTimer = window.setTimeout(() => { retryDelay = 500; }, 5000);
+      };
+      socket.onmessage = (event) => {
+        try {
+          const message: unknown = JSON.parse(String(event.data));
+          if (
+            message && typeof message === "object" &&
+            (message as Record<string, unknown>).event_type ===
+              "generation_job.state_changed"
+          ) {
+            scheduleRefresh();
+          }
+        } catch {
+          // 通知は再取得トリガーだけなので、壊れた1件は無視して定期同期へ任せる。
+        }
+      };
+      socket.onerror = () => socket?.close();
+      socket.onclose = () => {
+        setEventsConnected(false);
+        if (stableTimer !== null) {
+          window.clearTimeout(stableTimer);
+          stableTimer = null;
+        }
+        if (stopped) return;
+        retryLater();
+      };
+    };
+    connect();
+    return () => {
+      stopped = true;
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      if (stableTimer !== null) window.clearTimeout(stableTimer);
+      socket?.close();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
-    let issued = 0;
-    let applied = 0;
     const tick = async () => {
-      const sequence = ++issued;
       try {
-        const list = await api.listJobs(jobScope);
-        // 遅れて届いた古い応答で、新しい状態を上書きしない。
-        if (active && sequence > applied) {
-          applied = sequence;
-          setJobs(list);
-        }
+        await refreshJobs();
       } catch (cause) {
         if (active) setError(describe(cause));
       }
     };
     void tick();
-    const timer = window.setInterval(tick, POLL_INTERVAL_MS);
+    const timer = window.setInterval(
+      tick,
+      eventsConnected ? CONNECTED_POLL_INTERVAL_MS : POLL_INTERVAL_MS,
+    );
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, [jobScope]);
+  }, [eventsConnected, refreshJobs]);
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -596,6 +669,11 @@ export function App() {
         <h1>MyComfyUI</h1>
         <span className="muted">
           Projectの有無を選び、画像・音声・動画・音楽・合成の生成を投入する。
+        </span>
+        <span
+          className={`badge ${eventsConnected ? "events-connected" : "events-offline"}`}
+        >
+          進捗通知:{eventsConnected ? "WebSocket" : "REST同期"}
         </span>
         <nav className="row">
           {VIEWS.map((item) => (

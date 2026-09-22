@@ -41,6 +41,7 @@ from mycomfyui_api.engines import AUTO_SEED, SUPPORTED_ENGINES, is_supported
 from mycomfyui_api.engines import prepare as prepare_execution
 from mycomfyui_api.engines import workflow_defaults as engine_workflow_defaults
 from mycomfyui_api.errors import ApiError
+from mycomfyui_api.events import job_events
 from mycomfyui_api.execution import (
     PreparationContext,
     PreparationError,
@@ -616,6 +617,7 @@ async def create_generation_job(
         raise
     # ここから先はレコードが確定している。失敗してもスナップショットを消さない。
     await _load_queue_sequence(session, job)
+    await job_events.publish_job(job.id, job.state)
     return job
 
 
@@ -1643,6 +1645,7 @@ async def cancel_generation_job(
     await session.refresh(job)
     if job.state == "cancelling":
         worker.request_cancel(job_id)
+    await job_events.publish_job(job.id, job.state)
     return job
 
 
@@ -2992,6 +2995,7 @@ async def _create_derived_job(
         raise
     # ここから先はレコードが確定している。失敗してもスナップショットを消さない。
     await _load_queue_sequence(session, job)
+    await job_events.publish_job(job.id, job.state)
     return job
 
 
