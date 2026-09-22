@@ -314,11 +314,23 @@ export function App() {
         void refreshJobsRef.current().catch((cause) => setError(describe(cause)));
       }, 100);
     };
+    const retryLater = () => {
+      const jittered = retryDelay * (0.75 + Math.random() * 0.5);
+      reconnectTimer = window.setTimeout(connect, jittered);
+      retryDelay = Math.min(retryDelay * 2, 10000);
+    };
     const connect = () => {
       if (stopped) return;
       const url = new URL("/api/v1/events", window.location.href);
       url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      socket = new WebSocket(url);
+      try {
+        socket = new WebSocket(url);
+      } catch {
+        // 生成時点で弾かれると以降のイベントが来ない。ここで次を予約しないと
+        // 再接続が止まり、通知経路が復帰しなくなる。
+        retryLater();
+        return;
+      }
       socket.onopen = () => {
         setEventsConnected(true);
         scheduleRefresh();
@@ -348,9 +360,7 @@ export function App() {
           stableTimer = null;
         }
         if (stopped) return;
-        const jittered = retryDelay * (0.75 + Math.random() * 0.5);
-        reconnectTimer = window.setTimeout(connect, jittered);
-        retryDelay = Math.min(retryDelay * 2, 10000);
+        retryLater();
       };
     };
     connect();

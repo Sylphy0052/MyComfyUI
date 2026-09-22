@@ -41,6 +41,19 @@ class EventHub:
             self._subscribers.discard(queue)
 
     async def publish_job(self, job_id: str, state: str) -> None:
+        """Job状態の変化を配る。ここでの失敗は呼び出し元へ返さない。
+
+        発行はJobの作成・取消・実行のcommit直後に呼ばれる。通知の失敗で
+        例外を返すと、DBへ確定済みの操作がAPIの500になったり、`running`の
+        まま実行へ進まないJobが残る。通知は再取得の引き金でしかないため、
+        失敗はログに残して捨てる。
+        """
+        try:
+            self._publish_job(job_id, state)
+        except Exception:
+            logger.warning("Job状態の通知に失敗した job_id=%s", job_id, exc_info=True)
+
+    def _publish_job(self, job_id: str, state: str) -> None:
         event = self.event(
             "generation_job.state_changed",
             "generation_job",
@@ -152,9 +165,14 @@ async def job_event_stream(websocket: WebSocket) -> None:
         return
     try:
         await websocket.accept()
-    except Exception:
+    except WebSocketDisconnect:
         # ハンドシェイクの途中でタブを閉じられただけ。通知経路の外へは出さない。
         logger.debug("WebSocketの確立前に切断された", exc_info=True)
+        return
+    except Exception:
+        # 切断以外でacceptが通らないのは設定か実装の問題で、放置すると全接続が
+        # 黙って失敗する。debugでは気付けないため上のレベルで残す。
+        logger.warning("WebSocketを確立できなかった", exc_info=True)
         return
     try:
         async with job_events.subscribe() as queue:
