@@ -272,6 +272,12 @@ export function App() {
   const workflowsSceneId = useFrozenWhenInactive(sceneId, workflowsActive);
   const workflowsShotId = useFrozenWhenInactive(shotId, workflowsActive);
 
+  // 初回取得の往復中に選択が変わることがある。書き戻す前に現在値を見る。
+  const projectIdRef = useRef(projectId);
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -288,6 +294,7 @@ export function App() {
         const restoredProjectId = initialUiState.projectId;
         if (
           restoredProjectId &&
+          projectIdRef.current === restoredProjectId &&
           !projectList.items.some((item) => item.id === restoredProjectId)
         ) {
           setProjectId(null);
