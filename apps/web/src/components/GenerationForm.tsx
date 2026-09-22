@@ -12,6 +12,7 @@ import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
 import { conflictNotice, noticeSuffix } from "./BackendNotice";
+import { mergePrompt } from "../prompt/merge";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -246,10 +247,11 @@ export function GenerationForm({
         instruction: description,
         provider_id: providerId || null,
       });
+      // 既に入力されているプロンプトは残し、補完結果をタグ順に沿って追記する。
       setValues((current) => ({
         ...current,
-        positive_prompt: result.positive_prompt,
-        negative_prompt: result.negative_prompt,
+        positive_prompt: mergePrompt(current.positive_prompt ?? "", result.positive_prompt),
+        negative_prompt: mergePrompt(current.negative_prompt ?? "", result.negative_prompt),
       }));
       setTouchedFields((current) => new Set(current).add("positive_prompt").add("negative_prompt"));
     } catch (cause) {
@@ -299,25 +301,13 @@ export function GenerationForm({
 
   const appendTags = () => {
     if (extractedTags.length === 0) return;
-    const current = values.positive_prompt?.trim() ?? "";
-    const existing = new Set(
-      current
-        .split(",")
-        .map((tag) => tag.trim().toLocaleLowerCase())
-        .filter(Boolean),
-    );
-    const tagsToAdd: string[] = [];
-    for (const tag of extractedTags) {
-      const normalized = tag.toLocaleLowerCase();
-      if (existing.has(normalized)) continue;
-      existing.add(normalized);
-      tagsToAdd.push(tag);
-    }
-    const suffix = tagsToAdd.join(", ");
-    if (!suffix) return;
+    const current = values.positive_prompt ?? "";
+    // 既存のタグは並び順ごと残し、新しいタグだけをタグ順に沿って差し込む。
+    const merged = mergePrompt(current, extractedTags.join(", "));
+    if (merged === current.trim()) return;
     setValues({
       ...values,
-      positive_prompt: current ? `${current}, ${suffix}` : suffix,
+      positive_prompt: merged,
     });
     setTouchedFields((currentFields) =>
       new Set(currentFields).add("positive_prompt")
