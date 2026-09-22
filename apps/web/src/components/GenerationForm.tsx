@@ -10,6 +10,7 @@ import type {
 } from "../api/client";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
+import { LookProfileManager } from "./LookProfileManager";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -88,12 +89,14 @@ interface Props {
     inputs: Record<string, unknown>,
     useInheritedDefaults: boolean,
     batchCount: number,
+    lookProfileIds: string[],
   ) => void;
   // 投入前の確認もAPIを直接呼ばず、Appから受け取った関数へ委ねる。
   onPreview: (
     recipe: Recipe | null,
     inputs: Record<string, unknown>,
     useInheritedDefaults: boolean,
+    lookProfileIds: string[],
   ) => void;
   previewing: boolean;
   preview: GenerationPreview | null;
@@ -128,6 +131,8 @@ export function GenerationForm({
   const [modelsValid, setModelsValid] = useState(false);
   const [invalid, setInvalid] = useState<string | null>(null);
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
+  const [lookProfileIds, setLookProfileIds] = useState<string[]>([]);
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
   const [tagImage, setTagImage] = useState<File | null>(null);
   const [extractingTags, setExtractingTags] = useState(false);
   const [tagError, setTagError] = useState<string | null>(null);
@@ -148,6 +153,7 @@ export function GenerationForm({
   useEffect(() => {
     if (recipe) {
       setValues(initialValues(recipe, toFieldSpecs(recipe)));
+      setTouchedFields(new Set());
     }
   }, [recipe]);
 
@@ -159,6 +165,9 @@ export function GenerationForm({
   const buildInputs = (): Record<string, unknown> | null => {
     const inputs: Record<string, unknown> = { ...modelValues };
     for (const field of fields) {
+      if (lookProfileIds.length > 0 && !touchedFields.has(field.name)) {
+        continue;
+      }
       const raw = values[field.name] ?? "";
       if (raw.trim() === "") {
         if (field.required) {
@@ -197,7 +206,7 @@ export function GenerationForm({
       return;
     }
     if (useInheritedDefaults) {
-      onSubmit(null, {}, true, parsedBatchCount);
+      onSubmit(null, {}, true, parsedBatchCount, []);
       return;
     }
     if (!recipe) {
@@ -207,7 +216,7 @@ export function GenerationForm({
     if (!inputs) {
       return;
     }
-    onSubmit(recipe, inputs, false, parsedBatchCount);
+    onSubmit(recipe, inputs, false, parsedBatchCount, lookProfileIds);
   };
 
   const assist = async () => {
@@ -227,6 +236,7 @@ export function GenerationForm({
         positive_prompt: result.positive_prompt,
         negative_prompt: result.negative_prompt,
       }));
+      setTouchedFields((current) => new Set(current).add("positive_prompt").add("negative_prompt"));
     } catch (cause) {
       setAssistError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -237,7 +247,7 @@ export function GenerationForm({
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
   const runPreview = () => {
     if (useInheritedDefaults) {
-      onPreview(null, {}, true);
+      onPreview(null, {}, true, []);
       return;
     }
     if (!recipe) {
@@ -247,7 +257,7 @@ export function GenerationForm({
     if (!inputs) {
       return;
     }
-    onPreview(recipe, inputs, false);
+    onPreview(recipe, inputs, false, lookProfileIds);
   };
 
   const extractTags = async () => {
@@ -294,6 +304,9 @@ export function GenerationForm({
       ...values,
       positive_prompt: current ? `${current}, ${suffix}` : suffix,
     });
+    setTouchedFields((currentFields) =>
+      new Set(currentFields).add("positive_prompt")
+    );
   };
 
   return (
@@ -375,6 +388,15 @@ export function GenerationForm({
           onValidityChange={setModelsValid}
         />
 
+        <fieldset disabled={useInheritedDefaults}>
+          <LookProfileManager
+            kind="image"
+            recipe={recipe}
+            selectedIds={lookProfileIds}
+            onSelectionChange={setLookProfileIds}
+          />
+        </fieldset>
+
         {fields.map((field) => (
           <div key={field.name}>
             <label htmlFor={`field-${field.name}`}>
@@ -387,7 +409,10 @@ export function GenerationForm({
                 disabled={useInheritedDefaults}
                 value={values[field.name] ?? ""}
                 onChange={(event) =>
-                  setValues({ ...values, [field.name]: event.target.value })
+                  {
+                    setValues({ ...values, [field.name]: event.target.value });
+                    setTouchedFields((current) => new Set(current).add(field.name));
+                  }
                 }
               />
             ) : (
@@ -397,7 +422,10 @@ export function GenerationForm({
                 type={field.control === "number" ? "number" : "text"}
                 value={values[field.name] ?? ""}
                 onChange={(event) =>
-                  setValues({ ...values, [field.name]: event.target.value })
+                  {
+                    setValues({ ...values, [field.name]: event.target.value });
+                    setTouchedFields((current) => new Set(current).add(field.name));
+                  }
                 }
               />
             )}

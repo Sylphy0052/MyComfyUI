@@ -251,6 +251,35 @@ class Recipe(Base):
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class LookProfile(Base):
+    """生成入力へ順序付きで重ねる、名前付きの再利用設定。"""
+
+    __tablename__ = "look_profile"
+    __table_args__ = (
+        CheckConstraint(
+            "kind in ('image','video','voice','music','compose')",
+            name="ck_look_profile_kind",
+        ),
+        CheckConstraint(
+            "category in ('general','style','character','background')",
+            name="ck_look_profile_category",
+        ),
+        UniqueConstraint("kind", "name", name="uq_look_profile_kind_name"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recipe_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("recipe.id"), nullable=True
+    )
+    inputs: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class GenerationJob(Base):
     """Execution request. State transitions are enforced by the API layer, not the DB."""
 

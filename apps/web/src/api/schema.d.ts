@@ -847,6 +847,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/look-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Look Profiles */
+        get: operations["list_look_profiles_api_v1_look_profiles_get"];
+        put?: never;
+        /** Create Look Profile */
+        post: operations["create_look_profile_api_v1_look_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/look-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Look Profile */
+        get: operations["get_look_profile_api_v1_look_profiles__profile_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Look Profile */
+        delete: operations["delete_look_profile_api_v1_look_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Look Profile */
+        patch: operations["update_look_profile_api_v1_look_profiles__profile_id__patch"];
+        trace?: never;
+    };
     "/api/v1/project-portability/import": {
         parameters: {
             query?: never;
@@ -2291,7 +2328,7 @@ export interface components {
              * Recipe Origin
              * @enum {string}
              */
-            recipe_origin: "runtime" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
+            recipe_origin: "runtime" | "look_profile" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
             /** Resolved Inputs */
             resolved_inputs: {
                 [key: string]: unknown;
@@ -2357,6 +2394,8 @@ export interface components {
              * @enum {string}
              */
             kind: "image" | "video" | "voice" | "music" | "compose";
+            /** Look Profile Ids */
+            look_profile_ids?: string[];
             /** Parent Job Id */
             parent_job_id?: string | null;
             /** Project Id */
@@ -2474,6 +2513,8 @@ export interface components {
              * @enum {string}
              */
             kind: "image" | "video" | "voice" | "music" | "compose";
+            /** Look Profile Ids */
+            look_profile_ids?: string[];
             /** Parent Job Id */
             parent_job_id?: string | null;
             /** Project Id */
@@ -2503,7 +2544,7 @@ export interface components {
              * Origin
              * @enum {string}
              */
-            origin: "runtime" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
+            origin: "runtime" | "look_profile" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
             /** Recipe Default */
             recipe_default: unknown;
             /** Value */
@@ -2531,6 +2572,8 @@ export interface components {
             input_refs: {
                 [key: string]: unknown;
             }[];
+            /** Look Profile Ids */
+            look_profile_ids?: string[];
             /** Model */
             model: {
                 [key: string]: unknown;
@@ -2547,7 +2590,7 @@ export interface components {
              * Recipe Origin
              * @enum {string}
              */
-            recipe_origin: "runtime" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
+            recipe_origin: "runtime" | "look_profile" | "shot" | "scene" | "project" | "recipe_default" | "workflow_default" | "adapter";
             /** Resolved Inputs */
             resolved_inputs: {
                 [key: string]: unknown;
@@ -2688,6 +2731,71 @@ export interface components {
             job: components["schemas"]["GenerationJobRead"];
             /** Truncated */
             truncated: boolean;
+        };
+        /** LookProfileCreate */
+        LookProfileCreate: {
+            /**
+             * Category
+             * @default general
+             * @enum {string}
+             */
+            category: "general" | "style" | "character" | "background";
+            /** Description */
+            description?: string | null;
+            /** Inputs */
+            inputs: {
+                [key: string]: unknown;
+            };
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "image" | "video" | "voice" | "music" | "compose";
+            /** Name */
+            name: string;
+            /** Recipe Id */
+            recipe_id?: string | null;
+        };
+        /** LookProfileRead */
+        LookProfileRead: {
+            /** Category */
+            category: string;
+            /** Created At */
+            created_at: string;
+            /** Description */
+            description: string | null;
+            /** Id */
+            id: string;
+            /** Inputs */
+            inputs: {
+                [key: string]: unknown;
+            };
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Recipe Id */
+            recipe_id: string | null;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** LookProfileUpdate */
+        LookProfileUpdate: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category?: "general" | "style" | "character" | "background";
+            /** Description */
+            description?: string | null;
+            /** Inputs */
+            inputs?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name?: string;
+            /** Recipe Id */
+            recipe_id?: string | null;
         };
         /**
          * PlannedOperation
@@ -5057,6 +5165,171 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageTagExtractRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_look_profiles_api_v1_look_profiles_get: {
+        parameters: {
+            query?: {
+                kind?: ("image" | "video" | "voice" | "music" | "compose") | null;
+                category?: ("general" | "style" | "character" | "background") | null;
+                q?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookProfileRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_look_profile_api_v1_look_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookProfileCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookProfileRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_look_profile_api_v1_look_profiles__profile_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookProfileRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_look_profile_api_v1_look_profiles__profile_id__delete: {
+        parameters: {
+            query?: {
+                confirm?: boolean;
+            };
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_look_profile_api_v1_look_profiles__profile_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookProfileRead"];
                 };
             };
             /** @description Validation Error */

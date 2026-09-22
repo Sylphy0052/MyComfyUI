@@ -1695,6 +1695,7 @@
           "recipe_origin": {
             "enum": [
               "runtime",
+              "look_profile",
               "shot",
               "scene",
               "project",
@@ -1868,6 +1869,16 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "look_profile_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Look Profile Ids",
+            "type": "array"
           },
           "parent_job_id": {
             "anyOf": [
@@ -2255,6 +2266,16 @@
             "title": "Kind",
             "type": "string"
           },
+          "look_profile_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Look Profile Ids",
+            "type": "array"
+          },
           "parent_job_id": {
             "anyOf": [
               {
@@ -2344,6 +2365,7 @@
           "origin": {
             "enum": [
               "runtime",
+              "look_profile",
               "shot",
               "scene",
               "project",
@@ -2406,6 +2428,13 @@
             "title": "Input Refs",
             "type": "array"
           },
+          "look_profile_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Look Profile Ids",
+            "type": "array"
+          },
           "model": {
             "additionalProperties": true,
             "title": "Model",
@@ -2434,6 +2463,7 @@
           "recipe_origin": {
             "enum": [
               "runtime",
+              "look_profile",
               "shot",
               "scene",
               "project",
@@ -2827,6 +2857,202 @@
           "truncated"
         ],
         "title": "JobLineageRead",
+        "type": "object"
+      },
+      "LookProfileCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "default": "general",
+            "enum": [
+              "general",
+              "style",
+              "character",
+              "background"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "maxProperties": 64,
+            "minProperties": 1,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "voice",
+              "music",
+              "compose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "inputs"
+        ],
+        "title": "LookProfileCreate",
+        "type": "object"
+      },
+      "LookProfileRead": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "category",
+          "description",
+          "recipe_id",
+          "inputs",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "LookProfileRead",
+        "type": "object"
+      },
+      "LookProfileUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "general",
+              "style",
+              "character",
+              "background"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "maxProperties": 64,
+            "minProperties": 1,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
+          }
+        },
+        "title": "LookProfileUpdate",
         "type": "object"
       },
       "PlannedOperation": {
@@ -8371,6 +8597,287 @@
           }
         },
         "summary": "Extract Image Tags"
+      }
+    },
+    "/api/v1/look-profiles": {
+      "get": {
+        "operationId": "list_look_profiles_api_v1_look_profiles_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "image",
+                    "video",
+                    "voice",
+                    "music",
+                    "compose"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "general",
+                    "style",
+                    "character",
+                    "background"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LookProfileRead"
+                  },
+                  "title": "Response List Look Profiles Api V1 Look Profiles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Look Profiles"
+      },
+      "post": {
+        "operationId": "create_look_profile_api_v1_look_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LookProfileCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookProfileRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Look Profile"
+      }
+    },
+    "/api/v1/look-profiles/{profile_id}": {
+      "delete": {
+        "operationId": "delete_look_profile_api_v1_look_profiles__profile_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Look Profile"
+      },
+      "get": {
+        "operationId": "get_look_profile_api_v1_look_profiles__profile_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookProfileRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Look Profile"
+      },
+      "patch": {
+        "operationId": "update_look_profile_api_v1_look_profiles__profile_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LookProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookProfileRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Look Profile"
       }
     },
     "/api/v1/project-portability/import": {

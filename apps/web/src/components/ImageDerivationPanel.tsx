@@ -9,6 +9,7 @@ import type {
 } from "../api/client";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
+import { LookProfileManager } from "./LookProfileManager";
 
 type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet";
 
@@ -89,6 +90,8 @@ export function ImageDerivationPanel({
   const [controlEnd, setControlEnd] = useState("1");
   const [modelValues, setModelValues] = useState<Record<string, string>>({});
   const [modelsValid, setModelsValid] = useState(false);
+  const [lookProfileIds, setLookProfileIds] = useState<string[]>([]);
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<GenerationPreview | null>(null);
@@ -151,6 +154,7 @@ export function ImageDerivationPanel({
     if (defaults.control_strength !== undefined) {
       setControlStrength(String(defaults.control_strength));
     }
+    setTouchedFields(new Set());
   }, [recipe]);
 
   useEffect(() => {
@@ -177,6 +181,7 @@ export function ImageDerivationPanel({
     controlStart,
     controlEnd,
     modelValues,
+    lookProfileIds,
   ]);
 
   const buildInputs = (): Record<string, unknown> | null => {
@@ -196,7 +201,8 @@ export function ImageDerivationPanel({
           : { relative_path: sourcePath.trim(), sha256: sourceSha256.trim() },
     };
     if (mode === "upscale") return inputs;
-    if (!prompt.trim()) {
+    const include = (name: string) => lookProfileIds.length === 0 || touchedFields.has(name);
+    if (include("positive_prompt") && !prompt.trim()) {
       setError("プロンプトを入力してください。");
       return null;
     }
@@ -210,12 +216,10 @@ export function ImageDerivationPanel({
       setError("seedは整数で入力してください。");
       return null;
     }
-    Object.assign(inputs, {
-      positive_prompt: prompt,
-      negative_prompt: negative,
-      denoise: denoiseValue,
-      seed: seedValue,
-    });
+    if (include("positive_prompt")) inputs.positive_prompt = prompt;
+    if (include("negative_prompt")) inputs.negative_prompt = negative;
+    if (include("denoise")) inputs.denoise = denoiseValue;
+    if (include("seed")) inputs.seed = seedValue;
     if (mode === "inpaint") {
       const grow = Number(growMaskBy);
       const maskReady =
@@ -230,7 +234,7 @@ export function ImageDerivationPanel({
         maskMode === "artifact"
           ? { artifact_id: maskId }
           : { relative_path: maskPath.trim(), sha256: maskSha256.trim() };
-      inputs.grow_mask_by = grow;
+      if (include("grow_mask_by")) inputs.grow_mask_by = grow;
     }
     if (mode === "controlnet") {
       const values = [width, height, controlStrength, controlStart, controlEnd].map(Number);
@@ -246,10 +250,12 @@ export function ImageDerivationPanel({
         setError("幅・高さ・制御強度・制御範囲が不正です。");
         return null;
       }
-      Object.assign(inputs, {
-        width: values[0], height: values[1], batch_size: 1,
-        control_strength: values[2], control_start: values[3], control_end: values[4],
-      });
+      if (include("width")) inputs.width = values[0];
+      if (include("height")) inputs.height = values[1];
+      if (include("batch_size")) inputs.batch_size = 1;
+      if (include("control_strength")) inputs.control_strength = values[2];
+      if (include("control_start")) inputs.control_start = values[3];
+      if (include("control_end")) inputs.control_end = values[4];
     }
     return inputs;
   };
@@ -295,6 +301,7 @@ export function ImageDerivationPanel({
         scene_id: sceneId,
         shot_id: shotId,
         recipe_id: recipe.id,
+        look_profile_ids: lookProfileIds,
         inputs,
       };
       if (previewOnly) {
@@ -351,14 +358,20 @@ export function ImageDerivationPanel({
           </div>
         )}
         <ModelSelector recipe={recipe} values={modelValues} onChange={setModelValues} onValidityChange={setModelsValid} idPrefix="derivation-model" />
+        <LookProfileManager
+          kind="image"
+          recipe={recipe}
+          selectedIds={lookProfileIds}
+          onSelectionChange={setLookProfileIds}
+        />
         {mode !== "upscale" && <>
           <label htmlFor="derivation-prompt">プロンプト</label>
-          <textarea id="derivation-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+          <textarea id="derivation-prompt" value={prompt} onChange={(event) => { setPrompt(event.target.value); setTouchedFields((current) => new Set(current).add("positive_prompt")); }} />
           <label htmlFor="derivation-negative">除外したい要素</label>
-          <textarea id="derivation-negative" value={negative} onChange={(event) => setNegative(event.target.value)} />
+          <textarea id="derivation-negative" value={negative} onChange={(event) => { setNegative(event.target.value); setTouchedFields((current) => new Set(current).add("negative_prompt")); }} />
           <div className="row">
-            <label>denoise<input type="number" min="0" max="1" step="0.05" value={denoise} onChange={(event) => setDenoise(event.target.value)} /></label>
-            <label>seed<input type="number" value={seed} onChange={(event) => setSeed(event.target.value)} /></label>
+            <label>denoise<input type="number" min="0" max="1" step="0.05" value={denoise} onChange={(event) => { setDenoise(event.target.value); setTouchedFields((current) => new Set(current).add("denoise")); }} /></label>
+            <label>seed<input type="number" value={seed} onChange={(event) => { setSeed(event.target.value); setTouchedFields((current) => new Set(current).add("seed")); }} /></label>
           </div>
         </>}
         {mode === "inpaint" && <>
@@ -376,17 +389,17 @@ export function ImageDerivationPanel({
               <input value={maskSha256} onChange={(event) => setMaskSha256(event.target.value)} placeholder="SHA-256" />
             </div>
           )}
-          <label>mask拡張(px)<input type="number" min="0" value={growMaskBy} onChange={(event) => setGrowMaskBy(event.target.value)} /></label>
+          <label>mask拡張(px)<input type="number" min="0" value={growMaskBy} onChange={(event) => { setGrowMaskBy(event.target.value); setTouchedFields((current) => new Set(current).add("grow_mask_by")); }} /></label>
         </>}
         {mode === "controlnet" && <>
           <div className="row">
-            <label>幅<input type="number" value={width} onChange={(event) => setWidth(event.target.value)} /></label>
-            <label>高さ<input type="number" value={height} onChange={(event) => setHeight(event.target.value)} /></label>
-            <label>制御強度<input type="number" step="0.05" value={controlStrength} onChange={(event) => setControlStrength(event.target.value)} /></label>
+            <label>幅<input type="number" value={width} onChange={(event) => { setWidth(event.target.value); setTouchedFields((current) => new Set(current).add("width")); }} /></label>
+            <label>高さ<input type="number" value={height} onChange={(event) => { setHeight(event.target.value); setTouchedFields((current) => new Set(current).add("height")); }} /></label>
+            <label>制御強度<input type="number" step="0.05" value={controlStrength} onChange={(event) => { setControlStrength(event.target.value); setTouchedFields((current) => new Set(current).add("control_strength")); }} /></label>
           </div>
           <div className="row">
-            <label>制御開始<input type="number" min="0" max="1" step="0.05" value={controlStart} onChange={(event) => setControlStart(event.target.value)} /></label>
-            <label>制御終了<input type="number" min="0" max="1" step="0.05" value={controlEnd} onChange={(event) => setControlEnd(event.target.value)} /></label>
+            <label>制御開始<input type="number" min="0" max="1" step="0.05" value={controlStart} onChange={(event) => { setControlStart(event.target.value); setTouchedFields((current) => new Set(current).add("control_start")); }} /></label>
+            <label>制御終了<input type="number" min="0" max="1" step="0.05" value={controlEnd} onChange={(event) => { setControlEnd(event.target.value); setTouchedFields((current) => new Set(current).add("control_end")); }} /></label>
           </div>
         </>}
         {error && <p className="error">{error}</p>}
