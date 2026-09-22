@@ -3,9 +3,11 @@
 
   /* 色: 背景の階層 (奥から手前へ) */
   --color-bg-deep: #090b0f;
+  /* 面の内側に置く画像・動画の下地 */
   --color-bg-sunken: #0d0f13;
   --color-bg: #16181d;
   /* 色: 面の階層 */
+  /* パネルの中にくぼませる領域 */
   --color-surface-inset: #181b21;
   --color-surface: #1f2229;
   --color-surface-raised: #262a32;
@@ -16,8 +18,12 @@
   --color-text-on-accent: #10141c;
   /* 色: 強調と状態 */
   --color-accent: #6ea8fe;
+  --color-accent-hover: color-mix(in srgb, var(--color-accent) 85%, white);
+  --color-accent-subtle: color-mix(in srgb, var(--color-accent) 20%, transparent);
   --color-danger: #ff7b72;
+  --color-danger-subtle: color-mix(in srgb, var(--color-danger) 20%, transparent);
   --color-ok: #67d98a;
+  --color-ok-subtle: color-mix(in srgb, var(--color-ok) 20%, transparent);
   --color-warning: #d8a657;
   --color-warning-subtle: #5a451f55;
   /* 色: 重ねて表示する面 */
@@ -26,7 +32,7 @@
   --color-overlay-strong: #090b0fee;
   --color-scrim: rgb(0 0 0 / 65%);
 
-  /* 余白: 2px刻み */
+  /* 余白: --space-N = N × 2px */
   --space-1: 2px;
   --space-2: 4px;
   --space-3: 6px;
@@ -37,6 +43,8 @@
   --space-8: 16px;
   --space-9: 18px;
   --space-10: 20px;
+  --space-12: 24px;
+  --space-16: 32px;
 
   /* 角丸 */
   --radius-sm: 4px;
@@ -58,6 +66,8 @@
 
   /* タイポグラフィ */
   --font-family-base: system-ui, "Noto Sans JP", sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* base は本文の既定 (14px)。md (13px) は補足文向けで base より小さい */
   --font-size-xs: 11px;
   --font-size-sm: 12px;
   --font-size-md: 13px;
@@ -213,7 +223,7 @@ ul.list li button[aria-pressed="true"] {
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
   word-break: break-all;
 }
@@ -1058,7 +1068,7 @@ button[aria-pressed="true"] {
 
 .sync-preview li {
   margin: 5px 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-family-mono);
   font-size: var(--font-size-sm);
 }
 
