@@ -1,8 +1,21 @@
 {
   "image_prompt": {
-    "positive_prompt": "1girl, 1boy, school darkroom, red safelight, developing tray, bust shot, eye level, autumn evening, cinematic lighting, detailed",
+    "quality_tags": ["masterpiece", "best quality", "safe"],
+    "subject_tags": ["1girl", "1boy"],
+    "character_tags": [],
+    "artist_tags": [],
+    "general_tags": [
+      "school darkroom",
+      "red safelight",
+      "developing tray",
+      "bust shot",
+      "eye level",
+      "autumn evening",
+      "cinematic lighting"
+    ],
+    "natural_text": "A girl and a boy stand on opposite sides of a developing tray in a school darkroom. The girl holds a wet print above the tray while the boy watches the print from across the tray. Red safelight from the ceiling falls on both faces from above.",
     "negative_prompt": "lowres, bad anatomy, extra fingers, watermark, text",
-    "rationale": "Shotの暗室と赤色光、バストショットの指定をpromptへ写した固定応答。"
+    "rationale": "Shotの暗室と赤色光、バストショットの指定をタグと自然文へ分けた固定応答。"
   },
   "shot_breakdown": {
     "shots": [
@@ -71,12 +84,33 @@
     "items": [
       {
         "shot_id": "",
-        "positive_prompt": "1girl, darkroom, red safelight, bust shot, cinematic lighting",
+        "quality_tags": ["masterpiece", "best quality", "safe"],
+        "subject_tags": ["1girl", "solo"],
+        "character_tags": [],
+        "artist_tags": [],
+        "general_tags": [
+          "darkroom",
+          "red safelight",
+          "bust shot",
+          "cinematic lighting"
+        ],
+        "natural_text": "A girl stands in front of a developing tray in a darkroom and looks down at the print in the tray. Red safelight from the ceiling falls on her face from above.",
         "negative_prompt": "lowres, bad anatomy, watermark"
       },
       {
         "shot_id": "",
-        "positive_prompt": "close up of developing tray, red safelight, wet print, high contrast",
+        "quality_tags": ["masterpiece", "best quality", "safe"],
+        "subject_tags": [],
+        "character_tags": [],
+        "artist_tags": [],
+        "general_tags": [
+          "developing tray",
+          "red safelight",
+          "wet print",
+          "high contrast",
+          "close-up"
+        ],
+        "natural_text": "A wet print lies in a developing tray filled with shallow liquid. The camera looks down at the tray from directly above under red safelight.",
         "negative_prompt": "lowres, text, watermark"
       }
     ],
