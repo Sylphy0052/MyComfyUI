@@ -224,15 +224,15 @@ ul.list li button[aria-pressed="true"] {
   background: rgba(22, 24, 29, 0.85);
 }
 
-.badge.decision-accepted {
+.gallery figure .badge.decision-accepted {
   color: var(--ok);
 }
 
-.badge.decision-rejected {
+.gallery figure .badge.decision-rejected {
   color: var(--danger);
 }
 
-.badge.decision-undecided {
+.gallery figure .badge.decision-undecided {
   color: var(--muted);
 }
 

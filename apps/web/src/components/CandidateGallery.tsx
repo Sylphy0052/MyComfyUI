@@ -424,7 +424,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
             </span>
             <ArtifactPreview artifact={artifact} />
             <figcaption>
-              <span className="row">{artifact.id === leftId && <span className="badge">A</span>}{artifact.id === rightId && <span className="badge">B</span>}<span className="muted">{DECISION_LABEL[artifact.decision] ?? artifact.decision}{artifact.decision_at ? ` / ${artifact.decision_at}` : ""}</span></span>
+              <span className="row">{artifact.id === leftId && <span className="badge">A</span>}{artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
               <span className="mono">{artifact.sha256.slice(0, 12)}</span>
               <div className="row">
                 <button type="button" onClick={() => setLeftId(artifact.id)}>Aへ</button>

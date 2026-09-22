@@ -61,7 +61,6 @@ const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
   { value: "compose", label: "合成" },
 ];
 
-// 画像タブの入力カラムは、生成・派生・スイープを排他表示にして縦の占有を抑える。
 const IMAGE_SUBTABS: { value: ImageSubTab; label: string }[] = [
   { value: "generate", label: "生成" },
   { value: "derive", label: "派生" },

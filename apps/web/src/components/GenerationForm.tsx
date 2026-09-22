@@ -400,87 +400,87 @@ export function GenerationForm({
       <div className="stack">
         <fieldset className="form-section">
           <legend>プロンプト</legend>
-        <div>
-          <label htmlFor="image-description">画像の説明</label>
-          <textarea
-            id="image-description"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
-          />
-          <p className="muted">日本語で説明するとAIがPromptとNegativeを補完します。</p>
-        </div>
-        <div className="row">
-          <label htmlFor="prompt-provider">AI</label>
-          <select
-            id="prompt-provider"
-            value={providerId}
-            onChange={(event) =>
-              setProviderId(event.target.value as AgentProviderId | "")
-            }
-          >
-            <option value="">既定のAI</option>
-            {providers.map((provider) => (
-              <option
-                key={provider.id}
-                value={provider.id}
-                disabled={!provider.available}
-              >
-                {provider.label}{provider.available ? "" : " (利用不可)"}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            disabled={assisting}
-            onClick={() => void assist()}
-          >
-            {assisting ? "補完中..." : "Promptを補完"}
-          </button>
-        </div>
-        {assistError && <p className="error">{assistError}</p>}
-        {promptFields.map(renderField)}
+          <div>
+            <label htmlFor="image-description">画像の説明</label>
+            <textarea
+              id="image-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
+            />
+            <p className="muted">日本語で説明するとAIがPromptとNegativeを補完します。</p>
+          </div>
+          <div className="row">
+            <label htmlFor="prompt-provider">AI</label>
+            <select
+              id="prompt-provider"
+              value={providerId}
+              onChange={(event) =>
+                setProviderId(event.target.value as AgentProviderId | "")
+              }
+            >
+              <option value="">既定のAI</option>
+              {providers.map((provider) => (
+                <option
+                  key={provider.id}
+                  value={provider.id}
+                  disabled={!provider.available}
+                >
+                  {provider.label}{provider.available ? "" : " (利用不可)"}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={assisting}
+              onClick={() => void assist()}
+            >
+              {assisting ? "補完中..." : "Promptを補完"}
+            </button>
+          </div>
+          {assistError && <p className="error">{assistError}</p>}
+          {promptFields.map(renderField)}
         </fieldset>
 
         <fieldset className="form-section">
           <legend>出力設定</legend>
-        <button
-          type="button"
-          disabled={!projectId}
-          aria-pressed={useInheritedDefaults}
-          className={useInheritedDefaults ? "primary" : undefined}
-          onClick={() => setUseInheritedDefaults((value) => !value)}
-        >
-          {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
-        </button>
-        {useInheritedDefaults && (
-          <p className="muted">Project、Scene、Shotの設定だけで生成します。</p>
-        )}
-        <div>
-          <label htmlFor="recipe">プリセット</label>
-          <select
-            id="recipe"
-            value={recipeId}
-            disabled={useInheritedDefaults}
-            onChange={(event) => setRecipeId(event.target.value)}
+          <button
+            type="button"
+            disabled={!projectId}
+            aria-pressed={useInheritedDefaults}
+            className={useInheritedDefaults ? "primary" : undefined}
+            onClick={() => setUseInheritedDefaults((value) => !value)}
           >
-            {recipes.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </div>
+            {useInheritedDefaults ? "Project既定値を使用中" : "Project既定値へ戻す"}
+          </button>
+          {useInheritedDefaults && (
+            <p className="muted">Project、Scene、Shotの設定だけで生成します。</p>
+          )}
+          <div>
+            <label htmlFor="recipe">プリセット</label>
+            <select
+              id="recipe"
+              value={recipeId}
+              disabled={useInheritedDefaults}
+              onChange={(event) => setRecipeId(event.target.value)}
+            >
+              {recipes.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <ModelSelector
-          recipe={recipe}
-          disabled={useInheritedDefaults}
-          values={modelValues}
-          onChange={setModelValues}
-          onValidityChange={setModelsValid}
-        />
+          <ModelSelector
+            recipe={recipe}
+            disabled={useInheritedDefaults}
+            values={modelValues}
+            onChange={setModelValues}
+            onValidityChange={setModelsValid}
+          />
 
-        {parameterFields.map(renderField)}
+          {parameterFields.map(renderField)}
         </fieldset>
 
         <details className="form-section collapsible">
