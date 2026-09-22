@@ -2859,10 +2859,18 @@ export interface components {
         /**
          * ImagePromptAssistRead
          * @description 構造化検証済みの画像prompt補完結果。
+         *
+         *     `positive_prompt`はタグ行と自然文を連結した結果とする。差し替えや再生成を行える
+         *     ように、連結前の2つも個別に返す。
          */
         ImagePromptAssistRead: {
             /** Model */
             model: string | null;
+            /**
+             * Natural Text
+             * @default
+             */
+            natural_text: string;
             /** Negative Prompt */
             negative_prompt: string;
             /** Positive Prompt */
@@ -2874,6 +2882,11 @@ export interface components {
             provider_id: "claude_code" | "codex" | "qwen" | "stub";
             /** Rationale */
             rationale: string;
+            /**
+             * Tag Line
+             * @default
+             */
+            tag_line: string;
         };
         /**
          * ImageReferenceCreate

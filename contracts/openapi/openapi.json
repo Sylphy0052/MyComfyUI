@@ -2968,7 +2968,7 @@
       },
       "ImagePromptAssistRead": {
         "additionalProperties": false,
-        "description": "構造化検証済みの画像prompt補完結果。",
+        "description": "構造化検証済みの画像prompt補完結果。\n\n`positive_prompt`はタグ行と自然文を連結した結果とする。差し替えや再生成を行える\nように、連結前の2つも個別に返す。",
         "properties": {
           "model": {
             "anyOf": [
@@ -2980,6 +2980,12 @@
               }
             ],
             "title": "Model"
+          },
+          "natural_text": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Natural Text",
+            "type": "string"
           },
           "negative_prompt": {
             "maxLength": 4000,
@@ -3005,6 +3011,12 @@
           "rationale": {
             "maxLength": 2000,
             "title": "Rationale",
+            "type": "string"
+          },
+          "tag_line": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Tag Line",
             "type": "string"
           }
         },

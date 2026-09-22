@@ -33,7 +33,14 @@ ProjectSourceType = Literal["local", "external"]
 ProjectSyncState = Literal["never", "synced", "outdated", "conflicted", "failed"]
 ProjectSort = Literal["name", "created", "updated", "last_used"]
 GenerationDefaultOrigin = Literal[
-    "runtime", "look_profile", "shot", "scene", "project", "recipe_default", "workflow_default", "adapter"
+    "runtime",
+    "look_profile",
+    "shot",
+    "scene",
+    "project",
+    "recipe_default",
+    "workflow_default",
+    "adapter",
 ]
 LookProfileCategory = Literal["general", "style", "character", "background"]
 ProductionStatus = Literal[
@@ -409,7 +416,9 @@ class PortableProject(ApiModel):
     tags: list[str]
     favorite: bool
     generation_defaults: ProjectGenerationDefaults
-    local_overrides: ProjectLocalOverrides = Field(default_factory=ProjectLocalOverrides)
+    local_overrides: ProjectLocalOverrides = Field(
+        default_factory=ProjectLocalOverrides
+    )
     source_type: ProjectSourceType
     source_locator: str | None = None
     source_revision: str | None = None
@@ -505,7 +514,9 @@ class PortableArtifact(ApiModel):
     def _validate_relative_path(cls, value: str) -> str:
         candidate = _reject_unsafe_path(value)
         if not candidate.replace("\\", "/").startswith(f"{ARTIFACTS_DIR_NAME}/"):
-            raise ValueError(f"relative_pathは{ARTIFACTS_DIR_NAME}/配下を指す必要があります。")
+            raise ValueError(
+                f"relative_pathは{ARTIFACTS_DIR_NAME}/配下を指す必要があります。"
+            )
         return candidate
 
     @field_validator("media_type")
@@ -514,7 +525,9 @@ class PortableArtifact(ApiModel):
         media_type = value.split(";", 1)[0].strip().lower()
         if media_type in REJECTED_MEDIA_TYPES:
             raise ValueError(f"扱えないmedia_typeです: {value}")
-        if media_type in ALLOWED_MEDIA_TYPES or media_type.startswith(ALLOWED_MEDIA_TYPE_PREFIXES):
+        if media_type in ALLOWED_MEDIA_TYPES or media_type.startswith(
+            ALLOWED_MEDIA_TYPE_PREFIXES
+        ):
             return value
         raise ValueError(f"扱えないmedia_typeです: {value}")
 
@@ -565,8 +578,13 @@ class ProjectPackage(ApiModel):
         if any(item.scene_id not in known_scenes for item in self.shots):
             raise ValueError("Shotがpackage内にないSceneを参照しています。")
         for item in self.artifacts:
-            if item.parent_artifact_id and item.parent_artifact_id not in known_artifacts:
-                raise ValueError("Artifactがpackage内にない親Artifactを参照しています。")
+            if (
+                item.parent_artifact_id
+                and item.parent_artifact_id not in known_artifacts
+            ):
+                raise ValueError(
+                    "Artifactがpackage内にない親Artifactを参照しています。"
+                )
             if item.assigned_scene_id and item.assigned_scene_id not in known_scenes:
                 raise ValueError("Artifactがpackage内にないSceneを参照しています。")
             if item.assigned_shot_id and item.assigned_shot_id not in known_shots:
@@ -1298,7 +1316,9 @@ class AssignmentTarget(ApiModel):
 
     @model_validator(mode="after")
     def _validate_hierarchy(self) -> "AssignmentTarget":
-        if self.project_id is None and (self.scene_id is not None or self.shot_id is not None):
+        if self.project_id is None and (
+            self.scene_id is not None or self.shot_id is not None
+        ):
             raise ValueError("Scene・Shotの割当てにはproject_idが必要です。")
         if self.shot_id is not None and self.scene_id is None:
             raise ValueError("Shotの割当てにはscene_idが必要です。")
@@ -1540,9 +1560,17 @@ class ImagePromptAssistCreate(ApiModel):
 
 
 class ImagePromptAssistRead(ApiModel):
-    """構造化検証済みの画像prompt補完結果。"""
+    """構造化検証済みの画像prompt補完結果。
+
+    `positive_prompt`はタグ行と自然文を連結した結果とする。差し替えや再生成を行える
+    ように、連結前の2つも個別に返す。
+    """
 
     positive_prompt: str = Field(min_length=1, max_length=4000)
+    #: 決められたブロック順で連結済みのタグ行。
+    tag_line: str = Field(default="", max_length=4000)
+    #: タグでは結び付けられない関係を書いた自然文。
+    natural_text: str = Field(default="", max_length=2000)
     negative_prompt: str = Field(max_length=4000)
     rationale: str = Field(max_length=2000)
     provider_id: AgentProviderId

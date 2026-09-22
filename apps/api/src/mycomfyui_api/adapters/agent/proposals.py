@@ -9,9 +9,10 @@ Providerへ流れないようにするためである。
 """
 
 import json
-from typing import Any
+from collections.abc import Iterable, Mapping
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from mycomfyui_api.adapters.agent.base import (
     AgentInvalidResponse,
@@ -40,6 +41,35 @@ MAX_PLAN_DEFAULTS = 20
 #: 資産整理案が指定できる移動先ディレクトリの長さ上限。
 MAX_PLAN_DESTINATION_LENGTH = 500
 
+#: prompt案の1ブロックが持てるタグの上限。
+MAX_PROMPT_TAGS = 40
+
+#: prompt案のタグ1件の長さ上限。重み括弧を付けても収まる長さにする。
+MAX_PROMPT_TAG_LENGTH = 200
+
+#: prompt案の自然文の長さ上限。混在形式では2〜3文・50語程度までしか効かない。
+MAX_NATURAL_TEXT_LENGTH = 2000
+
+#: タグ行を組み立てるブロックの順序。Qwen-Image(Anima)公式の並びに合わせる。
+#: Providerが書いた順序ではなくこの順で連結し、並びを実装側で固定する。
+TAG_BLOCK_FIELDS = (
+    "quality_tags",
+    "subject_tags",
+    "character_tags",
+    "artist_tags",
+    "general_tags",
+)
+
+#: negative promptの基準値。Qwen-Image(Anima)公式のbaselineをそのまま使う。
+#: Providerにはショット固有の追加分だけを書かせ、この基準値は実装側で足す。
+DEFAULT_NEGATIVE_PROMPT = (
+    "worst quality, low quality, score_1, score_2, score_3, artist name, "
+    "blurry, jpeg artifacts, chromatic aberration"
+)
+
+#: prompt案のタグ1件。カンマはタグの区切りに使うため値へ含めない。
+PromptTag = Annotated[str, StringConstraints(max_length=MAX_PROMPT_TAG_LENGTH)]
+
 
 class ProposalOutput(BaseModel):
     """提案出力の基底。未知の項目を受け付けない。"""
@@ -47,11 +77,43 @@ class ProposalOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ImagePromptOutput(ProposalOutput):
+class PromptBody(ProposalOutput):
+    """prompt案のタグと自然文。
+
+    タグはブロックごとの配列で受け取り、並び順は`TAG_BLOCK_FIELDS`の順で実装側が
+    組み立てる。Providerが書いた順序に依存させないためである。自然文は位置関係や
+    光の当たり方など、タグでは結び付けられない関係を担う。
+    """
+
+    #: 品質、meta、year、ratingのタグ。
+    quality_tags: list[PromptTag] = Field(
+        default_factory=list, max_length=MAX_PROMPT_TAGS
+    )
+    #: 人数を示すタグ。
+    subject_tags: list[PromptTag] = Field(
+        default_factory=list, max_length=MAX_PROMPT_TAGS
+    )
+    #: キャラクター名と作品名のタグ。
+    character_tags: list[PromptTag] = Field(
+        default_factory=list, max_length=MAX_PROMPT_TAGS
+    )
+    #: 絵師のタグ。
+    artist_tags: list[PromptTag] = Field(
+        default_factory=list, max_length=MAX_PROMPT_TAGS
+    )
+    #: 外見、ポーズ、カメラ、背景、光のタグ。
+    general_tags: list[PromptTag] = Field(
+        default_factory=list, max_length=MAX_PROMPT_TAGS
+    )
+    #: タグでは表せない関係を書く自然文。
+    natural_text: str = Field(default="", max_length=MAX_NATURAL_TEXT_LENGTH)
+    #: そのショット固有の避けたい要素だけ。基準値は`DEFAULT_NEGATIVE_PROMPT`が持つ。
+    negative_prompt: str = Field(default="", max_length=4000)
+
+
+class ImagePromptOutput(PromptBody):
     """画像生成のprompt案。承認後の生成Job投入に使う。"""
 
-    positive_prompt: str = Field(min_length=1, max_length=4000)
-    negative_prompt: str = Field(default="", max_length=4000)
     rationale: str = Field(default="", max_length=2000)
 
 
@@ -107,11 +169,11 @@ class WorkflowRegistrationDraftOutput(ProposalOutput):
     rationale: str = Field(default="", max_length=2000)
 
 
-class BatchGenerationItem(ProposalOutput):
+class BatchGenerationItem(PromptBody):
+    """バッチ生成計画の1件。prompt案の書き方は`image_prompt`と同じにする。"""
+
     #: 対象Shot。入力へ載せたScene配下の一覧にあるものだけを使う。
     shot_id: str = Field(default="", max_length=200)
-    positive_prompt: str = Field(min_length=1, max_length=4000)
-    negative_prompt: str = Field(default="", max_length=4000)
 
 
 class BatchGenerationPlanOutput(ProposalOutput):
@@ -150,11 +212,35 @@ OUTPUT_MODELS: dict[AgentProposalKind, type[ProposalOutput]] = {
     "asset_organization_plan": AssetOrganizationPlanOutput,
 }
 
+#: prompt案の書き方。prompt案を持つ種別で同じ規約を使う。
+#: 出典はQwen-Image(Anima)の作法。詳細は`docs/design/qwen-image-prompt-spec.md`。
+PROMPT_DIRECTIVE = (
+    "promptはタグと自然文で組み立てる。タグはブロックごとの配列で返し、"
+    "1つの配列へ他ブロックの語を混ぜない。連結の順序は実装側が決めるため、"
+    "配列をまたぐ並び順は考えなくてよい。\n"
+    "- quality_tags: masterpiece、best qualityなどの品質、meta、year、rating\n"
+    "- subject_tags: 1girl、2girls、soloなどの人数\n"
+    "- character_tags: キャラクター名と作品名\n"
+    "- artist_tags: 絵師。`@`を前に付ける\n"
+    "- general_tags: 外見、ポーズ、カメラ、背景、光。この順に並べる。"
+    "from belowやfrom sideなどのアングルは前の方へ置く\n"
+    "タグは英語の小文字とスペースで書き、値へカンマを含めない。"
+    "矛盾するタグを同居させず、同じ部位へ同義のタグを3つ以上置かない。\n"
+    "natural_textには、タグでは結び付けられない関係を書く。"
+    "誰がどこにいて何に触れているか、視線の向き、光源の向きと光が当たる面を、"
+    "代名詞を使わず主語を名詞にして2文以上で書く。\n"
+    "subject_tagsが2人以上を示すときは、髪色・髪型・眼鏡など見分けに使う属性を"
+    "general_tagsへ入れず、natural_text側でキャラクターごとに書く。"
+    "タグへ残してよいのは全員に共通する属性だけとする。\n"
+    "negative_promptには、このショット固有の避けたい要素だけを書く。"
+    "品質系の基準値は実装側が足すため書かない。"
+)
+
 #: 種別ごとの指示。Providerへ渡すsystem promptの本文へ埋め込む。
 KIND_DIRECTIVES: dict[AgentProposalKind, str] = {
     "image_prompt": (
-        "与えたShotまたは利用者説明に沿う画像生成promptを1件提案する。"
-        "positive_promptは英語の語句列、negative_promptは避けたい要素とする。"
+        "与えたShotまたは利用者説明に沿う画像生成promptを1件提案する。\n"
+        + PROMPT_DIRECTIVE
     ),
     "shot_breakdown": (
         "与えたSceneをShotへ分割する案を出す。各Shotの内容、カメラ、登場人物、"
@@ -174,7 +260,7 @@ KIND_DIRECTIVES: dict[AgentProposalKind, str] = {
     ),
     "batch_generation_plan": (
         "与えたScene配下のShot一覧から、続けて画像を生成するShotと、その"
-        "promptの案を出す。shot_idは一覧にあるものだけを使う。"
+        "promptの案を出す。shot_idは一覧にあるものだけを使う。\n" + PROMPT_DIRECTIVE
     ),
     "asset_organization_plan": (
         "与えた既存Artifactの一覧から、付けるとよいタグと外すとよいタグの案を出す。"
@@ -227,11 +313,82 @@ def _require_all_properties(node: Any) -> Any:
     return node
 
 
+def _normalize_tag(value: Any) -> str:
+    """タグ1件を連結できる形へ整える。
+
+    カンマはタグの区切りに使うため、値へ混ざっていれば空白へ置き換える。Providerが
+    1つの要素へ複数のタグを詰めても、区切りが壊れないようにする。
+    """
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.replace(",", " ").split())
+
+
+def _dedupe(values: Iterable[str]) -> list[str]:
+    """順序を保ったまま重複と空文字を落とす。比較は大文字小文字を無視する。"""
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        key = value.casefold()
+        if not value or key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result
+
+
+def compose_tag_line(body: Mapping[str, Any]) -> str:
+    """prompt案のタグ配列を`TAG_BLOCK_FIELDS`の順で1行へ連結する。
+
+    Providerが返した配列の順序ではなくこの順を使う。並びを実装側で固定するためで
+    ある。
+    """
+    tags: list[str] = []
+    for field_name in TAG_BLOCK_FIELDS:
+        values = body.get(field_name)
+        if not isinstance(values, list):
+            continue
+        tags.extend(_normalize_tag(value) for value in values)
+    return ", ".join(_dedupe(tags))
+
+
+def compose_positive_prompt(tag_line: str, natural_text: str) -> str:
+    """タグ行と自然文を1つのpositive promptへ組み立てる。
+
+    公式が示す書き方に合わせ、タグ行のあとへ自然文を置く。片方だけのときは区切りを
+    入れない。
+    """
+    parts = [part.strip() for part in (tag_line, natural_text) if part.strip()]
+    return "\n\n".join(parts)
+
+
+def merge_negative_prompt(baseline: str, extra: str) -> str:
+    """negative promptの基準値へ、ショット固有の追加分を重複なく足す。"""
+    values = [_normalize_tag(value) for value in f"{baseline},{extra}".split(",")]
+    return ", ".join(_dedupe(values))
+
+
+def _attach_prompt_text(body: dict[str, Any]) -> None:
+    """タグ行と連結済みpositive promptを派生項目として足す。
+
+    Providerにはタグ配列と自然文だけを返させ、生成Jobへ渡す文字列はここで作る。
+    """
+    tag_line = compose_tag_line(body)
+    natural_text = str(body.get("natural_text") or "").strip()
+    positive_prompt = compose_positive_prompt(tag_line, natural_text)
+    if not positive_prompt:
+        raise AgentInvalidResponse("prompt案にタグと自然文のどちらもありません。")
+    body["tag_line"] = tag_line
+    body["natural_text"] = natural_text
+    body["positive_prompt"] = positive_prompt
+
+
 def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
     """Providerの応答を期待する形へ検証する。
 
     Providerが形を守る保証はない。履歴へ残す前にここで弾き、壊れた提案を
-    承認対象にしない。
+    承認対象にしない。prompt案は検証のあとタグ行とpositive promptを組み立て、
+    後続がProviderの書いた並び順に触らないようにする。
     """
     if not isinstance(payload, dict):
         raise AgentInvalidResponse("提案がJSON objectではありません。")
@@ -240,7 +397,14 @@ def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
         validated = model.model_validate(payload)
     except Exception as error:
         raise AgentInvalidResponse(f"提案の形が期待と異なります: {error}") from error
-    return validated.model_dump()
+    data = validated.model_dump()
+    if kind == "image_prompt":
+        _attach_prompt_text(data)
+    elif kind == "batch_generation_plan":
+        for item in data.get("items", []):
+            if isinstance(item, dict):
+                _attach_prompt_text(item)
+    return data
 
 
 def build_prompt(request: ProposalRequest) -> str:
