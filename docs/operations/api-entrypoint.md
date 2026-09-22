@@ -72,6 +72,8 @@ migrationの置き場は次の順で決まる。
 
 進捗通知用のWebSocketは`/api/v1/events`にある([ADR 0001](../adr/0001-application-stack-and-boundaries.md))。CORSと同じ`--allow-origin`の一覧でOriginを検証し、loopback以外のclientからの接続は受けない。Originを送らないclientはloopbackからの接続だけ許す。通知はUIがRESTを取り直す引き金であり、状態の正本はRESTのまま変えない。
 
+loopbackの判定はTCPの接続元だけで行う。`X-Forwarded-For`で接続元を偽れないよう、uvicornの`proxy_headers`は無効にしてある。前段にreverse proxyを置くと、外から来た接続もproxyのloopback接続として見えるため、この判定は効かなくなる。外部へ公開する場合はproxyの側で接続元を絞る。
+
 ## 単一実行ファイルへ固める
 
 PyInstallerで固める。選定の理由は次のとおり。

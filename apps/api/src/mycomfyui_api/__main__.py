@@ -141,7 +141,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         from mycomfyui_api.main import app
 
         # ログレベルだけはuvicornの起動にしか使わないため、`Settings`へ載せない。
-        config = uvicorn.Config(app, log_level=args.log_level)
+        # `proxy_headers`の既定は有効で、loopbackからの要求だけは
+        # `X-Forwarded-For`でclient hostを上書きできる。WebSocketの許可判定は
+        # client hostを見るため、前段にproxyを置かない本構成では無効にして、
+        # 接続元を実際のTCP peerだけで判断する。
+        config = uvicorn.Config(app, log_level=args.log_level, proxy_headers=False)
         server = uvicorn.Server(config)
         # 親プロセスはこの行でport確定を知る。bufferingで遅れないよう即座に流す。
         print(f"{LISTENING_PREFIX} http://{bound_host}:{bound_port}", flush=True)

@@ -105,6 +105,12 @@ def _allowed(websocket: WebSocket) -> bool:
     )
 
 
+async def _close_quietly(websocket: WebSocket, code: int, reason: str) -> None:
+    """まだ繋がっているときだけ閉じる。既に切れていれば何もしない。"""
+    if websocket.client_state.name == "CONNECTED":
+        await websocket.close(code=code, reason=reason)
+
+
 @router.websocket("/events")
 async def job_event_stream(websocket: WebSocket) -> None:
     if not _allowed(websocket):
@@ -131,9 +137,14 @@ async def job_event_stream(websocket: WebSocket) -> None:
                 await asyncio.wait_for(
                     websocket.send_json(event), timeout=SEND_TIMEOUT_SECONDS
                 )
-    except (RuntimeError, TimeoutError):
-        if websocket.client_state.name == "CONNECTED":
-            await websocket.close(code=1013, reason="Subscriber limit reached")
+    except RuntimeError:
+        # 購読枠が空くまで待たせない。画面はRESTのポーリングへ落ちて動き続ける。
+        await _close_quietly(websocket, 1013, "Subscriber limit reached")
+        return
+    except TimeoutError:
+        # 受け取らないclientを抱えたままにしない。障害切り分けのため、
+        # 購読枠の不足とは別の理由を返す。
+        await _close_quietly(websocket, 1011, "Send timed out")
         return
     except WebSocketDisconnect:
         return

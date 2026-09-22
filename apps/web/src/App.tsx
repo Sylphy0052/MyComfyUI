@@ -322,6 +322,8 @@ export function App() {
       socket.onopen = () => {
         setEventsConnected(true);
         scheduleRefresh();
+        // 5秒つながり続けたら再接続間隔を初期値へ戻す。すぐ切れる接続では
+        // 戻さず、バックオフを伸ばしたまま次の再接続へ入る。
         stableTimer = window.setTimeout(() => { retryDelay = 500; }, 5000);
       };
       socket.onmessage = (event) => {
@@ -638,7 +640,9 @@ export function App() {
         <span className="muted">
           Projectの有無を選び、画像・音声・動画・音楽・合成の生成を投入する。
         </span>
-        <span className={`badge ${eventsConnected ? "succeeded" : "queued"}`}>
+        <span
+          className={`badge ${eventsConnected ? "events-connected" : "events-offline"}`}
+        >
           進捗通知:{eventsConnected ? "WebSocket" : "REST同期"}
         </span>
         <nav className="row">

@@ -384,6 +384,15 @@ ul.list.plain li.current {
   border-color: var(--accent);
 }
 
+/* 通知経路の接続状態。Jobの状態を表すbadgeとは別の意味なので色も別に持つ。 */
+.badge.events-connected {
+  color: var(--ok);
+}
+
+.badge.events-offline {
+  color: var(--muted);
+}
+
 .badge.canon-unchanged {
   color: var(--ok);
 }
