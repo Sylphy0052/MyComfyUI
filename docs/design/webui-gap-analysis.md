@@ -58,8 +58,9 @@ API 側は画像・動画・音声・音楽・合成の 5 媒体すべてが実�
 
 - プロンプト系の入力欄は **13 箇所以上**に散在。うち 3 箇所は **JSON textarea の中でプロンプトを編集する形**（`ProjectGenerationDefaultsEditor.tsx:177`、`LookProfileManager.tsx:208`、`ProjectOperations.tsx:294`）。
 - `PromptAssist` を使っているのは `GenerationForm.tsx:392` と `ImageDerivationPanel.tsx:380` の **2 箇所のみ**。動画・音声・音楽・合成・スイープには無い。
-- `PromptAssist.tsx:36` — 結果は `onApply` で **全文置換**される。API 側の `ImagePromptAssistRead`（`schemas.py:1542`）も positive / negative の全文を返す。
-- **プロンプトを差分で編集する仕組みは UI・API ともに無い。** 差分を扱う UI は `ExecutionPreview.tsx:109`（Workflow 変数の差分）、`CanonWarning.tsx:77`（Canon 差分）、`CandidateGallery.tsx:361`（A/B メタデータ比較）の 3 つだが、いずれも**表示のみ**。
+- `apps/web/src/prompt/merge.ts` の `mergePrompt` により、AI 補完とタグ抽出の結果は**既存のプロンプトを保ったまま追記される**（`GenerationForm.tsx:238-239,286`、`ImageDerivationPanel.tsx:387-388`）。Anima 系のタグ順に沿った位置へ挿入し、重複は落とす。全文置換は解消済み。
+- ただし**追加しかできない。** 既存の記述を変える・消す操作が無い。`MergeResult`（`merge.ts:173`）が返すのは追加件数のみで、何がどう変わったかを提示して採否を選ばせる仕組みは無い。API 側の `ImagePromptAssistRead`（`schemas.py:1542`）も positive / negative の全文を返す。
+- 差分を扱う UI は `ExecutionPreview.tsx:109`（Workflow 変数の差分）、`CanonWarning.tsx:77`（Canon 差分）、`CandidateGallery.tsx:361`（A/B メタデータ比較）の 3 つだが、いずれも**表示のみ**でプロンプトは対象外。
 - API 側 `ProposalRequest`（`adapters/agent/base.py:57`）に画像を渡すフィールドが無く、3 provider（claude_code / codex / qwen）いずれも画像を送らない。**画像を見せて直す経路は存在しない。**
 
 ### 工程・進捗
@@ -122,7 +123,7 @@ severity は「あるべき使い方がどの程度成立しないか」で判�
 
 | ID | ギャップ | 根拠 | 対応 UC | severity |
 |---|---|---|---|---|
-| G-15 | プロンプトを差分で編集する仕組みが無い。提案は常に全文置換 | `PromptAssist.tsx:36`、`schemas.py:1542` | UC-A2 | 高 |
+| G-15 | プロンプトへ追加はできるが、変える・消すができない。変更内容を提示して採否を選ばせる仕組みも無い | `merge.ts:173,189`、`schemas.py:1542` | UC-A2 | 高 |
 | G-16 | 画像を入力にしてプロンプトを直す経路が無い。`ProposalRequest` に画像フィールドが無く、3 provider とも画像を送らない | `adapters/agent/base.py:57-77` | UC-A3 | 高 |
 | G-17 | novel-writer のプロンプト資産（作法 288 行 + reference 556 行、プロンプト 800 ファイル規模）を参照する仕組みが無い | 取り込み経路なし | UC-A1, UC-A2 | 高 |
 | G-18 | タグの実在・使用頻度を生成前に検証しない。novel-writer 側には `tagcheck.py` があるが取り込まれていない | 該当実装なし | UC-A1 | 中 |
@@ -199,7 +200,7 @@ API 側にパイプラインの状態機械が無いため、初期段階は**�
 
 **5. プロンプトの差分編集（G-15, G-19, G-20）**
 
-提案を全文置換ではなく差分として返し、差分の単位で採否を選べるようにする。API 側の応答形式の変更（`ImagePromptAssistRead` に差分を加える）と、差分表示 UI の追加が要る。`PromptAssist` を動画・音声・音楽へも展開する。
+追記マージ（`mergePrompt`）の上に、変える・消すを加える。提案の内容を差分として提示し、差分の単位で採否を選べるようにする。API 側の応答形式の変更（`ImagePromptAssistRead` に差分を加える）と、差分表示 UI の追加が要る。`PromptAssist` を動画・音声・音楽へも展開する。
 
 **6. 画像を見せて直す（G-16）**
 
