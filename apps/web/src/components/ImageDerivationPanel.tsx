@@ -109,7 +109,9 @@ export function ImageDerivationPanel({
   const mode = modeOf(recipe);
 
   useEffect(() => {
-    if (recipeId || !recipes.length) return;
+    if (!recipes.length) return;
+    // Recipe一覧が差し替わって選択中のidが消えた場合も選び直す。
+    if (recipeId && recipes.some((item) => item.id === recipeId)) return;
     // 既定は img2img とし、無い場合だけ先頭のRecipeへ落とす。
     const preferred = recipes.find((item) => modeOf(item) === "img2img");
     setRecipeId((preferred ?? recipes[0]).id);
