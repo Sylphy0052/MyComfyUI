@@ -12,6 +12,7 @@ import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
 import { PromptAssist } from "./PromptAssist";
+import { mergePrompt } from "../prompt/merge";
 
 type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet";
 
@@ -382,8 +383,9 @@ export function ImageDerivationPanel({
             idPrefix="derivation"
             placeholder="例: 元画像の構図を保ったまま、夕暮れの海辺に置き換える。"
             onApply={(result) => {
-              setPrompt(result.positive);
-              setNegative(result.negative);
+              // 既に入力されているプロンプトは残し、補完結果をタグ順に沿って追記する。
+              setPrompt((current) => mergePrompt(current, result.positive).prompt);
+              setNegative((current) => mergePrompt(current, result.negative).prompt);
               setTouchedFields((current) =>
                 new Set(current).add("positive_prompt").add("negative_prompt"),
               );
