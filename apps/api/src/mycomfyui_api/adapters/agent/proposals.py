@@ -42,13 +42,21 @@ MAX_PLAN_DEFAULTS = 20
 MAX_PLAN_DESTINATION_LENGTH = 500
 
 #: prompt案の1ブロックが持てるタグの上限。
-MAX_PROMPT_TAGS = 40
+MAX_PROMPT_TAGS = 30
 
 #: prompt案のタグ1件の長さ上限。重み括弧を付けても収まる長さにする。
-MAX_PROMPT_TAG_LENGTH = 200
+MAX_PROMPT_TAG_LENGTH = 100
 
 #: prompt案の自然文の長さ上限。混在形式では2〜3文・50語程度までしか効かない。
 MAX_NATURAL_TEXT_LENGTH = 2000
+
+#: 連結したpositive promptの長さ上限。API契約の`positive_prompt`と同じ値にする。
+#: ブロックごとの上限を全て使うとこの値を超えるため、連結後に改めて当てる。
+MAX_POSITIVE_PROMPT_LENGTH = 4000
+
+#: prompt案が書けるnegative promptの長さ上限。`DEFAULT_NEGATIVE_PROMPT`を足しても
+#: API契約の4000文字へ収まるよう、基準値の分だけ余白を残す。
+MAX_NEGATIVE_PROMPT_LENGTH = 3000
 
 #: タグ行を組み立てるブロックの順序。Qwen-Image(Anima)公式の並びに合わせる。
 #: Providerが書いた順序ではなくこの順で連結し、並びを実装側で固定する。
@@ -108,7 +116,7 @@ class PromptBody(ProposalOutput):
     #: タグでは表せない関係を書く自然文。
     natural_text: str = Field(default="", max_length=MAX_NATURAL_TEXT_LENGTH)
     #: そのショット固有の避けたい要素だけ。基準値は`DEFAULT_NEGATIVE_PROMPT`が持つ。
-    negative_prompt: str = Field(default="", max_length=4000)
+    negative_prompt: str = Field(default="", max_length=MAX_NEGATIVE_PROMPT_LENGTH)
 
 
 class ImagePromptOutput(PromptBody):
@@ -320,17 +328,28 @@ def _normalize_tag(value: Any) -> str:
     1つの要素へ複数のタグを詰めても、区切りが壊れないようにする。
     """
     if not isinstance(value, str):
+        # str以外はPydanticが先に弾く。ここへ来た値は落とし、連結を壊さない。
         return ""
     return " ".join(value.replace(",", " ").split())
 
 
+def _dedupe_key(value: str) -> str:
+    """重複判定に使うキー。重み括弧を外し、大文字小文字を無視する。
+
+    `(blurry:1.2)`と`blurry`を別物として残すと、基準値と提案の追加分が二重に並ぶ。
+    """
+    stripped = value.strip().strip("()[]{}").strip()
+    base = stripped.rsplit(":", 1)[0] if ":" in stripped else stripped
+    return base.strip().casefold()
+
+
 def _dedupe(values: Iterable[str]) -> list[str]:
-    """順序を保ったまま重複と空文字を落とす。比較は大文字小文字を無視する。"""
+    """順序を保ったまま重複と空文字を落とす。"""
     result: list[str] = []
     seen: set[str] = set()
     for value in values:
-        key = value.casefold()
-        if not value or key in seen:
+        key = _dedupe_key(value)
+        if not value or not key or key in seen:
             continue
         seen.add(key)
         result.append(value)
@@ -378,9 +397,26 @@ def _attach_prompt_text(body: dict[str, Any]) -> None:
     positive_prompt = compose_positive_prompt(tag_line, natural_text)
     if not positive_prompt:
         raise AgentInvalidResponse("prompt案にタグと自然文のどちらもありません。")
+    if len(positive_prompt) > MAX_POSITIVE_PROMPT_LENGTH:
+        # ブロックごとの上限を全て使うとAPI契約の長さを超える。連結後に改めて当てる。
+        raise AgentInvalidResponse(
+            f"prompt案が長すぎます。{MAX_POSITIVE_PROMPT_LENGTH}文字以内にしてください。"
+        )
     body["tag_line"] = tag_line
     body["natural_text"] = natural_text
     body["positive_prompt"] = positive_prompt
+
+
+def _try_attach_prompt_text(body: dict[str, Any]) -> bool:
+    """1件分のprompt案を組み立てる。使えない案なら`False`を返して落とす。
+
+    バッチ計画では、1件が空でも残りの案は使える。全体を捨てずに済ませる。
+    """
+    try:
+        _attach_prompt_text(body)
+    except AgentInvalidResponse:
+        return False
+    return True
 
 
 def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
@@ -401,9 +437,14 @@ def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
     if kind == "image_prompt":
         _attach_prompt_text(data)
     elif kind == "batch_generation_plan":
-        for item in data.get("items", []):
-            if isinstance(item, dict):
-                _attach_prompt_text(item)
+        items = [
+            item
+            for item in data.get("items", [])
+            if isinstance(item, dict) and _try_attach_prompt_text(item)
+        ]
+        if not items:
+            raise AgentInvalidResponse("バッチ生成計画に使えるprompt案がありません。")
+        data["items"] = items
     return data
 
 

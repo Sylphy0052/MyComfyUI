@@ -4134,9 +4134,11 @@ async def assist_image_prompt(
         raise _agent_error(error) from error
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],
-        tag_line=output["tag_line"],
-        natural_text=output["natural_text"],
-        negative_prompt=output["negative_prompt"],
+        tag_line=output.get("tag_line", ""),
+        natural_text=output.get("natural_text", ""),
+        negative_prompt=proposals.merge_negative_prompt(
+            proposals.DEFAULT_NEGATIVE_PROMPT, output.get("negative_prompt", "")
+        ),
         rationale=output["rationale"],
         provider_id=provider.id,
         model=result.model,
