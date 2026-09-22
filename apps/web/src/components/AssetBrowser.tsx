@@ -13,8 +13,8 @@ import type {
 } from "../api/client";
 import type { SceneSummary, ShotSummary } from "../api/aimedia";
 import { ArtifactDetail } from "./ArtifactDetail";
-import { CanonWarning } from "./CanonWarning";
 import { ArtifactPreview, mediaLabel } from "./ArtifactPreview";
+import { CanonWarning } from "./CanonWarning";
 import { DECISION_LABEL, DECISION_OPTIONS } from "./CandidateGallery";
 import { ExternalImageImportPanel } from "./ExternalImageImportPanel";
 import { AssignmentPicker } from "./AssignmentPicker";
@@ -317,6 +317,8 @@ export function AssetBrowser({
           ? await api.replayJob(selectedDetail.job.id)
           : await api.regenerateJob(selectedDetail.job.id);
       onDerivedJob(job);
+      // 再実行したJobの記録も一覧へ出す。成果物はJobの完了後に再読込で現れる。
+      setReloadToken((current) => current + 1);
     } catch (cause) {
       setError(describe(cause));
     } finally {
