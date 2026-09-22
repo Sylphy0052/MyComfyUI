@@ -19,7 +19,6 @@ import httpx
 from mycomfyui_api.adapters.comfyui.client import (
     ComfyUIClient,
     ComfyUIError,
-    WaitResult,
 )
 from mycomfyui_api.adapters.image_tagger import ImageTaggerError, normalize_tag_values
 from mycomfyui_api.settings import Settings, get_settings
@@ -31,6 +30,10 @@ TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "wd14_tagger.jso
 #: Workflow内でのノードの役割。テンプレートと対応する。
 LOAD_IMAGE_NODE = "1"
 TAGGER_NODE = "2"
+
+#: 解析用の画像を置くinput配下のディレクトリ。生成に使う素材と混ぜず、まとめて
+#: 片付けられるようにする。ComfyUIはinputのファイルを消すAPIを持たない。
+INPUT_SUBFOLDER = "mycomfyui-tagger"
 
 #: 取り込んだ画像に付ける拡張子。ComfyUIは内容から形式を判定するため、
 #: media typeとの対応が無い場合もこの名前で受け付けられる。
@@ -64,21 +67,29 @@ class ComfyUITagger:
             raise ImageTaggerError("空の画像は解析できません。")
         file_name = _unique_file_name(media_type)
         client = ComfyUIClient(self._settings, transport=self._transport)
+        uploaded: str | None = None
         try:
             async with client:
-                uploaded = await client.upload_input(file_name, data)
+                uploaded = await client.upload_input(
+                    file_name, data, subfolder=INPUT_SUBFOLDER
+                )
                 workflow = self._build_workflow(uploaded)
                 prompt_id = await client.submit(workflow)
-                result = await client.wait_for_completion(
+                # タガーは取消に対応しない。`cancel_event`は待機APIの必須引数であり、
+                # ここでsetする経路は無い。制限時間はExecutionTimeoutで伝わる。
+                await client.wait_for_completion(
                     prompt_id,
                     cancel_event=asyncio.Event(),
                     timeout=self._settings.image_tagger_timeout_seconds,
                 )
-                if result is not WaitResult.COMPLETED:
-                    raise ImageTaggerError("画像タグ抽出が完了しませんでした。")
                 entry = await client.history_entry(prompt_id)
-        except ComfyUIError as error:
-            raise ImageTaggerError(f"画像タグ抽出に失敗しました: {error}") from error
+        except (ComfyUIError, OSError, ValueError) as error:
+            # ComfyUIはinputへ置いたファイルを消すAPIを持たない。失敗した分は残るため、
+            # 運用で片付けられるよう名前をログへ残す。
+            if uploaded is not None:
+                logger.warning("解析に失敗した入力画像が残りました。name=%s", uploaded)
+            logger.warning("画像タグ抽出に失敗しました。(%s)", error)
+            raise ImageTaggerError("画像タグ抽出に失敗しました。") from error
         if entry is None:
             raise ImageTaggerError("画像タグ抽出の結果を取得できませんでした。")
         return normalize_tag_values(_tag_values(entry))
@@ -114,6 +125,9 @@ def _tag_values(entry: dict[str, Any]) -> list[str]:
 
     WD14 Taggerはカンマ区切りの1文字列を`tags`へ入れて返す。配列で返す版もあるため、
     要素ごとにカンマで割ってから正規化へ渡す。
+
+    ノードの版が変わって形が変わったときに、型エラーではなく利用者へ伝わる文言で
+    止めたいため、段階ごとに形を確かめてImageTaggerErrorへ倒す。
     """
     outputs = entry.get("outputs")
     if not isinstance(outputs, dict):

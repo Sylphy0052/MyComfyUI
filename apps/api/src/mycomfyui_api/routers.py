@@ -73,14 +73,8 @@ from mycomfyui_api.settings import get_settings
 from mycomfyui_api.structure import (
     get_local_scene,
     get_local_shot,
-)
-from mycomfyui_api.structure import (
     scene_envelope as local_scene_envelope,
-)
-from mycomfyui_api.structure import (
     shot_envelope as local_shot_envelope,
-)
-from mycomfyui_api.structure import (
     shot_summary as local_shot_summary,
 )
 
@@ -257,13 +251,10 @@ async def get_workflow_model_options(workflow_version_id: str, session: SessionD
         variable = raw.get("variable")
         node_class = raw.get("node_class")
         option_field = raw.get("option_field")
-        if (
-            all(
-                isinstance(value, str) and value
-                for value in (variable, node_class, option_field)
-            )
-            and (node_class, option_field) in allowed_slots
-        ):
+        if all(
+            isinstance(value, str) and value
+            for value in (variable, node_class, option_field)
+        ) and (node_class, option_field) in allowed_slots:
             declared.append((variable, node_class, option_field))
 
     client = create_comfyui_client()
@@ -497,9 +488,7 @@ async def _ensure_look_profile_name(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_look_profile(payload: schemas.LookProfileCreate, session: SessionDep):
-    if (
-        await session.scalar(select(func.count(LookProfile.id))) or 0
-    ) >= MAX_LOOK_PROFILES:
+    if (await session.scalar(select(func.count(LookProfile.id))) or 0) >= MAX_LOOK_PROFILES:
         raise ApiError(
             "LOOK_PROFILE_LIMIT_REACHED",
             f"LookProfileは{MAX_LOOK_PROFILES}件まで作成できます。",
@@ -598,15 +587,9 @@ async def create_generation_job(
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
-    (
-        effective,
-        recipe,
-        _,
-        _,
-        preferences,
-        _,
-        look_profiles,
-    ) = await _resolve_generation_defaults(session, payload, resolved)
+    effective, recipe, _, _, preferences, _, look_profiles = await _resolve_generation_defaults(
+        session, payload, resolved
+    )
     # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
     prepared = await _prepare_execution(recipe, effective, source, resolved, session)
@@ -656,15 +639,9 @@ async def preview_generation_job(
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
-    (
-        effective,
-        recipe,
-        recipe_origin,
-        input_origins,
-        preferences,
-        look_profile_ids,
-        look_profiles,
-    ) = await _resolve_generation_defaults(session, payload, resolved)
+    effective, recipe, recipe_origin, input_origins, preferences, look_profile_ids, look_profiles = (
+        await _resolve_generation_defaults(session, payload, resolved)
+    )
     prepared = await _prepare_execution(recipe, effective, source, resolved, session)
     await _validate_resolved_models(recipe, prepared)
     defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
@@ -683,7 +660,11 @@ async def preview_generation_job(
         seed_auto=_is_seed_auto(defaults, effective.inputs, prepared),
         parameters={
             **dict(prepared.parameters),
-            **({"look_profile_ids": look_profile_ids} if look_profile_ids else {}),
+            **(
+                {"look_profile_ids": look_profile_ids}
+                if look_profile_ids
+                else {}
+            ),
             **({"look_profiles": look_profiles} if look_profiles else {}),
             **({"production_preferences": preferences} if preferences else {}),
         },
@@ -918,7 +899,9 @@ async def _resolve_generation_defaults(
     if payload.look_profile_ids and not payload.use_inherited_defaults:
         rows = list(
             await session.scalars(
-                select(LookProfile).where(LookProfile.id.in_(payload.look_profile_ids))
+                select(LookProfile).where(
+                    LookProfile.id.in_(payload.look_profile_ids)
+                )
             )
         )
         profiles = {profile.id: profile for profile in rows}
@@ -1103,9 +1086,7 @@ async def _resolve_references(
     shot_envelope: Any = None
 
     try:
-        project = (
-            await session.get(Project, project_id) if project_id is not None else None
-        )
+        project = await session.get(Project, project_id) if project_id is not None else None
         if project_id is not None and project is None:
             raise ApiError(
                 "PROJECT_NOT_FOUND",
@@ -1352,7 +1333,11 @@ def _build_job_records(
                 if prepared.parent_artifact_id is not None
                 else {}
             ),
-            **({"production_preferences": preferences} if preferences else {}),
+            **(
+                {"production_preferences": preferences}
+                if preferences
+                else {}
+            ),
         },
         input_refs=_merge_input_refs(
             resolved.input_refs([]), prepared.input_refs, payload.input_refs
@@ -1591,9 +1576,7 @@ async def update_job_assignment(
     target = await _validate_assignment_target(session, source, payload)
     _set_assignment(job, target)
     if payload.include_artifacts:
-        artifacts = await session.scalars(
-            select(Artifact).where(Artifact.job_id == job.id)
-        )
+        artifacts = await session.scalars(select(Artifact).where(Artifact.job_id == job.id))
         for artifact in artifacts:
             _set_assignment(artifact, target)
     await session.commit()
@@ -1906,7 +1889,9 @@ async def confirm_external_image_import(
 )
 async def get_artifact_import(artifact_id: str, session: SessionDep):
     await _get_or_404(session, Artifact, "Artifact", artifact_id)
-    return await _get_or_404(session, ArtifactImport, "ArtifactImport", artifact_id)
+    return await _get_or_404(
+        session, ArtifactImport, "ArtifactImport", artifact_id
+    )
 
 
 async def _collect_artifact_lineage(
@@ -2465,8 +2450,7 @@ async def list_artifact_integrity(
                 if artifact.id in imported_artifact_ids
                 else [
                     _integrity_finding(
-                        "reference_broken",
-                        "移行したArtifactには作成元Jobがありません。",
+                        "reference_broken", "移行したArtifactには作成元Jobがありません。"
                     )
                 ]
             )
@@ -2779,7 +2763,9 @@ async def _current_selected_canon(
         if not isinstance(canon_id, str):
             continue
         try:
-            descriptor = await _external_canon(source, project, external_id, canon_id)
+            descriptor = await _external_canon(
+                source, project, external_id, canon_id
+            )
         except AiMediaNotFound:
             continue
         except AiMediaUnavailable as error:
@@ -3370,9 +3356,7 @@ async def extract_image_tags(payload: schemas.ImageTagExtractRequest):
         )
     except ImageTaggerError as error:
         raise ApiError(
-            "IMAGE_TAGGER_ERROR",
-            str(error),
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            "IMAGE_TAGGER_ERROR", str(error), status_code=status.HTTP_503_SERVICE_UNAVAILABLE
         ) from error
     if settings.image_tagger_refine:
         try:
@@ -3541,7 +3525,9 @@ async def _fetch_envelopes(
 
 async def _context_artifacts(session: AsyncSession, scene_id: str) -> list[Artifact]:
     """入力へ載せる既存Artifactを引く。Scene配下の完成済み画像だけを対象にする。"""
-    jobs = select(GenerationJob.id).where(GenerationJob.assigned_scene_id == scene_id)
+    jobs = select(GenerationJob.id).where(
+        GenerationJob.assigned_scene_id == scene_id
+    )
     query = (
         select(Artifact)
         .where(Artifact.job_id.in_(jobs))

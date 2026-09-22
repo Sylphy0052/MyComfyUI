@@ -474,7 +474,7 @@ ComfyUIのタイムアウトはネットワーク往復と生成物の転送分�
 
 `MYCOMFYUI_AGENT_QWEN_BASE_URL`の既定値は`http://127.0.0.1:8000/v1`である。パス末尾の`/v1`まで含めて指定する。提案Providerとタグの整理はこの値へ`/chat/completions`を足して呼ぶ。推論サーバーが起きていない間は提案Provider一覧で`qwen`が`available: false`になり、他のProviderと生成Jobには影響しない。
 
-画像タグ抽出はComfyUI(8188)へWorkflowとして投入する。選択した画像は`/upload/image`でRemote GPU HostのComfyUIへ転送される。抽出したタグは既定で推論サーバーへ渡して整理するが、この段は任意であり、繋がらない場合はWD14 Taggerが出したタグをそのまま返す。整理を行わない場合は`MYCOMFYUI_IMAGE_TAGGER_REFINE=false`とする。
+画像タグ抽出はComfyUI(8188)へWorkflowとして投入する。選択した画像は`/upload/image`でRemote GPU HostのComfyUIへ転送され、`input/mycomfyui-tagger/`へ置かれる。ComfyUIはinputのファイルを消すAPIを持たないため、このディレクトリは溜まり続ける。生成に使う素材とは混ざらないので、不要になったらディレクトリごと消してよい。抽出したタグは既定で推論サーバーへ渡して整理するが、この段は任意であり、繋がらない場合はWD14 Taggerが出したタグをそのまま返す。整理を行わない場合は`MYCOMFYUI_IMAGE_TAGGER_REFINE=false`とする。
 
 設定の詳細は[Application APIのREADME](../../apps/api/README.md)を参照する。
 
