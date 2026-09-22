@@ -18,7 +18,6 @@ import type {
   ShotSummary,
 } from "./api/aimedia";
 import { AgentPanel } from "./components/AgentPanel";
-import { ArtifactHistory } from "./components/ArtifactHistory";
 import { AssetBrowser } from "./components/AssetBrowser";
 import { CandidateGallery } from "./components/CandidateGallery";
 import type { Candidate } from "./components/CandidateGallery";
@@ -42,7 +41,6 @@ const CONNECTED_POLL_INTERVAL_MS = 15000;
 type View = "projects" | "generate" | "assets" | "workflows";
 type GenerationTab = "image" | "video" | "music" | "voice" | "compose";
 type ImageSubTab = "generate" | "derive" | "sweep";
-type LowerTab = "agent" | "history";
 
 const VIEWS: { value: View; label: string }[] = [
   { value: "projects", label: "Project" },
@@ -63,11 +61,6 @@ const IMAGE_SUBTABS: { value: ImageSubTab; label: string }[] = [
   { value: "generate", label: "生成" },
   { value: "derive", label: "派生" },
   { value: "sweep", label: "スイープ" },
-];
-
-const LOWER_TABS: { value: LowerTab; label: string }[] = [
-  { value: "agent", label: "エージェント" },
-  { value: "history", label: "Artifact履歴" },
 ];
 
 function nextTabForKey<T extends string>(
@@ -112,7 +105,6 @@ export function App() {
   const [generationTab, setGenerationTab] =
     useState<GenerationTab>("image");
   const [imageSubTab, setImageSubTab] = useState<ImageSubTab>("generate");
-  const [lowerTab, setLowerTab] = useState<LowerTab>("agent");
 
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -138,7 +130,6 @@ export function App() {
   const [previewing, setPreviewing] = useState(false);
   const [busyArtifactId, setBusyArtifactId] = useState<string | null>(null);
   // Job を投入・派生させたときに値を変え、Artifact 履歴を取り直させる。
-  const [historyToken, setHistoryToken] = useState(0);
   const [structureToken, setStructureToken] = useState(0);
   const [eventsConnected, setEventsConnected] = useState(false);
   const jobsRequestSequence = useRef(0);
@@ -533,12 +524,10 @@ export function App() {
       }
       const lastJob = createdJobs.at(-1);
       if (lastJob) setSelectedJobId(lastJob.id);
-      setHistoryToken((current) => current + 1);
       await refreshJobs();
     } catch (cause) {
       if (createdJobs.length > 0) {
         setSelectedJobId(createdJobs.at(-1)?.id ?? null);
-        setHistoryToken((current) => current + 1);
         await refreshJobs();
         setError(
           `${createdJobs.length}/${batchCount}バッチを投入しました。残りの投入に失敗しました: ${describe(cause)}`,
@@ -616,10 +605,9 @@ export function App() {
     }
   };
 
-  // 再実行で作った派生 Job も、投入直後と同じようにキューと履歴へ反映する。
+  // 再実行で作った派生 Job も、投入直後と同じようにキューへ反映する。
   const handleDerivedJob = (job: GenerationJob) => {
     setSelectedJobId(job.id);
-    setHistoryToken((current) => current + 1);
     void refreshJobs().catch((cause) => setError(describe(cause)));
   };
 
@@ -649,18 +637,6 @@ export function App() {
     event.preventDefault();
     setImageSubTab(nextTab);
     document.getElementById(`image-subtab-${nextTab}`)?.focus();
-  };
-
-  const handleLowerTabKeyDown = (
-    event: KeyboardEvent<HTMLButtonElement>,
-    currentTab: LowerTab,
-  ) => {
-    const nextTab = nextTabForKey(event.key, LOWER_TABS, currentTab);
-    if (!nextTab) return;
-
-    event.preventDefault();
-    setLowerTab(nextTab);
-    document.getElementById(`lower-tab-${nextTab}`)?.focus();
   };
 
   return (
@@ -938,71 +914,18 @@ export function App() {
               onCancel={cancel}
               projects={projects}
               unassigned={!projectId}
-              onAssignmentChanged={async () => {
-                await refreshJobs();
-                setHistoryToken((current) => current + 1);
-              }}
+              onAssignmentChanged={refreshJobs}
             />
           </div>
 
-          <div className="full lower-workspace">
-            <nav
-              className="lower-tabs"
-              role="tablist"
-              aria-label="補助機能"
-            >
-              {LOWER_TABS.map((item) => (
-                <button
-                  key={item.value}
-                  id={`lower-tab-${item.value}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={lowerTab === item.value}
-                  aria-controls={`lower-panel-${item.value}`}
-                  tabIndex={lowerTab === item.value ? 0 : -1}
-                  className={lowerTab === item.value ? "primary" : undefined}
-                  onClick={() => setLowerTab(item.value)}
-                  onKeyDown={(event) =>
-                    handleLowerTabKeyDown(event, item.value)
-                  }
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-
-            <div
-              id="lower-panel-agent"
-              role="tabpanel"
-              aria-labelledby="lower-tab-agent"
-              hidden={lowerTab !== "agent"}
-            >
-              <AgentPanel
-                projectId={projectId}
-                sceneId={sceneId}
-                shotId={shotId}
-                recipes={recipes}
-                onAppliedJob={handleDerivedJob}
-              />
-            </div>
-
-            <div
-              id="lower-panel-history"
-              role="tabpanel"
-              aria-labelledby="lower-tab-history"
-              hidden={lowerTab !== "history"}
-            >
-              <ArtifactHistory
-                shotId={shotId}
-                unassigned={!projectId}
-                refreshToken={historyToken}
-                onDerivedJob={handleDerivedJob}
-                projects={projects}
-                onAssignmentsChanged={async () => {
-                  setHistoryToken((current) => current + 1);
-                }}
-              />
-            </div>
+          <div className="full">
+            <AgentPanel
+              projectId={projectId}
+              sceneId={sceneId}
+              shotId={shotId}
+              recipes={recipes}
+              onAppliedJob={handleDerivedJob}
+            />
           </div>
         </>
       )}
@@ -1019,14 +942,12 @@ export function App() {
               shotId={shotId}
               onSelectShot={setShotId}
               projects={projects}
-              onAssignmentsChanged={async () => {
-                setHistoryToken((current) => current + 1);
-              }}
               onDeriveArtifact={(artifactId) => {
                 setDerivationSourceArtifactId(artifactId);
                 setGenerationTab("image");
                 setView("generate");
               }}
+              onDerivedJob={handleDerivedJob}
             />
           </div>
           <div className="full">

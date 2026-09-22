@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import type {
   Artifact,
   ArtifactImport,
+  CanonStatus,
   GenerationJob,
   GenerationManifest,
   JobLineage,
@@ -12,6 +13,7 @@ import type {
 } from "../api/client";
 import type { SceneSummary, ShotSummary } from "../api/aimedia";
 import { ArtifactDetail } from "./ArtifactDetail";
+import { CanonWarning } from "./CanonWarning";
 import { ArtifactPreview, mediaLabel } from "./ArtifactPreview";
 import { DECISION_LABEL, DECISION_OPTIONS } from "./CandidateGallery";
 import { ExternalImageImportPanel } from "./ExternalImageImportPanel";
@@ -42,6 +44,7 @@ const PAGE_SIZE = 60;
 interface Detail {
   job: GenerationJob;
   manifest: GenerationManifest;
+  canonStatus: CanonStatus;
   lineage: JobLineage;
 }
 
@@ -54,8 +57,9 @@ interface Props {
   shotId: string | null;
   onSelectShot: (shotId: string | null) => void;
   projects: ProjectRecord[];
-  onAssignmentsChanged: () => Promise<void>;
   onDeriveArtifact: (artifactId: string) => void;
+  /** 再実行で作ったJobを、投入直後と同じようにキューへ反映する。 */
+  onDerivedJob: (job: GenerationJob) => void;
 }
 
 function describe(error: unknown): string {
@@ -76,8 +80,8 @@ export function AssetBrowser({
   shotId,
   onSelectShot,
   projects,
-  onAssignmentsChanged,
   onDeriveArtifact,
+  onDerivedJob,
 }: Props) {
   const [kind, setKind] = useState("");
   const [decision, setDecision] = useState("");
@@ -111,6 +115,7 @@ export function AssetBrowser({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchTag, setBatchTag] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
+  const [rerunBusy, setRerunBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -192,11 +197,12 @@ export function AssetBrowser({
     (async () => {
       try {
         const job = await api.getJob(selectedJobId);
-        const [manifest, lineage] = await Promise.all([
+        const [manifest, canonStatus, lineage] = await Promise.all([
           api.getManifest(job.manifest_id),
+          api.getCanonStatus(job.id),
           api.getLineage(job.id),
         ]);
-        if (active) setDetail({ job, manifest, lineage });
+        if (active) setDetail({ job, manifest, canonStatus, lineage });
       } catch (cause) {
         if (!active) return;
         setDetail(null);
@@ -300,6 +306,24 @@ export function AssetBrowser({
 
   const lineageActive = lineageArtifactId !== null || lineageJobId !== null;
 
+  /** 選択中のArtifactを作ったJobを、当時の条件または現在のCanonで実行し直す。 */
+  const rerun = async (mode: "replay" | "regenerate") => {
+    if (!selectedDetail) return;
+    setRerunBusy(true);
+    setError(null);
+    try {
+      const job =
+        mode === "replay"
+          ? await api.replayJob(selectedDetail.job.id)
+          : await api.regenerateJob(selectedDetail.job.id);
+      onDerivedJob(job);
+    } catch (cause) {
+      setError(describe(cause));
+    } finally {
+      setRerunBusy(false);
+    }
+  };
+
   const operateSelected = async (
     operation: "move" | "copy" | "unassign" | "tag",
     target?: AssignmentTarget,
@@ -318,7 +342,6 @@ export function AssetBrowser({
       setSelectedIds([]);
       setBatchTag("");
       setReloadToken((current) => current + 1);
-      await onAssignmentsChanged();
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -345,7 +368,6 @@ export function AssetBrowser({
         }}
         onImported={async () => {
           setReloadToken((current) => current + 1);
-          await onAssignmentsChanged();
         }}
       />
 
@@ -677,12 +699,37 @@ export function AssetBrowser({
                 </button>
               )}
               {selectedDetail ? (
-                <ArtifactDetail
-                  artifact={selected}
-                  job={selectedDetail.job}
-                  manifest={selectedDetail.manifest}
-                  lineage={selectedDetail.lineage}
-                />
+                <>
+                  <CanonWarning
+                    status={selectedDetail.canonStatus}
+                    job={selectedDetail.job}
+                  />
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={
+                        rerunBusy || !selectedDetail.canonStatus.replayable
+                      }
+                      onClick={() => void rerun("replay")}
+                    >
+                      当時の条件で再実行
+                    </button>
+                    <button
+                      type="button"
+                      disabled={rerunBusy}
+                      onClick={() => void rerun("regenerate")}
+                    >
+                      現在のCanonで再生成
+                    </button>
+                  </div>
+                  <ArtifactDetail
+                    artifact={selected}
+                    job={selectedDetail.job}
+                    manifest={selectedDetail.manifest}
+                    lineage={selectedDetail.lineage}
+                  />
+                </>
               ) : selectedImportDetail ? (
                 <div className="stack">
                   <h3>外部画像の来歴</h3>
