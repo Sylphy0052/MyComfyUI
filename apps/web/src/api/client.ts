@@ -104,6 +104,12 @@ export type GenerationBatchCreate =
 export type GenerationBatchPreview =
   components["schemas"]["GenerationBatchPreview"];
 export type GenerationBatch = components["schemas"]["GenerationBatchRead"];
+export type GenerationExperimentCreate =
+  components["schemas"]["GenerationExperimentCreate"];
+export type GenerationExperimentPreview =
+  components["schemas"]["GenerationExperimentPreview"];
+export type GenerationExperiment =
+  components["schemas"]["GenerationExperimentRead"];
 export type ProjectStatistics = components["schemas"]["ProjectStatistics"];
 
 /**
@@ -530,6 +536,55 @@ export const api = {
     request<GenerationBatch>(
       `/projects/${encodeURIComponent(projectId)}/batches/${encodeURIComponent(batchId)}/retry-failed`,
       { method: "POST" },
+    ),
+
+  previewGenerationExperiment: (
+    projectId: string,
+    payload: GenerationExperimentCreate,
+  ) =>
+    request<GenerationExperimentPreview>(
+      `/projects/${encodeURIComponent(projectId)}/experiments/preview`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  createGenerationExperiment: (
+    projectId: string,
+    payload: GenerationExperimentCreate,
+  ) =>
+    request<GenerationExperiment>(
+      `/projects/${encodeURIComponent(projectId)}/experiments`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  listGenerationExperiments: (
+    projectId: string,
+    params?: { limit?: number; offset?: number },
+  ) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.offset) query.set("offset", String(params.offset));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<GenerationExperiment[]>(
+      `/projects/${encodeURIComponent(projectId)}/experiments${suffix}`,
+    );
+  },
+
+  cancelPendingExperimentJobs: (projectId: string, experimentId: string) =>
+    request<GenerationExperiment>(
+      `/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/cancel-pending`,
+      { method: "POST" },
+    ),
+
+  retryFailedExperimentJobs: (projectId: string, experimentId: string) =>
+    request<GenerationExperiment>(
+      `/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/retry-failed`,
+      { method: "POST" },
+    ),
+
+  deleteGenerationExperiment: (projectId: string, experimentId: string) =>
+    request<void>(
+      `/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}?confirm=true`,
+      { method: "DELETE" },
     ),
 
   getProjectStatistics: (

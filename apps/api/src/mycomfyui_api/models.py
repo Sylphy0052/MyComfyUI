@@ -380,6 +380,51 @@ class GenerationBatchItem(Base):
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class GenerationExperiment(Base):
+    """同一Scene・Shotで入力軸を展開する探索実験。"""
+
+    __tablename__ = "generation_experiment"
+    __table_args__ = (
+        Index("ix_generation_experiment_project", "project_id", "created_at"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(PROJECT_ID_LENGTH), ForeignKey("project.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    request: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class GenerationExperimentItem(Base):
+    """探索variantと、その現在のJob。"""
+
+    __tablename__ = "generation_experiment_item"
+    __table_args__ = (
+        UniqueConstraint(
+            "experiment_id", "ordinal", name="uq_generation_experiment_item_ordinal"
+        ),
+        Index("ix_generation_experiment_item_experiment", "experiment_id", "ordinal"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    experiment_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_experiment.id"), nullable=False
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    variables: Mapped[dict] = mapped_column(JSON, nullable=False)
+    inputs: Mapped[dict] = mapped_column(JSON, nullable=False)
+    job_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    planning_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class GenerationManifest(Base):
     """Resolved execution snapshot for exactly one GenerationJob. Immutable once created."""
 

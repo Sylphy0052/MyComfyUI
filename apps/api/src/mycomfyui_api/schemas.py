@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
@@ -1039,6 +1040,121 @@ class GenerationPreviewRead(ApiModel):
     diff: list[GenerationPreviewDiff]
     parent_job_id: str | None
     look_profile_ids: list[str] = Field(default_factory=list)
+
+
+SweepMode = Literal["cartesian", "zip"]
+
+
+class GenerationSweepAxes(ApiModel):
+    seed: list[int] = Field(default_factory=list, max_length=20)
+    cfg: list[float] = Field(default_factory=list, max_length=20)
+    steps: list[int] = Field(default_factory=list, max_length=20)
+    prompt_fragment: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def _validate_values(self) -> "GenerationSweepAxes":
+        if not any((self.seed, self.cfg, self.steps, self.prompt_fragment)):
+            raise ValueError("探索軸を1つ以上指定してください。")
+        if any(value != -1 and value < 0 for value in self.seed):
+            raise ValueError("seedは-1または0以上で指定します。")
+        if any(not math.isfinite(value) or not 0 < value <= 100 for value in self.cfg):
+            raise ValueError("CFGは0より大きく100以下で指定します。")
+        if any(not 1 <= value <= 1000 for value in self.steps):
+            raise ValueError("stepsは1以上1000以下で指定します。")
+        if any(len(value) > 2_000 for value in self.prompt_fragment):
+            raise ValueError("prompt断片は2000文字以下にしてください。")
+        return self
+
+
+class GenerationExperimentCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+    scene_id: AiMediaId
+    shot_id: AiMediaId
+    recipe_id: ResourceId
+    look_profile_ids: list[ResourceId] = Field(default_factory=list, max_length=10)
+    base_inputs: dict[str, Any] = Field(default_factory=dict, max_length=64)
+    input_refs: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
+    axes: GenerationSweepAxes
+    mode: SweepMode = "cartesian"
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("実験名を入力してください。")
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_shape(self) -> "GenerationExperimentCreate":
+        if len(set(self.look_profile_ids)) != len(self.look_profile_ids):
+            raise ValueError("look_profile_idsを重複させられません。")
+        try:
+            input_size = len(
+                json.dumps(self.base_inputs, ensure_ascii=False).encode("utf-8")
+            )
+        except (RecursionError, TypeError, ValueError) as error:
+            raise ValueError("base_inputsをJSONとして保存できません。") from error
+        if input_size > 64 * 1024:
+            raise ValueError("base_inputsは64KB以下にしてください。")
+        lengths = [
+            len(values)
+            for values in (
+                self.axes.seed,
+                self.axes.cfg,
+                self.axes.steps,
+                self.axes.prompt_fragment,
+            )
+            if values
+        ]
+        count = 1
+        if self.mode == "cartesian":
+            for length in lengths:
+                count *= length
+        else:
+            count = max(lengths)
+            if any(length not in (1, count) for length in lengths):
+                raise ValueError("zip軸は1件または最大軸と同じ件数にしてください。")
+        if count > 1000:
+            raise ValueError("重複除外前の組合せは1000件以下にしてください。")
+        return self
+
+
+class GenerationExperimentPreviewItem(ApiModel):
+    ordinal: int
+    variables: dict[str, Any]
+    inputs: dict[str, Any]
+    preview: GenerationPreviewRead
+
+
+class GenerationExperimentPreview(ApiModel):
+    name: str
+    mode: SweepMode
+    job_count: int
+    duplicate_count: int
+    items: list[GenerationExperimentPreviewItem]
+
+
+class GenerationExperimentItemRead(ApiModel):
+    id: str
+    ordinal: int
+    variables: dict[str, Any]
+    inputs: dict[str, Any]
+    job_id: str | None
+    state: str
+    attempts: int
+    planning_error: str | None
+
+
+class GenerationExperimentRead(ApiModel):
+    id: str
+    project_id: str
+    name: str
+    state: str
+    counts: dict[str, int]
+    items: list[GenerationExperimentItemRead]
+    created_at: str
+    updated_at: str
 
 
 class GenerationJobRead(ApiModel):

@@ -1,0 +1,254 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { ApiError, api } from "../api/client";
+import type {
+  GenerationExperiment,
+  GenerationExperimentCreate,
+  GenerationExperimentPreview,
+  Recipe,
+} from "../api/client";
+import { LookProfileManager } from "./LookProfileManager";
+
+interface Props {
+  projectId: string | null;
+  sceneId: string | null;
+  shotId: string | null;
+  recipes: Recipe[];
+  onJobsChanged: () => void;
+  activeComparisonId: string | null;
+  onCompare: (experimentId: string, jobIds: string[]) => void;
+}
+
+function describe(error: unknown): string {
+  if (error instanceof ApiError) return `${error.message} (${error.code})`;
+  return String(error);
+}
+
+function numbers(value: string, integer = false): number[] {
+  if (!value.trim()) return [];
+  return value.split(",").map((item) => {
+    const parsed = Number(item.trim());
+    if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed))) {
+      throw new Error(integer ? "整数軸を確認してください。" : "数値軸を確認してください。");
+    }
+    return parsed;
+  });
+}
+
+export function GenerationSweepPanel({
+  projectId,
+  sceneId,
+  shotId,
+  recipes,
+  onJobsChanged,
+  activeComparisonId,
+  onCompare,
+}: Props) {
+  const [name, setName] = useState("探索スイープ");
+  const [recipeId, setRecipeId] = useState("");
+  const [mode, setMode] = useState<"cartesian" | "zip">("cartesian");
+  const [prompt, setPrompt] = useState("");
+  const [negative, setNegative] = useState("");
+  const [seedAxis, setSeedAxis] = useState("-1");
+  const [cfgAxis, setCfgAxis] = useState("4,5");
+  const [stepsAxis, setStepsAxis] = useState("20,30");
+  const [fragmentAxis, setFragmentAxis] = useState("");
+  const [lookProfileIds, setLookProfileIds] = useState<string[]>([]);
+  const [preview, setPreview] = useState<GenerationExperimentPreview | null>(null);
+  const [previewSignature, setPreviewSignature] = useState<string | null>(null);
+  const [experiments, setExperiments] = useState<GenerationExperiment[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const requestSequence = useRef(0);
+  const busyRef = useRef(false);
+  const recipe = useMemo(
+    () => recipes.find((item) => item.id === recipeId) ?? null,
+    [recipeId, recipes],
+  );
+
+  useEffect(() => {
+    if (!recipeId && recipes[0]) setRecipeId(recipes[0].id);
+  }, [recipeId, recipes]);
+
+  useEffect(() => {
+    setExperiments([]);
+    if (!projectId) return;
+    let active = true;
+    const refresh = () => {
+      if (busyRef.current) return;
+      const sequence = ++requestSequence.current;
+      void api.listGenerationExperiments(projectId, { limit: 20, offset: page * 20 })
+        .then((items) => {
+          if (active && sequence === requestSequence.current) {
+            setExperiments(items);
+            const comparing = items.find((item) => item.id === activeComparisonId);
+            if (comparing) {
+              onCompare(
+                comparing.id,
+                comparing.items.map((item) => item.job_id).filter((id): id is string => Boolean(id)),
+              );
+            }
+          }
+        })
+        .catch((cause) => { if (active) setError(describe(cause)); });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [activeComparisonId, onCompare, page, projectId]);
+
+  useEffect(() => { setPage(0); }, [projectId]);
+
+  useEffect(() => { busyRef.current = busy; }, [busy]);
+
+  useEffect(() => { setPreview(null); setPreviewSignature(null); }, [
+    name, recipeId, mode, prompt, negative, seedAxis, cfgAxis, stepsAxis,
+    fragmentAxis, lookProfileIds, projectId, sceneId, shotId,
+  ]);
+
+  const payload = (): GenerationExperimentCreate | null => {
+    if (!projectId || !sceneId || !shotId || !recipeId) {
+      setError("activeなProject、Scene、Shot、Recipeを選択してください。");
+      return null;
+    }
+    try {
+      return {
+        name: name.trim() || "探索スイープ",
+        scene_id: sceneId,
+        shot_id: shotId,
+        recipe_id: recipeId,
+        look_profile_ids: lookProfileIds,
+        base_inputs: {
+          ...(prompt.trim() ? { positive_prompt: prompt.trim() } : {}),
+          ...(negative.trim() ? { negative_prompt: negative.trim() } : {}),
+        },
+        input_refs: [],
+        axes: {
+          seed: numbers(seedAxis, true),
+          cfg: numbers(cfgAxis),
+          steps: numbers(stepsAxis, true),
+          prompt_fragment: fragmentAxis.split("\n").map((item) => item.trim()).filter(Boolean),
+        },
+        mode,
+      };
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return null;
+    }
+  };
+
+  const runPreview = async () => {
+    const request = payload();
+    if (!projectId || !request) return;
+    busyRef.current = true;
+    setBusy(true); setError(null);
+    try {
+      setPreview(await api.previewGenerationExperiment(projectId, request));
+      setPreviewSignature(JSON.stringify(request));
+    }
+    catch (cause) { setError(describe(cause)); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+
+  const create = async () => {
+    const request = payload();
+    if (!projectId || !request) return;
+    if (!preview || previewSignature !== JSON.stringify(request)) {
+      setError("入力を変更したため、もう一度展開を確認してください。");
+      return;
+    }
+    requestSequence.current += 1;
+    busyRef.current = true;
+    setBusy(true); setError(null);
+    try {
+      const created = await api.createGenerationExperiment(projectId, request);
+      setExperiments((current) => [created, ...current]);
+      setPreview(null);
+      setPreviewSignature(null);
+      onJobsChanged();
+    } catch (cause) { setError(describe(cause)); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+
+  const operate = async (experiment: GenerationExperiment, action: "cancel" | "retry") => {
+    if (!projectId) return;
+    requestSequence.current += 1;
+    busyRef.current = true;
+    setBusy(true); setError(null);
+    try {
+      const updated = action === "cancel"
+        ? await api.cancelPendingExperimentJobs(projectId, experiment.id)
+        : await api.retryFailedExperimentJobs(projectId, experiment.id);
+      setExperiments((current) => current.map((item) => item.id === updated.id ? updated : item));
+      onJobsChanged();
+      if (activeComparisonId === updated.id) {
+        onCompare(
+          updated.id,
+          updated.items.map((item) => item.job_id).filter((id): id is string => Boolean(id)),
+        );
+      }
+    } catch (cause) { setError(describe(cause)); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+
+  const remove = async (experiment: GenerationExperiment) => {
+    if (!projectId || !window.confirm(`探索実験「${experiment.name}」を削除しますか。JobとArtifactは残ります。`)) return;
+    requestSequence.current += 1;
+    busyRef.current = true;
+    setBusy(true); setError(null);
+    try {
+      await api.deleteGenerationExperiment(projectId, experiment.id);
+      setExperiments((current) => current.filter((item) => item.id !== experiment.id));
+    } catch (cause) { setError(describe(cause)); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+
+  if (!projectId) return <section className="panel"><h2>探索スイープ</h2><p className="muted">Projectを選ぶと利用できます。</p></section>;
+  return (
+    <section className="panel">
+      <h2>探索スイープ</h2>
+      <div className="stack">
+        {error && <p className="error">{error}</p>}
+        <label>実験名<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>Recipe<select value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>展開方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="cartesian">直積</option><option value="zip">zip</option></select></label>
+        <label>基本Prompt<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label>
+        <label>Negative<textarea value={negative} onChange={(event) => setNegative(event.target.value)} /></label>
+        <div className="row">
+          <label>seed<input value={seedAxis} onChange={(event) => setSeedAxis(event.target.value)} placeholder="-1,1,2" /></label>
+          <label>CFG<input value={cfgAxis} onChange={(event) => setCfgAxis(event.target.value)} placeholder="4,5,6" /></label>
+          <label>steps<input value={stepsAxis} onChange={(event) => setStepsAxis(event.target.value)} placeholder="20,30" /></label>
+        </div>
+        <label>Prompt断片（1行1候補）<textarea value={fragmentAxis} onChange={(event) => setFragmentAxis(event.target.value)} /></label>
+        <LookProfileManager kind="image" recipe={recipe} selectedIds={lookProfileIds} onSelectionChange={setLookProfileIds} />
+        <div className="row">
+          <button type="button" disabled={busy || !sceneId || !shotId || !recipeId} onClick={() => void runPreview()}>展開を確認</button>
+          <button type="button" className="primary" disabled={busy || !preview} onClick={() => void create()}>{busy ? "処理中..." : "確認した実験を作成"}</button>
+        </div>
+        {preview && <div><p>{preview.job_count}variant / 重複除外{preview.duplicate_count}件</p><ol>{preview.items.map((item) => <li key={item.ordinal} className="mono">#{item.ordinal + 1} {JSON.stringify(item.variables)}</li>)}</ol></div>}
+        <div className="stack">
+          {experiments.map((experiment) => {
+            const jobIds = experiment.items.map((item) => item.job_id).filter((id): id is string => Boolean(id));
+            return <details key={experiment.id}>
+              <summary>{experiment.name} / {experiment.state}</summary>
+              <p>待機:{experiment.counts.queued ?? 0} / 実行中:{experiment.counts.running ?? 0} / 完了:{experiment.counts.completed ?? 0} / 失敗:{experiment.counts.failed ?? 0} / 取消:{experiment.counts.cancelled ?? 0}</p>
+              <div className="row">
+                <button type="button" disabled={busy} onClick={() => void operate(experiment, "cancel")}>未開始を中止</button>
+                <button type="button" disabled={busy} onClick={() => void operate(experiment, "retry")}>失敗を再実行</button>
+                <button type="button" disabled={!jobIds.length} onClick={() => onCompare(experiment.id, jobIds)}>この実験だけ比較</button>
+                <button type="button" disabled={busy} onClick={() => void remove(experiment)}>実験を削除</button>
+              </div>
+              <ol>{experiment.items.map((item) => <li key={item.id}>#{item.ordinal + 1} {item.state} / {JSON.stringify(item.variables)}{item.planning_error ? ` / ${item.planning_error}` : ""}</li>)}</ol>
+            </details>;
+          })}
+        </div>
+        <div className="row">
+          <button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>前の20件</button>
+          <span>{page + 1}ページ</span>
+          <button type="button" disabled={experiments.length < 20} onClick={() => setPage((current) => current + 1)}>次の20件</button>
+        </div>
+      </div>
+    </section>
+  );
+}

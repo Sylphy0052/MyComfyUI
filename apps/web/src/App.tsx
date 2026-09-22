@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import { ApiError, api } from "./api/client";
@@ -24,6 +24,7 @@ import { CandidateGallery } from "./components/CandidateGallery";
 import type { Candidate } from "./components/CandidateGallery";
 import { ComposePanel } from "./components/ComposePanel";
 import { GenerationForm } from "./components/GenerationForm";
+import { GenerationSweepPanel } from "./components/GenerationSweepPanel";
 import { IntegrityList } from "./components/IntegrityList";
 import { ImageDerivationPanel } from "./components/ImageDerivationPanel";
 import { JobQueue } from "./components/JobQueue";
@@ -135,6 +136,12 @@ export function App() {
   const [structureToken, setStructureToken] = useState(0);
   const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
     useState<string | null>(null);
+  const [comparisonJobIds, setComparisonJobIds] = useState<string[] | null>(null);
+  const [comparisonArtifactsByJob, setComparisonArtifactsByJob] = useState<
+    Record<string, Artifact[]>
+  >({});
+  const [comparisonExperimentId, setComparisonExperimentId] = useState<string | null>(null);
+  const comparisonRequestSequence = useRef(0);
 
   const txt2imgRecipes = useMemo(
     () => recipes.filter((recipe) => recipeTemplateName(recipe) === "anima_txt2img"),
@@ -384,6 +391,40 @@ export function App() {
       left.artifact.created_at.localeCompare(right.artifact.created_at),
     );
   }, [artifactsByJob]);
+  const visibleCandidates = useMemo(
+    () => {
+      if (!comparisonJobIds) return candidates;
+      return comparisonJobIds.flatMap((jobId) =>
+        (comparisonArtifactsByJob[jobId] ?? [])
+          .filter((artifact) => artifact.kind === "image")
+          .map((artifact) => ({ artifact, jobId })),
+      );
+    },
+    [candidates, comparisonArtifactsByJob, comparisonJobIds],
+  );
+
+  useEffect(() => {
+    comparisonRequestSequence.current += 1;
+    setComparisonJobIds(null);
+    setComparisonArtifactsByJob({});
+    setComparisonExperimentId(null);
+  }, [projectId]);
+
+  const compareExperiment = useCallback(async (experimentId: string, jobIds: string[]) => {
+    const sequence = ++comparisonRequestSequence.current;
+    setError(null);
+    try {
+      const entries = await Promise.all(
+        jobIds.map(async (jobId) => [jobId, await api.listJobArtifacts(jobId)] as const),
+      );
+      if (sequence !== comparisonRequestSequence.current) return;
+      setComparisonArtifactsByJob(Object.fromEntries(entries));
+      setComparisonJobIds(jobIds);
+      setComparisonExperimentId(experimentId);
+    } catch (cause) {
+      setError(describe(cause));
+    }
+  }, []);
 
   const submit = async (
     recipe: Recipe | null,
@@ -636,12 +677,22 @@ export function App() {
                 previewError={previewError}
               />
               <CandidateGallery
-                candidates={candidates}
+                candidates={visibleCandidates}
                 busyArtifactId={busyArtifactId}
                 onDecide={decide}
                 onDerive={setDerivationSourceArtifactId}
                 active={view === "generate" && generationTab === "image"}
               />
+              {comparisonJobIds && (
+                <button type="button" onClick={() => {
+                  comparisonRequestSequence.current += 1;
+                  setComparisonJobIds(null);
+                  setComparisonArtifactsByJob({});
+                  setComparisonExperimentId(null);
+                }}>
+                  実験の比較絞込みを解除
+                </button>
+              )}
               <ImageDerivationPanel
                 projectId={projectId}
                 sceneId={sceneId}
@@ -650,6 +701,15 @@ export function App() {
                 sourceArtifactId={derivationSourceArtifactId}
                 onSourceArtifactChange={setDerivationSourceArtifactId}
                 onSubmittedJob={handleDerivedJob}
+              />
+              <GenerationSweepPanel
+                projectId={projectId}
+                sceneId={sceneId}
+                shotId={shotId}
+                recipes={txt2imgRecipes}
+                onJobsChanged={() => { void refreshJobs().catch((cause) => setError(describe(cause))); }}
+                activeComparisonId={comparisonExperimentId}
+                onCompare={compareExperiment}
               />
             </div>
 
