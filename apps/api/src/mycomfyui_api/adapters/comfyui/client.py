@@ -196,7 +196,9 @@ class ComfyUIClient:
         payload = await self._get_json(f"/object_info/{quote(node_class, safe='')}")
         return _extract_option_names(payload, node=node_class, field=field)
 
-    async def upload_input(self, file_name: str, data: bytes) -> str:
+    async def upload_input(
+        self, file_name: str, data: bytes, *, subfolder: str = ""
+    ) -> str:
         """素材をComfyUIのinputへ置き、Workflowから参照できる名前を返す。
 
         `LoadImage`と`LoadAudio`はComfyUI側のinputディレクトリにあるファイル名しか
@@ -204,12 +206,18 @@ class ComfyUIClient:
         ここでアップロードし、返った名前をWorkflowへ差し込む。
 
         同名ファイルは上書きしない。ComfyUIが採番した名前をそのまま使う。
+
+        `subfolder`を指定すると、inputの下のそのディレクトリへ置く。ComfyUIは置いた
+        ファイルを消すAPIを持たないため、後から一括で片付けたい用途を分ける。
         """
+        form = {"type": "input", "overwrite": "false"}
+        if subfolder:
+            form["subfolder"] = subfolder
         try:
             response = await self._client.post(
                 "/upload/image",
                 files={"image": (file_name, data, "application/octet-stream")},
-                data={"type": "input", "overwrite": "false"},
+                data=form,
             )
         except httpx.HTTPError as error:
             raise ComfyUIUnavailable(

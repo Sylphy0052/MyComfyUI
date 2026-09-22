@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     #: Qwenを動かすOpenAI互換推論サーバーの接続先。Remote GPU Hostで動かす場合も
     #: ComfyUIとvoice-runnerと同じく、この値だけをRemote PCのURLへ変える。
     agent_qwen_base_url: str = "http://127.0.0.1:8000/v1"
-    #: 推論サーバーへ渡すモデル名。画像タグ抽出も使う場合は視覚言語モデルを指定する。
+    #: 推論サーバーへ渡すモデル名。画像タグの整理にも同じモデルを使う。
     agent_qwen_model: str = "qwen3"
     #: 提案1件あたりの実行上限。ローカル推論はCLI経由より遅くなりうるため別に持つ。
     agent_qwen_timeout_seconds: float = Field(default=180.0, gt=0)
@@ -96,6 +96,21 @@ class Settings(BaseSettings):
     compose_timeout_seconds: float = Field(default=600.0, gt=0)
     #: 取り込む参照画像とガイド音声の上限バイト数。
     max_image_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
+    #: 画像タグ抽出に使うWD14 Taggerのモデル。ComfyUIの`WD14Tagger|pysssss`へ渡す。
+    #: 初めて使うモデルはComfyUI側でのダウンロードが入り、初回だけ時間がかかる。
+    image_tagger_model: str = "wd-swinv2-tagger-v3"
+    #: タグを採用する確信度の下限。下げるほど数は増え、無関係なタグも混じる。
+    image_tagger_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+    #: キャラクター名タグだけに適用する下限。誤検出を避けるため本体より高く保つ。
+    image_tagger_character_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    #: `closed_mouth`ではなく`closed mouth`の形で受け取り、そのままプロンプトへ渡す。
+    image_tagger_replace_underscore: bool = True
+    #: 抽出から除くタグ。ComfyUIのノードへそのまま渡すカンマ区切りの文字列。
+    image_tagger_exclude_tags: str = ""
+    #: 抽出1件の実行上限。ComfyUIの起動待ちとモデル読み込みを含む。
+    image_tagger_timeout_seconds: float = Field(default=300.0, gt=0)
+    #: 抽出したタグをQwenで整理・拡張する。失敗しても抽出結果はそのまま返す。
+    image_tagger_refine: bool = True
     #: 外部画像Artifactが使用できる総量。無認証loopback APIからの無制限保存を防ぐ。
     external_image_import_quota_bytes: int = Field(
         default=20 * 1024 * 1024 * 1024, gt=0

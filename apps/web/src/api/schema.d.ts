@@ -838,7 +838,7 @@ export interface paths {
         put?: never;
         /**
          * Extract Image Tags
-         * @description 画像をQwen互換の視覚言語モデルへ渡し、正プロンプト用タグを返す。
+         * @description 画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。
          */
         post: operations["extract_image_tags_api_v1_image_tags_post"];
         delete?: never;
@@ -2883,7 +2883,7 @@ export interface components {
         };
         /**
          * ImageTagExtractRead
-         * @description 視覚言語モデルが抽出した正プロンプト用のタグ。
+         * @description 画像から抽出した正プロンプト用のタグ。
          */
         ImageTagExtractRead: {
             /** Tags */

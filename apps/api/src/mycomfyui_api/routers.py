@@ -23,7 +23,6 @@ from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import proposals
 from mycomfyui_api.adapters.agent.base import AgentProvider
-from mycomfyui_api.adapters.image_tagger import ImageTaggerError, QwenImageTagger
 from mycomfyui_api.adapters.aimedia.client import (
     AiMediaNotFound,
     AiMediaUnavailable,
@@ -33,6 +32,8 @@ from mycomfyui_api.adapters.comfyui import workflow as comfyui_workflow
 from mycomfyui_api.adapters.comfyui.client import ComfyUIError
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
 from mycomfyui_api.adapters.comfyui.factory import create_comfyui_client
+from mycomfyui_api.adapters.comfyui.tagger import ComfyUITagger
+from mycomfyui_api.adapters.image_tagger import ImageTaggerError, QwenTagRefiner
 from mycomfyui_api.adapters.voice import audio as voice_audio
 from mycomfyui_api.adapters.voice.base import VoiceError
 from mycomfyui_api.adapters.voice.factory import create_voice_backend
@@ -3331,7 +3332,7 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
 
 @router.post("/image-tags", response_model=schemas.ImageTagExtractRead)
 async def extract_image_tags(payload: schemas.ImageTagExtractRequest):
-    """画像をQwen互換の視覚言語モデルへ渡し、正プロンプト用タグを返す。"""
+    """画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。"""
     settings = get_settings()
     encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
     if len(payload.content_base64) > encoded_limit:
@@ -3350,13 +3351,21 @@ async def extract_image_tags(payload: schemas.ImageTagExtractRequest):
             {"byte_size": len(data), "limit": settings.max_image_bytes},
         )
     try:
-        tags = await QwenImageTagger(settings).extract(
+        tags = await ComfyUITagger(settings).extract(
             payload.content_base64, payload.media_type
         )
     except ImageTaggerError as error:
         raise ApiError(
             "IMAGE_TAGGER_ERROR", str(error), status_code=status.HTTP_503_SERVICE_UNAVAILABLE
         ) from error
+    if settings.image_tagger_refine:
+        try:
+            tags = await QwenTagRefiner(settings).refine(tags)
+        except ImageTaggerError as error:
+            # 整理は付加価値であり、抽出そのものは成功している。Remote GPU Hostでは
+            # ComfyUIの生成中に推論サーバーへ接続できないため、この失敗は通常運用でも
+            # 起こりうる。WD14が出したタグをそのまま返す。
+            logger.info("タグの整理を省いて抽出結果を返します。(%s)", error)
     return schemas.ImageTagExtractRead(tags=tags)
 
 
