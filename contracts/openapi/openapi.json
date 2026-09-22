@@ -1,6 +1,42 @@
 {
   "components": {
     "schemas": {
+      "AgentBackendStatusRead": {
+        "additionalProperties": false,
+        "description": "オンデマンドで起動するBackendの状態。状態照会口を設定したProviderだけが持つ。\n\n接続先とプロセスの詳細は返さない。利用者が待ち時間と副作用を予想できる範囲に留める。",
+        "properties": {
+          "conflicts_running": {
+            "default": false,
+            "title": "Conflicts Running",
+            "type": "boolean"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "sleeping": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleeping"
+          },
+          "starting": {
+            "default": false,
+            "title": "Starting",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready"
+        ],
+        "title": "AgentBackendStatusRead",
+        "type": "object"
+      },
       "AgentProposalApplicationRead": {
         "additionalProperties": false,
         "description": "計画1stepの適用状態。適用先はここから辿る。",
@@ -452,6 +488,16 @@
           "available": {
             "title": "Available",
             "type": "boolean"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentBackendStatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "title": "Id",

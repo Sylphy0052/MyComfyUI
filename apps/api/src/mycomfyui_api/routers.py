@@ -3436,15 +3436,42 @@ AgentProvidersDep = Annotated[dict[str, AgentProvider], Depends(get_agent_provid
 AGENT_CONTEXT_ARTIFACT_LIMIT = 20
 
 
+async def _describe_agent_provider(
+    provider: AgentProvider,
+) -> schemas.AgentProviderRead:
+    """Providerの表示用の状態を組み立てる。
+
+    オンデマンドで起動するBackendを持つProviderは`describe()`で可用性と状態を同時に
+    返す。持たないProviderは従来どおり`available()`だけを見る。
+    """
+    describe = getattr(provider, "describe", None)
+    if describe is None:
+        return schemas.AgentProviderRead(
+            id=provider.id, label=provider.label, available=await provider.available()
+        )
+    available, status = await describe()
+    backend = (
+        schemas.AgentBackendStatusRead(
+            ready=status.ready,
+            sleeping=status.sleeping,
+            starting=status.starting,
+            conflicts_running=status.conflicts_running,
+        )
+        if status is not None
+        else None
+    )
+    return schemas.AgentProviderRead(
+        id=provider.id,
+        label=provider.label,
+        available=available,
+        backend=backend,
+    )
+
+
 @router.get("/agent-providers", response_model=list[schemas.AgentProviderRead])
 async def list_agent_providers(providers: AgentProvidersDep):
     """設定済みProviderを返す。接続先と認証情報は返さない。"""
-    return [
-        schemas.AgentProviderRead(
-            id=provider.id, label=provider.label, available=await provider.available()
-        )
-        for provider in providers.values()
-    ]
+    return [await _describe_agent_provider(provider) for provider in providers.values()]
 
 
 def _resolve_agent_provider(

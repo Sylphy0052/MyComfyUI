@@ -11,6 +11,7 @@ import type {
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
+import { conflictNotice, noticeSuffix } from "./BackendNotice";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -171,6 +172,9 @@ export function GenerationForm({
   useEffect(() => {
     void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
   }, []);
+
+  // タグの整理は Provider を選ばずに走るため、副作用を抽出ボタンのそばへ出す。
+  const tagNotice = conflictNotice(providers);
 
   /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
   const buildInputs = (): Record<string, unknown> | null => {
@@ -372,7 +376,11 @@ export function GenerationForm({
               {extractingTags ? "抽出中..." : "タグを抽出"}
             </button>
           </div>
-          <p className="muted">選んだ画像は設定済みのQwen互換AIへ送信して解析します。</p>
+          <p className="muted">
+            選んだ画像はComfyUIのWD14 Taggerへ送信して解析します。抽出したタグの整理には
+            設定済みのQwen互換AIを使います。
+          </p>
+          {tagNotice && <p className="muted">{tagNotice}</p>}
           {tagError && <p className="error">{tagError}</p>}
           {extractedTags.length > 0 && (
             <div className="row">
@@ -428,6 +436,7 @@ export function GenerationForm({
                   disabled={!provider.available}
                 >
                   {provider.label}{provider.available ? "" : " (利用不可)"}
+                  {noticeSuffix(provider)}
                 </option>
               ))}
             </select>

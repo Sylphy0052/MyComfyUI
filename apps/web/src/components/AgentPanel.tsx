@@ -11,6 +11,7 @@ import type {
   GenerationJob,
   Recipe,
 } from "../api/client";
+import { BackendNotice, noticeSuffix } from "./BackendNotice";
 
 /**
  * 提案の種別。`image_prompt` だけが承認後に生成 Job の投入へつながる。
@@ -293,6 +294,7 @@ export function AgentPanel({
           <li key={provider.id}>
             {provider.label} ({provider.id}):{" "}
             {provider.available ? "利用可能" : "利用不可"}
+            <BackendNotice provider={provider} />
           </li>
         ))}
       </ul>
@@ -310,6 +312,7 @@ export function AgentPanel({
             <option key={provider.id} value={provider.id}>
               {provider.label} ({provider.id})
               {provider.available ? "" : " - 利用不可"}
+              {noticeSuffix(provider)}
             </option>
           ))}
         </select>
