@@ -223,8 +223,6 @@ export function App() {
     });
   }, [view]);
 
-  // 戻る操作で復元した直後は、同じ状態をもう一度履歴へ積まないようにする。
-  const skipHistoryPushRef = useRef(false);
   const lastViewRef = useRef<View>(initialUiState.view);
 
   useEffect(() => {
@@ -238,15 +236,14 @@ export function App() {
     };
     const viewChanged = lastViewRef.current !== view;
     lastViewRef.current = view;
-    const mode = viewChanged && !skipHistoryPushRef.current ? "push" : "replace";
-    skipHistoryPushRef.current = false;
-    persistUiState(next, mode);
+    persistUiState(next, viewChanged ? "push" : "replace");
   }, [view, generationTab, imageSubTab, projectId, sceneId, shotId]);
 
   useEffect(() => {
     const restore = () => {
       const restored = uiStateFromUrl(window.location.search);
-      skipHistoryPushRef.current = true;
+      // 復元先のViewを現在地として扱い、戻った先をもう一度履歴へ積まない。
+      lastViewRef.current = restored.view;
       setView(restored.view);
       setGenerationTab(restored.generationTab);
       setImageSubTab(restored.imageSubTab);
