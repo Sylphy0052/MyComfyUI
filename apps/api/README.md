@@ -614,6 +614,5 @@ Recipe の変更は新しい Recipe として作成し、必要なら `supersede
 
 ## 対象外
 
-動画・音楽生成、img2img、LoRA、hires fix、ControlNet、IPAdapter、
-再実行(Exact Replay / Regenerate with Current Canon)、Web UI、進捗の UI への中継、認証、削除 API は
-本 API の対象外とする。複数 GPU への分散、優先度付きスケジューリング、クラウドキューも対象外とする。
+LoRA、latent hires fix、IPAdapter、進捗のWebSocket中継、認証、削除APIは
+本APIの対象外とする。複数GPUへの分散、優先度付きスケジューリング、クラウドキューも対象外とする。

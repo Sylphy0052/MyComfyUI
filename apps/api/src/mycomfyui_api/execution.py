@@ -58,6 +58,8 @@ class PreparedExecution:
     #: 入力から決まる親Job。合成Jobが入力の動画Jobを親に持つために使う。要求が
     #: `parent_job_id`を指定していないときだけ採用する。
     parent_job_id: str | None = None
+    #: 画像派生の主入力Artifact。出力Artifactのparent_artifact_idへ引き継ぐ。
+    parent_artifact_id: str | None = None
     #: 型変換まで済ませた、変数ごとの確定値。投入前プレビューが解決済み入力と
     #: Workflow既定値との差分を示すために使う。Manifestへは保存しない。
     resolved_inputs: dict[str, Any] = field(default_factory=dict)

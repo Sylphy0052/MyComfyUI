@@ -51,6 +51,15 @@ I2V_TEMPLATE = "minimax_h3_i2v"
 
 KIND_VIDEO = "video"
 KIND_MUSIC = "music"
+KIND_IMAGE = "image"
+
+IMG2IMG_TEMPLATE = "anima_img2img"
+INPAINT_TEMPLATE = "anima_inpaint"
+CONTROLNET_TEMPLATE = "sd15_controlnet"
+UPSCALE_TEMPLATE = "image_upscale"
+DERIVATION_TEMPLATES = frozenset(
+    {IMG2IMG_TEMPLATE, INPAINT_TEMPLATE, CONTROLNET_TEMPLATE, UPSCALE_TEMPLATE}
+)
 
 
 @dataclass(frozen=True)
@@ -64,6 +73,84 @@ class _MediaPlan:
     parameters: dict[str, Any] = field(default_factory=dict)
     #: テンプレート変数ではないが、入力として受け取って確定した値。
     resolved_extras: dict[str, Any] = field(default_factory=dict)
+    parent_job_id: str | None = None
+    parent_artifact_id: str | None = None
+
+
+async def _image_plan(
+    template_name: str, values: dict[str, Any], context: PreparationContext
+) -> _MediaPlan:
+    """画像派生の主入力とmaskを解決し、Artifact lineageを固定する。"""
+    if template_name not in DERIVATION_TEMPLATES:
+        return _MediaPlan(values=dict(values))
+    remaining = dict(values)
+    slots = workflow_module.upload_slots(template_name)
+    uploads: list[dict[str, Any]] = []
+    input_refs: list[dict[str, Any]] = []
+
+    async def take(variable: str, raw: Any, label: str) -> sources.InputSource:
+        source = await sources.resolve(
+            raw,
+            label=label,
+            lookup=context.artifact_lookup,
+            artifact_kinds=("image",),
+        )
+        node_id, input_key = slots[variable]
+        remaining[variable] = source.file_name
+        uploads.append(
+            {
+                "variable": variable,
+                "node_id": node_id,
+                "input_key": input_key,
+                "source": source.kind,
+                "relative_path": source.relative_path,
+                "sha256": source.sha256,
+                "file_name": source.file_name,
+                "artifact_id": source.artifact_id,
+            }
+        )
+        input_refs.append(sources.reference(source, label))
+        return source
+
+    raw_source = remaining.pop("source_image", None)
+    if raw_source is None:
+        raise PreparationError("source_imageに派生元画像を指定します。")
+    primary = await take("source_image", raw_source, "派生元画像")
+
+    if template_name == INPAINT_TEMPLATE:
+        raw_mask = remaining.pop("mask_image", None)
+        if raw_mask is None:
+            raise PreparationError("inpaintにはmask_imageが必要です。")
+        await take("mask_image", raw_mask, "inpaint mask")
+    if template_name == CONTROLNET_TEMPLATE:
+        start = remaining.get("control_start")
+        end = remaining.get("control_end")
+        if isinstance(start, int | float) and isinstance(end, int | float) and start > end:
+            raise PreparationError("control_startはcontrol_end以下で指定します。")
+        canny_low = remaining.get("canny_low")
+        canny_high = remaining.get("canny_high")
+        if (
+            isinstance(canny_low, int | float)
+            and isinstance(canny_high, int | float)
+            and canny_low > canny_high
+        ):
+            raise PreparationError("canny_lowはcanny_high以下で指定します。")
+        width = remaining.get("width")
+        height = remaining.get("height")
+        batch_size = remaining.get("batch_size")
+        if all(
+            isinstance(value, int) and not isinstance(value, bool)
+            for value in (width, height, batch_size)
+        ) and width * height * batch_size > 100_000_000:
+            raise PreparationError("幅×高さ×batch_sizeは1億pixel以下にしてください。")
+
+    return _MediaPlan(
+        values=remaining,
+        uploads=uploads,
+        input_refs=input_refs,
+        parent_job_id=primary.job_id,
+        parent_artifact_id=primary.artifact_id,
+    )
 
 
 def resolve_template_name(recipe: Recipe) -> str:
@@ -300,6 +387,8 @@ async def _media_plan(
     values: dict[str, Any],
     context: PreparationContext,
 ) -> _MediaPlan:
+    if recipe.kind == KIND_IMAGE:
+        return await _image_plan(template_name, values, context)
     if recipe.kind == KIND_VIDEO:
         return await _video_plan(template_name, values, context)
     if recipe.kind == KIND_MUSIC:
@@ -341,5 +430,7 @@ async def prepare(
             "input_uploads": plan.uploads,
         },
         input_refs=plan.input_refs,
+        parent_job_id=plan.parent_job_id,
+        parent_artifact_id=plan.parent_artifact_id,
         resolved_inputs={**prepared.resolved_values, **plan.resolved_extras},
     )

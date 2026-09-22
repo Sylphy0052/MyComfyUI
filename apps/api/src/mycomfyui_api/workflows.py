@@ -41,6 +41,10 @@ _OUTPUT_NODE_KINDS: dict[str, str] = {
 #: 同梱テンプレートの生成種別。`Recipe.kind`と揃える。
 _COMFYUI_KINDS: dict[str, str] = {
     "anima_txt2img": "image",
+    "anima_img2img": "image",
+    "anima_inpaint": "image",
+    "sd15_controlnet": "image",
+    "image_upscale": "image",
     "minimax_h3_ref2v": "video",
     "minimax_h3_i2v": "video",
     "ace_step_bgm": "music",

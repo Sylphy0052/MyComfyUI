@@ -21,12 +21,14 @@ interface Props {
   candidates: Candidate[];
   busyArtifactId: string | null;
   onDecide: (artifactId: string, decision: ArtifactDecision) => void;
+  onDerive?: (artifactId: string) => void;
 }
 
 export function CandidateGallery({
   candidates,
   busyArtifactId,
   onDecide,
+  onDerive,
 }: Props) {
   return (
     <section className="panel">
@@ -66,6 +68,11 @@ export function CandidateGallery({
                   >
                     戻す
                   </button>
+                  {onDerive && (
+                    <button type="button" onClick={() => onDerive(artifact.id)}>
+                      派生生成
+                    </button>
+                  )}
                 </div>
               </figcaption>
             </figure>

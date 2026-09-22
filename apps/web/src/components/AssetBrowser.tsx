@@ -55,6 +55,7 @@ interface Props {
   onSelectShot: (shotId: string | null) => void;
   projects: ProjectRecord[];
   onAssignmentsChanged: () => Promise<void>;
+  onDeriveArtifact: (artifactId: string) => void;
 }
 
 function describe(error: unknown): string {
@@ -76,6 +77,7 @@ export function AssetBrowser({
   onSelectShot,
   projects,
   onAssignmentsChanged,
+  onDeriveArtifact,
 }: Props) {
   const [kind, setKind] = useState("");
   const [decision, setDecision] = useState("");
@@ -665,6 +667,15 @@ export function AssetBrowser({
                 </div>
               </div>
               <ArtifactPreview artifact={selected} />
+              {selected.kind === "image" && selected.availability === "complete" && (
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => onDeriveArtifact(selected.id)}
+                >
+                  この画像から派生生成
+                </button>
+              )}
               {selectedDetail ? (
                 <ArtifactDetail
                   artifact={selected}

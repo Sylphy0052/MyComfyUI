@@ -1,0 +1,12 @@
+{
+  "60": {"class_type": "UNETLoader", "inputs": {"unet_name": "chosenMixAnima_v10.safetensors", "weight_dtype": "default"}},
+  "61": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen_3_06b_base.safetensors", "type": "stable_diffusion"}},
+  "62": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_vae.safetensors"}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["61", 0]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["61", 0]}},
+  "10": {"class_type": "LoadImage", "inputs": {"image": "input.png"}},
+  "11": {"class_type": "VAEEncode", "inputs": {"pixels": ["10", 0], "vae": ["62", 0]}},
+  "3": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 0.65, "model": ["60", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["11", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["62", 0]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "mycomfyui", "images": ["8", 0]}}
+}

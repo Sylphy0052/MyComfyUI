@@ -1116,6 +1116,11 @@ def _build_job_records(
         parameters={
             **dict(prepared.parameters),
             **(
+                {"primary_input_artifact_id": prepared.parent_artifact_id}
+                if prepared.parent_artifact_id is not None
+                else {}
+            ),
+            **(
                 {"production_preferences": preferences}
                 if preferences
                 else {}
