@@ -110,10 +110,12 @@ async def fetch_status(
             body = bytearray()
             async for chunk in response.aiter_bytes():
                 body.extend(chunk)
+                # 上限ちょうどまでは受け取り、超えた時点で読むのをやめる。
                 if len(body) > MAX_STATUS_BYTES:
                     logger.info(
-                        "Qwenの状態照会の応答が%dバイトを超えました。",
+                        "Qwenの状態照会の応答が%dバイトを超えました。(%dバイト受信)",
                         MAX_STATUS_BYTES,
+                        len(body),
                     )
                     return None
     except (httpx.HTTPError, httpx.InvalidURL) as error:
