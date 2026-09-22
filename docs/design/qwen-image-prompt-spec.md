@@ -485,3 +485,61 @@ negative も同じ理由で連結後に検査する。フィールド単位の�
 | タグ実在確認 (Danbooru API) | 外部ネットワーク依存が増える。0 件タグの混入は baseline と指示文の整備より優先度が低い |
 
 どちらも後続の Issue として切り出す。
+
+## 12. 実機検証 (2026-09-23)
+
+11 節の方針で実装したあと、実際の Qwen 推論サーバーへ提案を投げて挙動を確かめた。
+
+- 接続先: `192.168.1.2:8000` (llama.cpp server)
+- モデル: `qwen3.8-27b-ud-iq3s`
+- 確認した種別: `image_prompt` (単体 / 複数キャラ)、`batch_generation_plan` (2 Shot)
+
+### 12.1 効いていたこと
+
+- ブロック別のタグ配列と自然文が意図どおり返る。連結順も固定される
+- アングルタグ (`from below`, `from side`, `from above`) が `general_tags` の前方へ置かれる
+- **複数キャラの指示で、髪色・髪型・眼鏡がタグ行から完全に外れ、自然文側で左右に割り振られた**。3.4 節が挙げた「識別属性をタグ行に残すと 0/4 で混ざる」条件を、指示文だけで回避できている
+
+複数キャラのケース (「2人の少女が図書館で話している。1人は眼鏡をかけた黒髪ショート、もう1人は金髪ロングのポニーテール」) で返った値は次のとおり。タグ行には髪色も髪型も眼鏡も含まれず、避けたい要素が無いため `negative_prompt` は空文字になった。
+
+```text
+tag_line:        masterpiece, best quality, safe, 2girls, library, bookshelf, books,
+                 talking, indoor
+natural_text:    A black-haired short-haired girl wearing glasses stands on the left
+                 side of the frame, facing the blonde girl. A blonde long-haired girl
+                 with a ponytail stands on the right side of the frame, looking toward
+                 the black-haired girl. The two girls are positioned between tall
+                 bookshelves filled with books, and warm light from above illuminates
+                 their faces and the spines of the books behind them.
+negative_prompt: (空文字)
+```
+
+`batch_generation_plan` でも同じブロック構造で返り、`natural_text` は英語になる。
+
+```text
+tag_line:     masterpiece, best quality, safe, 1girl, solo, from behind, looking away,
+              school uniform, sitting, classroom, window, sunset, golden hour, afternoon
+natural_text: A girl in a school uniform sits at a desk near the classroom window,
+              gazing outside at the setting sun. The warm sunset light streams through
+              the glass and illuminates her side profile and the surrounding desks.
+```
+
+引用は 12.2 の追記をすべて入れた最終状態の指示文で実行したものである。
+
+### 12.2 指示文の不足として見つかったこと
+
+初回の実装では次の3点が抜けており、指示文へ追記した。
+
+| 症状 | 追記した内容 |
+| --- | --- |
+| `batch_generation_plan` で `natural_text` が日本語で返った。`image_prompt` では英語だった | 利用者の指示が日本語でも `natural_text` は英語で書く |
+| rating (`safe` など) が一度も入らなかった | rating を必ず1つ入れる。判断できなければ `safe` にする |
+| 避けたい要素が無いときに `negative_prompt` が `","` になった | 避けたい要素が無ければ空文字にする。区切りだけの値を返さない |
+
+rating については、追記の初回に `rating:sensitive` という値が返った。`rating:` は Danbooru の検索構文であってタグではないため、接頭辞を付けず値だけを書くことも指示文へ足した。
+
+### 12.3 この検証から言えること
+
+作法を指示文へ書けば、27B の量子化モデルでも規約のうち機械的に確かめにくい部分 (識別属性の振り分け、アングルタグの位置) は守られる。一方で、書いていないこと (自然文の言語、rating の要否、空値の書き方) はモデルごと・経路ごとに揺れる。規約は「守らせたいことを漏れなく書く」必要がある。
+
+検証に使ったスクリプトは `~/.claude/bin/qwen-prompt-check.py` と `~/.claude/bin/qwen-batch-check.py` に置いた。接続先は `MYCOMFYUI_AGENT_QWEN_BASE_URL` と `MYCOMFYUI_AGENT_QWEN_MODEL` で渡す。
