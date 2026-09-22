@@ -13,6 +13,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mycomfyui_api import schemas
+from mycomfyui_api.events import job_events
 from mycomfyui_api.models import AgentProposalApplication, GenerationJob
 
 logger = logging.getLogger(__name__)
@@ -223,6 +224,7 @@ class JobQueueWorker:
             await session.commit()
             if update_result.rowcount == 0:
                 return None
+            await job_events.publish_job(job_id, "running")
             return job_id
 
     async def _load(self, job_id: str) -> GenerationJob:
@@ -251,3 +253,4 @@ class JobQueueWorker:
                 job.retryable = outcome.retryable
             job.finished_at = schemas.now_iso()
             await session.commit()
+            await job_events.publish_job(job.id, job.state)

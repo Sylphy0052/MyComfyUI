@@ -29,6 +29,7 @@ from mycomfyui_api.errors import (
     unhandled_error_handler,
     validation_error_handler,
 )
+from mycomfyui_api.events import router as event_router
 from mycomfyui_api.image_imports import MAX_IMAGE_BYTES as MAX_EXTERNAL_IMAGE_BYTES
 from mycomfyui_api.migrator import upgrade_to_head
 from mycomfyui_api.queue import (
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(operations_router)
     app.include_router(structure_router)
     app.include_router(reference_router)
+    app.include_router(event_router)
     # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
     # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りするため、
     # ASGIの受信側にも関所を置く。
