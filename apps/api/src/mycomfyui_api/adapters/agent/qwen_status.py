@@ -13,6 +13,7 @@ proxy側が別portへ用意した状態照会口は`systemctl start`を呼ばず
 場合やproxyを挟まない場合は、従来どおり`/models`で到達性を確かめる。
 """
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +23,11 @@ import httpx
 from mycomfyui_api.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+#: 照会の応答として読む上限。応答は真偽値がいくつか入るだけで1KBに満たない。
+#: 照会先が壊れた場合や別のサービスを指してしまった場合に、画面を描画するたびに
+#: 大きな本文を読み込むことがないようにする。
+MAX_STATUS_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -76,24 +82,45 @@ async def fetch_status(
 
     照会は画面を描画するたびに走るため、待たせない方を優先して短い時間で打ち切る。
     照会口は`systemctl start`を呼ばないので、この呼び出しでBackendは起動しない。
+
+    照会先は運用者が環境変数で与える固定値であり、利用者の入力からは決まらない。この
+    前提が崩れる変更(接続先をAPIやDBから受け取る等)を入れる場合は、任意の宛先へ要求を
+    出せる経路になるため、宛先の制限をここへ足す必要がある。
+
+    `httpx.InvalidURL`は`httpx.HTTPError`の系統に属さない。`http://host:port/`のように
+    portへ数値以外を書いた設定ミスで送出されるため、同じく捕捉して他のProviderの一覧まで
+    巻き込まないようにする。
     """
     url = settings.agent_qwen_status_url
     if not url:
         return None
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(settings.agent_qwen_status_timeout_seconds),
-            transport=transport,
-        ) as client:
-            response = await client.get(url)
-    except httpx.HTTPError as error:
+        async with (
+            httpx.AsyncClient(
+                timeout=httpx.Timeout(settings.agent_qwen_status_timeout_seconds),
+                transport=transport,
+            ) as client,
+            client.stream("GET", url) as response,
+        ):
+            if not response.is_success:
+                logger.info(
+                    "Qwenの状態照会がHTTP %sを返しました。", response.status_code
+                )
+                return None
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > MAX_STATUS_BYTES:
+                    logger.info(
+                        "Qwenの状態照会の応答が%dバイトを超えました。",
+                        MAX_STATUS_BYTES,
+                    )
+                    return None
+    except (httpx.HTTPError, httpx.InvalidURL) as error:
         logger.info("Qwenの状態照会に失敗しました。(%s)", type(error).__name__)
         return None
-    if not response.is_success:
-        logger.info("Qwenの状態照会がHTTP %sを返しました。", response.status_code)
-        return None
     try:
-        payload = response.json()
+        payload = json.loads(bytes(body))
     except ValueError:
         logger.info("Qwenの状態照会の応答を解釈できません。")
         return None
