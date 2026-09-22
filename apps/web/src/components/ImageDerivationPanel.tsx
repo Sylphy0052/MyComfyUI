@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
+  AgentProvider,
   Artifact,
   GenerationJob,
   GenerationPreview,
@@ -10,6 +11,7 @@ import type {
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
+import { PromptAssist } from "./PromptAssist";
 
 type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet";
 
@@ -96,6 +98,7 @@ export function ImageDerivationPanel({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<GenerationPreview | null>(null);
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
   const sourceArtifactIdRef = useRef(sourceArtifactId);
   sourceArtifactIdRef.current = sourceArtifactId;
 
@@ -106,8 +109,15 @@ export function ImageDerivationPanel({
   const mode = modeOf(recipe);
 
   useEffect(() => {
-    if (!recipeId && recipes.length) setRecipeId(recipes[0].id);
+    if (recipeId || !recipes.length) return;
+    // 既定は img2img とし、無い場合だけ先頭のRecipeへ落とす。
+    const preferred = recipes.find((item) => modeOf(item) === "img2img");
+    setRecipeId((preferred ?? recipes[0]).id);
   }, [recipeId, recipes]);
+
+  useEffect(() => {
+    void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
 
   useEffect(() => {
     if (sourceArtifactId) setSourceMode("artifact");
@@ -365,6 +375,18 @@ export function ImageDerivationPanel({
           onSelectionChange={setLookProfileIds}
         />
         {mode !== "upscale" && <>
+          <PromptAssist
+            providers={providers}
+            idPrefix="derivation"
+            placeholder="例: 元画像の構図を保ったまま、夕暮れの海辺に置き換える。"
+            onApply={(result) => {
+              setPrompt(result.positive);
+              setNegative(result.negative);
+              setTouchedFields((current) =>
+                new Set(current).add("positive_prompt").add("negative_prompt"),
+              );
+            }}
+          />
           <label htmlFor="derivation-prompt">プロンプト</label>
           <textarea id="derivation-prompt" value={prompt} onChange={(event) => { setPrompt(event.target.value); setTouchedFields((current) => new Set(current).add("positive_prompt")); }} />
           <label htmlFor="derivation-negative">除外したい要素</label>

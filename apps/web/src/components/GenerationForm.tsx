@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type {
   AgentProvider,
-  AgentProviderId,
   ApiError,
   GenerationPreview,
   Recipe,
@@ -11,7 +10,8 @@ import type {
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
-import { conflictNotice, noticeSuffix } from "./BackendNotice";
+import { PromptAssist } from "./PromptAssist";
+import { conflictNotice } from "./BackendNotice";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -149,11 +149,7 @@ export function GenerationForm({
   const [extractingTags, setExtractingTags] = useState(false);
   const [tagError, setTagError] = useState<string | null>(null);
   const [extractedTags, setExtractedTags] = useState<string[]>([]);
-  const [description, setDescription] = useState("");
   const [providers, setProviders] = useState<AgentProvider[]>([]);
-  const [providerId, setProviderId] = useState<AgentProviderId | "">("");
-  const [assisting, setAssisting] = useState(false);
-  const [assistError, setAssistError] = useState<string | null>(null);
   const [batchCount, setBatchCount] = useState("1");
 
   useEffect(() => {
@@ -234,29 +230,13 @@ export function GenerationForm({
     onSubmit(recipe, inputs, false, parsedBatchCount, lookProfileIds);
   };
 
-  const assist = async () => {
-    if (!description.trim()) {
-      setAssistError("画像の説明を入力してください。");
-      return;
-    }
-    setAssisting(true);
-    setAssistError(null);
-    try {
-      const result = await api.assistImagePrompt({
-        instruction: description,
-        provider_id: providerId || null,
-      });
-      setValues((current) => ({
-        ...current,
-        positive_prompt: result.positive_prompt,
-        negative_prompt: result.negative_prompt,
-      }));
-      setTouchedFields((current) => new Set(current).add("positive_prompt").add("negative_prompt"));
-    } catch (cause) {
-      setAssistError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setAssisting(false);
-    }
+  const applyAssist = (result: { positive: string; negative: string }) => {
+    setValues((current) => ({
+      ...current,
+      positive_prompt: result.positive,
+      negative_prompt: result.negative,
+    }));
+    setTouchedFields((current) => new Set(current).add("positive_prompt").add("negative_prompt"));
   };
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
@@ -409,46 +389,12 @@ export function GenerationForm({
       <div className="stack">
         <fieldset className="form-section">
           <legend>プロンプト</legend>
-          <div>
-            <label htmlFor="image-description">画像の説明</label>
-            <textarea
-              id="image-description"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
-            />
-            <p className="muted">日本語で説明するとAIがPromptとNegativeを補完します。</p>
-          </div>
-          <div className="row">
-            <label htmlFor="prompt-provider">AI</label>
-            <select
-              id="prompt-provider"
-              value={providerId}
-              onChange={(event) =>
-                setProviderId(event.target.value as AgentProviderId | "")
-              }
-            >
-              <option value="">既定のAI</option>
-              {providers.map((provider) => (
-                <option
-                  key={provider.id}
-                  value={provider.id}
-                  disabled={!provider.available}
-                >
-                  {provider.label}{provider.available ? "" : " (利用不可)"}
-                  {noticeSuffix(provider)}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={assisting}
-              onClick={() => void assist()}
-            >
-              {assisting ? "補完中..." : "Promptを補完"}
-            </button>
-          </div>
-          {assistError && <p className="error">{assistError}</p>}
+          <PromptAssist
+            providers={providers}
+            idPrefix="image"
+            placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
+            onApply={applyAssist}
+          />
           {promptFields.map(renderField)}
         </fieldset>
 
