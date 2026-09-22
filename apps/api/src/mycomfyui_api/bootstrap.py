@@ -122,9 +122,6 @@ async def ensure_default_recipes(
             isinstance(reference, dict)
             and reference.get("sha256") == digest
             and recipe.input_schema == DEFAULT_INPUT_SCHEMA
-            # 既定値の変更も後継の作成条件にする。negative promptの基準値のように、
-            # 入力欄の定義を変えずに既定値だけを足す更新を取りこぼさないためである。
-            and recipe.defaults == DEFAULT_VALUES
         ):
             return None
 
@@ -701,8 +698,8 @@ async def ensure_media_recipes(
     """動画・音楽・合成の既定Recipeを登録する。
 
     テンプレートやスナップショットの形が変わったときは既存Recipeを書き換えず、後継
-    Recipeを追加する。判定はComfyUI系がテンプレートのSHA-256、入力欄の定義、既定値に
-    よる。合成はテンプレートファイルを持たないため、スナップショットの版で判定する。
+    Recipeを追加する。判定はComfyUI系がテンプレートのSHA-256、合成がスナップショット
+    の版による。テンプレートファイルを持たないためである。
     """
     created: list[Recipe] = []
     for name, kind, template_name, schema, defaults in TEMPLATE_RECIPES:
@@ -712,7 +709,6 @@ async def ensure_media_recipes(
             isinstance(recipe.workflow_template_ref, dict)
             and recipe.workflow_template_ref.get("sha256") == digest
             and recipe.input_schema == schema
-            and recipe.defaults == defaults
             for recipe in existing
         ):
             continue

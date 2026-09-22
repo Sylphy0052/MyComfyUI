@@ -442,7 +442,9 @@ LLM にはブロックごとの配列を返させ、**並び順はサーバー�
 
 baseline を LLM に毎回書かせる案は、毎回揺れることと、4.4 節の「隣接色を negative へ置くと狙いの色まで削れる」事故を招きやすいことから採らない。
 
-既定 Recipe の後継を作る判定に、テンプレートの SHA-256 と入力欄の定義だけでなく既定値も含める。入力欄の定義を変えずに既定値だけを足す更新では後継が作られず、既存の環境に baseline が入らないためである。
+既定 Recipe の後継を作る判定は変えない。判定は従来どおりテンプレートの SHA-256 と入力欄の定義で行う。既定値の変更も条件に含めると、既存の環境で起動のたびに後継 Recipe が作られ、Project の生成既定値や過去の Job が参照している Recipe が最新版から外れるためである。
+
+この結果、`DEFAULT_VALUES` に入れた baseline がフォームの初期値として見えるのは新しく作った環境だけになる。既存の環境でも baseline は効くが、それは投入操作を組み立てる時点のマージによる。
 
 マージは生成 Job の投入操作を組み立てる箇所で行う。提案から投入する Job は `inputs.negative_prompt` を明示的に渡すため、Recipe の既定値が効かないからである。この結果、SD1.5 ControlNet の Recipe に対しても Anima 公式の baseline が乗る。baseline の中身は品質と画質の除外語が中心で SD1.5 でも無害なため、Recipe ごとの出し分けは行わない。`score_*` のように SD1.5 で意味を持たない語が混ざる点は許容する。
 
@@ -468,9 +470,12 @@ prompt 案を出す種別は `image_prompt` と `batch_generation_plan` の 2 �
 | `MAX_PROMPT_TAG_LENGTH` | 100 | タグ 1 件の長さ。重み括弧を付けても収まる |
 | `MAX_NATURAL_TEXT_LENGTH` | 2000 | 自然文のみの形式で 3〜5 文を書ける長さ |
 | `MAX_POSITIVE_PROMPT_LENGTH` | 4000 | 連結後の上限。API 契約の `positive_prompt` と同じ値 |
-| `MAX_NEGATIVE_PROMPT_LENGTH` | 3000 | 提案が書ける negative の上限。baseline を足しても 4000 に収まる余白を残す |
+| `MAX_NEGATIVE_PROMPT_LENGTH` | 3000 | 提案が書ける negative の上限 |
+| `MAX_MERGED_NEGATIVE_LENGTH` | 4000 | baseline を足したあとの上限。API 契約の `negative_prompt` と同じ値 |
 
 ブロックごとの上限をすべて使い切ると連結後が `MAX_POSITIVE_PROMPT_LENGTH` を超えるため、連結したあとに改めて長さを検査し、超過は `AgentInvalidResponse` にする。API 応答の組み立てで `ValidationError` を起こして 500 を返す経路を塞ぐためである。
+
+negative も同じ理由で連結後に検査する。フィールド単位の上限だけでは足りない。タグを `, ` で連結するため、短いタグを並べるほど区切りの分だけ膨らむからである。実測では 1〜3 文字のタグを 932 件並べた 2,999 文字の入力が、baseline とのマージ後に 4,044 文字になった。
 
 ### 11.7 今回は見送るもの
 

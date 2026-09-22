@@ -9,6 +9,7 @@ Providerへ流れないようにするためである。
 """
 
 import json
+import logging
 import re
 from collections.abc import Iterable, Mapping
 from typing import Annotated, Any
@@ -20,6 +21,8 @@ from mycomfyui_api.adapters.agent.base import (
     AgentProposalKind,
     ProposalRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 #: 利用者の指示文の上限。提案の入力に収まる長さへ抑える。
 MAX_INSTRUCTION_LENGTH = 2000
@@ -55,9 +58,15 @@ MAX_NATURAL_TEXT_LENGTH = 2000
 #: ブロックごとの上限を全て使うとこの値を超えるため、連結後に改めて当てる。
 MAX_POSITIVE_PROMPT_LENGTH = 4000
 
-#: prompt案が書けるnegative promptの長さ上限。`DEFAULT_NEGATIVE_PROMPT`を足しても
-#: API契約の4000文字へ収まるよう、基準値の分だけ余白を残す。
+#: prompt案が書けるnegative promptの長さ上限。
 MAX_NEGATIVE_PROMPT_LENGTH = 3000
+
+#: 提案の説明の長さ上限。各出力型の`rationale`に合わせる。
+MAX_RATIONALE_LENGTH = 2000
+
+#: 基準値を足したあとのnegative promptの長さ上限。API契約の`negative_prompt`と同じ
+#: 値にする。短いタグを並べると区切りの分だけ膨らむため、連結後に改めて当てる。
+MAX_MERGED_NEGATIVE_LENGTH = 4000
 
 #: タグ行を組み立てるブロックの順序。Qwen-Image(Anima)公式の並びに合わせる。
 #: Providerが書いた順序ではなくこの順で連結し、並びを実装側で固定する。
@@ -354,17 +363,29 @@ def _dedupe_key(value: str) -> str:
     return stripped.strip().casefold()
 
 
+def _is_weighted(value: str) -> bool:
+    """`(tag:1.2)`のように重みを持つ書き方かどうか。"""
+    return WEIGHTED_TAG_PATTERN.match(value.strip()) is not None
+
+
 def _dedupe(values: Iterable[str]) -> list[str]:
-    """順序を保ったまま重複と空文字を落とす。"""
-    result: list[str] = []
-    seen: set[str] = set()
+    """順序を保ったまま重複と空文字を落とす。
+
+    同じタグが重み付きと重みなしで並んだときは重み付きを残す。先に現れた方を無条件に
+    採ると、Providerが指定した重みが黙って消える。
+    """
+    order: list[str] = []
+    chosen: dict[str, str] = {}
     for value in values:
         key = _dedupe_key(value)
-        if not value or not key or key in seen:
+        if not value or not key:
             continue
-        seen.add(key)
-        result.append(value)
-    return result
+        if key not in chosen:
+            chosen[key] = value
+            order.append(key)
+        elif _is_weighted(value) and not _is_weighted(chosen[key]):
+            chosen[key] = value
+    return [chosen[key] for key in order]
 
 
 def compose_tag_line(body: Mapping[str, Any]) -> str:
@@ -413,6 +434,15 @@ def _attach_prompt_text(body: dict[str, Any]) -> None:
         raise AgentInvalidResponse(
             f"prompt案が長すぎます。{MAX_POSITIVE_PROMPT_LENGTH}文字以内にしてください。"
         )
+    merged_negative = merge_negative_prompt(
+        DEFAULT_NEGATIVE_PROMPT, str(body.get("negative_prompt") or "")
+    )
+    if len(merged_negative) > MAX_MERGED_NEGATIVE_LENGTH:
+        # 短いタグを並べると区切りの分だけ膨らむ。基準値を足した長さで判定する。
+        raise AgentInvalidResponse(
+            "negative promptが長すぎます。基準値と合わせて"
+            f"{MAX_MERGED_NEGATIVE_LENGTH}文字以内にしてください。"
+        )
     body["tag_line"] = tag_line
     body["natural_text"] = natural_text
     body["positive_prompt"] = positive_prompt
@@ -428,6 +458,20 @@ def _try_attach_prompt_text(body: dict[str, Any]) -> bool:
     except AgentInvalidResponse:
         return False
     return True
+
+
+def _record_dropped_items(data: dict[str, Any], dropped: int) -> None:
+    """落とした案があったことを`rationale`へ残す。
+
+    `items`が黙って減ると、計画から外れたShotを利用者が計画外と読み違える。
+    """
+    if dropped <= 0:
+        return
+    logger.warning("prompt案の形が不足するstepを除外しました。件数=%s", dropped)
+    note = f"{dropped}件は形が不足していたため計画から外した。"
+    rationale = data.get("rationale") or ""
+    combined = f"{rationale}\n{note}".strip() if rationale else note
+    data["rationale"] = combined[:MAX_RATIONALE_LENGTH]
 
 
 def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
@@ -448,14 +492,16 @@ def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
     if kind == "image_prompt":
         _attach_prompt_text(data)
     elif kind == "batch_generation_plan":
+        original = data.get("items", [])
         items = [
             item
-            for item in data.get("items", [])
+            for item in original
             if isinstance(item, dict) and _try_attach_prompt_text(item)
         ]
         if not items:
             raise AgentInvalidResponse("バッチ生成計画に使えるprompt案がありません。")
         data["items"] = items
+        _record_dropped_items(data, len(original) - len(items))
     return data
 
 
