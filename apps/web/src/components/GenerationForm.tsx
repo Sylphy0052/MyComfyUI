@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
 import type {
@@ -44,6 +44,20 @@ function toFieldSpecs(recipe: Recipe): FieldSpec[] {
       help: typeof spec.help === "string" ? spec.help : null,
     };
   });
+}
+
+/** 入力文字列がその項目の型として送信できるか。Recipe切替時の持ち越し判定に使う。 */
+function isParsableAs(field: FieldSpec, raw: string): boolean {
+  if (raw.trim() === "") {
+    return true;
+  }
+  if (field.type === "integer") {
+    return Number.isInteger(Number(raw));
+  }
+  if (field.type === "number") {
+    return Number.isFinite(Number.parseFloat(raw));
+  }
+  return true;
 }
 
 function initialValues(recipe: Recipe, fields: FieldSpec[]): Record<string, string> {
@@ -123,12 +137,11 @@ export function GenerationForm({
     () => recipes.find((item) => item.id === recipeId) ?? null,
     [recipes, recipeId],
   );
+  // モデル選択を含む全項目。既定値の組み立てと、持ち越し時の型の確認に使う。
+  const allFields = useMemo(() => (recipe ? toFieldSpecs(recipe) : []), [recipe]);
   const fields = useMemo(
-    () =>
-      recipe
-        ? toFieldSpecs(recipe).filter((field) => field.control !== "model")
-        : [],
-    [recipe],
+    () => allFields.filter((field) => field.control !== "model"),
+    [allFields],
   );
   // Prompt系はプロンプトのセクション、残りは出力設定のセクションへ振り分ける。
   const promptFields = useMemo(
@@ -138,6 +151,11 @@ export function GenerationForm({
   const parameterFields = useMemo(
     () => fields.filter((field) => !PROMPT_FIELD_NAMES.has(field.name)),
     [fields],
+  );
+  // Recipe の既定値。現在の入力との差分表示と、既定値への書き戻しに使う。
+  const defaultValues = useMemo(
+    () => (recipe ? initialValues(recipe, allFields) : {}),
+    [recipe, allFields],
   );
   const [values, setValues] = useState<Record<string, string>>({});
   const [modelValues, setModelValues] = useState<Record<string, string>>({});
@@ -159,16 +177,74 @@ export function GenerationForm({
     }
   }, [recipes, recipeId]);
 
+  // Recipe変更の効果から参照する。描画中に代入して、effectの実行順に依存しないようにする。
+  const touchedRef = useRef(touchedFields);
+  touchedRef.current = touchedFields;
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+
+  // Recipeを変えても、使用者が触った項目の入力は残す。触っていない項目だけ新しい既定値にする。
+  // 触った印は現在のRecipeに合わせて作り直す。残したままだと、Look Profileを使うときに
+  // 前のRecipeで触っただけの項目がProfileの値を上書きしてしまう。
   useEffect(() => {
-    if (recipe) {
-      setValues(initialValues(recipe, toFieldSpecs(recipe)));
-      setTouchedFields(new Set());
+    if (!recipe) return;
+    const specs = new Map(allFields.map((field) => [field.name, field]));
+    const nextValues = { ...defaultValues };
+    const nextTouched = new Set<string>();
+    for (const name of touchedRef.current) {
+      const spec = specs.get(name);
+      const kept = valuesRef.current[name];
+      // 新しいRecipeに無い項目、型が合わず送信時に弾かれる値は持ち越さない。
+      if (!spec || kept === undefined || !isParsableAs(spec, kept)) continue;
+      nextValues[name] = kept;
+      if (kept !== (defaultValues[name] ?? "")) {
+        nextTouched.add(name);
+      }
     }
-  }, [recipe]);
+    setValues(nextValues);
+    setTouchedFields(nextTouched);
+  }, [recipe, allFields, defaultValues]);
 
   useEffect(() => {
     void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
   }, []);
+
+  /** 入力がRecipe既定値と異なるか。バッジと差分一覧で同じ判定を使う。 */
+  const isFieldChanged = (name: string) =>
+    (values[name] ?? "") !== (defaultValues[name] ?? "");
+
+  // 既定値と異なる項目。差分の明示と、既定値で上書きするかの判断に使う。
+  const changedFields = fields.filter((field) => isFieldChanged(field.name));
+
+  /** 入力を書き換える。既定値と同じ値に戻したときは触った印も外す。 */
+  const changeField = (name: string, value: string) => {
+    setValues((current) => ({ ...current, [name]: value }));
+    setTouchedFields((current) => {
+      const next = new Set(current);
+      if (value === (defaultValues[name] ?? "")) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
+  /** 1項目だけRecipe既定値へ戻す。以降はその項目を未変更として扱う。 */
+  const resetField = (name: string) => {
+    setValues((current) => ({ ...current, [name]: defaultValues[name] ?? "" }));
+    setTouchedFields((current) => {
+      const next = new Set(current);
+      next.delete(name);
+      return next;
+    });
+  };
+
+  /** 入力をすべてRecipe既定値で上書きする。 */
+  const resetAllFields = () => {
+    setValues({ ...defaultValues });
+    setTouchedFields(new Set());
+  };
 
   // タグの整理は Provider を選ばずに走るため、副作用を抽出ボタンのそばへ出す。
   const tagNotice = conflictNotice(providers);
@@ -294,21 +370,21 @@ export function GenerationForm({
     );
   };
 
-  const renderField = (field: FieldSpec) => (
+  const renderField = (field: FieldSpec) => {
+    const changed = isFieldChanged(field.name);
+    return (
     <div key={field.name}>
       <label htmlFor={`field-${field.name}`}>
         {field.label}
         {field.required ? " *" : ""}
+        {changed && <span className="badge field-changed">既定値と異なる</span>}
       </label>
       {field.control === "textarea" ? (
         <textarea
           id={`field-${field.name}`}
           disabled={useInheritedDefaults}
           value={values[field.name] ?? ""}
-          onChange={(event) => {
-            setValues({ ...values, [field.name]: event.target.value });
-            setTouchedFields((current) => new Set(current).add(field.name));
-          }}
+          onChange={(event) => changeField(field.name, event.target.value)}
         />
       ) : (
         <input
@@ -316,13 +392,19 @@ export function GenerationForm({
           disabled={useInheritedDefaults}
           type={field.control === "number" ? "number" : "text"}
           value={values[field.name] ?? ""}
-          onChange={(event) => {
-            setValues({ ...values, [field.name]: event.target.value });
-            setTouchedFields((current) => new Set(current).add(field.name));
-          }}
+          onChange={(event) => changeField(field.name, event.target.value)}
         />
       )}
       {field.help && <p className="muted">{field.help}</p>}
+      {changed && (
+        <button
+          type="button"
+          disabled={useInheritedDefaults}
+          onClick={() => resetField(field.name)}
+        >
+          この項目を既定値へ戻す
+        </button>
+      )}
       {field.name === "positive_prompt" && (
         <div className="tag-extractor">
           <label htmlFor="tag-image">画像からタグを抽出</label>
@@ -363,7 +445,8 @@ export function GenerationForm({
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   // 投入操作はfieldsetの外にあるため、無効化はfieldsetのdisabled継承ではなくここで判断する。
   const actionsDisabled =
@@ -417,6 +500,20 @@ export function GenerationForm({
               ))}
             </select>
           </div>
+          {!useInheritedDefaults && changedFields.length > 0 && (
+            <div className="recipe-diff">
+              <p className="muted">
+                Recipe既定値と異なる項目: {changedFields.map((field) => field.label).join(", ")}
+              </p>
+              <button
+                type="button"
+                disabled={useInheritedDefaults}
+                onClick={resetAllFields}
+              >
+                モデル以外の入力をRecipe既定値で上書き
+              </button>
+            </div>
+          )}
 
           <ModelSelector
             recipe={recipe}

@@ -450,6 +450,18 @@ ul.list.plain li.current {
   color: var(--ok);
 }
 
+.badge.field-changed {
+  color: var(--accent);
+  margin-left: 6px;
+}
+
+.recipe-diff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 details summary {
   cursor: pointer;
   font-size: 12px;
