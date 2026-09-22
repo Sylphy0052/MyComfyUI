@@ -10,6 +10,8 @@ import type {
 import { LookProfileManager } from "./LookProfileManager";
 
 interface Props {
+  /** 隠れている間は一覧のポーリングを止め、無駄なリクエストを出さない。 */
+  active: boolean;
   projectId: string | null;
   sceneId: string | null;
   shotId: string | null;
@@ -36,6 +38,7 @@ function numbers(value: string, integer = false): number[] {
 }
 
 export function GenerationSweepPanel({
+  active,
   projectId,
   sceneId,
   shotId,
@@ -72,15 +75,14 @@ export function GenerationSweepPanel({
   }, [recipeId, recipes]);
 
   useEffect(() => {
-    setExperiments([]);
-    if (!projectId) return;
-    let active = true;
+    if (!projectId || !active) return;
+    let alive = true;
     const refresh = () => {
       if (busyRef.current) return;
       const sequence = ++requestSequence.current;
       void api.listGenerationExperiments(projectId, { limit: 20, offset: page * 20 })
         .then((items) => {
-          if (active && sequence === requestSequence.current) {
+          if (alive && sequence === requestSequence.current) {
             setExperiments(items);
             const comparing = items.find((item) => item.id === activeComparisonId);
             if (comparing) {
@@ -91,14 +93,16 @@ export function GenerationSweepPanel({
             }
           }
         })
-        .catch((cause) => { if (active) setError(describe(cause)); });
+        .catch((cause) => { if (alive) setError(describe(cause)); });
     };
     refresh();
     const timer = window.setInterval(refresh, 2000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [activeComparisonId, onCompare, page, projectId]);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [active, activeComparisonId, onCompare, page, projectId]);
 
-  useEffect(() => { setPage(0); }, [projectId]);
+  // Projectが変わると前のProjectの実験は無関係になる。表示の切替では消さず、
+  // 隠れている間も直前の一覧を残したまま、復帰時に取り直す。
+  useEffect(() => { setPage(0); setExperiments([]); }, [projectId]);
 
   useEffect(() => { busyRef.current = busy; }, [busy]);
 

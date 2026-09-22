@@ -186,7 +186,9 @@ export function AssetBrowser({
   const selectedImportDetail =
     importDetail?.artifact_id === selected?.id ? importDetail : null;
   const selectedImportState =
-    importLookup?.artifactId === selected?.id ? importLookup.state : "loading";
+    importLookup && importLookup.artifactId === selected?.id
+      ? importLookup.state
+      : "loading";
 
   useEffect(() => {
     if (!selectedJobId) {

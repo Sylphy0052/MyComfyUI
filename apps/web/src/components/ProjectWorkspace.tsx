@@ -20,6 +20,7 @@ type ProjectStatus = ProjectRecord["status"];
 type ProjectSort = "name" | "created" | "updated" | "last_used";
 
 interface Props {
+  hidden?: boolean;
   selectedProjectId: string | null;
   onSelectProject: (projectId: string | null) => void;
   onActiveProjectsChanged: (projects: ProjectRecord[]) => void;
@@ -81,6 +82,7 @@ function formatDate(value: string | null): string {
 }
 
 export function ProjectWorkspace({
+  hidden,
   selectedProjectId,
   onSelectProject,
   onActiveProjectsChanged,
@@ -282,7 +284,7 @@ export function ProjectWorkspace({
   const failedJobs = home?.jobs.filter((job) => job.state === "failed").length ?? 0;
 
   return (
-    <main className="full project-workspace">
+    <main className="full project-workspace" hidden={hidden}>
       <section className="panel project-toolbar">
         <div className="row spread">
           <div>

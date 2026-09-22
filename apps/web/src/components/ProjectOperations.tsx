@@ -151,6 +151,8 @@ export function ProjectOperations({ project }: { project: ProjectRecord }) {
     };
   }, [kind]);
 
+  // Project画面を離れている間もバッチの進捗は追い続ける。戻ったときに止まった
+  // 表示を見せないためで、実行中のバッチが無ければこのポーリング自体が動かない。
   useEffect(() => {
     if (!batches.some((batch) => batch.state === "running" || batch.state === "pending")) {
       return;
