@@ -33,14 +33,22 @@ import { SceneBrowser } from "./components/SceneBrowser";
 import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
+import {
+  persistUiState,
+  readInitialUiState,
+  uiStateFromUrl,
+} from "./state/uiState";
+import type {
+  GenerationTab,
+  ImageSubTab,
+  UiState,
+  View,
+} from "./state/uiState";
+import { useFrozenWhenInactive } from "./state/useFrozenWhenInactive";
 
 /** WebSocketは再取得トリガーだけに使い、RESTで得られる状態を正本とする。 */
 const POLL_INTERVAL_MS = 2000;
 const CONNECTED_POLL_INTERVAL_MS = 15000;
-
-type View = "projects" | "generate" | "assets" | "workflows";
-type GenerationTab = "image" | "video" | "music" | "voice" | "compose";
-type ImageSubTab = "generate" | "derive" | "sweep";
 
 const VIEWS: { value: View; label: string }[] = [
   { value: "projects", label: "Project" },
@@ -101,18 +109,28 @@ function recipeTemplateName(recipe: Recipe): string {
 
 export function App() {
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<View>("generate");
-  const [generationTab, setGenerationTab] =
-    useState<GenerationTab>("image");
-  const [imageSubTab, setImageSubTab] = useState<ImageSubTab>("generate");
+  // URLとlocalStorageから復元した値で開く。以降の変更は永続化のeffectで書き戻す。
+  const [initialUiState] = useState(readInitialUiState);
+  const [view, setView] = useState<View>(initialUiState.view);
+  const [visitedViews, setVisitedViews] = useState<ReadonlySet<View>>(
+    () => new Set([initialUiState.view]),
+  );
+  const [generationTab, setGenerationTab] = useState<GenerationTab>(
+    initialUiState.generationTab,
+  );
+  const [imageSubTab, setImageSubTab] = useState<ImageSubTab>(
+    initialUiState.imageSubTab,
+  );
 
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(
+    initialUiState.projectId,
+  );
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
-  const [sceneId, setSceneId] = useState<string | null>(null);
+  const [sceneId, setSceneId] = useState<string | null>(initialUiState.sceneId);
   const [scene, setScene] = useState<SceneEnvelope | null>(null);
   const [shots, setShots] = useState<ShotSummary[]>([]);
-  const [shotId, setShotId] = useState<string | null>(null);
+  const [shotId, setShotId] = useState<string | null>(initialUiState.shotId);
   const [shot, setShot] = useState<ShotEnvelope | null>(null);
 
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -192,6 +210,67 @@ export function App() {
     setProjectId(nextProjectId);
     if (nextProjectId) setView("generate");
   }, []);
+
+  // 一度開いたViewはマウントしたまま hidden で隠し、戻ったときに入力を残す。
+  // 未訪問のViewまで最初から立ち上げると、開いてもいない画面の取得が走るため、
+  // 訪問済みのものだけをマウント対象にする。
+  useEffect(() => {
+    setVisitedViews((current) => {
+      if (current.has(view)) return current;
+      const next = new Set(current);
+      next.add(view);
+      return next;
+    });
+  }, [view]);
+
+  // 戻る操作で復元した直後は、同じ状態をもう一度履歴へ積まないようにする。
+  const skipHistoryPushRef = useRef(false);
+  const lastViewRef = useRef<View>(initialUiState.view);
+
+  useEffect(() => {
+    const next: UiState = {
+      view,
+      generationTab,
+      imageSubTab,
+      projectId,
+      sceneId,
+      shotId,
+    };
+    const viewChanged = lastViewRef.current !== view;
+    lastViewRef.current = view;
+    const mode = viewChanged && !skipHistoryPushRef.current ? "push" : "replace";
+    skipHistoryPushRef.current = false;
+    persistUiState(next, mode);
+  }, [view, generationTab, imageSubTab, projectId, sceneId, shotId]);
+
+  useEffect(() => {
+    const restore = () => {
+      const restored = uiStateFromUrl(window.location.search);
+      skipHistoryPushRef.current = true;
+      setView(restored.view);
+      setGenerationTab(restored.generationTab);
+      setImageSubTab(restored.imageSubTab);
+      setProjectId(restored.projectId);
+      setSceneId(restored.sceneId);
+      setShotId(restored.shotId);
+    };
+    window.addEventListener("popstate", restore);
+    return () => window.removeEventListener("popstate", restore);
+  }, []);
+
+  // 隠れているViewには直前の選択を渡し続ける。Scene/Shotを切り替えるたびに
+  // 見えていないViewまで一覧を取り直すのを避ける。
+  const assetsActive = view === "assets";
+  const assetsProjects = useFrozenWhenInactive(projects, assetsActive);
+  const assetsProjectId = useFrozenWhenInactive(projectId, assetsActive);
+  const assetsScenes = useFrozenWhenInactive(scenes, assetsActive);
+  const assetsSceneId = useFrozenWhenInactive(sceneId, assetsActive);
+  const assetsShots = useFrozenWhenInactive(shots, assetsActive);
+  const assetsShotId = useFrozenWhenInactive(shotId, assetsActive);
+
+  const workflowsActive = view === "workflows";
+  const workflowsSceneId = useFrozenWhenInactive(sceneId, workflowsActive);
+  const workflowsShotId = useFrozenWhenInactive(shotId, workflowsActive);
 
   useEffect(() => {
     let active = true;
@@ -677,17 +756,18 @@ export function App() {
         </div>
       )}
 
-      {view === "projects" && (
+      {visitedViews.has("projects") && (
         <ProjectWorkspace
+          hidden={view !== "projects"}
           selectedProjectId={projectId}
           onSelectProject={useProject}
           onActiveProjectsChanged={setProjects}
         />
       )}
 
-      {view === "generate" && (
+      {visitedViews.has("generate") && (
         <>
-          <div>
+          <div hidden={view !== "generate"}>
             <SceneBrowser
               projects={projects}
               projectId={projectId}
@@ -705,7 +785,7 @@ export function App() {
             />
           </div>
 
-          <div className="generation-workspace">
+          <div className="generation-workspace" hidden={view !== "generate"}>
             <nav
               className="generation-tabs"
               role="tablist"
@@ -809,6 +889,11 @@ export function App() {
                   hidden={imageSubTab !== "sweep"}
                 >
                   <GenerationSweepPanel
+                    active={
+                      view === "generate" &&
+                      generationTab === "image" &&
+                      imageSubTab === "sweep"
+                    }
                     projectId={projectId}
                     sceneId={sceneId}
                     shotId={shotId}
@@ -905,7 +990,7 @@ export function App() {
             </div>
           </div>
 
-          <div>
+          <div hidden={view !== "generate"}>
             <JobQueue
               jobs={jobs}
               selectedJobId={selectedJobId}
@@ -918,7 +1003,7 @@ export function App() {
             />
           </div>
 
-          <div className="full">
+          <div className="full" hidden={view !== "generate"}>
             <AgentPanel
               projectId={projectId}
               sceneId={sceneId}
@@ -930,35 +1015,39 @@ export function App() {
         </>
       )}
 
-      {view === "assets" && (
+      {visitedViews.has("assets") && (
         <>
-          <div className="full">
+          <div className="full" hidden={view !== "assets"}>
             <AssetBrowser
-              projectId={projectId}
-              scenes={scenes}
-              sceneId={sceneId}
+              projectId={assetsProjectId}
+              scenes={assetsScenes}
+              sceneId={assetsSceneId}
               onSelectScene={setSceneId}
-              shots={shots}
-              shotId={shotId}
+              shots={assetsShots}
+              shotId={assetsShotId}
               onSelectShot={setShotId}
-              projects={projects}
+              projects={assetsProjects}
               onDeriveArtifact={(artifactId) => {
                 setDerivationSourceArtifactId(artifactId);
                 setGenerationTab("image");
+                setImageSubTab("derive");
                 setView("generate");
               }}
               onRerunJob={handleDerivedJob}
             />
           </div>
-          <div className="full">
-            <IntegrityList sceneId={sceneId} shotId={shotId} />
+          <div className="full" hidden={view !== "assets"}>
+            <IntegrityList sceneId={assetsSceneId} shotId={assetsShotId} />
           </div>
         </>
       )}
 
-      {view === "workflows" && (
-        <div className="full">
-          <WorkflowRegistry sceneId={sceneId} shotId={shotId} />
+      {visitedViews.has("workflows") && (
+        <div className="full" hidden={view !== "workflows"}>
+          <WorkflowRegistry
+            sceneId={workflowsSceneId}
+            shotId={workflowsShotId}
+          />
         </div>
       )}
     </div>
