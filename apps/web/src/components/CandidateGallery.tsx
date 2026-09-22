@@ -394,6 +394,11 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
           </div>
         </div>
       </div>
+      {comparisonActive && (
+        <p className="muted">
+          実験の比較で絞り込み中です。新しく投入した候補は、絞込みを解除するまで表示されません。
+        </p>
+      )}
       {error && <p className="error">{error}</p>}
       {candidates.length === 0 ? <p className="muted">成功したJobの画像がまだありません。</p> : <>
         {compare}

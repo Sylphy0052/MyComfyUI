@@ -387,6 +387,7 @@ export function GenerationForm({
     </div>
   );
 
+  // 投入操作はfieldsetの外にあるため、無効化はfieldsetのdisabled継承ではなくここで判断する。
   const actionsDisabled =
     disabled ||
     submitting ||
