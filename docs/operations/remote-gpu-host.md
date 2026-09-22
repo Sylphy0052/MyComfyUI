@@ -466,13 +466,40 @@ MYCOMFYUI_AGENT_QWEN_BASE_URL=http://<remote>:8000/v1
 MYCOMFYUI_AGENT_QWEN_MODEL=<推論サーバーへ載せたモデル名>
 ```
 
+推論サーバーを常駐させず、接続を受けてから起動する構成では、状態照会口の接続先も指定する。
+
+```dotenv
+MYCOMFYUI_AGENT_QWEN_STATUS_URL=http://<remote>:8002/status
+```
+
 ComfyUIのタイムアウトはネットワーク往復と生成物の転送分の余裕を見る。既定は600秒。
 
 `MYCOMFYUI_VOICE_RUNNER_BASE_URL`の既定値は`http://127.0.0.1:8770`であり、手元完結構成ではそのままでよい。Remote構成でこの行を落とすと、手元PCの8770へ繋ぎにいって接続を拒否される。冒頭に挙げた症状が出たときは、手順3のrunner常駐と併せてこの値を確かめる。
 
 `MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS`は1台詞あたりの実行上限であり、既定は300秒。Backendのプロセス起動とモデルロードを含む値のため、Remote構成にしたことだけを理由に変えない。実測で足りなければ上げる。
 
-`MYCOMFYUI_AGENT_QWEN_BASE_URL`の既定値は`http://127.0.0.1:8000/v1`である。パス末尾の`/v1`まで含めて指定する。提案Providerとタグの整理はこの値へ`/chat/completions`を足して呼ぶ。推論サーバーが起きていない間は提案Provider一覧で`qwen`が`available: false`になり、他のProviderと生成Jobには影響しない。
+`MYCOMFYUI_AGENT_QWEN_BASE_URL`の既定値は`http://127.0.0.1:8000/v1`である。パス末尾の`/v1`まで含めて指定する。提案Providerとタグの整理はこの値へ`/chat/completions`を足して呼ぶ。
+
+`MYCOMFYUI_AGENT_QWEN_STATUS_URL`は既定で未設定であり、推論サーバーを常駐させる構成では設定しなくてよい。未設定の場合、Application APIは`MYCOMFYUI_AGENT_QWEN_BASE_URL`へ`/models`を足して到達性を確かめる。推論サーバーが起きていない間は提案Provider一覧で`qwen`が`available: false`になる。
+
+接続を受けてから推論サーバーを起動する構成では、この`/models`が問題になる。到達性を確かめるための接続そのものが起動の引き金を引くためである。可用性を表示するたびにGPUを占有するうえ、起動を待てずに`available: false`と表示することにもなる。状態照会口を設定すると、Application APIは`/models`を叩かず、次の形のJSONを読む。
+
+```json
+{"qwen": {"ready": true, "sleeping": false},
+ "comfyui": {"active": false},
+ "starting": false}
+```
+
+- `ready`は推論要求を今すぐ受け付けられることを表す。偽なら起動を待つ時間がかかる
+- `sleeping`はVRAMを解放した休止状態を表す。判別できない場合は`null`でよい
+- `comfyui.active`は、Qwenの起動によって停止する側が動いていることを表す
+- `starting`は起動処理が進行中であることを表す
+
+照会口を設定した場合、`qwen`の`available`は「今すぐ応答できるか」ではなく「要求すれば応答させられるか」を表す。照会口が応答するかぎり、推論サーバーが停止中でも`available: true`とし、起動の待ち時間と、起動がComfyUIの停止を伴うことは一覧の`backend`で表す。照会口へ到達できない場合だけ`available: false`になる。
+
+照会口は接続を受けても推論サーバーを起動しないものとする。起動する実装を指すと、`/models`を叩いていたときと同じ問題が起きる。
+
+どの構成でも、`qwen`が使えないことが他のProviderと生成Jobへ影響することはない。
 
 画像タグ抽出はComfyUI(8188)へWorkflowとして投入する。選択した画像は`/upload/image`でRemote GPU HostのComfyUIへ転送され、`input/mycomfyui-tagger/`へ置かれる。ComfyUIはinputのファイルを消すAPIを持たないため、このディレクトリは溜まり続ける。生成に使う素材とは混ざらないので、不要になったらディレクトリごと消してよい。抽出したタグは既定で推論サーバーへ渡して整理するが、この段は任意であり、繋がらない場合はWD14 Taggerが出したタグをそのまま返す。整理を行わない場合は`MYCOMFYUI_IMAGE_TAGGER_REFINE=false`とする。
 
@@ -485,6 +512,7 @@ ComfyUIのタイムアウトはネットワーク往復と生成物の転送分�
 |Jobがすぐ失敗する|`BACKEND_UNAVAILABLE`|手順1と手順2のFirewallと待受、Remote PCの電源、アドレスの変化|
 |音声Jobだけが失敗する|`BACKEND_UNAVAILABLE`|手順3の`voice-runner`常駐、手順7の`MYCOMFYUI_VOICE_RUNNER_BASE_URL`、「ComfyUI以外のポートも同じ扱いにする」の8770|
 |`qwen`の提案だけが失敗する|`AGENT_UNAVAILABLE`|推論サーバーの起動、手順7の`MYCOMFYUI_AGENT_QWEN_BASE_URL`と`MYCOMFYUI_AGENT_QWEN_MODEL`、「ComfyUI以外のポートも同じ扱いにする」の8000|
+|`qwen`が選べない(`available: false`)|-|状態照会口を使う構成なら手順7の`MYCOMFYUI_AGENT_QWEN_STATUS_URL`と、照会口への到達可否。使わない構成なら推論サーバーの起動|
 |画像タグ抽出が失敗する|`IMAGE_TAGGER_ERROR`|ComfyUIの起動、WD14 Taggerノードの導入、`MYCOMFYUI_IMAGE_TAGGER_MODEL`が`/object_info`の選択肢にあること、手順7の`MYCOMFYUI_COMFYUI_BASE_URL`|
 |実行中に失敗する|`BACKEND_DISCONNECTED`|ネットワークの切断、ComfyUIプロセスの落ち、手順3のログ|
 |モデルが見つからない|`MODEL_NOT_FOUND`|手順4のファイル名とRecipeの指す名前|
