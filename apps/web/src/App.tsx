@@ -257,6 +257,9 @@ export function App() {
 
   // 隠れているViewには直前の選択を渡し続ける。Scene/Shotを切り替えるたびに
   // 見えていないViewまで一覧を取り直すのを避ける。
+  const projectsActive = view === "projects";
+  const projectsSelectedId = useFrozenWhenInactive(projectId, projectsActive);
+
   const assetsActive = view === "assets";
   const assetsProjects = useFrozenWhenInactive(projects, assetsActive);
   const assetsProjectId = useFrozenWhenInactive(projectId, assetsActive);
@@ -280,6 +283,18 @@ export function App() {
         if (!active) return;
         setProjects(projectList.items);
         setRecipes(recipeList);
+        // 復元したProjectが削除されていることがある。無効なIDを抱えたままだと
+        // Scene取得が毎回失敗し、その状態をURLとlocalStorageへ書き戻し続ける。
+        const restoredProjectId = initialUiState.projectId;
+        if (
+          restoredProjectId &&
+          !projectList.items.some((item) => item.id === restoredProjectId)
+        ) {
+          setProjectId(null);
+          setError(
+            "前回選んでいたProjectが見つかりません。Projectを選び直してください。",
+          );
+        }
       } catch (cause) {
         if (active) setError(describe(cause));
       }
@@ -755,8 +770,8 @@ export function App() {
 
       {visitedViews.has("projects") && (
         <ProjectWorkspace
-          hidden={view !== "projects"}
-          selectedProjectId={projectId}
+          hidden={!projectsActive}
+          selectedProjectId={projectsSelectedId}
           onSelectProject={useProject}
           onActiveProjectsChanged={setProjects}
         />

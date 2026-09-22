@@ -165,7 +165,13 @@ export function readStoredUiState(): Partial<UiState> {
 /** 起動時の初期状態。URL > localStorage > 既定値の順に採用する。 */
 export function readInitialUiState(): UiState {
   const stored = readStoredUiState();
-  const fromUrl = readUrlUiState(window.location.search);
+  const fromUrl: Partial<UiState> = { ...readUrlUiState(window.location.search) };
+  // Projectを伴わないScene/ShotはURLから受け取らない。どのProjectのIDか
+  // 判断できず、前回のProjectと噛み合わない組で開くことになるため。
+  if (!fromUrl.projectId) {
+    delete fromUrl.sceneId;
+    delete fromUrl.shotId;
+  }
   // URLで別のProjectを指定されたら、前回のScene/Shotは持ち越さない。
   // 他のProjectに属するIDのまま開くと、存在しない選択で一度取得しに行くことになる。
   const carried =
