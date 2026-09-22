@@ -59,7 +59,7 @@ interface Props {
   projects: ProjectRecord[];
   onDeriveArtifact: (artifactId: string) => void;
   /** 再実行で作ったJobを、投入直後と同じようにキューへ反映する。 */
-  onDerivedJob: (job: GenerationJob) => void;
+  onRerunJob: (job: GenerationJob) => void;
 }
 
 function describe(error: unknown): string {
@@ -81,7 +81,7 @@ export function AssetBrowser({
   onSelectShot,
   projects,
   onDeriveArtifact,
-  onDerivedJob,
+  onRerunJob,
 }: Props) {
   const [kind, setKind] = useState("");
   const [decision, setDecision] = useState("");
@@ -116,6 +116,8 @@ export function AssetBrowser({
   const [batchTag, setBatchTag] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
   const [rerunBusy, setRerunBusy] = useState(false);
+  // 再実行するとcanon整合の判定が変わる。一覧とは別に詳細だけ取り直す。
+  const [detailToken, setDetailToken] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -212,7 +214,7 @@ export function AssetBrowser({
     return () => {
       active = false;
     };
-  }, [selectedJobId]);
+  }, [selectedJobId, detailToken]);
 
   useEffect(() => {
     if (!selected || selected.job_id) {
@@ -316,9 +318,10 @@ export function AssetBrowser({
         mode === "replay"
           ? await api.replayJob(selectedDetail.job.id)
           : await api.regenerateJob(selectedDetail.job.id);
-      onDerivedJob(job);
-      // 再実行したJobの記録も一覧へ出す。成果物はJobの完了後に再読込で現れる。
+      onRerunJob(job);
+      // 再実行したJobの記録も一覧へ出す。成果物はJobの完了後、「再取得」で現れる。
       setReloadToken((current) => current + 1);
+      setDetailToken((current) => current + 1);
     } catch (cause) {
       setError(describe(cause));
     } finally {

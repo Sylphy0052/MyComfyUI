@@ -947,7 +947,7 @@ export function App() {
                 setGenerationTab("image");
                 setView("generate");
               }}
-              onDerivedJob={handleDerivedJob}
+              onRerunJob={handleDerivedJob}
             />
           </div>
           <div className="full">
