@@ -236,7 +236,10 @@ PROMPT_DIRECTIVE = (
     "promptはタグと自然文で組み立てる。タグはブロックごとの配列で返し、"
     "1つの配列へ他ブロックの語を混ぜない。連結の順序は実装側が決めるため、"
     "配列をまたぐ並び順は考えなくてよい。\n"
-    "- quality_tags: masterpiece、best qualityなどの品質、meta、year、rating\n"
+    "- quality_tags: masterpiece、best qualityなどの品質、meta、year、rating。"
+    "ratingはsafe、sensitive、nsfw、explicitのうち1つを必ず入れる。"
+    "`rating:`のような接頭辞を付けず値だけを書く。"
+    "指示から判断できなければsafeにする\n"
     "- subject_tags: 1girl、2girls、soloなどの人数\n"
     "- character_tags: キャラクター名と作品名\n"
     "- artist_tags: 絵師。`@`を前に付ける\n"
@@ -246,12 +249,14 @@ PROMPT_DIRECTIVE = (
     "矛盾するタグを同居させず、同じ部位へ同義のタグを3つ以上置かない。\n"
     "natural_textには、タグでは結び付けられない関係を書く。"
     "誰がどこにいて何に触れているか、視線の向き、光源の向きと光が当たる面を、"
-    "代名詞を使わず主語を名詞にして2文以上で書く。\n"
+    "代名詞を使わず主語を名詞にして2文以上で書く。"
+    "利用者の指示が日本語でも、natural_textは英語で書く。\n"
     "subject_tagsが2人以上を示すときは、髪色・髪型・眼鏡など見分けに使う属性を"
     "general_tagsへ入れず、natural_text側でキャラクターごとに書く。"
     "タグへ残してよいのは全員に共通する属性だけとする。\n"
-    "negative_promptには、このショット固有の避けたい要素だけを書く。"
+    "negative_promptには、このショット固有の避けたい要素だけを英語で書く。"
     "品質系の基準値は実装側が足すため書かない。"
+    "避けたい要素が無ければ空文字にする。区切りだけの値を返さない。"
 )
 
 #: 種別ごとの指示。Providerへ渡すsystem promptの本文へ埋め込む。
