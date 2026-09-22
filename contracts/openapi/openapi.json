@@ -1842,6 +1842,270 @@
         "title": "GenerationBatchRead",
         "type": "object"
       },
+      "GenerationExperimentCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "axes": {
+            "$ref": "#/components/schemas/GenerationSweepAxes"
+          },
+          "base_inputs": {
+            "additionalProperties": true,
+            "maxProperties": 64,
+            "title": "Base Inputs",
+            "type": "object"
+          },
+          "input_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "title": "Input Refs",
+            "type": "array"
+          },
+          "look_profile_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Look Profile Ids",
+            "type": "array"
+          },
+          "mode": {
+            "default": "cartesian",
+            "enum": [
+              "cartesian",
+              "zip"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "recipe_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Recipe Id",
+            "type": "string"
+          },
+          "scene_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "shot_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Shot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "scene_id",
+          "shot_id",
+          "recipe_id",
+          "axes"
+        ],
+        "title": "GenerationExperimentCreate",
+        "type": "object"
+      },
+      "GenerationExperimentItemRead": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "planning_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planning Error"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "variables": {
+            "additionalProperties": true,
+            "title": "Variables",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "ordinal",
+          "variables",
+          "inputs",
+          "job_id",
+          "state",
+          "attempts",
+          "planning_error"
+        ],
+        "title": "GenerationExperimentItemRead",
+        "type": "object"
+      },
+      "GenerationExperimentPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "duplicate_count": {
+            "title": "Duplicate Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationExperimentPreviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "job_count": {
+            "title": "Job Count",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "cartesian",
+              "zip"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "mode",
+          "job_count",
+          "duplicate_count",
+          "items"
+        ],
+        "title": "GenerationExperimentPreview",
+        "type": "object"
+      },
+      "GenerationExperimentPreviewItem": {
+        "additionalProperties": false,
+        "properties": {
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/GenerationPreviewRead"
+          },
+          "variables": {
+            "additionalProperties": true,
+            "title": "Variables",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ordinal",
+          "variables",
+          "inputs",
+          "preview"
+        ],
+        "title": "GenerationExperimentPreviewItem",
+        "type": "object"
+      },
+      "GenerationExperimentRead": {
+        "additionalProperties": false,
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationExperimentItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "state",
+          "counts",
+          "items",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GenerationExperimentRead",
+        "type": "object"
+      },
       "GenerationJobCreate": {
         "additionalProperties": false,
         "description": "Jobと実行時Manifestを同一トランザクションで作成する要求。\n\nWorkflow JSONはApplication APIがRecipeと`inputs`から組み立てる。Scene、Shot、\nCanonの不変参照も参照APIから解決して固定する。呼び出し元はManifestの中身も\nComfyUIのノードも参照の中身も組み立てない。",
@@ -2568,6 +2832,45 @@
           "parent_job_id"
         ],
         "title": "GenerationPreviewRead",
+        "type": "object"
+      },
+      "GenerationSweepAxes": {
+        "additionalProperties": false,
+        "properties": {
+          "cfg": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 20,
+            "title": "Cfg",
+            "type": "array"
+          },
+          "prompt_fragment": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Prompt Fragment",
+            "type": "array"
+          },
+          "seed": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 20,
+            "title": "Seed",
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 20,
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "title": "GenerationSweepAxes",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -10174,6 +10477,382 @@
         "summary": "Get Deletion Impact",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/experiments": {
+      "get": {
+        "operationId": "list_experiments_api_v1_projects__project_id__experiments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GenerationExperimentRead"
+                  },
+                  "title": "Response List Experiments Api V1 Projects  Project Id  Experiments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Experiments",
+        "tags": [
+          "project-operations"
+        ]
+      },
+      "post": {
+        "operationId": "create_experiment_api_v1_projects__project_id__experiments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationExperimentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationExperimentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Experiment",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/experiments/preview": {
+      "post": {
+        "operationId": "preview_experiment_api_v1_projects__project_id__experiments_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationExperimentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationExperimentPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Experiment",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/experiments/{experiment_id}": {
+      "delete": {
+        "operationId": "delete_experiment_api_v1_projects__project_id__experiments__experiment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Experiment",
+        "tags": [
+          "project-operations"
+        ]
+      },
+      "get": {
+        "operationId": "get_experiment_api_v1_projects__project_id__experiments__experiment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationExperimentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Experiment",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/experiments/{experiment_id}/cancel-pending": {
+      "post": {
+        "operationId": "cancel_pending_experiment_jobs_api_v1_projects__project_id__experiments__experiment_id__cancel_pending_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationExperimentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Pending Experiment Jobs",
+        "tags": [
+          "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/experiments/{experiment_id}/retry-failed": {
+      "post": {
+        "operationId": "retry_failed_experiment_jobs_api_v1_projects__project_id__experiments__experiment_id__retry_failed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationExperimentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Failed Experiment Jobs",
+        "tags": [
+          "project-operations"
         ]
       }
     },
