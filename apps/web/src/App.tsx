@@ -390,6 +390,7 @@ export function App() {
     inputs: Record<string, unknown>,
     useInheritedDefaults: boolean,
     batchCount: number,
+    lookProfileIds: string[],
   ) => {
     setSubmitting(true);
     setError(null);
@@ -403,6 +404,7 @@ export function App() {
           shot_id: shotId,
           recipe_id: recipe?.id,
           use_inherited_defaults: useInheritedDefaults,
+          look_profile_ids: lookProfileIds,
           inputs,
         });
         createdJobs.push(job);
@@ -432,6 +434,7 @@ export function App() {
     recipe: Recipe | null,
     inputs: Record<string, unknown>,
     useInheritedDefaults: boolean,
+    lookProfileIds: string[],
   ) => {
     setPreviewing(true);
     setError(null);
@@ -443,6 +446,7 @@ export function App() {
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
+        look_profile_ids: lookProfileIds,
         inputs,
       });
       setPreviewResult(result);

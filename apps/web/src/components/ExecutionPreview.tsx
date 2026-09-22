@@ -5,6 +5,7 @@ import { KIND_LABEL, shorten } from "./CanonWarning";
 /** 値の出所を画面の語へ直す。API が新しい値を返しても値をそのまま出す。 */
 const ORIGIN_LABEL: Record<string, string> = {
   runtime: "今回の入力",
+  look_profile: "ルックプロファイル",
   shot: "Shot設定",
   scene: "Scene設定",
   project: "Project既定値",
@@ -95,6 +96,15 @@ export function ExecutionPreview({
           ))}
         </ul>
       </div>
+
+      {preview.look_profile_ids.length > 0 && (
+        <div>
+          <p className="muted">適用LookProfile（上から順にoverlay）</p>
+          <ol className="list plain">
+            {preview.look_profile_ids.map((id) => <li key={id} className="mono">{id}</li>)}
+          </ol>
+        </div>
+      )}
 
       <div>
         <p className="muted">

@@ -9,6 +9,9 @@ import type {
 } from "./aimedia";
 
 export type Recipe = components["schemas"]["RecipeRead"];
+export type LookProfile = components["schemas"]["LookProfileRead"];
+export type LookProfileCreate = components["schemas"]["LookProfileCreate"];
+export type LookProfileUpdate = components["schemas"]["LookProfileUpdate"];
 export type GenerationJob = components["schemas"]["GenerationJobRead"];
 export type GenerationManifest =
   components["schemas"]["GenerationManifestRead"];
@@ -177,6 +180,34 @@ export const api = {
     const query = kind ? `?kind=${encodeURIComponent(kind)}` : "";
     return request<Recipe[]>(`/recipes${query}`);
   },
+
+  listLookProfiles: (params?: { kind?: string; category?: string; query?: string; limit?: number; offset?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.kind) query.set("kind", params.kind);
+    if (params?.category) query.set("category", params.category);
+    if (params?.query) query.set("q", params.query);
+    if (params?.limit) query.set("limit", String(params.limit));
+    if (params?.offset) query.set("offset", String(params.offset));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<LookProfile[]>(`/look-profiles${suffix}`);
+  },
+
+  createLookProfile: (payload: LookProfileCreate) =>
+    request<LookProfile>("/look-profiles", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateLookProfile: (profileId: string, payload: LookProfileUpdate) =>
+    request<LookProfile>(`/look-profiles/${encodeURIComponent(profileId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteLookProfile: (profileId: string) =>
+    request<void>(`/look-profiles/${encodeURIComponent(profileId)}?confirm=true`, {
+      method: "DELETE",
+    }),
 
   listProjects: (params?: {
     lifecycle?: "active" | "archived" | "trashed";
@@ -550,6 +581,7 @@ export const api = {
     shot_id?: string | null;
     recipe_id?: string | null;
     use_inherited_defaults?: boolean;
+    look_profile_ids?: string[];
     inputs: Record<string, unknown>;
   }) =>
     request<GenerationJob>("/generation-jobs", {
@@ -565,6 +597,7 @@ export const api = {
     shot_id?: string | null;
     recipe_id?: string | null;
     use_inherited_defaults?: boolean;
+    look_profile_ids?: string[];
     inputs: Record<string, unknown>;
   }) =>
     request<GenerationPreview>("/generation-jobs/preview", {

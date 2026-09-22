@@ -57,6 +57,7 @@ from mycomfyui_api.models import (
     GenerationJob,
     GenerationManifest,
     ImageImportPreview,
+    LookProfile,
     Project,
     ProjectShot,
     Recipe,
@@ -123,6 +124,7 @@ MIN_FREE_SPACE_AFTER_IMPORT = 512 * 1024 * 1024
 MAX_MODEL_OPTIONS_PER_SLOT = 2000
 MAX_MODEL_OPTION_LENGTH = 512
 MODEL_INVENTORY_UNAVAILABLE = "ComfyUIのモデル在庫を取得できません。"
+MAX_LOOK_PROFILES = 200
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -436,6 +438,132 @@ async def get_recipe(recipe_id: str, session: SessionDep):
     return await _get_or_404(session, Recipe, "Recipe", recipe_id)
 
 
+async def _validate_look_profile(
+    session: AsyncSession,
+    *,
+    kind: str,
+    recipe_id: str | None,
+    inputs: dict[str, Any],
+) -> None:
+    if not inputs:
+        raise _validation_error("LookProfileのinputsを空にできません。")
+    if recipe_id is None:
+        return
+    recipe = await _get_or_404(session, Recipe, "Recipe", recipe_id)
+    if recipe.kind != kind:
+        raise _validation_error(
+            "LookProfileとRecipeの生成種別が一致しません。",
+            {"profile_kind": kind, "recipe_kind": recipe.kind},
+        )
+    schema = recipe.input_schema if isinstance(recipe.input_schema, dict) else {}
+    unknown = sorted(set(inputs) - set(schema))
+    if unknown:
+        raise _validation_error(
+            "Recipeで指定できないLookProfile入力があります。",
+            {"unknown": unknown, "recipe_id": recipe.id},
+        )
+
+
+async def _ensure_look_profile_name(
+    session: AsyncSession, kind: str, name: str, *, exclude_id: str | None = None
+) -> None:
+    query = select(LookProfile.id).where(
+        LookProfile.kind == kind, LookProfile.name == name
+    )
+    if exclude_id is not None:
+        query = query.where(LookProfile.id != exclude_id)
+    if await session.scalar(query) is not None:
+        raise ApiError(
+            "LOOK_PROFILE_CONFLICT",
+            "同じ生成種別に同名のLookProfileがあります。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+@router.post(
+    "/look-profiles",
+    response_model=schemas.LookProfileRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_look_profile(payload: schemas.LookProfileCreate, session: SessionDep):
+    if (await session.scalar(select(func.count(LookProfile.id))) or 0) >= MAX_LOOK_PROFILES:
+        raise ApiError(
+            "LOOK_PROFILE_LIMIT_REACHED",
+            f"LookProfileは{MAX_LOOK_PROFILES}件まで作成できます。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    await _ensure_look_profile_name(session, payload.kind, payload.name)
+    await _validate_look_profile(
+        session,
+        kind=payload.kind,
+        recipe_id=payload.recipe_id,
+        inputs=payload.inputs,
+    )
+    now = schemas.now_iso()
+    profile = LookProfile(
+        id=schemas.new_id(), created_at=now, updated_at=now, **payload.model_dump()
+    )
+    session.add(profile)
+    await _commit(session)
+    return profile
+
+
+@router.get("/look-profiles", response_model=list[schemas.LookProfileRead])
+async def list_look_profiles(
+    session: SessionDep,
+    kind: schemas.GenerationKind | None = None,
+    category: schemas.LookProfileCategory | None = None,
+    q: Annotated[str | None, Query(max_length=120)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    query = select(LookProfile).order_by(LookProfile.kind, LookProfile.name)
+    if kind is not None:
+        query = query.where(LookProfile.kind == kind)
+    if category is not None:
+        query = query.where(LookProfile.category == category)
+    if q and q.strip():
+        query = query.where(func.lower(LookProfile.name).contains(q.strip().lower()))
+    return list(await session.scalars(query.limit(limit).offset(offset)))
+
+
+@router.get("/look-profiles/{profile_id}", response_model=schemas.LookProfileRead)
+async def get_look_profile(profile_id: str, session: SessionDep):
+    return await _get_or_404(session, LookProfile, "LookProfile", profile_id)
+
+
+@router.patch("/look-profiles/{profile_id}", response_model=schemas.LookProfileRead)
+async def update_look_profile(
+    profile_id: str, payload: schemas.LookProfileUpdate, session: SessionDep
+):
+    profile = await _get_or_404(session, LookProfile, "LookProfile", profile_id)
+    values = payload.model_dump(exclude_unset=True)
+    name = values.get("name", profile.name)
+    recipe_id = values.get("recipe_id", profile.recipe_id)
+    inputs = values.get("inputs", profile.inputs)
+    await _ensure_look_profile_name(session, profile.kind, name, exclude_id=profile.id)
+    await _validate_look_profile(
+        session, kind=profile.kind, recipe_id=recipe_id, inputs=inputs
+    )
+    for key, value in values.items():
+        setattr(profile, key, value)
+    profile.updated_at = schemas.now_iso()
+    await _commit(session)
+    return profile
+
+
+@router.delete("/look-profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_look_profile(
+    profile_id: str, session: SessionDep, confirm: bool = False
+):
+    profile = await _get_or_404(session, LookProfile, "LookProfile", profile_id)
+    if not confirm:
+        raise _validation_error("LookProfileの削除にはconfirm=trueが必要です。")
+    await session.delete(profile)
+    await _commit(session)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/generation-jobs",
     response_model=schemas.GenerationJobRead,
@@ -457,7 +585,7 @@ async def create_generation_job(
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
-    effective, recipe, _, _, preferences = await _resolve_generation_defaults(
+    effective, recipe, _, _, preferences, _, look_profiles = await _resolve_generation_defaults(
         session, payload, resolved
     )
     # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
@@ -480,6 +608,7 @@ async def create_generation_job(
             queue_sequence,
             resolved,
             preferences,
+            look_profiles,
         )
         await _persist_job_records(session, job, workflow_artifact, manifest)
     except Exception:
@@ -507,7 +636,7 @@ async def preview_generation_job(
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
-    effective, recipe, recipe_origin, input_origins, preferences = (
+    effective, recipe, recipe_origin, input_origins, preferences, look_profile_ids, look_profiles = (
         await _resolve_generation_defaults(session, payload, resolved)
     )
     prepared = await _prepare_execution(recipe, effective, source, resolved, session)
@@ -528,6 +657,12 @@ async def preview_generation_job(
         seed_auto=_is_seed_auto(defaults, effective.inputs, prepared),
         parameters={
             **dict(prepared.parameters),
+            **(
+                {"look_profile_ids": look_profile_ids}
+                if look_profile_ids
+                else {}
+            ),
+            **({"look_profiles": look_profiles} if look_profiles else {}),
             **({"production_preferences": preferences} if preferences else {}),
         },
         resolved_inputs=dict(prepared.resolved_inputs),
@@ -546,6 +681,7 @@ async def preview_generation_job(
             recipe, defaults, effective.inputs, prepared, input_origins
         ),
         parent_job_id=_resolve_parent_job_id(payload, prepared),
+        look_profile_ids=look_profile_ids,
     )
 
 
@@ -681,8 +817,10 @@ async def _resolve_generation_defaults(
     schemas.GenerationDefaultOrigin,
     dict[str, schemas.GenerationDefaultOrigin],
     dict[str, Any],
+    list[str],
+    list[dict[str, Any]],
 ]:
-    """Recipeと入力をProject、Scene、Shot、実行時指定の順で上書きする。"""
+    """入力をProject、Scene、Shot、LookProfile順、実行時指定の順で上書きする。"""
     project_profile = schemas.ProjectGenerationProfile()
     local_overrides = schemas.ProjectLocalOverrides()
     if payload.project_id is not None:
@@ -753,17 +891,82 @@ async def _resolve_generation_defaults(
         ):
             inputs["positive_prompt"] = local_overrides.shot_prompts[payload.shot_id]
             input_origins["positive_prompt"] = "shot"
+    applied_profiles: list[str] = []
+    profile_snapshots: list[dict[str, Any]] = []
+    if payload.look_profile_ids and not payload.use_inherited_defaults:
+        rows = list(
+            await session.scalars(
+                select(LookProfile).where(
+                    LookProfile.id.in_(payload.look_profile_ids)
+                )
+            )
+        )
+        profiles = {profile.id: profile for profile in rows}
+        missing = [item for item in payload.look_profile_ids if item not in profiles]
+        if missing:
+            raise _validation_error(
+                "指定したLookProfileがありません。", {"missing": missing}
+            )
+        schema = recipe.input_schema if isinstance(recipe.input_schema, dict) else {}
+        for profile_id in payload.look_profile_ids:
+            profile = profiles[profile_id]
+            if profile.kind != recipe.kind:
+                raise _validation_error(
+                    "LookProfileとRecipeの生成種別が一致しません。",
+                    {"profile_id": profile.id, "profile_kind": profile.kind},
+                )
+            if profile.recipe_id is not None and profile.recipe_id != recipe.id:
+                raise _validation_error(
+                    "LookProfileは別のRecipe専用です。",
+                    {
+                        "profile_id": profile.id,
+                        "profile_recipe_id": profile.recipe_id,
+                        "recipe_id": recipe.id,
+                    },
+                )
+            unknown = sorted(set(profile.inputs) - set(schema))
+            if unknown:
+                raise _validation_error(
+                    "Recipeで指定できないLookProfile入力があります。",
+                    {"profile_id": profile.id, "unknown": unknown},
+                )
+            for name, value in profile.inputs.items():
+                inputs[name] = value
+                input_origins[name] = "look_profile"
+            applied_profiles.append(profile.id)
+            snapshot = {
+                "id": profile.id,
+                "name": profile.name,
+                "category": profile.category,
+                "recipe_id": profile.recipe_id,
+                "inputs": profile.inputs,
+                "updated_at": profile.updated_at,
+            }
+            canonical = json.dumps(
+                snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            profile_snapshots.append(
+                {**snapshot, "sha256": hashlib.sha256(canonical).hexdigest()}
+            )
     if not payload.use_inherited_defaults:
         for name, value in payload.inputs.items():
             inputs[name] = value
             input_origins[name] = "runtime"
 
     return (
-        payload.model_copy(update={"recipe_id": recipe.id, "inputs": inputs}),
+        payload.model_copy(
+            update={
+                "recipe_id": recipe.id,
+                "inputs": inputs,
+                "look_profile_ids": applied_profiles,
+            }
+        ),
         recipe,
         recipe_origin,
         input_origins,
         preferences,
+        applied_profiles,
+        profile_snapshots,
     )
 
 
@@ -1069,6 +1272,7 @@ def _build_job_records(
     queue_sequence: int | Any,
     resolved: _ResolvedReferences,
     preferences: dict[str, Any] | None = None,
+    look_profiles: list[dict[str, Any]] | None = None,
 ) -> tuple[GenerationJob, Artifact, GenerationManifest]:
     manifest_id = schemas.new_id()
     workflow_artifact_id = schemas.new_id()
@@ -1115,6 +1319,12 @@ def _build_job_records(
         resolved_prompt=prepared.resolved_prompt,
         parameters={
             **dict(prepared.parameters),
+            **(
+                {"look_profile_ids": list(payload.look_profile_ids)}
+                if payload.look_profile_ids
+                else {}
+            ),
+            **({"look_profiles": look_profiles} if look_profiles else {}),
             **(
                 {"primary_input_artifact_id": prepared.parent_artifact_id}
                 if prepared.parent_artifact_id is not None

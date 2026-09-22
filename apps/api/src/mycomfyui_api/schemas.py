@@ -32,8 +32,9 @@ ProjectSourceType = Literal["local", "external"]
 ProjectSyncState = Literal["never", "synced", "outdated", "conflicted", "failed"]
 ProjectSort = Literal["name", "created", "updated", "last_used"]
 GenerationDefaultOrigin = Literal[
-    "runtime", "shot", "scene", "project", "recipe_default", "workflow_default", "adapter"
+    "runtime", "look_profile", "shot", "scene", "project", "recipe_default", "workflow_default", "adapter"
 ]
+LookProfileCategory = Literal["general", "style", "character", "background"]
 ProductionStatus = Literal[
     "not_started", "in_progress", "has_candidates", "accepted", "completed"
 ]
@@ -874,6 +875,54 @@ class RecipeRead(ApiModel):
     created_at: str
 
 
+def _look_profile_inputs(value: dict[str, Any]) -> dict[str, Any]:
+    if any(not key or len(key) > 100 for key in value):
+        raise ValueError("LookProfile input名は1〜100文字で指定します。")
+    try:
+        size = len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+    except (RecursionError, TypeError, ValueError) as error:
+        raise ValueError("LookProfile inputsをJSONとして保存できません。") from error
+    if size > 64 * 1024:
+        raise ValueError("LookProfile inputsは64KB以下にしてください。")
+    return value
+
+
+class LookProfileCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: GenerationKind
+    category: LookProfileCategory = "general"
+    description: str | None = Field(default=None, max_length=2_000)
+    recipe_id: ResourceId | None = None
+    inputs: dict[str, Any] = Field(min_length=1, max_length=64)
+
+    _inputs_limit = field_validator("inputs")(_look_profile_inputs)
+
+
+class LookProfileUpdate(ApiModel):
+    name: str = Field(default=None, min_length=1, max_length=120)  # type: ignore[assignment]
+    category: LookProfileCategory = None  # type: ignore[assignment]
+    description: str | None = Field(default=None, max_length=2_000)
+    recipe_id: ResourceId | None = None
+    inputs: dict[str, Any] = Field(default=None, min_length=1, max_length=64)  # type: ignore[assignment]
+
+    @field_validator("inputs")
+    @classmethod
+    def _validate_inputs(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _look_profile_inputs(value)
+
+
+class LookProfileRead(ApiModel):
+    id: str
+    name: str
+    kind: str
+    category: str
+    description: str | None
+    recipe_id: str | None
+    inputs: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+
 class GenerationPreviewCreate(ApiModel):
     """投入せずに、解決済みの入力とWorkflow差分だけを確かめる要求。
 
@@ -890,6 +939,7 @@ class GenerationPreviewCreate(ApiModel):
     #: 真なら画面の入力を捨て、Project、Scene、Shotから継承した状態へ戻す。
     use_inherited_defaults: bool = False
     parent_job_id: ResourceId | None = None
+    look_profile_ids: list[ResourceId] = Field(default_factory=list, max_length=10)
     inputs: dict[str, Any] = Field(default_factory=dict)
     #: 利用者素材のcache参照だけを受け取る。Scene/Shot/Canonの参照は解決結果が正本の
     #: ため、ここから渡された同種の参照は受け付けない。
@@ -901,6 +951,8 @@ class GenerationPreviewCreate(ApiModel):
             raise ValueError("scene_idを指定する場合はproject_idが必要です。")
         if self.shot_id is not None and self.scene_id is None:
             raise ValueError("shot_idを指定する場合はscene_idが必要です。")
+        if len(set(self.look_profile_ids)) != len(self.look_profile_ids):
+            raise ValueError("look_profile_idsを重複させられません。")
         return self
 
     @field_validator("input_refs")
@@ -986,6 +1038,7 @@ class GenerationPreviewRead(ApiModel):
     template_sha256: str | None
     diff: list[GenerationPreviewDiff]
     parent_job_id: str | None
+    look_profile_ids: list[str] = Field(default_factory=list)
 
 
 class GenerationJobRead(ApiModel):
