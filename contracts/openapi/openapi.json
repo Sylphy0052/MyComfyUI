@@ -3033,7 +3033,7 @@
       },
       "ImageTagExtractRead": {
         "additionalProperties": false,
-        "description": "視覚言語モデルが抽出した正プロンプト用のタグ。",
+        "description": "画像から抽出した正プロンプト用のタグ。",
         "properties": {
           "tags": {
             "items": {
@@ -8865,7 +8865,7 @@
     },
     "/api/v1/image-tags": {
       "post": {
-        "description": "画像をQwen互換の視覚言語モデルへ渡し、正プロンプト用タグを返す。",
+        "description": "画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。",
         "operationId": "extract_image_tags_api_v1_image_tags_post",
         "requestBody": {
           "content": {

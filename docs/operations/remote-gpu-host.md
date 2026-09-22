@@ -459,7 +459,7 @@ MYCOMFYUI_COMFYUI_TIMEOUT_SECONDS=900
 MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://<remote>:8770
 ```
 
-提案Providerに`qwen`を使う場合、または画像からタグを抽出する場合は、推論サーバーの接続先も同じように向ける。画像タグ抽出には画像入力を扱える視覚言語モデルを指定する。
+提案Providerに`qwen`を使う場合、または画像から抽出したタグを整理する場合は、推論サーバーの接続先も同じように向ける。画像そのものの解析はComfyUIの`WD14Tagger|pysssss`が行うため、視覚言語モデルは要らない。
 
 ```dotenv
 MYCOMFYUI_AGENT_QWEN_BASE_URL=http://<remote>:8000/v1
@@ -472,7 +472,9 @@ ComfyUIのタイムアウトはネットワーク往復と生成物の転送分�
 
 `MYCOMFYUI_VOICE_RUNNER_TIMEOUT_SECONDS`は1台詞あたりの実行上限であり、既定は300秒。Backendのプロセス起動とモデルロードを含む値のため、Remote構成にしたことだけを理由に変えない。実測で足りなければ上げる。
 
-`MYCOMFYUI_AGENT_QWEN_BASE_URL`の既定値は`http://127.0.0.1:8000/v1`である。パス末尾の`/v1`まで含めて指定する。提案Providerと画像タグ抽出はこの値へ`/chat/completions`を足して呼ぶ。画像タグ抽出は選択した画像をdata URLで送るため、Remote GPU Hostを使う場合は画像がそのHostへ転送される。推論サーバーが起きていない間は提案Provider一覧で`qwen`が`available: false`になり、他のProviderと生成Jobには影響しない。
+`MYCOMFYUI_AGENT_QWEN_BASE_URL`の既定値は`http://127.0.0.1:8000/v1`である。パス末尾の`/v1`まで含めて指定する。提案Providerとタグの整理はこの値へ`/chat/completions`を足して呼ぶ。推論サーバーが起きていない間は提案Provider一覧で`qwen`が`available: false`になり、他のProviderと生成Jobには影響しない。
+
+画像タグ抽出はComfyUI(8188)へWorkflowとして投入する。選択した画像は`/upload/image`でRemote GPU HostのComfyUIへ転送される。抽出したタグは既定で推論サーバーへ渡して整理するが、この段は任意であり、繋がらない場合はWD14 Taggerが出したタグをそのまま返す。整理を行わない場合は`MYCOMFYUI_IMAGE_TAGGER_REFINE=false`とする。
 
 設定の詳細は[Application APIのREADME](../../apps/api/README.md)を参照する。
 
@@ -483,7 +485,7 @@ ComfyUIのタイムアウトはネットワーク往復と生成物の転送分�
 |Jobがすぐ失敗する|`BACKEND_UNAVAILABLE`|手順1と手順2のFirewallと待受、Remote PCの電源、アドレスの変化|
 |音声Jobだけが失敗する|`BACKEND_UNAVAILABLE`|手順3の`voice-runner`常駐、手順7の`MYCOMFYUI_VOICE_RUNNER_BASE_URL`、「ComfyUI以外のポートも同じ扱いにする」の8770|
 |`qwen`の提案だけが失敗する|`AGENT_UNAVAILABLE`|推論サーバーの起動、手順7の`MYCOMFYUI_AGENT_QWEN_BASE_URL`と`MYCOMFYUI_AGENT_QWEN_MODEL`、「ComfyUI以外のポートも同じ扱いにする」の8000|
-|画像タグ抽出が失敗する|`IMAGE_TAGGER_ERROR`|推論サーバーの起動、`MYCOMFYUI_AGENT_QWEN_MODEL`が画像入力を扱えるモデルであること、手順7の接続先|
+|画像タグ抽出が失敗する|`IMAGE_TAGGER_ERROR`|ComfyUIの起動、WD14 Taggerノードの導入、`MYCOMFYUI_IMAGE_TAGGER_MODEL`が`/object_info`の選択肢にあること、手順7の`MYCOMFYUI_COMFYUI_BASE_URL`|
 |実行中に失敗する|`BACKEND_DISCONNECTED`|ネットワークの切断、ComfyUIプロセスの落ち、手順3のログ|
 |モデルが見つからない|`MODEL_NOT_FOUND`|手順4のファイル名とRecipeの指す名前|
 |完了検知が遅い|—|手順5のWebSocket。ポーリングへ落ちていないか|

@@ -1764,6 +1764,6 @@ class ImageTagExtractRequest(ApiModel):
 
 
 class ImageTagExtractRead(ApiModel):
-    """視覚言語モデルが抽出した正プロンプト用のタグ。"""
+    """画像から抽出した正プロンプト用のタグ。"""
 
     tags: list[str]
