@@ -129,18 +129,23 @@ export async function toReferenceImage(item: PickedMedia): Promise<ProjectRefere
   throw new Error("選択した画像を取り込めませんでした。選び直してください。");
 }
 
-/** Fileのmedia_typeを決める。typeが空の画像は拡張子から推測する。 */
+/**
+ * Fileのmedia_typeを決める。typeが空なら拡張子から推測し、判別できなければ
+ * `application/octet-stream`を返す (画像・音声として通さない)。
+ */
 export function mediaTypeOf(file: File, kind: "image" | "audio" = "image"): string {
   if (file.type) return file.type;
   const name = file.name.toLowerCase();
   if (kind === "audio") {
     if (name.endsWith(".wav")) return "audio/wav";
     if (name.endsWith(".m4a")) return "audio/mp4";
-    return "audio/mpeg";
+    if (name.endsWith(".mp3")) return "audio/mpeg";
+    return "application/octet-stream";
   }
+  if (name.endsWith(".png")) return "image/png";
   if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
   if (name.endsWith(".webp")) return "image/webp";
-  return "image/png";
+  return "application/octet-stream";
 }
 
 const DEFAULT_MAX_BYTES = 25 * 1024 * 1024;
@@ -366,16 +371,13 @@ export function MediaPicker({
       setError(`ファイルは${Math.floor(maxBytes / (1024 * 1024))}MB以下にしてください。`);
       return null;
     }
-    // typeが取得できないブラウザ環境もあるため、判別できた場合のみ弾く。
-    if (kind === "image" && file.type && !file.type.startsWith("image/")) {
-      setError("画像ファイルを選択してください。");
-      return null;
-    }
-    if (kind === "audio" && file.type && !file.type.startsWith("audio/")) {
-      setError("音声ファイルを選択してください。");
-      return null;
-    }
+    // typeが取得できないブラウザ環境もあるため、typeが空なら拡張子から判別する。
+    // どちらでも判別できないファイルは通さない。
     const resolvedMediaType = mediaTypeOf(file, kind);
+    if (!resolvedMediaType.startsWith(`${kind}/`)) {
+      setError(kind === "audio" ? "音声ファイルを選択してください。" : "画像ファイルを選択してください。");
+      return null;
+    }
     if (!autoRegister) {
       return {
         key: crypto.randomUUID(),
@@ -491,7 +493,9 @@ export function MediaPicker({
 
   const counter =
     typeof max === "number"
-      ? `${value.length}/${max}`
+      ? typeof min === "number"
+        ? `${value.length}/${max} (${min}件以上)`
+        : `${value.length}/${max}`
       : typeof min === "number"
         ? `${value.length}/${min}以上`
         : null;

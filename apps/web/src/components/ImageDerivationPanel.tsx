@@ -371,6 +371,7 @@ export function ImageDerivationPanel({
           shotId={shotId}
           enableRoleTagging
         />
+        <p className="muted">登録素材・アップロードから選んだ画像は入力cacheとしてManifestのinput_refsへ記録し、Artifact親子関係は持ちません。</p>
         <ModelSelector recipe={recipe} values={modelValues} onChange={setModelValues} onValidityChange={setModelsValid} idPrefix="derivation-model" />
         <LookProfileManager
           kind="image"
