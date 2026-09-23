@@ -14,6 +14,8 @@ export interface PipelineReadiness {
   acceptedImages: Artifact[];
   referenceArtifactIds: string[];
   audios: Artifact[];
+  /** この結果を取得した場面。切替直後に前の場面の結果を使わないための照合用。 */
+  sceneId: string | null;
 }
 
 const EMPTY: PipelineReadiness = {
@@ -21,6 +23,7 @@ const EMPTY: PipelineReadiness = {
   acceptedImages: [],
   referenceArtifactIds: [],
   audios: [],
+  sceneId: null,
 };
 
 /**
@@ -32,6 +35,8 @@ export function usePipelineReadiness(
   projectId: string | null,
   sceneId: string | null,
   jobs: GenerationJob[],
+  /** 採用の変更など、Jobが増えない更新の後に取り直したいときに進める。 */
+  refreshKey: string | number,
 ): PipelineReadiness {
   const [readiness, setReadiness] = useState<PipelineReadiness>(EMPTY);
   const succeededKey = jobs.filter((job) => job.state === "succeeded").length;
@@ -46,10 +51,8 @@ export function usePipelineReadiness(
   );
 
   useEffect(() => {
-    if (!projectId || !sceneId) {
-      setReadiness(EMPTY);
-      return;
-    }
+    setReadiness(EMPTY);
+    if (!projectId || !sceneId) return;
     let cancelled = false;
     Promise.all([
       api.listArtifacts({ projectId, sceneId, kind: "image", limit: 200 }),
@@ -72,6 +75,7 @@ export function usePipelineReadiness(
           acceptedImages,
           referenceArtifactIds,
           audios,
+          sceneId,
         });
       })
       .catch(() => {
@@ -81,9 +85,9 @@ export function usePipelineReadiness(
     return () => {
       cancelled = true;
     };
-  }, [projectId, sceneId, succeededKey, composed]);
+  }, [projectId, sceneId, succeededKey, composed, refreshKey]);
 
-  return readiness;
+  return readiness.sceneId === sceneId ? readiness : EMPTY;
 }
 
 interface Props {

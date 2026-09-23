@@ -305,6 +305,8 @@ export function App() {
   const [pipelineStep, setPipelineStep] = useState<PipelineStepId>(() =>
     readPipelineStep(initialUiState.sceneId),
   );
+  // 採用の変更などJobが増えない更新の後に、工程の「揃っている」判定を取り直すための値。
+  const [readinessVersion, setReadinessVersion] = useState(0);
   const [audioTab, setAudioTab] = useState<"voice" | "music">("voice");
   const [scene, setScene] = useState<SceneEnvelope | null>(null);
   const [shots, setShots] = useState<ShotSummary[]>([]);
@@ -465,8 +467,15 @@ export function App() {
       ? audioTab
       : pipelineDef.tab
     : generationTab;
-  const shownImageSubTab: ImageSubTab = isProduction ? (pipelineDef.imageSubTab ?? "generate") : imageSubTab;
-  const pipelineReadiness = usePipelineReadiness(projectId, sceneId, jobs);
+  const shownImageSubTab: ImageSubTab =
+    isProduction && !PRODUCTION_IMAGE_SUBTABS.has(imageSubTab) ? "generate" : imageSubTab;
+  // ラボでは工程を使わないので、判定用の一覧取得も走らせない。
+  const pipelineReadiness = usePipelineReadiness(
+    isProduction ? projectId : null,
+    isProduction ? sceneId : null,
+    jobs,
+    `${readinessVersion}:${pipelineStep}`,
+  );
 
   // 場面を切り替えたら、その場面で最後にいた工程へ戻る。
   useEffect(() => {
@@ -476,6 +485,9 @@ export function App() {
     (step: PipelineStepId) => {
       setPipelineStep(step);
       if (sceneId) persistPipelineStep(sceneId, step);
+      // 画像の工程は、対応する画像サブタブを開く。開いた後は使い手が切り替えられる。
+      const subTab = PIPELINE_STEPS.find((item) => item.id === step)?.imageSubTab;
+      if (subTab) setImageSubTab(subTab);
     },
     [sceneId],
   );
@@ -492,6 +504,13 @@ export function App() {
   const suggestedFirstFrame = useMemo(
     () => pipelineReadiness.acceptedImages.slice(0, 1).map(pickedFromArtifact),
     [pipelineReadiness.acceptedImages],
+  );
+  const suggestedReferences = useMemo(
+    () =>
+      pipelineReadiness.referenceArtifactIds.map(
+        (id): PickedMedia => ({ key: `artifact:${id}`, label: id, source: { artifact_id: id } }),
+      ),
+    [pipelineReadiness.referenceArtifactIds],
   );
   const suggestedGuideAudio = useMemo(
     () => pipelineReadiness.audios.slice(0, 1).map(pickedFromArtifact),
@@ -1131,6 +1150,7 @@ export function App() {
 
   const applyDecision = async (artifactId: string, decision: ArtifactDecision) => {
     const updated = await api.updateDecision(artifactId, decision);
+    setReadinessVersion((version) => version + 1);
     setArtifactsByJob((current) => {
       const next: Record<string, Artifact[]> = {};
       for (const [jobId, artifacts] of Object.entries(current)) {
@@ -1368,7 +1388,6 @@ export function App() {
               <div className="image-input-column">
                 <nav
                   className="image-subtabs"
-                  hidden={isProduction}
                   role="tablist"
                   aria-label="画像の入力種別"
                 >
@@ -1534,6 +1553,7 @@ export function App() {
                 jobs={jobs}
                 onSubmittedJob={handleDerivedJob}
                 suggestedFirstFrame={suggestedFirstFrame}
+                suggestedReferences={suggestedReferences}
                 suggestedGuideAudio={suggestedGuideAudio}
               />
             </div>

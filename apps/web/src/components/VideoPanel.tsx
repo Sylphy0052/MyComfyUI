@@ -77,6 +77,7 @@ interface Props {
   onSubmittedJob: (job: GenerationJob) => void;
   /** 前の工程の成果物。未指定の入力欄にだけ初期値として入れる。 */
   suggestedFirstFrame?: PickedMedia[];
+  suggestedReferences?: PickedMedia[];
   suggestedGuideAudio?: PickedMedia[];
 }
 
@@ -88,6 +89,7 @@ export function VideoPanel({
   jobs,
   onSubmittedJob,
   suggestedFirstFrame,
+  suggestedReferences,
   suggestedGuideAudio,
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -203,10 +205,13 @@ export function VideoPanel({
     if (suggestedFirstFrame?.length) {
       setFirstFrame((current) => (current.length ? current : suggestedFirstFrame));
     }
+    if (suggestedReferences?.length) {
+      setReferences((current) => (current.length ? current : suggestedReferences.slice(0, MAX_REFERENCES)));
+    }
     if (suggestedGuideAudio?.length) {
       setGuideAudio((current) => (current.length ? current : suggestedGuideAudio));
     }
-  }, [projectId, shotId, suggestedFirstFrame, suggestedGuideAudio]);
+  }, [projectId, shotId, suggestedFirstFrame, suggestedReferences, suggestedGuideAudio]);
 
   useEffect(() => {
     if (!succeededVideoJobIds) {
