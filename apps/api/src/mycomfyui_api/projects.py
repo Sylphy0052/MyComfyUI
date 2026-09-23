@@ -710,8 +710,8 @@ def _stamp_character_updates(
     for character in payload.characters:
         before = previous.get(character.id)
         unchanged = before is not None and before.model_dump(
-            exclude={"updated_at"}
-        ) == character.model_dump(exclude={"updated_at"})
+            exclude={"updated_at", "reference_sets"}
+        ) == character.model_dump(exclude={"updated_at", "reference_sets"})
         characters.append(
             character.model_copy(
                 update={"updated_at": before.updated_at if unchanged else now}
@@ -723,7 +723,14 @@ def _stamp_character_updates(
 def _validate_local_reference_images(payload: schemas.ProjectLocalOverrides) -> None:
     verified: dict[str, tuple[int, str, str | None]] = {}
     for character in payload.characters:
-        for reference in character.reference_images:
+        references = list(character.reference_images)
+        for reference_set in character.reference_sets:
+            references.extend(
+                slot.image
+                for slot in reference_set.slots.values()
+                if slot.image is not None
+            )
+        for reference in references:
             actual = verified.get(reference.relative_path)
             if actual is None:
                 try:

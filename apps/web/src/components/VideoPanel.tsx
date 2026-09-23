@@ -36,7 +36,7 @@ const MAX_FRAMES = 362;
 const FPS = 24;
 
 /** R2Vが受け付ける参照画像の枚数の上限。バックエンドの制約に合わせる。 */
-const MAX_REFERENCES = 9;
+export const MAX_REFERENCES = 9;
 
 type VideoMode = "ref2v" | "i2v";
 

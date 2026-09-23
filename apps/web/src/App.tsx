@@ -46,7 +46,7 @@ import type { ToastItem } from "./components/ui/ToastRegion";
 import { NotifyContext } from "./components/ui/notify";
 import type { Notice } from "./components/ui/notify";
 import { ignoresShortcut } from "./components/ui/shortcuts";
-import { VideoPanel } from "./components/VideoPanel";
+import { VideoPanel, MAX_REFERENCES } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
 import { tagCheckWarnings } from "./prompt/tagCheck";
@@ -61,6 +61,7 @@ import {
 import type { ProductionPlan } from "./state/productionPlan";
 import { characterPrompt } from "./state/characterPrompt";
 import type { SceneOutfits } from "./state/characterPrompt";
+import { sceneReferenceImages } from "./state/referenceSlots";
 import { subscribeLookProfilesChanged } from "./preset/productionChoices";
 import type { PickedMedia } from "./components/MediaPicker";
 import {
@@ -648,13 +649,25 @@ export function App() {
     () => pipelineReadiness.acceptedImages.slice(0, 1).map(pickedFromArtifact),
     [pipelineReadiness.acceptedImages],
   );
-  const suggestedReferences = useMemo(
-    () =>
-      pipelineReadiness.referenceArtifactIds.map(
-        (id): PickedMedia => ({ key: `artifact:${id}`, label: id, source: { artifact_id: id } }),
-      ),
-    [pipelineReadiness.referenceArtifactIds],
-  );
+  const suggestedReferences = useMemo(() => {
+    // キャラクターの参照セットの画像を、登場するキャラクターの並び順で先頭へ足す。
+    // 場面に衣装が無ければ既定衣装、それも無ければ衣装指定なしのセットを使う (Issue #155)。
+    const fromReferenceSets = activePlan
+      ? sceneReferenceImages(activePlan.characters, localCharacters, sceneOutfits, sceneId)
+      : [];
+    const fromArtifacts = pipelineReadiness.referenceArtifactIds.map(
+      (id): PickedMedia => ({ key: `artifact:${id}`, label: id, source: { artifact_id: id } }),
+    );
+    const seen = new Set<string>();
+    const merged: PickedMedia[] = [];
+    for (const item of [...fromReferenceSets, ...fromArtifacts]) {
+      if (seen.has(item.key)) continue;
+      seen.add(item.key);
+      merged.push(item);
+      if (merged.length >= MAX_REFERENCES) break;
+    }
+    return merged;
+  }, [activePlan, localCharacters, sceneOutfits, sceneId, pipelineReadiness.referenceArtifactIds]);
   const suggestedGuideAudio = useMemo(
     () => pipelineReadiness.audios.slice(0, 1).map(pickedFromArtifact),
     [pipelineReadiness.audios],
