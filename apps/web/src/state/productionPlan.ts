@@ -273,6 +273,23 @@ export function applyPlanPreset(
 }
 
 /**
+ * 計画のPresetが値を決める入力名。パネルの値は送られないため、入力チェックで未入力を許す。
+ * 適用できないときは空集合を返す。
+ */
+export function planPresetKeys(
+  preset: PlanPreset | null | undefined,
+  recipe: Recipe | null | undefined,
+  useInheritedDefaults: boolean,
+): ReadonlySet<string> {
+  if (!preset || !recipe || planPresetBlocker(preset, recipe, useInheritedDefaults)) return new Set();
+  const keys = new Set(Object.keys(preset.profile.inputs));
+  for (const [name, raw] of Object.entries(preset.choiceValues)) {
+    if (raw.trim() !== "") keys.add(name);
+  }
+  return keys;
+}
+
+/**
  * Shotごと・Presetごとに1回だけ、PresetのRecipeを選び既定値の引き継ぎを外す。
  * 使用者がその後に変えた選択は上書きしない。F-06の `VideoPanel` の自動投入と同じ方式。
  */

@@ -12,6 +12,7 @@ import type { SceneEnvelope } from "../api/aimedia";
 import {
   applyPlanPreset,
   planPresetBlocker,
+  planPresetKeys,
   usePlanPresetDefaults,
   type PlanPreset,
 } from "../state/productionPlan";
@@ -190,17 +191,19 @@ export function MusicPanel({
   /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
   const buildInputs = (): Record<string, unknown> | null => {
     if (useInheritedDefaults) return {};
-    if (!mood.trim()) {
+    // 計画のPresetが決める入力は送られないため、未入力でも止めない。
+    const fixed = planPresetKeys(planPreset, recipe, useInheritedDefaults);
+    if (!fixed.has("positive_prompt") && !mood.trim()) {
       setError("moodを入力してください。");
       return null;
     }
     const seconds = Number.parseFloat(secondsStr);
-    if (!Number.isFinite(seconds) || seconds <= 0) {
+    if (!fixed.has("seconds") && (!Number.isFinite(seconds) || seconds <= 0)) {
       setError("尺は0より大きい数値で入力してください。");
       return null;
     }
     const seed = Number.parseInt(seedStr || "-1", 10);
-    if (!Number.isFinite(seed)) {
+    if (!fixed.has("seed") && !Number.isFinite(seed)) {
       setError("seedは整数で入力してください。");
       return null;
     }

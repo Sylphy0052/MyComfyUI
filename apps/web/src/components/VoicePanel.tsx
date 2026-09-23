@@ -12,6 +12,7 @@ import type { CanonDescriptor, ShotEnvelope } from "../api/aimedia";
 import {
   applyPlanPreset,
   planPresetBlocker,
+  planPresetKeys,
   usePlanPresetDefaults,
   type PlanPreset,
 } from "../state/productionPlan";
@@ -260,8 +261,14 @@ export function VoicePanel({
 
   const buildInputs = (): Record<string, unknown> | null => {
     if (useInheritedDefaults) return {};
+    // 計画のPresetが決める入力は送られないため、未入力でも止めない。
+    const fixed = planPresetKeys(
+      planPreset,
+      recipes.find((item) => item.id === recipeId),
+      useInheritedDefaults,
+    );
     const voices: Record<string, unknown> = {};
-    for (const voiceId of voiceIds) {
+    for (const voiceId of fixed.has("voices") ? [] : voiceIds) {
       const binding = bindings[voiceId] ?? EMPTY_BINDING;
       if (projectId && !binding.canonId) {
         setError(`${voiceId}のVoice Canonを選んでください。`);
@@ -292,18 +299,19 @@ export function VoicePanel({
       };
     }
     const parsedSeed = Number.parseInt(seed || "-1", 10);
-    if (!Number.isFinite(parsedSeed)) {
+    if (!fixed.has("seed") && !Number.isFinite(parsedSeed)) {
       setError("seedは整数で入力してください。");
       return null;
     }
     const standalone = !shotId;
     const duration = Number.parseFloat(standaloneDuration);
-    if (standalone && !standaloneText.trim()) {
+    if (standalone && !fixed.has("dialogue") && !standaloneText.trim()) {
       setError("読む台詞を入力してください。");
       return null;
     }
     if (
       standalone &&
+      !fixed.has("duration_sec") &&
       (!Number.isFinite(duration) || duration < 1 || duration > 15)
     ) {
       setError("目標尺は1秒以上15秒以下で入力してください。");

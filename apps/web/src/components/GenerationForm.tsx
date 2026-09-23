@@ -210,6 +210,8 @@ export function GenerationForm({
 
   // 計画のPresetとプロンプトを入れる。値は触った印を付け、上のRecipe変更の効果で持ち越させる。
   const appliedPlanRef = useRef<string | null>(null);
+  // 計画が最後に入れたプロンプト。使用者が書き換えていなければ、工程を移ったときに入れ替える。
+  const planPromptRef = useRef<string | null>(null);
   useEffect(() => {
     if (!plan || recipes.length === 0) return;
     const preset = plan.preset;
@@ -228,8 +230,10 @@ export function GenerationForm({
         if (value.trim() !== "") filled[name] = value;
       }
     }
-    if (plan.prompt && !(valuesRef.current.positive_prompt ?? "").trim()) {
+    const currentPrompt = valuesRef.current.positive_prompt ?? "";
+    if (plan.prompt && (!currentPrompt.trim() || currentPrompt === planPromptRef.current)) {
       filled.positive_prompt = plan.prompt;
+      planPromptRef.current = plan.prompt;
     }
     if (Object.keys(filled).length === 0) return;
     setValues((current) => ({ ...current, ...filled }));
