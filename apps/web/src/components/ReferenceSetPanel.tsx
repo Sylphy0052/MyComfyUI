@@ -71,28 +71,33 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
 
   const persist = (
     update: (stored: ProjectCharacterProfile) => ProjectCharacterProfile,
-  ): Promise<void> => {
-    const run = async () => {
+  ): Promise<boolean> => {
+    const run = async (): Promise<boolean> => {
       setBusy(true);
       try {
         const latest = await api.getProjectLocalOverrides(projectId);
         const current = latest.characters ?? [];
         const stored = current.find((item) => item.id === character.id);
-        if (!stored) return; // 保存前にキャラクターが削除された。黙って諦める。
+        if (!stored) {
+          setError("このキャラクターは他の画面で削除されたため保存できませんでした。");
+          return false;
+        }
         const updated = update(stored);
         const characters = current.map((item) => (item.id === character.id ? updated : item));
         const saved = await api.updateProjectLocalOverrides(projectId, { ...latest, characters });
         setError(null);
         onSaved(saved);
+        return true;
       } catch (cause) {
         setError(describe(cause));
+        return false;
       } finally {
         setBusy(false);
       }
     };
     // runは例外を外へ出さないので、キューが途中で止まることはない。
     const queued = queueRef.current.then(run);
-    queueRef.current = queued;
+    queueRef.current = queued.then(() => undefined);
     return queued;
   };
 
@@ -159,7 +164,9 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
     if (emptyKeys.length === 0) return;
     setBusy(true);
     setError(null);
-    Promise.all(
+    // 一部の投入が失敗しても、投入できたJobは枠へ記録する。記録しないとJobだけが走り、
+    // 次の生成で同じ枠へ二重に投入される。
+    void Promise.allSettled(
       emptyKeys.map((key) =>
         api.createJob({
           kind: "image",
@@ -168,24 +175,34 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
           inputs: { positive_prompt: slotPrompt(character, referenceSet.outfit_id ?? null, key) },
         }),
       ),
-    )
-      .then((jobs) =>
-        persist((stored) => ({
+    ).then(async (results) => {
+      const submitted = new Map<ReferenceSlotKey, string>();
+      const failures: string[] = [];
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") submitted.set(emptyKeys[index], result.value.id);
+        else failures.push(describe(result.reason));
+      });
+      if (submitted.size > 0) {
+        const saved = await persist((stored) => ({
           ...stored,
           reference_sets: (stored.reference_sets ?? []).map((set) => {
             if (set.id !== referenceSet.id) return set;
             const slots = { ...set.slots };
-            emptyKeys.forEach((key, index) => {
-              slots[key] = { pending_job_id: jobs[index].id };
-            });
+            for (const [key, jobId] of submitted) slots[key] = { pending_job_id: jobId };
             return { ...set, slots };
           }),
-        })),
-      )
-      .catch((cause) => {
-        setError(describe(cause));
-        setBusy(false);
-      });
+        }));
+        if (!saved) {
+          await Promise.allSettled([...submitted.values()].map((jobId) => api.cancelJob(jobId)));
+          setBusy(false);
+          return;
+        }
+      }
+      if (failures.length > 0) {
+        setError(`${failures.length}枠の生成を投入できませんでした: ${failures[0]}`);
+      }
+      setBusy(false);
+    });
   };
 
   // ポーリング対象のJob ID一覧。フレッシュな枠の状態はpersist内のGETで取り直すため、
@@ -211,8 +228,20 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
           // 完了したJobの画像は入力cacheへ取り込み、動画の参照画像として渡せる形で枠へ入れる。
           const resolved = new Map<string, ProjectReferenceSlot | null>();
           let failed = 0;
+          let unreachable = 0;
           for (const jobId of pendingJobIds) {
-            const job = await api.getJob(jobId);
+            let job;
+            try {
+              job = await api.getJob(jobId);
+            } catch (cause) {
+              if (cause instanceof ApiError && cause.status === 404) {
+                failed += 1;
+                resolved.set(jobId, null);
+              } else {
+                unreachable += 1;
+              }
+              continue;
+            }
             if (PENDING_STATES.has(job.state)) continue;
             const artifact = job.state === "succeeded"
               ? (await api.listJobArtifacts(jobId)).find((item) => item.media_type?.startsWith("image/"))
@@ -232,26 +261,34 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
               resolved.set(jobId, null);
             }
           }
-          if (!active || resolved.size === 0) return;
-          if (failed > 0) setError(`${failed}枠の生成が完了しませんでした。空の枠を生成し直してください。`);
-          await persist((stored) => ({
-            ...stored,
-            reference_sets: (stored.reference_sets ?? []).map((set) => {
-              const slots = { ...set.slots };
-              let changed = false;
-              for (const key of Object.keys(slots) as ReferenceSlotKey[]) {
-                const slot = slots[key];
-                if (!slot?.pending_job_id || !resolved.has(slot.pending_job_id)) continue;
-                changed = true;
-                const filled = resolved.get(slot.pending_job_id) ?? null;
-                if (filled) slots[key] = filled;
-                else delete slots[key];
-              }
-              return changed ? { ...set, slots } : set;
-            }),
-          }));
-        } catch {
-          // 次回のポーリングで再試行する。
+          if (!active) return;
+          if (resolved.size > 0) {
+            await persist((stored) => ({
+              ...stored,
+              reference_sets: (stored.reference_sets ?? []).map((set) => {
+                const slots = { ...set.slots };
+                let changed = false;
+                for (const key of Object.keys(slots) as ReferenceSlotKey[]) {
+                  const slot = slots[key];
+                  if (!slot?.pending_job_id || !resolved.has(slot.pending_job_id)) continue;
+                  changed = true;
+                  const filled = resolved.get(slot.pending_job_id) ?? null;
+                  if (filled) slots[key] = filled;
+                  else delete slots[key];
+                }
+                return changed ? { ...set, slots } : set;
+              }),
+            }));
+          }
+          // persistは成功時にエラー表示を消すため、結果の通知は保存のあとに出す。
+          if (failed > 0) {
+            setError(`${failed}枠の生成が完了しませんでした。空の枠を生成し直してください。`);
+          } else if (unreachable > 0) {
+            setError("生成中のJobの状態を取得できませんでした。しばらくして再確認します。");
+          }
+        } catch (cause) {
+          // 画像の取り込みや保存の失敗。枠は生成中のまま残し、次回のポーリングで再試行する。
+          if (active) setError(`生成した画像を枠へ反映できませんでした: ${describe(cause)}`);
         } finally {
           pollingRef.current = false;
         }
@@ -317,6 +354,9 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
                   <div key={def.key} className="stack" style={{ width: 160 }}>
                     <span className="muted">{def.label}</span>
                     {pending && <p className="muted">生成中...</p>}
+                    {pending && (
+                      <Button disabled={busy} onClick={() => removeSlotImage(set.id, def.key)}>待つのをやめる</Button>
+                    )}
                     {!pending && thumbUrl && <img src={thumbUrl} alt={def.label} style={{ width: "100%" }} />}
                     {!pending && !thumbUrl && slot?.image && <p>{slot.image.file_name}</p>}
                     {!pending && !thumbUrl && !slot?.image && <p className="muted">未設定</p>}
