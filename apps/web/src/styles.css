@@ -340,6 +340,23 @@ ul.list li button[aria-pressed="true"] {
   border-color: var(--color-accent);
 }
 
+/* 詰め表示: 行の中身を1行へ寄せ、行間と内側の余白を減らす。 */
+ul.list.density-compact {
+  gap: var(--space-1);
+}
+
+ul.list.density-compact li button {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-3);
+  padding-block: var(--space-1);
+}
+
+.structure-list.density-compact li {
+  padding: var(--space-1);
+}
+
 .muted {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
@@ -402,6 +419,30 @@ ul.list li button[aria-pressed="true"] {
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
 }
 
+/* リスト表示: サムネイルを左の細い列に寄せ、選択欄や情報を右の列へ縦に積む。
+   採否バッジは絶対配置でサムネイルに重ねるため、列の指定から外す (指定すると右の列へ移る)。 */
+.gallery.gallery-list {
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.gallery.gallery-list > figure {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: start;
+}
+
+.gallery.gallery-list > figure > :is(.preview, .preview-missing, .preview-link) {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  max-height: 120px;
+  object-fit: contain;
+}
+
+.gallery.gallery-list > figure > :not(.preview, .preview-missing, .preview-link, .badge.decision) {
+  grid-column: 2;
+}
+
 .card,
 .gallery figure {
   margin: 0;
@@ -415,6 +456,11 @@ ul.list li button[aria-pressed="true"] {
 .candidate-card > .preview {
   border-radius: calc(var(--radius-md) - var(--border-width))
     calc(var(--radius-md) - var(--border-width)) 0 0;
+}
+
+.gallery-list > .candidate-card > .preview {
+  border-radius: calc(var(--radius-md) - var(--border-width)) 0 0
+    calc(var(--radius-md) - var(--border-width));
 }
 
 /* モードBでキーボードの採否が効く候補。採否の枠線と重ならないよう outline で示す。 */
@@ -456,12 +502,12 @@ ul.list li button[aria-pressed="true"] {
   margin: 0;
 }
 
-.thumb-size {
+.toggle-group {
   display: flex;
   gap: var(--space-2);
 }
 
-.thumb-size button {
+.toggle-group button {
   min-width: 32px;
   padding: var(--space-1) var(--space-3);
 }

@@ -12,6 +12,8 @@ import { Card } from "./ui/Card";
 import { EmptyState } from "./ui/EmptyState";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
+import { ToggleGroup } from "./ui/ToggleGroup";
+import { GALLERY_DENSITY_OPTIONS, useListDensity } from "../state/densityState";
 
 export const DECISION_OPTIONS: { value: string; label: string }[] = [
   { value: "undecided", label: "未判断" },
@@ -40,12 +42,6 @@ interface Props {
   /** 作品制作 (モードB) 向けの表示。比較・詳細・派生を隠し、採否だけを出す。 */
   simple?: boolean;
 }
-type ThumbSize = "s" | "m" | "l";
-const THUMB_SIZES: { value: ThumbSize; label: string }[] = [
-  { value: "s", label: "S" },
-  { value: "m", label: "M" },
-  { value: "l", label: "L" },
-];
 interface CandidateDetail { job: GenerationJob; manifest: GenerationManifest; lineage: JobLineage | null; }
 interface ViewTransform { zoom: number; x: number; y: number; }
 const INITIAL_TRANSFORM: ViewTransform = { zoom: 1, x: 0, y: 0 };
@@ -145,7 +141,9 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
-  const [thumbSize, setThumbSize] = useState<ThumbSize>("m");
+  const [storedDensity, setDensity] = useListDensity("candidates");
+  // モードBは切替を出さないため、ラボで選んだ形式を持ち込まず従来の中サイズに固定する。
+  const density = simple ? "m" : storedDensity;
   const [leftId, setLeftId] = useState<string | null>(null);
   const [rightId, setRightId] = useState<string | null>(null);
   const [activeSide, setActiveSide] = useState<"A" | "B">("A");
@@ -421,18 +419,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
               実験の比較絞込みを解除
             </button>
           )}
-          {!simple && <div className="thumb-size" role="group" aria-label="サムネイルの表示サイズ">
-            {THUMB_SIZES.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                aria-pressed={thumbSize === item.value}
-                onClick={() => setThumbSize(item.value)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>}
+          {!simple && <ToggleGroup label="候補の表示形式" options={GALLERY_DENSITY_OPTIONS} value={storedDensity} onChange={setDensity} />}
         </div>
       </div>
       {comparisonActive && (
@@ -463,7 +450,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
         {!simple && detailArtifactId && selectedDetail && !selectedDetail.lineage && !selectedDetailError && (
           <LoadingPlaceholder label="lineageを取得中です。" lines={2} />
         )}
-        <div className={`gallery gallery-${thumbSize}`}>
+        <div className={`gallery gallery-${density}`}>
           {candidates.map(({ artifact }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}${simple && artifact.id === activeId ? " selected" : ""}`}>
             <Badge tone={`decision decision-${artifact.decision}`}>
               {DECISION_LABEL[artifact.decision] ?? artifact.decision}
