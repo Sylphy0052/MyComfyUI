@@ -14,6 +14,7 @@ import { ProjectGenerationDefaultsEditor } from "./ProjectGenerationDefaultsEdit
 import { ProjectOperations } from "./ProjectOperations";
 import { ProjectPackageDialog, ProjectPortabilityPanel } from "./ProjectPortability";
 import { ExternalProjectImporter, ProjectSyncPanel } from "./ProjectSyncPanel";
+import { LoadingPlaceholder } from "./LoadingPlaceholder";
 
 type Lifecycle = ProjectRecord["lifecycle"];
 type ProjectStatus = ProjectRecord["status"];
@@ -356,7 +357,7 @@ export function ProjectWorkspace({
       <div className="project-layout">
         <section className="panel project-list-panel" aria-busy={loading}>
           <h2>{LIFECYCLES.find((item) => item.value === lifecycle)?.label}</h2>
-          {loading && <p className="muted">読込み中...</p>}
+          {loading && <LoadingPlaceholder label="読込み中..." />}
           {!loading && !listError && projects.length === 0 && (
             <p className="muted">条件に一致するProjectはありません。</p>
           )}
@@ -468,7 +469,7 @@ export function ProjectWorkspace({
                 </div>
               )}
 
-              {homeLoading && <p className="muted">Projectホームを読込み中...</p>}
+              {homeLoading && <LoadingPlaceholder label="Projectホームを読込み中..." lines={4} />}
               {homeError && <p className="error">Projectホームを取得できません。{homeError}</p>}
               {home && (
                 <>

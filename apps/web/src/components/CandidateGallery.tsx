@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { Artifact, ArtifactDecision, GenerationJob, GenerationManifest, JobLineage } from "../api/client";
 import { ArtifactDetail } from "./ArtifactDetail";
 import { ArtifactPreview } from "./ArtifactPreview";
+import { LoadingPlaceholder } from "./LoadingPlaceholder";
 
 export const DECISION_OPTIONS: { value: string; label: string }[] = [
   { value: "undecided", label: "未判断" },
@@ -420,7 +421,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
           </div>
         )}
         {detailArtifactId && selectedDetail && !selectedDetail.lineage && !selectedDetailError && (
-          <p className="muted">lineageを取得中です。</p>
+          <LoadingPlaceholder label="lineageを取得中です。" lines={2} />
         )}
         <div className={`gallery gallery-${thumbSize}`}>
           {candidates.map(({ artifact }) => <figure key={artifact.id} className={artifact.decision}>

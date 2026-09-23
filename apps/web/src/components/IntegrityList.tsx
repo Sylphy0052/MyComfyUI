@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { ArtifactIntegrity, ArtifactIntegrityReason } from "../api/client";
+import { LoadingPlaceholder } from "./LoadingPlaceholder";
 
 const REASON_LABEL: Record<ArtifactIntegrityReason, string> = {
   file_missing: "実ファイル欠損",
@@ -123,7 +124,7 @@ export function IntegrityList({ sceneId, shotId }: Props) {
         </button>
       </div>
 
-      {loading && <p className="muted">判定中。</p>}
+      {loading && <LoadingPlaceholder label="判定中。" lines={2} />}
 
       {failed && !loading && (
         <p className="muted">

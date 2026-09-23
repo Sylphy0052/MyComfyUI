@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { Recipe, WorkflowModelOptions } from "../api/client";
+import { LoadingPlaceholder } from "./LoadingPlaceholder";
 
 interface FieldSpec {
   label?: unknown;
@@ -162,7 +163,7 @@ export function ModelSelector({
       <p className="muted">
         未変更のslotは送信せず、Project、Scene、Shot、Recipeの既定値を使用します。
       </p>
-      {loading && <p className="muted">モデル在庫を確認中...</p>}
+      {loading && <LoadingPlaceholder label="モデル在庫を確認中..." lines={2} />}
       {error && <p className="error">{error}</p>}
     </fieldset>
   );

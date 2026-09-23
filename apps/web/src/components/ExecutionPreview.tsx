@@ -1,6 +1,7 @@
 import type { ApiError } from "../api/client";
 import type { GenerationPreview, GenerationPreviewDiff } from "../api/client";
 import { KIND_LABEL, shorten } from "./CanonWarning";
+import { LoadingPlaceholder } from "./LoadingPlaceholder";
 
 /** 値の出所を画面の語へ直す。API が新しい値を返しても値をそのまま出す。 */
 const ORIGIN_LABEL: Record<string, string> = {
@@ -42,7 +43,7 @@ export function ExecutionPreview({
   loading: boolean;
 }) {
   if (loading) {
-    return <p className="muted">確認中...</p>;
+    return <LoadingPlaceholder label="確認中..." />;
   }
   if (error) {
     return <PreviewError error={error} />;
