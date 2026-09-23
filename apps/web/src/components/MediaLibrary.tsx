@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -8,6 +8,10 @@ import type {
   ProjectCharacterProfile,
 } from "../api/client";
 import { LoadingPlaceholder } from "./LoadingPlaceholder";
+import { MediaViewer } from "./MediaViewer";
+import type { MediaViewerItem } from "./MediaViewer";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 /** 一度に取る件数。一覧は新しい順の窓で見る (他のブラウザ系コンポーネントと同じ考え方)。 */
 const PAGE_SIZE = 100;
@@ -60,6 +64,7 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!projectId) {
@@ -113,13 +118,35 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
     };
   }, [projectId, sceneId, shotId, kind, source, role, characterId]);
 
-  const filtered = keyword
-    ? items.filter((item) =>
-        `${item.label ?? ""} ${item.relative_path}`
-          .toLowerCase()
-          .includes(keyword.toLowerCase()),
-      )
-    : items;
+  const filtered = useMemo(
+    () =>
+      keyword
+        ? items.filter((item) =>
+            `${item.label ?? ""} ${item.relative_path}`
+              .toLowerCase()
+              .includes(keyword.toLowerCase()),
+          )
+        : items,
+    [items, keyword],
+  );
+
+  // ビューアは Artifact の配信経路で表示するため、Artifact 由来の素材だけを前後移動の対象にする。
+  // 一覧に載っている素材は実ファイルがある前提で availability を complete とする。
+  const viewerItems = useMemo<MediaViewerItem[]>(
+    () =>
+      filtered.flatMap((item) =>
+        item.artifact_id
+          ? [
+              {
+                id: item.artifact_id,
+                media_type: item.media_type,
+                availability: "complete" as const,
+              },
+            ]
+          : [],
+      ),
+    [filtered],
+  );
 
   return (
     <section className="panel">
@@ -212,6 +239,19 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
                 />
               )}
               <span className="mono">{item.label ?? item.relative_path}</span>
+              {item.artifact_id && (
+                <IconButton
+                  icon={<Icon name="expand" />}
+                  label="拡大"
+                  onClick={() =>
+                    setViewerIndex(
+                      viewerItems.findIndex(
+                        (entry) => entry.id === item.artifact_id,
+                      ),
+                    )
+                  }
+                />
+              )}
               {(item.character_ids ?? []).length > 0 && (
                 <span className="row">
                   {(item.character_ids ?? []).map((id) => {
@@ -228,6 +268,12 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
           ))}
         </ul>
       )}
+      <MediaViewer
+        items={viewerItems}
+        index={viewerIndex}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </section>
   );
 }

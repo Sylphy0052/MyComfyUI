@@ -19,6 +19,9 @@ import { DECISION_LABEL, DECISION_OPTIONS } from "./CandidateGallery";
 import { ExternalImageImportPanel } from "./ExternalImageImportPanel";
 import { AssignmentPicker } from "./AssignmentPicker";
 import { LoadingPlaceholder } from "./LoadingPlaceholder";
+import { MediaViewer } from "./MediaViewer";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 const KIND_OPTIONS = [
   { value: "image", label: "画像" },
@@ -119,6 +122,7 @@ export function AssetBrowser({
   const [rerunBusy, setRerunBusy] = useState(false);
   // 再実行するとcanon整合の判定が変わる。一覧とは別に詳細だけ取り直す。
   const [detailToken, setDetailToken] = useState(0);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -616,6 +620,15 @@ export function AssetBrowser({
                       ))}
                     </span>
                     <div className="row">
+                      <IconButton
+                        icon={<Icon name="expand" />}
+                        label="拡大"
+                        onClick={() =>
+                          setViewerIndex(
+                            artifacts.findIndex((item) => item.id === artifact.id),
+                          )
+                        }
+                      />
                       <button
                         type="button"
                         aria-pressed={artifact.id === selectedArtifactId}
@@ -773,6 +786,12 @@ export function AssetBrowser({
           )}
         </div>
       </div>
+      <MediaViewer
+        items={artifacts}
+        index={viewerIndex}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </section>
   );
 }
