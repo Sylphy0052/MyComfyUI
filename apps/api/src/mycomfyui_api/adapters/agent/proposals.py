@@ -442,10 +442,11 @@ def _ensure_rating_tag(quality_tags: list[Any]) -> list[Any]:
 
     `PROMPT_DIRECTIVE`はratingを必ず入れるよう指示するが、指示文だけでは
     Providerが守る保証がない。落ちていても提案自体は拒否せず、安全側の値を
-    実装側で足して先へ進める。
+    実装側で足して先へ進める。判定は`_dedupe_key`と同じ基準にそろえ、
+    `(nsfw:1.3)`のような重み付きの書き方も見落とさないようにする。
     """
     has_rating = any(
-        isinstance(tag, str) and _normalize_tag(tag).casefold() in RATING_TAGS
+        isinstance(tag, str) and _dedupe_key(_normalize_tag(tag)) in RATING_TAGS
         for tag in quality_tags
     )
     if has_rating:
