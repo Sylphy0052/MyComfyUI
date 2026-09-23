@@ -568,6 +568,57 @@ class ArtifactTag(Base):
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class MediaRoleTag(Base):
+    """画像取込物へ後付けする役割・キャラクター/シーンの紐付け。
+
+    生成物・外部取込・登録素材(Artifact由来)は`artifact_id`で結び付ける。入力cache
+    (`/image-references`が書く`inputs/`配下のファイル)はDB上に対応する行を持たない
+    ため、`relative_path`(+`sha256`)で直接特定する。どちらか一方だけを持つ。
+    入力cache側は他にDB上の記録が無いため、この行が横断一覧に載せる唯一のカタログ
+    行になる。そのため`file_name`・`byte_size`・`media_type`もここへ保持する
+    (artifact_id指定時はArtifact側に同じ情報があるため常にNULLのままでよい)。
+    1件の対象につき役割は1つ、キャラクターは複数へ関連付けられるため`character_ids`
+    はリストで持つ(JSON列。件数は少数を想定し、絞り込みはPython側で行う)。
+    """
+
+    __tablename__ = "media_role_tag"
+    __table_args__ = (
+        CheckConstraint(
+            "role in ('appearance_reference','pose','background','costume','other')",
+            name="ck_media_role_tag_role",
+        ),
+        CheckConstraint(
+            "(artifact_id IS NOT NULL) != (relative_path IS NOT NULL)",
+            name="ck_media_role_tag_target_xor",
+        ),
+        UniqueConstraint("artifact_id", name="uq_media_role_tag_artifact_id"),
+        UniqueConstraint("relative_path", name="uq_media_role_tag_relative_path"),
+        Index(
+            "ix_media_role_tag_assignment", "assigned_project_id", "assigned_scene_id"
+        ),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    artifact_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=True
+    )
+    relative_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(SHA256_LENGTH), nullable=True)
+    file_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    byte_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    media_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    character_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    assigned_project_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
+    assigned_scene_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class ApprovalLog(Base):
     """Append-only record of a proposed operation and its decision."""
 

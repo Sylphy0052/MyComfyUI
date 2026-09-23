@@ -67,6 +67,7 @@ from mycomfyui_api.models import (
     GenerationManifest,
     ImageImportPreview,
     LookProfile,
+    MediaRoleTag,
     Project,
     ProjectShot,
     Recipe,
@@ -2339,6 +2340,290 @@ async def list_artifacts(
     response.headers[LINEAGE_TRUNCATED_HEADER] = "true" if truncated else "false"
     result = await session.execute(query.limit(limit).offset(offset))
     return await _artifact_reads(session, result.scalars().all())
+
+
+def _media_role_tag_read(tag: MediaRoleTag) -> schemas.MediaRoleTagRead:
+    return schemas.MediaRoleTagRead.model_validate(tag)
+
+
+@router.put("/media-role-tags", response_model=schemas.MediaRoleTagRead)
+async def upsert_media_role_tag(
+    payload: schemas.MediaRoleTagUpsert, session: SessionDep
+):
+    """役割・キャラクターの紐付けを登録・更新する。
+
+    Issue #148: 取込時の役割/キャラクター指定を、既存の4系統の取込endpointを変えずに
+    後付けできるようにする。対象(`artifact_id`または`relative_path`)へ同じ内容を
+    再送すると上書きになる。
+    """
+    if payload.artifact_id is not None:
+        await _get_or_404(session, Artifact, "Artifact", payload.artifact_id)
+        existing = await session.scalar(
+            select(MediaRoleTag).where(MediaRoleTag.artifact_id == payload.artifact_id)
+        )
+    else:
+        existing = await session.scalar(
+            select(MediaRoleTag).where(
+                MediaRoleTag.relative_path == payload.relative_path
+            )
+        )
+    now = schemas.now_iso()
+    if existing is None:
+        row = MediaRoleTag(
+            id=schemas.new_id(),
+            artifact_id=payload.artifact_id,
+            relative_path=payload.relative_path,
+            sha256=payload.sha256,
+            file_name=payload.file_name,
+            byte_size=payload.byte_size,
+            media_type=payload.media_type,
+            role=payload.role,
+            character_ids=list(payload.character_ids),
+            assigned_project_id=payload.project_id,
+            assigned_scene_id=payload.scene_id,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(row)
+    else:
+        existing.sha256 = payload.sha256
+        existing.file_name = payload.file_name
+        existing.byte_size = payload.byte_size
+        existing.media_type = payload.media_type
+        existing.role = payload.role
+        existing.character_ids = list(payload.character_ids)
+        existing.assigned_project_id = payload.project_id
+        existing.assigned_scene_id = payload.scene_id
+        existing.updated_at = now
+        row = existing
+    await _commit(session)
+    await session.refresh(row)
+    return _media_role_tag_read(row)
+
+
+@router.delete("/media-role-tags", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_media_role_tag(
+    session: SessionDep,
+    artifact_id: str | None = None,
+    relative_path: str | None = None,
+):
+    """役割・キャラクターの紐付けを外す。対象そのもの(Artifact・入力cacheの実体)は消さない。"""
+    if bool(artifact_id) == bool(relative_path):
+        raise _validation_error(
+            "artifact_idとrelative_pathはどちらか一方だけ指定してください。"
+        )
+    query = select(MediaRoleTag)
+    query = (
+        query.where(MediaRoleTag.artifact_id == artifact_id)
+        if artifact_id
+        else query.where(MediaRoleTag.relative_path == relative_path)
+    )
+    row = await session.scalar(query)
+    if row is not None:
+        await session.delete(row)
+        await _commit(session)
+
+
+async def _media_role_tag_map(
+    session: AsyncSession, artifact_ids: Sequence[str]
+) -> dict[str, MediaRoleTag]:
+    """Artifact IDごとの役割タグをまとめて引く。`_artifact_tag_map`と同じ理由でIN句を
+    まとめ、SQLiteのbind parameter上限に当たらないよう分割する。
+    """
+    tags: dict[str, MediaRoleTag] = {}
+    unique_ids = list(dict.fromkeys(artifact_ids))
+    for start in range(0, len(unique_ids), TAG_LOOKUP_CHUNK):
+        chunk = unique_ids[start : start + TAG_LOOKUP_CHUNK]
+        result = await session.execute(
+            select(MediaRoleTag).where(MediaRoleTag.artifact_id.in_(chunk))
+        )
+        for tag in result.scalars().all():
+            if tag.artifact_id is not None:
+                tags[tag.artifact_id] = tag
+    return tags
+
+
+async def _artifact_import_ids(
+    session: AsyncSession, artifact_ids: Sequence[str]
+) -> set[str]:
+    """外部取込由来のArtifact IDの集合をまとめて引く。"""
+    ids: set[str] = set()
+    unique_ids = list(dict.fromkeys(artifact_ids))
+    for start in range(0, len(unique_ids), TAG_LOOKUP_CHUNK):
+        chunk = unique_ids[start : start + TAG_LOOKUP_CHUNK]
+        result = await session.execute(
+            select(ArtifactImport.artifact_id).where(
+                ArtifactImport.artifact_id.in_(chunk)
+            )
+        )
+        ids.update(result.scalars().all())
+    return ids
+
+
+def _media_item_kind(media_type: str) -> str:
+    if media_type.startswith("audio/"):
+        return "audio"
+    return "image"
+
+
+@router.get("/media-items", response_model=list[schemas.MediaItemRead])
+async def list_media_items(
+    session: SessionDep,
+    project_id: str | None = None,
+    scene_id: str | None = None,
+    shot_id: str | None = None,
+    unassigned: bool = False,
+    kind: schemas.ArtifactKind | None = None,
+    source: schemas.MediaItemSource | None = None,
+    role: schemas.MediaRole | None = None,
+    character_id: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    """生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。
+
+    Artifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力
+    cacheファイル(`registered_input`)、Projectのキャラクター参照画像
+    (`character_reference`)を横断して返す。人物参照はProject単位の設定のため
+    `project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。
+    `character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、
+    常に一覧の末尾寄りになる。
+    """
+    if unassigned and any(
+        value is not None for value in (project_id, scene_id, shot_id)
+    ):
+        raise _validation_error(
+            "unassignedとProjectコンテキストの絞り込みは同時に指定できません。"
+        )
+
+    items: list[schemas.MediaItemRead] = []
+
+    # 1) Artifact由来 (生成物・外部取込・登録素材)
+    artifact_query = select(Artifact).order_by(
+        Artifact.created_at.desc(), Artifact.id.asc()
+    )
+    artifact_query = _artifact_filters(
+        artifact_query,
+        project_id=project_id,
+        scene_id=scene_id,
+        shot_id=shot_id,
+        unassigned=unassigned,
+        job_id=None,
+        kind=kind,
+    )
+    artifacts = list((await session.execute(artifact_query)).scalars().all())
+    artifact_ids = [artifact.id for artifact in artifacts]
+    imported_ids = await _artifact_import_ids(session, artifact_ids)
+    artifact_role_tags = await _media_role_tag_map(session, artifact_ids)
+    for artifact in artifacts:
+        artifact_source: schemas.MediaItemSource = (
+            "generated"
+            if artifact.job_id
+            else "external_import"
+            if artifact.id in imported_ids
+            else "registered"
+        )
+        tag = artifact_role_tags.get(artifact.id)
+        items.append(
+            schemas.MediaItemRead(
+                key=f"artifact:{artifact.id}",
+                source=artifact_source,
+                kind=artifact.kind,
+                relative_path=artifact.relative_path,
+                sha256=artifact.sha256,
+                byte_size=artifact.byte_size,
+                media_type=artifact.media_type,
+                created_at=artifact.created_at,
+                label=artifact.relative_path.rsplit("/", 1)[-1],
+                role=tag.role if tag else None,
+                character_ids=list(tag.character_ids) if tag else [],
+                artifact_id=artifact.id,
+                assigned_project_id=artifact.assigned_project_id,
+                assigned_scene_id=artifact.assigned_scene_id,
+                assigned_shot_id=artifact.assigned_shot_id,
+            )
+        )
+
+    # 2) 役割タグを付けた入力cacheファイル (registered_input)
+    input_tag_query = select(MediaRoleTag).where(
+        MediaRoleTag.relative_path.is_not(None)
+    )
+    if project_id is not None:
+        input_tag_query = input_tag_query.where(
+            MediaRoleTag.assigned_project_id == project_id
+        )
+    if scene_id is not None:
+        input_tag_query = input_tag_query.where(
+            MediaRoleTag.assigned_scene_id == scene_id
+        )
+    if unassigned:
+        input_tag_query = input_tag_query.where(
+            MediaRoleTag.assigned_project_id.is_(None)
+        )
+    input_tags = list((await session.execute(input_tag_query)).scalars().all())
+    for tag in input_tags:
+        media_type = tag.media_type or "application/octet-stream"
+        items.append(
+            schemas.MediaItemRead(
+                key=f"input:{tag.relative_path}",
+                source="registered_input",
+                kind=_media_item_kind(media_type),
+                relative_path=tag.relative_path or "",
+                sha256=tag.sha256 or "",
+                byte_size=tag.byte_size or 0,
+                media_type=media_type,
+                created_at=tag.created_at,
+                label=tag.file_name,
+                role=tag.role,
+                character_ids=list(tag.character_ids),
+                artifact_id=None,
+                assigned_project_id=tag.assigned_project_id,
+                assigned_scene_id=tag.assigned_scene_id,
+                assigned_shot_id=None,
+            )
+        )
+
+    # 3) Projectのキャラクター参照画像 (character_reference)。Project単位の設定の
+    #    ため、project_idを指定したときだけ含める。
+    if project_id is not None:
+        project = await session.get(Project, project_id)
+        if project is not None:
+            overrides = schemas.ProjectLocalOverrides.model_validate(
+                project.local_overrides or {}
+            )
+            for character in overrides.characters:
+                for reference in character.reference_images:
+                    items.append(
+                        schemas.MediaItemRead(
+                            key=f"character:{character.id}:{reference.relative_path}",
+                            source="character_reference",
+                            kind=_media_item_kind(reference.media_type),
+                            relative_path=reference.relative_path,
+                            sha256=reference.sha256,
+                            byte_size=reference.byte_size,
+                            media_type=reference.media_type,
+                            created_at="",
+                            label=f"{character.name} / {reference.file_name}",
+                            role="appearance_reference",
+                            character_ids=[character.id],
+                            artifact_id=None,
+                            assigned_project_id=project_id,
+                            assigned_scene_id=None,
+                            assigned_shot_id=None,
+                        )
+                    )
+
+    if source is not None:
+        items = [item for item in items if item.source == source]
+    if role is not None:
+        items = [item for item in items if item.role == role]
+    if character_id is not None:
+        items = [item for item in items if character_id in item.character_ids]
+    if kind is not None:
+        items = [item for item in items if item.kind == kind]
+
+    items.sort(key=lambda item: item.created_at, reverse=True)
+    return items[offset : offset + limit]
 
 
 def _integrity_finding(

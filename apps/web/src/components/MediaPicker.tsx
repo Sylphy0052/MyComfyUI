@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { Artifact } from "../api/client";
+import type { Artifact, MediaRole, ProjectCharacterProfile } from "../api/client";
 
 /**
  * Job入力として渡す画像・音声の指定。既存Artifactを指すか、アップロード直後に
@@ -83,6 +83,15 @@ const TAB_LABEL: Record<SourceTab, string> = {
   upload: "アップロード",
 };
 
+const ROLE_LABEL: Record<MediaRole, string> = {
+  appearance_reference: "外見参照",
+  pose: "ポーズ",
+  background: "背景",
+  costume: "衣装",
+  other: "その他",
+};
+const ROLE_OPTIONS = Object.keys(ROLE_LABEL) as MediaRole[];
+
 export interface MediaPickerProps {
   kind: "image" | "audio";
   label: string;
@@ -105,6 +114,12 @@ export interface MediaPickerProps {
   sources?: SourceTab[];
   /** アップロード直後に入力cacheへ登録するか。falseなら選んだFileをそのまま返すだけにする。 */
   autoRegister?: boolean;
+  /**
+   * 取込時に役割・キャラクターを指定できるようにする (Issue #148)。既定はfalse
+   * (既存呼び出し元の見た目・挙動を変えない)。有効時、選択済みの役割があれば
+   * 選択・アップロードのたびに `/media-role-tags` へ後付けで登録する。
+   */
+  enableRoleTagging?: boolean;
 }
 
 export function MediaPicker({
@@ -123,14 +138,67 @@ export function MediaPicker({
   shotId = null,
   sources = ["generated", "registered", "upload"],
   autoRegister = true,
+  enableRoleTagging = false,
 }: MediaPickerProps) {
   const [tab, setTab] = useState<SourceTab>(sources[0] ?? "upload");
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [pickedArtifactId, setPickedArtifactId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [characters, setCharacters] = useState<ProjectCharacterProfile[]>([]);
+  const [role, setRole] = useState<MediaRole | "">("");
+  const [characterIds, setCharacterIds] = useState<string[]>([]);
 
   const needsArtifacts = sources.includes("generated") || sources.includes("registered");
+
+  useEffect(() => {
+    if (!enableRoleTagging || !projectId) {
+      setCharacters([]);
+      return;
+    }
+    let active = true;
+    api
+      .getProjectLocalOverrides(projectId)
+      .then((overrides) => {
+        if (active) setCharacters(overrides.characters ?? []);
+      })
+      .catch(() => {
+        // キャラクター一覧を取れなくても役割タグ付け以外は継続する。
+        if (active) setCharacters([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [enableRoleTagging, projectId]);
+
+  const tagRoleFor = (target: { artifact_id: string } | {
+    relative_path: string;
+    sha256: string;
+    file_name: string;
+    byte_size: number;
+    media_type: string;
+  }) => {
+    if (!enableRoleTagging || !role) return;
+    api
+      .upsertMediaRoleTag({
+        ...target,
+        role,
+        character_ids: characterIds,
+        project_id: projectId ?? undefined,
+        scene_id: sceneId ?? undefined,
+      })
+      .catch((cause) => {
+        setError(describe(cause));
+      });
+  };
+
+  const toggleCharacter = (characterId: string) => {
+    setCharacterIds((current) =>
+      current.includes(characterId)
+        ? current.filter((id) => id !== characterId)
+        : [...current, characterId],
+    );
+  };
 
   useEffect(() => {
     if (!needsArtifacts) return;
@@ -184,6 +252,7 @@ export function MediaPicker({
       mediaType: artifact.media_type,
       artifact,
     });
+    tagRoleFor({ artifact_id: artifactId });
     setPickedArtifactId("");
   };
 
@@ -223,6 +292,13 @@ export function MediaPicker({
         source: { relative_path: stored.relative_path, sha256: stored.sha256 },
         mediaType: resolvedMediaType,
         file,
+      });
+      tagRoleFor({
+        relative_path: stored.relative_path,
+        sha256: stored.sha256,
+        file_name: file.name,
+        byte_size: stored.byte_size,
+        media_type: stored.media_type,
       });
     } catch (cause) {
       setError(describe(cause));
@@ -297,6 +373,37 @@ export function MediaPicker({
             if (file) void uploadFile(file);
           }}
         />
+      )}
+      {enableRoleTagging && (
+        <div className="row media-picker-role-tagging">
+          <select
+            value={role}
+            disabled={disabled}
+            onChange={(event) => setRole(event.target.value as MediaRole | "")}
+          >
+            <option value="">役割を指定しない</option>
+            {ROLE_OPTIONS.map((item) => (
+              <option key={item} value={item}>
+                {ROLE_LABEL[item]}
+              </option>
+            ))}
+          </select>
+          {characters.length > 0 && (
+            <div className="row media-picker-characters">
+              {characters.map((character) => (
+                <label key={character.id} className="row">
+                  <input
+                    type="checkbox"
+                    checked={characterIds.includes(character.id)}
+                    disabled={disabled}
+                    onChange={() => toggleCharacter(character.id)}
+                  />
+                  {character.name}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       {error && <p className="error">{error}</p>}
       {value.length > 0 && (

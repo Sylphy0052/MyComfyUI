@@ -884,6 +884,61 @@ export interface paths {
         patch: operations["update_look_profile_api_v1_look_profiles__profile_id__patch"];
         trace?: never;
     };
+    "/api/v1/media-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Media Items
+         * @description 生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。
+         *
+         *     Artifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力
+         *     cacheファイル(`registered_input`)、Projectのキャラクター参照画像
+         *     (`character_reference`)を横断して返す。人物参照はProject単位の設定のため
+         *     `project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。
+         *     `character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、
+         *     常に一覧の末尾寄りになる。
+         */
+        get: operations["list_media_items_api_v1_media_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/media-role-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Media Role Tag
+         * @description 役割・キャラクターの紐付けを登録・更新する。
+         *
+         *     Issue #148: 取込時の役割/キャラクター指定を、既存の4系統の取込endpointを変えずに
+         *     後付けできるようにする。対象(`artifact_id`または`relative_path`)へ同じ内容を
+         *     再送すると上書きになる。
+         */
+        put: operations["upsert_media_role_tag_api_v1_media_role_tags_put"];
+        post?: never;
+        /**
+         * Delete Media Role Tag
+         * @description 役割・キャラクターの紐付けを外す。対象そのもの(Artifact・入力cacheの実体)は消さない。
+         */
+        delete: operations["delete_media_role_tag_api_v1_media_role_tags_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/project-portability/import": {
         parameters: {
             query?: never;
@@ -3211,6 +3266,106 @@ export interface components {
             name?: string;
             /** Recipe Id */
             recipe_id?: string | null;
+        };
+        /**
+         * MediaItemRead
+         * @description 生成物・登録素材・外部取込・人物参照を1つの一覧で探すための1件。
+         *
+         *     `key`は一覧内で一意な識別子(Artifact由来は`artifact_id`、それ以外は
+         *     `relative_path`ベース)。`role`・`character_ids`はタグ付け済みのときだけ埋まる。
+         */
+        MediaItemRead: {
+            /** Artifact Id */
+            artifact_id?: string | null;
+            /** Assigned Project Id */
+            assigned_project_id?: string | null;
+            /** Assigned Scene Id */
+            assigned_scene_id?: string | null;
+            /** Assigned Shot Id */
+            assigned_shot_id?: string | null;
+            /** Byte Size */
+            byte_size: number;
+            /** Character Ids */
+            character_ids?: string[];
+            /** Created At */
+            created_at: string;
+            /** Key */
+            key: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label?: string | null;
+            /** Media Type */
+            media_type: string;
+            /** Relative Path */
+            relative_path: string;
+            /** Role */
+            role?: string | null;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "generated" | "external_import" | "registered" | "registered_input" | "character_reference";
+        };
+        /** MediaRoleTagRead */
+        MediaRoleTagRead: {
+            /** Artifact Id */
+            artifact_id: string | null;
+            /** Assigned Project Id */
+            assigned_project_id: string | null;
+            /** Assigned Scene Id */
+            assigned_scene_id: string | null;
+            /** Byte Size */
+            byte_size: number | null;
+            /** Character Ids */
+            character_ids?: string[];
+            /** Created At */
+            created_at: string;
+            /** File Name */
+            file_name: string | null;
+            /** Id */
+            id: string;
+            /** Media Type */
+            media_type: string | null;
+            /** Relative Path */
+            relative_path: string | null;
+            /** Role */
+            role: string;
+            /** Sha256 */
+            sha256: string | null;
+            /** Updated At */
+            updated_at: string;
+        };
+        /**
+         * MediaRoleTagUpsert
+         * @description 役割タグの登録・更新要求。同じ対象へ再送すると上書きする。
+         */
+        MediaRoleTagUpsert: {
+            /** Artifact Id */
+            artifact_id?: string | null;
+            /** Byte Size */
+            byte_size?: number | null;
+            /** Character Ids */
+            character_ids?: string[];
+            /** File Name */
+            file_name?: string | null;
+            /** Media Type */
+            media_type?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Relative Path */
+            relative_path?: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "appearance_reference" | "pose" | "background" | "costume" | "other";
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Sha256 */
+            sha256?: string | null;
         };
         /**
          * PlannedOperation
@@ -6001,6 +6156,109 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LookProfileRead"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_media_items_api_v1_media_items_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                scene_id?: string | null;
+                shot_id?: string | null;
+                unassigned?: boolean;
+                kind?: ("image" | "video" | "audio" | "workflow" | "log") | null;
+                source?: ("generated" | "external_import" | "registered" | "registered_input" | "character_reference") | null;
+                role?: ("appearance_reference" | "pose" | "background" | "costume" | "other") | null;
+                character_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaItemRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_media_role_tag_api_v1_media_role_tags_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaRoleTagUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediaRoleTagRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_media_role_tag_api_v1_media_role_tags_delete: {
+        parameters: {
+            query?: {
+                artifact_id?: string | null;
+                relative_path?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
