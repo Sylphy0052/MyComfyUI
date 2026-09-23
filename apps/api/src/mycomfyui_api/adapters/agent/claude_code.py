@@ -10,6 +10,10 @@ APIキーをMyComfyUI側へ持たず、CLIの既存認証をそのまま使う�
   MCP、skillを読み込ませない。
 - cwdは提案ごとに作る空ディレクトリとする。リポジトリも`data_root`の他の領域も見せない。
 - 環境変数は`PATH`と`HOME`だけを渡す。`HOME`はCLIの既存認証に必要なため残す。
+- 画像を添付するときだけ、入出力を`stream-json`へ切り替える。画像はbase64のcontent
+  blockとして標準入力へ流し、ファイルとして書き出さない。ツールを持たせないため、
+  パスを渡して読ませる方式は使えない。CLI 2.1.280で、この経路でも上の条件を併用できる
+  ことと、`type=result`の最終行に構造化出力が載ることを実測した。
 
 この条件が効くことはCLI 2.1.270で実測した。ツール実行・ファイル作成・設定ファイルの読み出しを
 促す指示文を与えても、応答は提案JSONだけで、ツール使用と許可要求は発生せず、作業ディレクトリに
@@ -17,6 +21,7 @@ APIキーをMyComfyUI側へ持たず、CLIの既存認証をそのまま使う�
 """
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -57,6 +62,10 @@ class ClaudeCodeProvider:
     def label(self) -> str:
         return PROVIDER_LABEL
 
+    @property
+    def supports_images(self) -> bool:
+        return True
+
     async def available(self) -> bool:
         """CLIを実行できるかだけを返す。認証状態はここでは確かめない。"""
         return self._executable() is not None
@@ -71,13 +80,25 @@ class ClaudeCodeProvider:
             return str(path) if os.access(path, os.X_OK) else None
         return shutil.which(configured)
 
-    def _argv(self, executable: str, kind: str) -> list[str]:
+    def _argv(self, executable: str, kind: str, *, streaming: bool) -> list[str]:
         schema = proposals.json_schema(kind)  # type: ignore[arg-type]
+        # 画像はstream-jsonの入力でしか渡せず、CLIはその入力を`--output-format json`と
+        # 組み合わせられない。画像が無い呼び出しは従来の形のまま変えない。
+        formats = (
+            [
+                "--input-format",
+                "stream-json",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+            ]
+            if streaming
+            else ["--output-format", "json"]
+        )
         return [
             executable,
             "-p",
-            "--output-format",
-            "json",
+            *formats,
             "--json-schema",
             json.dumps(schema, ensure_ascii=False),
             # 提案だけを返させる。ツールを持たせない。
@@ -140,8 +161,9 @@ class ClaudeCodeProvider:
     async def _run(
         self, executable: str, request: ProposalRequest, workspace: Path
     ) -> dict[str, Any]:
-        argv = self._argv(executable, request.kind)
-        prompt = proposals.build_prompt(request).encode("utf-8")
+        streaming = bool(request.images)
+        argv = self._argv(executable, request.kind, streaming=streaming)
+        prompt = self._stdin(request, streaming=streaming)
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,
@@ -175,7 +197,8 @@ class ClaudeCodeProvider:
             )
             raise AgentUnavailable("提案Providerが異常終了しました。")
         try:
-            payload = json.loads(stdout.decode("utf-8"))
+            text = stdout.decode("utf-8")
+            payload = self._stream_result(text) if streaming else json.loads(text)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise AgentInvalidResponse(
                 "提案Providerの応答を解釈できません。"
@@ -185,6 +208,39 @@ class ClaudeCodeProvider:
                 "提案Providerの応答がJSON objectではありません。"
             )
         return payload
+
+    def _stdin(self, request: ProposalRequest, *, streaming: bool) -> bytes:
+        """標準入力へ流す本文。画像があるときはstream-jsonの利用者メッセージ1件にする。"""
+        prompt = proposals.build_prompt(request)
+        if not streaming:
+            return prompt.encode("utf-8")
+        content: list[dict[str, Any]] = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image.media_type,
+                    "data": base64.b64encode(image.data).decode("ascii"),
+                },
+            }
+            for image in request.images
+        ]
+        content.append({"type": "text", "text": prompt})
+        message = {"type": "user", "message": {"role": "user", "content": content}}
+        return (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
+
+    def _stream_result(self, text: str) -> Any:
+        """stream-jsonの出力から`type=result`の行を取り出す。
+
+        途中の行には応答本文や思考の断片が載るため、結果の行以外は解釈しない。
+        """
+        for line in reversed(text.splitlines()):
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            if isinstance(event, dict) and event.get("type") == "result":
+                return event
+        raise AgentInvalidResponse("提案Providerの応答に結果がありません。")
 
     def _result(
         self, request: ProposalRequest, payload: dict[str, Any]

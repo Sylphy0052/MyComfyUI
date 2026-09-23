@@ -62,6 +62,35 @@ export function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+/**
+ * 選んだ画像の中身をBase64で読む。アップロードしたFileがあればそれを、無ければ元
+ * Artifactの内容を取り直す。入力cacheだけを指す選択は中身を取れないため失敗させる。
+ */
+export async function readPickedImage(
+  item: PickedMedia,
+): Promise<{ base64: string; mediaType: string }> {
+  let base64: string;
+  let mediaType: string;
+  if (item.file) {
+    base64 = await toBase64(item.file);
+    mediaType = item.mediaType ?? item.file.type;
+  } else if ("artifact_id" in item.source) {
+    const response = await fetch(api.artifactContentUrl(item.source.artifact_id));
+    if (!response.ok) {
+      throw new Error("画像を取得できませんでした。選び直してください。");
+    }
+    const blob = await response.blob();
+    base64 = await blobToBase64(blob);
+    mediaType = item.mediaType ?? blob.type;
+  } else {
+    throw new Error("画像を取得できません。選び直してください。");
+  }
+  if (!mediaType.startsWith("image/")) {
+    throw new Error("画像形式を判別できません。対応する画像を選び直してください。");
+  }
+  return { base64, mediaType };
+}
+
 /** Fileのmedia_typeを決める。typeが空の画像は拡張子から推測する。 */
 export function mediaTypeOf(file: File, kind: "image" | "audio" = "image"): string {
   if (file.type) return file.type;

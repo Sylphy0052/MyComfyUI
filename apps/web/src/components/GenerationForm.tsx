@@ -14,7 +14,7 @@ import { PromptAssist } from "./PromptAssist";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffField } from "./PromptDiffReview";
 import { conflictNotice } from "./BackendNotice";
-import { MediaPicker, blobToBase64, toBase64 } from "./MediaPicker";
+import { MediaPicker, readPickedImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
@@ -346,28 +346,7 @@ export function GenerationForm({
     setExtractingTags(true);
     setTagError(null);
     try {
-      let base64: string;
-      let mediaType: string;
-      if (item.file) {
-        base64 = await toBase64(item.file);
-        mediaType = item.mediaType ?? item.file.type;
-      } else if ("artifact_id" in item.source) {
-        const response = await fetch(api.artifactContentUrl(item.source.artifact_id));
-        if (!response.ok) {
-          setTagError("画像を取得できませんでした。選び直してください。");
-          return;
-        }
-        const blob = await response.blob();
-        base64 = await blobToBase64(blob);
-        mediaType = item.mediaType ?? blob.type;
-      } else {
-        setTagError("画像を取得できません。選び直してください。");
-        return;
-      }
-      if (!mediaType.startsWith("image/")) {
-        setTagError("画像形式を判別できません。対応する画像を選び直してください。");
-        return;
-      }
+      const { base64, mediaType } = await readPickedImage(item);
       const result = await api.extractImageTags(base64, mediaType);
       setExtractedTags(result.tags);
     } catch (error) {
@@ -498,6 +477,11 @@ export function GenerationForm({
               <PromptAssist
                 providers={providers}
                 idPrefix="image"
+                current={{
+                  positive: values.positive_prompt ?? "",
+                  negative: values.negative_prompt ?? "",
+                }}
+                projectId={projectId}
                 placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
                 onApply={applyAssist}
               />

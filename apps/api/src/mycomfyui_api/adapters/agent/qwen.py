@@ -20,6 +20,7 @@ Remote PCのURLで直接つなぐ前提とし、APIキーを要求するホス�
 このため、提案の入力・出力・監査履歴・ログに認証情報が入る経路を作らない。
 """
 
+import base64
 import json
 import logging
 from typing import Any
@@ -78,6 +79,11 @@ class QwenProvider:
     @property
     def label(self) -> str:
         return PROVIDER_LABEL
+
+    @property
+    def supports_images(self) -> bool:
+        """推論サーバーのモデルが画像を受け付けるかは問い合わせでは分からないため、設定に従う。"""
+        return self._settings.agent_qwen_supports_images
 
     async def backend_status(self) -> qwen_status.BackendStatus | None:
         """Backendを起動させずに状態を読む。照会口が未設定ならNoneを返す。"""
@@ -140,7 +146,7 @@ class QwenProvider:
             "model": self._settings.agent_qwen_model,
             "messages": [
                 {"role": "system", "content": proposals.SYSTEM_PROMPT},
-                {"role": "user", "content": proposals.build_prompt(request)},
+                {"role": "user", "content": self._user_content(request)},
             ],
             "stream": False,
             "response_format": {
@@ -152,6 +158,24 @@ class QwenProvider:
                 },
             },
         }
+
+    def _user_content(self, request: ProposalRequest) -> str | list[dict[str, Any]]:
+        """利用者メッセージの本文。画像があるときはOpenAI互換の`image_url`で添付する。"""
+        prompt = proposals.build_prompt(request)
+        if not request.images:
+            return prompt
+        content: list[dict[str, Any]] = [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image.media_type};base64,"
+                    + base64.b64encode(image.data).decode("ascii")
+                },
+            }
+            for image in request.images
+        ]
+        content.append({"type": "text", "text": prompt})
+        return content
 
     async def _chat(
         self, request: ProposalRequest

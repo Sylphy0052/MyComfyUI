@@ -506,6 +506,11 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "supports_images": {
+            "default": false,
+            "title": "Supports Images",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2934,8 +2939,30 @@
       },
       "ImagePromptAssistCreate": {
         "additionalProperties": false,
-        "description": "SceneやShotに紐付けない画像prompt補完の要求。",
+        "description": "SceneやShotに紐付けない画像prompt補完の要求。\n\n`image`を渡すと、画像と現在のpromptを突き合わせて直した案を返す。",
         "properties": {
+          "current_negative_prompt": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Current Negative Prompt",
+            "type": "string"
+          },
+          "current_positive_prompt": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Current Positive Prompt",
+            "type": "string"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImagePromptAssistImage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "instruction": {
             "maxLength": 2000,
             "minLength": 1,
@@ -2964,6 +2991,28 @@
           "instruction"
         ],
         "title": "ImagePromptAssistCreate",
+        "type": "object"
+      },
+      "ImagePromptAssistImage": {
+        "additionalProperties": false,
+        "description": "プロンプト補完へ添付する画像。生成結果か利用者が持ち込んだ画像を1枚渡す。",
+        "properties": {
+          "content_base64": {
+            "minLength": 1,
+            "title": "Content Base64",
+            "type": "string"
+          },
+          "media_type": {
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_base64",
+          "media_type"
+        ],
+        "title": "ImagePromptAssistImage",
         "type": "object"
       },
       "ImagePromptAssistRead": {
@@ -9910,7 +9959,7 @@
     },
     "/api/v1/image-prompt-assists": {
       "post": {
-        "description": "日本語の説明を、SceneやShotに依存しない画像promptへ補完する。\n\nProviderへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。\nJob、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は\n利用者が明示的に投入するまで始まらない。",
+        "description": "日本語の説明を、SceneやShotに依存しない画像promptへ補完する。\n\nProviderへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。\nJob、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は\n利用者が明示的に投入するまで始まらない。\n\n画像を添付した場合は、画像と現在のpromptを突き合わせて直した案を返す。画像に\n対応しないProviderへは送らず、``AGENT_IMAGE_UNSUPPORTED``で理由を返す。",
         "operationId": "assist_image_prompt_api_v1_image_prompt_assists_post",
         "requestBody": {
           "content": {

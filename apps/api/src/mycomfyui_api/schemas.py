@@ -14,7 +14,10 @@ from pydantic import (
 )
 
 from mycomfyui_api import provenance
-from mycomfyui_api.adapters.agent.base import AgentProposalKind
+from mycomfyui_api.adapters.agent.base import (
+    PROPOSAL_IMAGE_MEDIA_TYPES,
+    AgentProposalKind,
+)
 from mycomfyui_api.adapters.agent.proposals import (
     MAX_INSTRUCTION_LENGTH,
     MAX_PLAN_STEPS,
@@ -1702,6 +1705,8 @@ class AgentProviderRead(ApiModel):
     id: str
     label: str
     available: bool
+    #: 画像を添付してプロンプト補完を依頼できるか。
+    supports_images: bool = False
     #: 常駐するProviderと、状態を読めないProviderではnull。
     backend: AgentBackendStatusRead | None = None
 
@@ -1739,12 +1744,34 @@ class AgentProposalCreate(ApiModel):
         return self
 
 
+class ImagePromptAssistImage(ApiModel):
+    """プロンプト補完へ添付する画像。生成結果か利用者が持ち込んだ画像を1枚渡す。"""
+
+    content_base64: str = Field(min_length=1)
+    media_type: str = Field(min_length=1)
+
+    @field_validator("media_type")
+    @classmethod
+    def _validate_media_type(cls, value: str) -> str:
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type not in PROPOSAL_IMAGE_MEDIA_TYPES:
+            raise ValueError("添付できる画像はPNG、JPEG、GIF、WebPだけです: " + value)
+        return media_type
+
+
 class ImagePromptAssistCreate(ApiModel):
-    """SceneやShotに紐付けない画像prompt補完の要求。"""
+    """SceneやShotに紐付けない画像prompt補完の要求。
+
+    `image`を渡すと、画像と現在のpromptを突き合わせて直した案を返す。
+    """
 
     #: 未指定なら設定の既定Providerを使う。
     provider_id: AgentProviderId | None = None
     instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
+    image: ImagePromptAssistImage | None = None
+    #: 直す対象の現在のprompt。空なら新しく組み立てる。
+    current_positive_prompt: str = Field(default="", max_length=4000)
+    current_negative_prompt: str = Field(default="", max_length=4000)
 
 
 class ImagePromptAssistRead(ApiModel):

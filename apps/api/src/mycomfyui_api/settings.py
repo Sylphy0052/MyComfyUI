@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     agent_timeout_seconds: float = Field(default=120.0, gt=0)
     #: 1回の提案取得で許す上限額。CLIへ渡し、超過はCLI側で打ち切らせる。
     agent_max_budget_usd: float = Field(default=0.5, gt=0)
+    #: 提案へ添付する画像1枚あたりの上限バイト数。Claudeの画像入力の上限に合わせる。
+    agent_max_image_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
     #: Codex CLIの実行ファイル。PATH上の名前でも絶対パスでもよい。
     agent_codex_cli_path: str = "codex"
     #: 未指定ならCodex CLIの既定モデルを使う。
@@ -66,6 +68,9 @@ class Settings(BaseSettings):
     agent_qwen_base_url: str = "http://127.0.0.1:8000/v1"
     #: 推論サーバーへ渡すモデル名。画像タグの整理にも同じモデルを使う。
     agent_qwen_model: str = "qwen3"
+    #: `agent_qwen_model`が画像入力を受け付けるか。VL系のモデルを置いたときだけ真にする。
+    #: 偽のままなら、画像を添付するプロンプト補完ではQwenを非対応として扱う。
+    agent_qwen_supports_images: bool = False
     #: 提案1件あたりの実行上限。ローカル推論はCLI経由より遅くなりうるため別に持つ。
     agent_qwen_timeout_seconds: float = Field(default=180.0, gt=0)
     #: Backendを起動させずに状態だけを読む照会口。Remote GPU Hostでgpu-proxyを挟む構成で

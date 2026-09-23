@@ -57,6 +57,11 @@ class StubAgentProvider:
     def label(self) -> str:
         return PROVIDER_LABEL
 
+    @property
+    def supports_images(self) -> bool:
+        """画像は読まずに固定提案を返す。画面の経路を外部送信なしで確かめるため対応とする。"""
+        return True
+
     async def available(self) -> bool:
         return not self._settings.agent_stub_failure
 

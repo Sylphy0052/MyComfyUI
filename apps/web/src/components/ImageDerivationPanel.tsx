@@ -382,6 +382,8 @@ export function ImageDerivationPanel({
             <PromptAssist
               providers={providers}
               idPrefix="derivation"
+              current={{ positive: prompt, negative }}
+              projectId={projectId}
               placeholder="例: 元画像の構図を保ったまま、夕暮れの海辺に置き換える。"
               onApply={(result) => {
                 // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。

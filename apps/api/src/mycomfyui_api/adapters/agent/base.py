@@ -50,17 +50,32 @@ class AgentInvalidResponse(AgentError):
     """応答を期待する形として解釈できなかった。"""
 
 
+#: Providerへ添付できる画像の形式。Claude、Codex、OpenAI互換APIのいずれも受け付ける
+#: 形式だけに絞る。
+PROPOSAL_IMAGE_MEDIA_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
+
+
+@dataclass(frozen=True)
+class ProposalImage:
+    """Providerへ添付する画像。検証済みの本体と形式だけを持ち、元のパスは持たない。"""
+
+    data: bytes
+    media_type: str
+
+
 @dataclass(frozen=True)
 class ProposalRequest:
     """Providerへ渡す提案要求。
 
     `context`は参照APIの表示用フィールドだけを許可リストで組み立てた値とする。秘密情報、
-    環境変数、ローカル絶対パスを入れない。
+    環境変数、ローカル絶対パスを入れない。`images`は`supports_images`が真のProviderへ
+    だけ渡す。
     """
 
     kind: AgentProposalKind
     instruction: str
     context: dict[str, Any] = field(default_factory=dict)
+    images: tuple[ProposalImage, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -85,6 +100,11 @@ class AgentProvider(Protocol):
 
     @property
     def label(self) -> str: ...
+
+    @property
+    def supports_images(self) -> bool:
+        """`ProposalRequest.images`を添付して問い合わせられるか。"""
+        ...
 
     async def available(self) -> bool: ...
 
