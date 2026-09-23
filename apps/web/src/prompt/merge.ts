@@ -331,12 +331,16 @@ export function diffPrompt(current: string, proposed: string): DiffHunk[] {
  * - `add`の反映位置は`mergePrompt`と同じ規約 (タグ順のブロックに沿って既存セグメント
  *   の直後へ挿入) に従う。
  * - 既存プロンプトが空のときは、`mergePrompt`同様に並べ替えず提案側の順のまま入れる。
+ * - 採用したhunkが1つも無いときは`current`をそのまま返す。分解して組み直すと、差分を
+ *   見せていない欄でも空白やカンマの書き方が変わってしまうため。
  */
 export function applyPromptDiff(
   current: string,
   hunks: readonly DiffHunk[],
   acceptedIds: ReadonlySet<string>,
 ): string {
+  if (!hunks.some((hunk) => acceptedIds.has(hunk.id))) return current;
+
   const currentSegments = parsePrompt(current);
 
   if (currentSegments.length === 0) {

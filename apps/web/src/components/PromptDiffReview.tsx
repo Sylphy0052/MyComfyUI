@@ -22,8 +22,10 @@ interface Props {
 /**
  * AIが提案したプロンプトと、既存のプロンプトの差分をhunk単位で見せ、採否を選ばせる。
  *
- * 採用しなかった追加・削除・変更はすべて既存の記述のまま残る。既定はすべて採用
- * 状態にしておき、不要なhunkだけ外す運用を想定する。
+ * 採用しなかった追加・削除・変更はすべて既存の記述のまま残る。既定では追加と変更
+ * だけを採用状態にし、削除は未選択にする。提案側はAIの再生成結果や抽出タグだけの
+ * ことが多く、提案に無い既存の記述をすべて削除扱いにすると、そのまま反映したとき
+ * に既存の記述が消えるため。削除したいhunkは利用者が明示的に選ぶ。
  */
 export function PromptDiffReview({ fields, onCancel, onAccept }: Props) {
   const diffs = fields.map((field) => ({
@@ -34,7 +36,9 @@ export function PromptDiffReview({ fields, onCancel, onAccept }: Props) {
   const [accepted, setAccepted] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     diffs.forEach(({ field, hunks }) => {
-      hunks.forEach((hunk) => initial.add(`${field.key}\u0000${hunk.id}`));
+      hunks
+        .filter((hunk) => hunk.kind !== "remove")
+        .forEach((hunk) => initial.add(`${field.key}\u0000${hunk.id}`));
     });
     return initial;
   });
