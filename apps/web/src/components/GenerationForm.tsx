@@ -192,6 +192,8 @@ export function GenerationForm({
     }
     setValues(nextValues);
     setTouchedFields(nextTouched);
+    // 開いている差分レビューは切替前の値を比べているので閉じる。
+    setPromptDiff(null);
   }, [recipe, allFields, defaultValues]);
 
   useEffect(() => {
@@ -375,6 +377,8 @@ export function GenerationForm({
     // モードBではネガティブや出力設定はPresetの固定部分として扱い、画面に出さない。
     const fieldHidden = simple && field.name !== "positive_prompt";
     const extrasHidden = simple;
+    // 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。
+    const readOnly = promptDiff !== null && PROMPT_FIELD_NAMES.has(field.name);
     return (
     <div key={field.name} hidden={fieldHidden}>
       <label htmlFor={`field-${field.name}`}>
@@ -386,6 +390,7 @@ export function GenerationForm({
         <textarea
           id={`field-${field.name}`}
           disabled={useInheritedDefaults}
+          readOnly={readOnly}
           value={values[field.name] ?? ""}
           onChange={(event) => changeField(field.name, event.target.value)}
         />
@@ -394,6 +399,7 @@ export function GenerationForm({
           id={`field-${field.name}`}
           disabled={useInheritedDefaults}
           type={field.control === "number" ? "number" : "text"}
+          readOnly={readOnly}
           value={values[field.name] ?? ""}
           onChange={(event) => changeField(field.name, event.target.value)}
         />

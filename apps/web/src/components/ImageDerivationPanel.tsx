@@ -404,10 +404,11 @@ export function ImageDerivationPanel({
               }}
             />
           )}
+          {/* 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。 */}
           <label htmlFor="derivation-prompt">プロンプト</label>
-          <textarea id="derivation-prompt" value={prompt} onChange={(event) => { setPrompt(event.target.value); setTouchedFields((current) => new Set(current).add("positive_prompt")); }} />
+          <textarea id="derivation-prompt" value={prompt} readOnly={promptDiff !== null} onChange={(event) => { setPrompt(event.target.value); setTouchedFields((current) => new Set(current).add("positive_prompt")); }} />
           <label htmlFor="derivation-negative">除外したい要素</label>
-          <textarea id="derivation-negative" value={negative} onChange={(event) => { setNegative(event.target.value); setTouchedFields((current) => new Set(current).add("negative_prompt")); }} />
+          <textarea id="derivation-negative" value={negative} readOnly={promptDiff !== null} onChange={(event) => { setNegative(event.target.value); setTouchedFields((current) => new Set(current).add("negative_prompt")); }} />
           <div className="row">
             <label>denoise<input type="number" min="0" max="1" step="0.05" value={denoise} onChange={(event) => { setDenoise(event.target.value); setTouchedFields((current) => new Set(current).add("denoise")); }} /></label>
             <label>seed<input type="number" value={seed} onChange={(event) => { setSeed(event.target.value); setTouchedFields((current) => new Set(current).add("seed")); }} /></label>
