@@ -119,6 +119,11 @@ interface Props {
   previewing: boolean;
   preview: GenerationPreview | null;
   previewError: ApiError | null;
+  /**
+   * 作品制作 (モードB) 向けの表示。Presetとプロンプトと投入だけを出す。
+   * 隠した項目もマウントしたままにし、ラボへ移ったとき同じ入力で続けられるようにする。
+   */
+  simple?: boolean;
 }
 
 export function GenerationForm({
@@ -131,6 +136,7 @@ export function GenerationForm({
   previewing,
   preview,
   previewError,
+  simple = false,
 }: Props) {
   const [recipeId, setRecipeId] = useState<string>("");
   const recipe = useMemo(
@@ -372,8 +378,11 @@ export function GenerationForm({
 
   const renderField = (field: FieldSpec) => {
     const changed = isFieldChanged(field.name);
+    // モードBではネガティブや出力設定はPresetの固定部分として扱い、画面に出さない。
+    const fieldHidden = simple && field.name !== "positive_prompt";
+    const extrasHidden = simple;
     return (
-    <div key={field.name}>
+    <div key={field.name} hidden={fieldHidden}>
       <label htmlFor={`field-${field.name}`}>
         {field.label}
         {field.required ? " *" : ""}
@@ -396,7 +405,7 @@ export function GenerationForm({
         />
       )}
       {field.help && <p className="muted">{field.help}</p>}
-      {changed && (
+      {changed && !extrasHidden && (
         <button
           type="button"
           disabled={useInheritedDefaults}
@@ -405,7 +414,7 @@ export function GenerationForm({
           この項目を既定値へ戻す
         </button>
       )}
-      {field.name === "positive_prompt" && (
+      {field.name === "positive_prompt" && !extrasHidden && (
         <div className="tag-extractor">
           <label htmlFor="tag-image">画像からタグを抽出</label>
           <div className="row">
@@ -462,19 +471,22 @@ export function GenerationForm({
       <div className="stack">
         <fieldset className="form-section">
           <legend>プロンプト</legend>
-          <PromptAssist
-            providers={providers}
-            idPrefix="image"
-            placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
-            onApply={applyAssist}
-          />
+          <div hidden={simple}>
+            <PromptAssist
+              providers={providers}
+              idPrefix="image"
+              placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
+              onApply={applyAssist}
+            />
+          </div>
           {promptFields.map(renderField)}
         </fieldset>
 
         <fieldset className="form-section">
-          <legend>出力設定</legend>
+          <legend>{simple ? "Preset" : "出力設定"}</legend>
           <button
             type="button"
+            hidden={simple}
             disabled={!projectId}
             aria-pressed={useInheritedDefaults}
             className={useInheritedDefaults ? "primary" : undefined}
@@ -500,7 +512,7 @@ export function GenerationForm({
               ))}
             </select>
           </div>
-          {!useInheritedDefaults && changedFields.length > 0 && (
+          {!simple && !useInheritedDefaults && changedFields.length > 0 && (
             <div className="recipe-diff">
               <p className="muted">
                 Recipe既定値と異なる項目: {changedFields.map((field) => field.label).join(", ")}
@@ -515,18 +527,26 @@ export function GenerationForm({
             </div>
           )}
 
-          <ModelSelector
-            recipe={recipe}
-            disabled={useInheritedDefaults}
-            values={modelValues}
-            onChange={setModelValues}
-            onValidityChange={setModelsValid}
-          />
+          {/* 投入可否の判定に使うため、モードBでも隠してマウントしたままにする。 */}
+          <div hidden={simple}>
+            <ModelSelector
+              recipe={recipe}
+              disabled={useInheritedDefaults}
+              values={modelValues}
+              onChange={setModelValues}
+              onValidityChange={setModelsValid}
+            />
+          </div>
+          {simple && recipe && !useInheritedDefaults && !modelsValid && (
+            <p className="muted">
+              このPresetはモデルの指定が揃っていません。ラボで確認してください。
+            </p>
+          )}
 
           {parameterFields.map(renderField)}
         </fieldset>
 
-        <details className="form-section collapsible">
+        <details className="form-section collapsible" hidden={simple}>
           <summary>ルックとバリエーション</summary>
           <div className="stack">
             <fieldset disabled={useInheritedDefaults}>
@@ -553,7 +573,7 @@ export function GenerationForm({
           </div>
         </details>
 
-        <fieldset className="form-section">
+        <fieldset className="form-section" hidden={simple}>
           <legend>確認と投入</legend>
           {invalid && <p className="error">{invalid}</p>}
           {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
@@ -568,7 +588,14 @@ export function GenerationForm({
 
       {/* 投入操作はフォームの長さに関わらず押せるよう、下端へ固定する。 */}
       <div className="form-actions">
-        <button type="button" disabled={actionsDisabled} onClick={runPreview}>
+        {simple && invalid && <p className="error">{invalid}</p>}
+        {simple && disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
+        <button
+          type="button"
+          hidden={simple}
+          disabled={actionsDisabled}
+          onClick={runPreview}
+        >
           {previewing ? "確認中..." : "投入前に確認"}
         </button>
         <button
@@ -579,7 +606,7 @@ export function GenerationForm({
         >
           {submitting ? "投入中..." : "画像生成を投入"}
         </button>
-        <span className="muted">バッチ {batchCount || "1"}</span>
+        {!simple && <span className="muted">バッチ {batchCount || "1"}</span>}
       </div>
     </section>
   );
