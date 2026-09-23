@@ -11,8 +11,9 @@ import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
 import { PromptAssist } from "./PromptAssist";
+import { PromptDiffReview } from "./PromptDiffReview";
+import type { PromptDiffField } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
-import { mergePrompt } from "../prompt/merge";
 import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 
@@ -91,6 +92,7 @@ export function ImageDerivationPanel({
   const [preview, setPreview] = useState<GenerationPreview | null>(null);
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
   const sourceArtifactIdRef = useRef(sourceArtifactId);
   sourceArtifactIdRef.current = sourceArtifactId;
 
@@ -361,19 +363,45 @@ export function ImageDerivationPanel({
           onSelectionChange={setLookProfileIds}
         />
         {mode !== "upscale" && <>
-          <PromptAssist
-            providers={providers}
-            idPrefix="derivation"
-            placeholder="例: 元画像の構図を保ったまま、夕暮れの海辺に置き換える。"
-            onApply={(result) => {
-              // 既に入力されているプロンプトは残し、補完結果をタグ順に沿って追記する。
-              setPrompt((current) => mergePrompt(current, result.positive).prompt);
-              setNegative((current) => mergePrompt(current, result.negative).prompt);
-              setTouchedFields((current) =>
-                new Set(current).add("positive_prompt").add("negative_prompt"),
-              );
-            }}
-          />
+          {promptDiff ? (
+            <PromptDiffReview
+              fields={promptDiff}
+              onCancel={() => setPromptDiff(null)}
+              onAccept={(result) => {
+                if ("positive_prompt" in result) setPrompt(result.positive_prompt);
+                if ("negative_prompt" in result) setNegative(result.negative_prompt);
+                setTouchedFields((current) => {
+                  const next = new Set(current);
+                  Object.keys(result).forEach((name) => next.add(name));
+                  return next;
+                });
+                setPromptDiff(null);
+              }}
+            />
+          ) : (
+            <PromptAssist
+              providers={providers}
+              idPrefix="derivation"
+              placeholder="例: 元画像の構図を保ったまま、夕暮れの海辺に置き換える。"
+              onApply={(result) => {
+                // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+                setPromptDiff([
+                  {
+                    key: "positive_prompt",
+                    label: "プロンプト",
+                    current: prompt,
+                    proposed: result.positive,
+                  },
+                  {
+                    key: "negative_prompt",
+                    label: "除外したい要素",
+                    current: negative,
+                    proposed: result.negative,
+                  },
+                ]);
+              }}
+            />
+          )}
           <label htmlFor="derivation-prompt">プロンプト</label>
           <textarea id="derivation-prompt" value={prompt} onChange={(event) => { setPrompt(event.target.value); setTouchedFields((current) => new Set(current).add("positive_prompt")); }} />
           <label htmlFor="derivation-negative">除外したい要素</label>

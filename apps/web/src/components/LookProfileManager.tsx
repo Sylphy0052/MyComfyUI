@@ -4,6 +4,9 @@ import { ApiError, api } from "../api/client";
 import type { LookProfile, Recipe } from "../api/client";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
+import { PromptFieldsEditor } from "./PromptFieldsEditor";
+import { mergePromptFields, splitPromptFields } from "../prompt/fields";
+import type { PromptFieldName } from "../prompt/fields";
 
 interface Props {
   kind: string;
@@ -30,7 +33,8 @@ export function LookProfileManager({
   const [name, setName] = useState("");
   const [category, setCategory] = useState<"general" | "style" | "character" | "background">("general");
   const [description, setDescription] = useState("");
-  const [inputsJson, setInputsJson] = useState("{}");
+  const [restJson, setRestJson] = useState("{}");
+  const [promptFields, setPromptFields] = useState<Partial<Record<PromptFieldName, string>>>({});
   const [scopeRecipeId, setScopeRecipeId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +79,8 @@ export function LookProfileManager({
     setName("");
     setCategory("general");
     setDescription("");
-    setInputsJson("{}");
+    setRestJson("{}");
+    setPromptFields({});
     setScopeRecipeId(recipe?.id ?? null);
   };
 
@@ -84,18 +89,36 @@ export function LookProfileManager({
     setName(duplicate ? `${profile.name}のコピー` : profile.name);
     setCategory(profile.category as typeof category);
     setDescription(profile.description ?? "");
-    setInputsJson(JSON.stringify(profile.inputs, null, 2));
+    const split = splitPromptFields(profile.inputs);
+    setRestJson(JSON.stringify(split.rest, null, 2));
+    setPromptFields(split.prompts);
     setScopeRecipeId(profile.recipe_id);
+  };
+
+  const changePromptField = (fieldName: PromptFieldName, value: string) => {
+    setPromptFields((current) => ({ ...current, [fieldName]: value }));
+  };
+
+  const addPromptField = (fieldName: PromptFieldName) => {
+    setPromptFields((current) => ({ ...current, [fieldName]: "" }));
+  };
+
+  const removePromptField = (fieldName: PromptFieldName) => {
+    setPromptFields((current) => {
+      const next = { ...current };
+      delete next[fieldName];
+      return next;
+    });
   };
 
   const save = async () => {
     let inputs: Record<string, unknown>;
     try {
-      const parsed: unknown = JSON.parse(inputsJson);
+      const parsed: unknown = JSON.parse(restJson);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("inputsはJSON objectで入力してください。");
       }
-      inputs = parsed as Record<string, unknown>;
+      inputs = mergePromptFields(parsed as Record<string, unknown>, promptFields);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       return;
@@ -207,7 +230,14 @@ export function LookProfileManager({
           <label>説明<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
           <label><input type="checkbox" checked={scopeRecipeId !== null} disabled={!recipe && scopeRecipeId === null} onChange={(event) => setScopeRecipeId(event.target.checked ? recipe?.id ?? null : null)} />Recipe専用</label>
           {scopeRecipeId && <p className="muted">対象Recipe:{scopeRecipeId}</p>}
-          <label>入力overlay<textarea className="mono" rows={10} value={inputsJson} onChange={(event) => setInputsJson(event.target.value)} /></label>
+          <PromptFieldsEditor
+            idPrefix="look-profile"
+            values={promptFields}
+            onChange={changePromptField}
+            onAdd={addPromptField}
+            onRemove={removePromptField}
+          />
+          <label>入力overlay（Prompt、Negative Prompt以外）<textarea className="mono" rows={10} value={restJson} onChange={(event) => setRestJson(event.target.value)} /></label>
           <p className="muted">後に並ぶプロファイルが前の値を上書きします。runtime入力は全プロファイルより優先されます。</p>
           <button type="button" className="primary" onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button>
         </fieldset>

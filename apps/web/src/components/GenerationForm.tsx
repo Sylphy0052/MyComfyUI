@@ -11,8 +11,9 @@ import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
 import { PromptAssist } from "./PromptAssist";
+import { PromptDiffReview } from "./PromptDiffReview";
+import type { PromptDiffField } from "./PromptDiffReview";
 import { conflictNotice } from "./BackendNotice";
-import { mergePrompt } from "../prompt/merge";
 import { MediaPicker, blobToBase64, toBase64 } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 
@@ -157,6 +158,7 @@ export function GenerationForm({
   const [extractedTags, setExtractedTags] = useState<string[]>([]);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [batchCount, setBatchCount] = useState("1");
+  const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
 
   useEffect(() => {
     if (!recipeId && recipes.length > 0) {
@@ -295,13 +297,31 @@ export function GenerationForm({
   };
 
   const applyAssist = (result: { positive: string; negative: string }) => {
-    // 既に入力されているプロンプトは残し、補完結果をタグ順に沿って追記する。
-    setValues((current) => ({
-      ...current,
-      positive_prompt: mergePrompt(current.positive_prompt ?? "", result.positive).prompt,
-      negative_prompt: mergePrompt(current.negative_prompt ?? "", result.negative).prompt,
-    }));
-    setTouchedFields((current) => new Set(current).add("positive_prompt").add("negative_prompt"));
+    // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+    setPromptDiff([
+      {
+        key: "positive_prompt",
+        label: "Prompt",
+        current: values.positive_prompt ?? "",
+        proposed: result.positive,
+      },
+      {
+        key: "negative_prompt",
+        label: "Negative",
+        current: values.negative_prompt ?? "",
+        proposed: result.negative,
+      },
+    ]);
+  };
+
+  const applyPromptDiffResult = (result: Record<string, string>) => {
+    setValues((current) => ({ ...current, ...result }));
+    setTouchedFields((current) => {
+      const next = new Set(current);
+      Object.keys(result).forEach((name) => next.add(name));
+      return next;
+    });
+    setPromptDiff(null);
   };
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */
@@ -360,17 +380,15 @@ export function GenerationForm({
 
   const appendTags = () => {
     if (extractedTags.length === 0) return;
-    const current = values.positive_prompt ?? "";
-    // 既存のタグは並び順ごと残し、新しいタグだけをタグ順に沿って差し込む。
-    const merged = mergePrompt(current, extractedTags.join(", "));
-    if (merged.added === 0) return;
-    setValues({
-      ...values,
-      positive_prompt: merged.prompt,
-    });
-    setTouchedFields((currentFields) =>
-      new Set(currentFields).add("positive_prompt")
-    );
+    // 既存のタグは残したまま、抽出したタグとの差分レビューを開いて採否を選ばせる。
+    setPromptDiff([
+      {
+        key: "positive_prompt",
+        label: "Prompt",
+        current: values.positive_prompt ?? "",
+        proposed: extractedTags.join(", "),
+      },
+    ]);
   };
 
   const renderField = (field: FieldSpec) => {
@@ -470,12 +488,20 @@ export function GenerationForm({
         <fieldset className="form-section">
           <legend>プロンプト</legend>
           <div hidden={simple}>
-            <PromptAssist
-              providers={providers}
-              idPrefix="image"
-              placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
-              onApply={applyAssist}
-            />
+            {promptDiff ? (
+              <PromptDiffReview
+                fields={promptDiff}
+                onCancel={() => setPromptDiff(null)}
+                onAccept={applyPromptDiffResult}
+              />
+            ) : (
+              <PromptAssist
+                providers={providers}
+                idPrefix="image"
+                placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
+                onApply={applyAssist}
+              />
+            )}
           </div>
           {promptFields.map(renderField)}
         </fieldset>

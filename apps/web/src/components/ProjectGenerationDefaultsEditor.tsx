@@ -7,6 +7,9 @@ import type {
   ProjectGenerationDefaultsRead,
   Recipe,
 } from "../api/client";
+import { PromptFieldsEditor } from "./PromptFieldsEditor";
+import { mergePromptFields, splitPromptFields } from "../prompt/fields";
+import type { PromptFieldName } from "../prompt/fields";
 
 type Kind = "image" | "video" | "music" | "voice" | "compose";
 type Profile = NonNullable<ProjectGenerationDefaults[Kind]>;
@@ -53,7 +56,11 @@ export function ProjectGenerationDefaultsEditor({
 }) {
   const [kind, setKind] = useState<Kind>("image");
   const [profiles, setProfiles] = useState<Record<Kind, Profile> | null>(null);
-  const [inputsText, setInputsText] = useState<Record<Kind, string> | null>(null);
+  const [restText, setRestText] = useState<Record<Kind, string> | null>(null);
+  const [promptValues, setPromptValues] = useState<Record<
+    Kind,
+    Partial<Record<PromptFieldName, string>>
+  > | null>(null);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [result, setResult] = useState<ProjectGenerationDefaultsRead | null>(null);
   const [busy, setBusy] = useState(false);
@@ -66,13 +73,19 @@ export function ProjectGenerationDefaultsEditor({
         if (!active) return;
         const normalized = normalize(loaded.defaults);
         setProfiles(normalized);
-        setInputsText(
+        const split = Object.fromEntries(
+          KINDS.map(({ value }) => [value, splitPromptFields(normalized[value].inputs ?? {})]),
+        ) as Record<Kind, ReturnType<typeof splitPromptFields>>;
+        setRestText(
           Object.fromEntries(
-            KINDS.map(({ value }) => [
-              value,
-              JSON.stringify(normalized[value].inputs ?? {}, null, 2),
-            ]),
+            KINDS.map(({ value }) => [value, JSON.stringify(split[value].rest, null, 2)]),
           ) as Record<Kind, string>,
+        );
+        setPromptValues(
+          Object.fromEntries(KINDS.map(({ value }) => [value, split[value].prompts])) as Record<
+            Kind,
+            Partial<Record<PromptFieldName, string>>
+          >,
         );
         setRecipes(recipeList);
         setResult(loaded);
@@ -100,19 +113,43 @@ export function ProjectGenerationDefaultsEditor({
     );
   };
 
+  const changePromptField = (name: PromptFieldName, value: string) => {
+    setPromptValues((current) =>
+      current ? { ...current, [kind]: { ...current[kind], [name]: value } } : current,
+    );
+  };
+
+  const addPromptField = (name: PromptFieldName) => {
+    setPromptValues((current) =>
+      current ? { ...current, [kind]: { ...current[kind], [name]: "" } } : current,
+    );
+  };
+
+  const removePromptField = (name: PromptFieldName) => {
+    setPromptValues((current) => {
+      if (!current) return current;
+      const next = { ...current[kind] };
+      delete next[name];
+      return { ...current, [kind]: next };
+    });
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!profiles || !inputsText) return;
+    if (!profiles || !restText || !promptValues) return;
     setBusy(true);
     setError(null);
     try {
-      const parsed = Object.fromEntries(
-        KINDS.map(({ value }) => [value, JSON.parse(inputsText[value])]),
+      const parsedRest = Object.fromEntries(
+        KINDS.map(({ value }) => [value, JSON.parse(restText[value])]),
       ) as Record<Kind, Record<string, unknown>>;
       const payload = Object.fromEntries(
         KINDS.map(({ value }) => [
           value,
-          { ...profiles[value], inputs: parsed[value] },
+          {
+            ...profiles[value],
+            inputs: mergePromptFields(parsedRest[value], promptValues[value]),
+          },
         ]),
       ) as ProjectGenerationDefaults;
       const saved = await api.updateProjectGenerationDefaults(projectId, payload);
@@ -153,7 +190,7 @@ export function ProjectGenerationDefaultsEditor({
           </button>
         ))}
       </nav>
-      {!profile || !inputsText ? (
+      {!profile || !restText || !promptValues ? (
         <p className="muted">読込み中...</p>
       ) : (
         <form className="stack" onSubmit={submit}>
@@ -172,14 +209,21 @@ export function ProjectGenerationDefaultsEditor({
           <p className="muted">
             Workflow: {selectedRecipe?.workflow_version_id ?? "Recipe選択後に解決"}
           </p>
+          <PromptFieldsEditor
+            idPrefix={`project-defaults-${kind}`}
+            values={promptValues[kind]}
+            onChange={changePromptField}
+            onAdd={addPromptField}
+            onRemove={removePromptField}
+          />
           <label>
-            実行入力（モデル、解像度、アスペクト比、Seed、Prompt、Negative Promptなど）
+            実行入力（モデル、解像度、アスペクト比、Seedなど）
             <textarea
               className="mono"
               rows={12}
-              value={inputsText[kind]}
+              value={restText[kind]}
               onChange={(event) =>
-                setInputsText({ ...inputsText, [kind]: event.target.value })
+                setRestText({ ...restText, [kind]: event.target.value })
               }
             />
           </label>

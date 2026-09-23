@@ -11,6 +11,9 @@ import type {
   Recipe,
 } from "../api/client";
 import type { SceneSummary, ShotSummary } from "../api/aimedia";
+import { PromptFieldsEditor } from "./PromptFieldsEditor";
+import { mergePromptFields } from "../prompt/fields";
+import type { PromptFieldName } from "../prompt/fields";
 
 type GenerationKind = GenerationBatchCreate["kind"];
 type BatchTarget = GenerationBatchCreate["targets"][number];
@@ -68,6 +71,7 @@ export function ProjectOperations({ project }: { project: ProjectRecord }) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
   const [inputs, setInputs] = useState("{}");
+  const [promptFields, setPromptFields] = useState<Partial<Record<PromptFieldName, string>>>({});
   const [preview, setPreview] = useState<GenerationBatchPreview | null>(null);
   const [batches, setBatches] = useState<GenerationBatch[]>([]);
   const [statistics, setStatistics] = useState<ProjectStatistics | null>(null);
@@ -181,9 +185,25 @@ export function ProjectOperations({ project }: { project: ProjectRecord }) {
         .map(({ scene_id, shot_id }) => ({ scene_id, shot_id })),
       recipe_id: recipeId || null,
       use_inherited_defaults: false,
-      inputs: parsed as Record<string, unknown>,
+      inputs: mergePromptFields(parsed as Record<string, unknown>, promptFields),
       input_refs: [],
     };
+  };
+
+  const changePromptField = (name: PromptFieldName, value: string) => {
+    setPromptFields((current) => ({ ...current, [name]: value }));
+  };
+
+  const addPromptField = (name: PromptFieldName) => {
+    setPromptFields((current) => ({ ...current, [name]: "" }));
+  };
+
+  const removePromptField = (name: PromptFieldName) => {
+    setPromptFields((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
   };
 
   const run = async (mode: "preview" | "create") => {
@@ -293,7 +313,14 @@ export function ProjectOperations({ project }: { project: ProjectRecord }) {
               ))}
               {targets.length === 0 && <p className="muted">対象のScene・Shotがありません。</p>}
             </div>
-            <label>生成設定（JSON）<textarea className="mono" value={inputs} onChange={(event) => { setInputs(event.target.value); setPreview(null); }} /></label>
+            <PromptFieldsEditor
+              idPrefix="batch-prompt"
+              values={promptFields}
+              onChange={(name, value) => { changePromptField(name, value); setPreview(null); }}
+              onAdd={(name) => { addPromptField(name); setPreview(null); }}
+              onRemove={(name) => { removePromptField(name); setPreview(null); }}
+            />
+            <label>生成設定（JSON、Prompt、Negative Prompt以外）<textarea className="mono" value={inputs} onChange={(event) => { setInputs(event.target.value); setPreview(null); }} /></label>
             <div className="row">
               <button type="button" disabled={busy || !canGenerate} onClick={() => run("preview")}>事前確認</button>
               <button type="button" className="primary" disabled={busy || !canGenerate || !preview} onClick={() => run("create")}>この計画を実行</button>
