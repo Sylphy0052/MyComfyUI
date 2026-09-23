@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MyComfyUI</title>
+    <script>
+      (function () {
+        // React描画前にdata-theme属性を確定させ、既定(ダーク)からの一瞬の切替 (FOUC) を防ぐ。
+        // キーと解決規則は src/state/themeState.ts と揃える。
+        try {
+          var pref = window.localStorage.getItem("mycomfyui.theme.v1");
+          var resolved =
+            pref === "light" || pref === "dark"
+              ? pref
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          document.documentElement.setAttribute("data-theme", resolved);
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
