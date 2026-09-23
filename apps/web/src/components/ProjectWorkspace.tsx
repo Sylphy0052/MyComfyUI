@@ -15,6 +15,7 @@ import { ProjectOperations } from "./ProjectOperations";
 import { ProjectPackageDialog, ProjectPortabilityPanel } from "./ProjectPortability";
 import { ExternalProjectImporter, ProjectSyncPanel } from "./ProjectSyncPanel";
 import { LoadingPlaceholder } from "./LoadingPlaceholder";
+import { useNotify } from "./ui/notify";
 
 type Lifecycle = ProjectRecord["lifecycle"];
 type ProjectStatus = ProjectRecord["status"];
@@ -24,6 +25,8 @@ interface Props {
   hidden?: boolean;
   selectedProjectId: string | null;
   onSelectProject: (projectId: string | null) => void;
+  /** 取り消しで選択を戻す。onSelectProject と違い、生成画面へは移らない。 */
+  onRestoreSelection: (projectId: string) => void;
   onActiveProjectsChanged: (projects: ProjectRecord[]) => void;
 }
 
@@ -86,9 +89,11 @@ export function ProjectWorkspace({
   hidden,
   selectedProjectId,
   onSelectProject,
+  onRestoreSelection,
   onActiveProjectsChanged,
 }: Props) {
   const [lifecycle, setLifecycle] = useState<Lifecycle>("active");
+  const notify = useNotify();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<ProjectSort>("last_used");
   const [favoriteOnly, setFavoriteOnly] = useState(false);
@@ -236,17 +241,36 @@ export function ProjectWorkspace({
     setBusy(true);
     setActionError(null);
     try {
-      if (pendingAction.kind === "archive") {
-        await api.archiveProject(pendingAction.project.id);
+      const { kind, project } = pendingAction;
+      const wasSelected = project.id === selectedProjectId;
+      if (kind === "archive") {
+        await api.archiveProject(project.id);
       } else {
-        await api.trashProject(pendingAction.project.id, true);
+        await api.trashProject(project.id, true);
       }
-      if (pendingAction.project.id === selectedProjectId) {
+      if (wasSelected) {
         onSelectProject(null);
       }
       setPendingAction(null);
       setFocusedId(null);
       await refresh();
+      // 復元APIは常にactiveへ戻すため、activeから移したときだけ取り消せる。
+      notify({
+        tone: "success",
+        message: `「${project.name}」を${kind === "archive" ? "アーカイブ" : "ゴミ箱へ移動"}しました`,
+        action:
+          project.lifecycle === "active"
+            ? {
+                label: "取り消す",
+                onAction: async () => {
+                  await api.restoreProject(project.id);
+                  await refresh();
+                  setFocusedId(project.id);
+                  if (wasSelected) onRestoreSelection(project.id);
+                },
+              }
+            : undefined,
+      });
     } catch (cause) {
       setActionError(describe(cause));
     } finally {

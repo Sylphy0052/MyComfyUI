@@ -154,6 +154,12 @@ export function LookProfileManager({
       setError("名前を入力してください。");
       return;
     }
+    if (
+      editingId &&
+      !window.confirm("保存済みのPresetを上書きします。上書き前の内容には戻せません。続けますか？")
+    ) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

@@ -1,3 +1,4 @@
+import { Button } from "./Button";
 import { Toast } from "./Toast";
 import type { ToastTone } from "./Toast";
 
@@ -6,6 +7,11 @@ export type ToastItem = {
   tone: ToastTone;
   message: string;
   jobId?: string;
+  group?: string;
+  action?: {
+    label: string;
+    onAction: () => void;
+  };
 };
 
 /**
@@ -30,6 +36,19 @@ export function ToastRegion({
           key={toast.id}
           tone={toast.tone}
           onDismiss={() => onDismiss(toast.id)}
+          action={
+            toast.action && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  onDismiss(toast.id);
+                  toast.action!.onAction();
+                }}
+              >
+                {toast.action.label}
+              </Button>
+            )
+          }
           message={
             toast.jobId ? (
               <button

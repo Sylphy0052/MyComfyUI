@@ -137,6 +137,9 @@ export function ProjectGenerationDefaultsEditor({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!profiles || !restText || !promptValues) return;
+    if (!window.confirm("Projectの生成既定値を上書き保存します。保存前の値には戻せません。続けますか？")) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
