@@ -88,6 +88,11 @@ DEFAULT_NEGATIVE_PROMPT = (
 #: prompt案のタグ1件。カンマはタグの区切りに使うため値へ含めない。
 PromptTag = Annotated[str, StringConstraints(max_length=MAX_PROMPT_TAG_LENGTH)]
 
+#: `quality_tags`へ必ず1つ入れるrating値。`PROMPT_DIRECTIVE`の指示文だけに頼ると、
+#: Providerやモデルを替えたときに抜け落ちても気付けない。ここで検査し、無ければ
+#: 安全側の既定値(`safe`)を実装側で補う。
+RATING_TAGS = frozenset({"safe", "sensitive", "nsfw", "explicit"})
+
 
 class ProposalOutput(BaseModel):
     """提案出力の基底。未知の項目を受け付けない。"""
@@ -427,11 +432,31 @@ def merge_negative_prompt(baseline: str, extra: str) -> str:
     return ", ".join(_dedupe(values))
 
 
+def _ensure_rating_tag(quality_tags: list[Any]) -> list[Any]:
+    """`quality_tags`にratingが1つも無ければ`safe`を補う。
+
+    `PROMPT_DIRECTIVE`はratingを必ず入れるよう指示するが、指示文だけでは
+    Providerが守る保証がない。落ちていても提案自体は拒否せず、安全側の値を
+    実装側で足して先へ進める。
+    """
+    has_rating = any(
+        isinstance(tag, str) and _normalize_tag(tag).casefold() in RATING_TAGS
+        for tag in quality_tags
+    )
+    if has_rating:
+        return quality_tags
+    logger.warning("prompt案にratingタグが無かったためsafeを補いました。")
+    return [*quality_tags, "safe"]
+
+
 def _attach_prompt_text(body: dict[str, Any]) -> None:
     """タグ行と連結済みpositive promptを派生項目として足す。
 
     Providerにはタグ配列と自然文だけを返させ、生成Jobへ渡す文字列はここで作る。
     """
+    quality_tags = body.get("quality_tags")
+    if isinstance(quality_tags, list):
+        body["quality_tags"] = _ensure_rating_tag(quality_tags)
     tag_line = compose_tag_line(body)
     natural_text = str(body.get("natural_text") or "").strip()
     positive_prompt = compose_positive_prompt(tag_line, natural_text)
