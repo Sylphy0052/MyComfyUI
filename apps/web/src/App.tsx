@@ -1183,6 +1183,7 @@ export function App() {
                     sourceArtifactId={derivationSourceArtifactId}
                     onSourceArtifactChange={setDerivationSourceArtifactId}
                     onSubmittedJob={handleDerivedJob}
+                    onManageWorkflows={() => setView("workflows")}
                   />
                 </div>
 

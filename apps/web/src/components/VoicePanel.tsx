@@ -10,6 +10,7 @@ import type {
 } from "../api/client";
 import type { CanonDescriptor, ShotEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { EmptyState } from "./ui/EmptyState";
 
 /** 1 つの voice_id に対する Voice Canon と参照音声の指定。 */
 interface VoiceBinding {
@@ -579,9 +580,17 @@ export function VoicePanel({
       </div>
 
       {verifications.length === 0 ? (
-        <p className="muted">
-          成功した音声Jobを選ぶと、台詞ごとの読み検証と尺を表示する。
-        </p>
+        <EmptyState
+          title="成功した音声Jobを選ぶと、台詞ごとの読み検証と尺を表示する。"
+          action={
+            <button
+              type="button"
+              onClick={() => document.getElementById("voice-job")?.focus()}
+            >
+              音声Jobを選ぶ
+            </button>
+          }
+        />
       ) : (
         <ul className="list plain">
           {verifications.map((item) => (

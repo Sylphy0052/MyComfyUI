@@ -12,6 +12,7 @@ import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
 import { PromptAssist } from "./PromptAssist";
+import { EmptyState } from "./ui/EmptyState";
 import { mergePrompt } from "../prompt/merge";
 
 type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet";
@@ -24,6 +25,8 @@ interface Props {
   sourceArtifactId: string | null;
   onSourceArtifactChange: (artifactId: string | null) => void;
   onSubmittedJob: (job: GenerationJob) => void;
+  /** Recipeが1件も無いとき、登録先のWorkflow管理画面へ移る導線に使う。 */
+  onManageWorkflows: () => void;
 }
 
 function templateName(recipe: Recipe): string {
@@ -71,6 +74,7 @@ export function ImageDerivationPanel({
   sourceArtifactId,
   onSourceArtifactChange,
   onSubmittedJob,
+  onManageWorkflows,
 }: Props) {
   const [recipeId, setRecipeId] = useState("");
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
@@ -335,7 +339,22 @@ export function ImageDerivationPanel({
     }
   };
 
-  if (recipes.length === 0) return null;
+  if (recipes.length === 0) {
+    return (
+      <section className="panel">
+        <h2>画像派生生成</h2>
+        <EmptyState
+          title="使えるRecipeがまだありません。"
+          description="Workflow管理でRecipeを登録すると、画像派生生成を使えます。"
+          action={
+            <button type="button" onClick={onManageWorkflows}>
+              Workflow管理を開く
+            </button>
+          }
+        />
+      </section>
+    );
+  }
   const sourceReady =
     sourceMode === "artifact"
       ? Boolean(sourceArtifactId)

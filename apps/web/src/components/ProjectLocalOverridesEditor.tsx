@@ -7,6 +7,14 @@ import type {
   ProjectLocalOverrides,
   ProjectReferenceImage,
 } from "../api/client";
+import { EmptyState } from "./ui/EmptyState";
+
+/** Sceneのstructure-panelへ移り、フォーカスして選ばせる。 */
+function focusSceneSection(): void {
+  const target = document.getElementById("scene-browser-scene-section");
+  target?.scrollIntoView({ block: "nearest" });
+  target?.focus();
+}
 
 function describe(error: unknown): string {
   if (error instanceof ApiError) return `${error.message}(${error.code})`;
@@ -287,7 +295,17 @@ export function ProjectLocalOverridesEditor({
       <section className="panel stack">
         <h2>生成プロンプト</h2>
         <p className="muted">外部原文とは別に保存し、画像・動画生成時はShot、Sceneの順で優先します。</p>
-        {!sceneId && <p className="muted">Sceneを選択してください。</p>}
+        {!sceneId && (
+          <EmptyState
+            title="Sceneを選択してください。"
+            description="生成プロンプトはSceneごとに保存します。"
+            action={
+              <button type="button" onClick={focusSceneSection}>
+                Sceneを選ぶ
+              </button>
+            }
+          />
+        )}
         {sceneId && (
           <PromptField
             key={`scene-${sceneId}-${settings.scene_prompts[sceneId] ?? ""}`}

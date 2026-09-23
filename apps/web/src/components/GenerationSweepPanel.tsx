@@ -8,6 +8,7 @@ import type {
   Recipe,
 } from "../api/client";
 import { LookProfileManager } from "./LookProfileManager";
+import { EmptyState } from "./ui/EmptyState";
 
 interface Props {
   /** 隠れている間は一覧のポーリングを止め、無駄なリクエストを出さない。 */
@@ -208,7 +209,25 @@ export function GenerationSweepPanel({
     finally { busyRef.current = false; setBusy(false); }
   };
 
-  if (!projectId) return <section className="panel"><h2>探索スイープ</h2><p className="muted">Projectを選ぶと利用できます。</p></section>;
+  if (!projectId) {
+    return (
+      <section className="panel">
+        <h2>探索スイープ</h2>
+        <EmptyState
+          title="Projectを選ぶと利用できます。"
+          description="左のシーン一覧でProjectを選ぶと、探索スイープを開始できます。"
+          action={
+            <button
+              type="button"
+              onClick={() => document.getElementById("generation-project")?.focus()}
+            >
+              Projectを選ぶ
+            </button>
+          }
+        />
+      </section>
+    );
+  }
   return (
     <section className="panel">
       <h2>探索スイープ</h2>
