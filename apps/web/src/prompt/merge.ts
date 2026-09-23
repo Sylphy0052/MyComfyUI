@@ -218,3 +218,171 @@ export function mergePrompt(current: string, incoming: string): MergeResult {
   if (added === 0) return { prompt: current.trim(), added: 0 };
   return { prompt: segments.map((segment) => segment.text).join(", "), added };
 }
+
+/**
+ * プロンプトの差分。
+ *
+ * - `add`: `after`のセグメントを新たに入れる。`before`は無い。
+ * - `remove`: `before`のセグメントを取り除く。`after`は無い。
+ * - `change`: 重み付けなど、素の語は同じだが表記が変わったセグメントを`before`から
+ *   `after`へ置き換える。
+ *
+ * `id`は同じ`current`と`proposed`の組み合わせなら常に同じ値になる。採否の状態を
+ * `id`をキーに保持し、`applyPromptDiff`へそのまま渡せるようにするためである。
+ */
+export interface DiffHunk {
+  readonly id: string;
+  readonly kind: "add" | "remove" | "change";
+  readonly before: PromptSegment | null;
+  readonly after: PromptSegment | null;
+}
+
+/** セグメント配列を、キー関数の値ごとの出現位置一覧へまとめる。 */
+function groupIndices(
+  segments: readonly PromptSegment[],
+  keyOf: (segment: PromptSegment) => string,
+): Map<string, number[]> {
+  const map = new Map<string, number[]>();
+  segments.forEach((segment, index) => {
+    const key = keyOf(segment);
+    const list = map.get(key);
+    if (list) {
+      list.push(index);
+    } else {
+      map.set(key, [index]);
+    }
+  });
+  return map;
+}
+
+/**
+ * 既存プロンプトと提案プロンプトを比較し、追加・削除・変更の単位へ分解する。
+ *
+ * 既存プロンプトを保ったまま、どの単位を反映するかを利用者が選べるようにするための
+ * 前段になる。マッチングは次の順で行う。
+ *
+ * 1. 完全一致 (`key`が同じ) は変更なしとして扱い、どちらのhunkにもしない。
+ * 2. 素の語 (`bareTag`) が一致するものは、重み付けなどが変わった`change`にする。
+ * 3. 既存側だけに残ったものは`remove`、提案側だけに残ったものは`add`にする。
+ *
+ * 既存セグメントどうしの並び順や、既存・提案それぞれの中の重複は
+ * `applyPromptDiff`側で吸収するため、ここでは判定だけを行う。
+ */
+export function diffPrompt(current: string, proposed: string): DiffHunk[] {
+  const currentSegments = parsePrompt(current);
+  const proposedSegments = dedupe(parsePrompt(proposed));
+
+  const consumedCurrent = new Set<number>();
+  const consumedProposed = new Set<number>();
+
+  const currentByExact = groupIndices(currentSegments, (segment) => segment.key);
+  proposedSegments.forEach((segment, index) => {
+    const candidates = currentByExact.get(segment.key);
+    const match = candidates?.find((value) => !consumedCurrent.has(value));
+    if (match === undefined) return;
+    consumedCurrent.add(match);
+    consumedProposed.add(index);
+  });
+
+  const currentByBase = groupIndices(currentSegments, (segment) => bareTag(segment.text));
+  const changeHunks: DiffHunk[] = [];
+  proposedSegments.forEach((segment, index) => {
+    if (consumedProposed.has(index)) return;
+    const candidates = currentByBase.get(bareTag(segment.text));
+    const match = candidates?.find((value) => !consumedCurrent.has(value));
+    if (match === undefined) return;
+    consumedCurrent.add(match);
+    consumedProposed.add(index);
+    changeHunks.push({
+      id: `change:${match}`,
+      kind: "change",
+      before: currentSegments[match],
+      after: segment,
+    });
+  });
+
+  const removeHunks: DiffHunk[] = currentSegments.reduce<DiffHunk[]>(
+    (hunks, segment, index) => {
+      if (consumedCurrent.has(index)) return hunks;
+      hunks.push({ id: `remove:${index}`, kind: "remove", before: segment, after: null });
+      return hunks;
+    },
+    [],
+  );
+
+  const addHunks: DiffHunk[] = proposedSegments.reduce<DiffHunk[]>(
+    (hunks, segment, index) => {
+      if (consumedProposed.has(index)) return hunks;
+      hunks.push({ id: `add:${index}`, kind: "add", before: null, after: segment });
+      return hunks;
+    },
+    [],
+  );
+
+  return [...changeHunks, ...removeHunks, ...addHunks];
+}
+
+/**
+ * `diffPrompt`が返したhunkのうち、`acceptedIds`にあるものだけを既存プロンプトへ反映
+ * する。
+ *
+ * - 不採用のhunkは既存の記述をそのまま残す。`remove`を不採用にすれば消えず、
+ *   `change`を不採用にすれば元の表記のまま残る。
+ * - `add`の反映位置は`mergePrompt`と同じ規約 (タグ順のブロックに沿って既存セグメント
+ *   の直後へ挿入) に従う。
+ * - 既存プロンプトが空のときは、`mergePrompt`同様に並べ替えず提案側の順のまま入れる。
+ */
+export function applyPromptDiff(
+  current: string,
+  hunks: readonly DiffHunk[],
+  acceptedIds: ReadonlySet<string>,
+): string {
+  const currentSegments = parsePrompt(current);
+
+  if (currentSegments.length === 0) {
+    const seen = new Set<string>();
+    const ordered: PromptSegment[] = [];
+    for (const hunk of hunks) {
+      if (hunk.kind !== "add" || !hunk.after) continue;
+      if (!acceptedIds.has(hunk.id)) continue;
+      if (seen.has(hunk.after.key)) continue;
+      seen.add(hunk.after.key);
+      ordered.push(hunk.after);
+    }
+    return ordered.map((segment) => segment.text).join(", ");
+  }
+
+  // `id`は`diffPrompt`が付けた`remove:<index>`/`change:<index>`の形式で、`index`は
+  // `currentSegments`上の位置を指す。重複するセグメントが複数あっても、キーではなく
+  // 位置で引き当てるため取り違えない。
+  const working: (PromptSegment | null)[] = [...currentSegments];
+  for (const hunk of hunks) {
+    if (hunk.kind === "add") continue;
+    if (!acceptedIds.has(hunk.id)) continue;
+    const index = Number(hunk.id.split(":")[1]);
+    if (!Number.isInteger(index) || index < 0 || index >= working.length) continue;
+    if (hunk.kind === "remove") {
+      working[index] = null;
+    } else if (hunk.kind === "change" && hunk.after) {
+      working[index] = hunk.after;
+    }
+  }
+
+  let result = working.filter((segment): segment is PromptSegment => segment !== null);
+  const seen = new Set(result.map((segment) => segment.key));
+
+  for (const hunk of hunks) {
+    if (hunk.kind !== "add" || !hunk.after) continue;
+    if (!acceptedIds.has(hunk.id)) continue;
+    if (seen.has(hunk.after.key)) continue;
+    seen.add(hunk.after.key);
+    const addition = hunk.after;
+    let insertAt = -1;
+    for (let index = 0; index < result.length; index += 1) {
+      if (result[index].block <= addition.block) insertAt = index;
+    }
+    result = [...result.slice(0, insertAt + 1), addition, ...result.slice(insertAt + 1)];
+  }
+
+  return result.map((segment) => segment.text).join(", ");
+}
