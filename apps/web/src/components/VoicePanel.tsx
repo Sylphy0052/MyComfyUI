@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -10,6 +10,7 @@ import type {
 } from "../api/client";
 import type { CanonDescriptor, ShotEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { EmptyState } from "./ui/EmptyState";
 
 /** 1 つの voice_id に対する Voice Canon と参照音声の指定。 */
 interface VoiceBinding {
@@ -90,6 +91,10 @@ export function VoicePanel({
   const [error, setError] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [verifications, setVerifications] = useState<VoiceVerification[]>([]);
+  const [verificationsLoading, setVerificationsLoading] = useState(false);
+  const [verificationsError, setVerificationsError] = useState<string | null>(
+    null,
+  );
   const [previewResult, setPreviewResult] = useState<GenerationPreview | null>(
     null,
   );
@@ -107,6 +112,10 @@ export function VoicePanel({
   const voiceJobs = useMemo(
     () => jobs.filter((job) => job.kind === "voice"),
     [jobs],
+  );
+  const selectedVoiceJob = useMemo(
+    () => voiceJobs.find((item) => item.id === selectedJobId) ?? null,
+    [voiceJobs, selectedJobId],
   );
 
   useEffect(() => {
@@ -156,26 +165,46 @@ export function VoicePanel({
     );
   }, [voiceIds]);
 
+  // Job を素早く切り替えたとき、遅れて届いた前の Job の応答で表示を上書きしない。
+  const verificationsSequence = useRef(0);
+
   const loadVerifications = useCallback(async (jobId: string) => {
+    const sequence = ++verificationsSequence.current;
+    setVerificationsLoading(true);
+    setVerificationsError(null);
     try {
-      setVerifications(await api.listVoiceVerifications(jobId));
+      const items = await api.listVoiceVerifications(jobId);
+      if (sequence === verificationsSequence.current) setVerifications(items);
     } catch (cause) {
-      setError(describe(cause));
+      if (sequence === verificationsSequence.current) {
+        setVerificationsError(describe(cause));
+      }
+    } finally {
+      if (sequence === verificationsSequence.current) {
+        setVerificationsLoading(false);
+      }
     }
+  }, []);
+
+  const clearVerifications = useCallback(() => {
+    verificationsSequence.current += 1;
+    setVerifications([]);
+    setVerificationsError(null);
+    setVerificationsLoading(false);
   }, []);
 
   useEffect(() => {
     if (!selectedJobId) {
-      setVerifications([]);
+      clearVerifications();
       return;
     }
     const job = voiceJobs.find((item) => item.id === selectedJobId);
     if (!job || job.state !== "succeeded") {
-      setVerifications([]);
+      clearVerifications();
       return;
     }
     void loadVerifications(selectedJobId);
-  }, [selectedJobId, voiceJobs, loadVerifications]);
+  }, [selectedJobId, voiceJobs, loadVerifications, clearVerifications]);
 
   const update = (voiceId: string, patch: Partial<VoiceBinding>) => {
     setBindings((current) => ({
@@ -578,10 +607,37 @@ export function VoicePanel({
         </select>
       </div>
 
-      {verifications.length === 0 ? (
-        <p className="muted">
-          成功した音声Jobを選ぶと、台詞ごとの読み検証と尺を表示する。
-        </p>
+      {verificationsLoading ? (
+        <EmptyState title="読み検証を取得しています…" />
+      ) : verificationsError ? (
+        <EmptyState
+          title="読み検証の取得に失敗しました。"
+          description={verificationsError}
+          action={
+            <button
+              type="button"
+              onClick={() => selectedJobId && void loadVerifications(selectedJobId)}
+            >
+              再試行
+            </button>
+          }
+        />
+      ) : !selectedJobId ? (
+        <EmptyState
+          title="成功した音声Jobを選ぶと、台詞ごとの読み検証と尺を表示する。"
+          action={
+            <button
+              type="button"
+              onClick={() => document.getElementById("voice-job")?.focus()}
+            >
+              音声Jobを選ぶ
+            </button>
+          }
+        />
+      ) : selectedVoiceJob?.state !== "succeeded" ? (
+        <EmptyState title="選択した音声Jobはまだ完了していません。完了すると読み検証と尺を表示する。" />
+      ) : verifications.length === 0 ? (
+        <EmptyState title="この音声Jobには読み検証がありません。" />
       ) : (
         <ul className="list plain">
           {verifications.map((item) => (

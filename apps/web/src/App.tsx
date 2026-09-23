@@ -284,6 +284,9 @@ export function App() {
   const [shot, setShot] = useState<ShotEnvelope | null>(null);
 
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [recipesLoading, setRecipesLoading] = useState(true);
+  const [recipesError, setRecipesError] = useState<string | null>(null);
+  const [recipesRetryToken, setRecipesRetryToken] = useState(0);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [manifest, setManifest] = useState<GenerationManifest | null>(null);
@@ -493,6 +496,7 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    setRecipesLoading(true);
     (async () => {
       try {
         const [projectList, recipeList] = await Promise.all([
@@ -502,6 +506,7 @@ export function App() {
         if (!active) return;
         setProjects(projectList.items);
         setRecipes(recipeList);
+        setRecipesError(null);
         // 復元したProjectが削除されていることがある。無効なIDを抱えたままだと
         // Scene取得が毎回失敗し、その状態をURLとlocalStorageへ書き戻し続ける。
         const restoredProjectId = initialUiState.projectId;
@@ -516,13 +521,18 @@ export function App() {
           );
         }
       } catch (cause) {
-        if (active) setError(describe(cause));
+        if (active) {
+          setError(describe(cause));
+          setRecipesError(describe(cause));
+        }
+      } finally {
+        if (active) setRecipesLoading(false);
       }
     })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [recipesRetryToken]);
 
   useEffect(() => {
     if (!projectId) {
@@ -1220,9 +1230,13 @@ export function App() {
                     sceneId={sceneId}
                     shotId={shotId}
                     recipes={derivationRecipes}
+                    recipesLoading={recipesLoading}
+                    recipesError={recipesError}
+                    onRetryRecipes={() => setRecipesRetryToken((token) => token + 1)}
                     sourceArtifactId={derivationSourceArtifactId}
                     onSourceArtifactChange={setDerivationSourceArtifactId}
                     onSubmittedJob={handleDerivedJob}
+                    onManageWorkflows={() => setView("workflows")}
                   />
                 </div>
 

@@ -181,7 +181,11 @@ export function SceneBrowser(props: Props) {
         <p className="muted">外部同期Projectの原文と構造は読取り専用です。人物設定と生成プロンプトはMyComfyUI側で編集できます。</p>
       )}
 
-      <section className="panel structure-panel">
+      <section
+        id="scene-browser-scene-section"
+        tabIndex={-1}
+        className="panel structure-panel"
+      >
         <div className="row spread">
           <h2>Scene</h2>
           {structureEditable && <button type="button" disabled={busy} onClick={() => { setEditingScene(null); setEditor("create-scene"); }}>追加</button>}
@@ -231,7 +235,11 @@ export function SceneBrowser(props: Props) {
         </div>}
       </section>
 
-      <section className="panel structure-panel">
+      <section
+        id="scene-browser-shot-section"
+        tabIndex={-1}
+        className="panel structure-panel"
+      >
         <div className="row spread">
           <h2>Shot</h2>
           {structureEditable && sceneId && <button type="button" disabled={busy} onClick={() => { setEditingShot(null); setEditor("create-shot"); }}>追加</button>}
