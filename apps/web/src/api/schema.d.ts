@@ -1734,6 +1734,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-versions/{workflow_version_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workflow Version Diff
+         * @description 2つのWorkflow版のグラフ・入出力差分。Recipe接続前の確認に使う。
+         */
+        get: operations["get_workflow_version_diff_api_v1_workflow_versions__workflow_version_id__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflow-versions/{workflow_version_id}/models": {
         parameters: {
             query?: never;
@@ -1807,7 +1827,15 @@ export interface paths {
          */
         get: operations["list_workflow_versions_api_v1_workflows__workflow_id__versions_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Workflow Graph Version
+         * @description 利用者が編集したグラフを検証し、新しいWorkflow版として登録する。
+         *
+         *     許可node以外・循環・不正link・出力不足は登録前に拒否する(Issue #110)。既存版は
+         *     書き換えず、常に新しい行を追加する。この版だけではRecipeへ接続されない。接続には
+         *     別途Recipe作成の承認(`OPERATION_RECIPE_CREATE`)が要る。
+         */
+        post: operations["create_workflow_graph_version_api_v1_workflows__workflow_id__versions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3995,6 +4023,38 @@ export interface components {
             target_duration_sec: number;
         };
         /**
+         * WorkflowGraphVersionCreate
+         * @description 利用者が編集したグラフから新しいWorkflow版を登録する要求。
+         *
+         *     `graph`はComfyUIのAPI形式(`{node_id: {"class_type": str, "inputs": {...}}}`)。
+         *     登録前に`graph_validation.validate_graph`で許可node・循環・不正link・出力有無を
+         *     検証し、通らなければ拒否する。
+         */
+        WorkflowGraphVersionCreate: {
+            /** Based On Version Id */
+            based_on_version_id?: string | null;
+            /** Graph */
+            graph: {
+                [key: string]: unknown;
+            };
+            /** Inputs */
+            inputs?: {
+                [key: string]: unknown;
+            }[];
+            /** Model Slots */
+            model_slots?: {
+                [key: string]: unknown;
+            }[];
+            /** Outputs */
+            outputs?: {
+                [key: string]: unknown;
+            }[];
+            /** Variables */
+            variables?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * WorkflowModelOptionsRead
          * @description 任意node照会を許さず、Workflow版の宣言だけから解決したモデル在庫。
          */
@@ -4038,12 +4098,46 @@ export interface components {
             name: string;
         };
         /**
+         * WorkflowVersionDiffRead
+         * @description 2つのWorkflow版のグラフ・入出力差分。承認前の確認表示に使う。
+         */
+        WorkflowVersionDiffRead: {
+            /** Added Node Classes */
+            added_node_classes: string[];
+            /** Added Nodes */
+            added_nodes: string[];
+            /** Changed Nodes */
+            changed_nodes: string[];
+            /** Inputs Changed */
+            inputs_changed: boolean;
+            /** Model Slots Changed */
+            model_slots_changed: boolean;
+            /** New Version Id */
+            new_version_id: string;
+            /** Old Version Id */
+            old_version_id: string;
+            /** Outputs Changed */
+            outputs_changed: boolean;
+            /** Removed Node Classes */
+            removed_node_classes: string[];
+            /** Removed Nodes */
+            removed_nodes: string[];
+        };
+        /**
          * WorkflowVersionRead
          * @description Workflowの1版。変数定義、対応モデル、入出力をそのまま返す。
          */
         WorkflowVersionRead: {
+            /** Based On Version Id */
+            based_on_version_id?: string | null;
             /** Created At */
             created_at: string;
+            /** Graph */
+            graph?: {
+                [key: string]: unknown;
+            } | null;
+            /** Graph Sha256 */
+            graph_sha256?: string | null;
             /** Id */
             id: string;
             /** Inputs */
@@ -7662,6 +7756,39 @@ export interface operations {
             };
         };
     };
+    get_workflow_version_diff_api_v1_workflow_versions__workflow_version_id__diff_get: {
+        parameters: {
+            query: {
+                against_version_id: string;
+            };
+            header?: never;
+            path: {
+                workflow_version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowVersionDiffRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_workflow_model_options_api_v1_workflow_versions__workflow_version_id__models_get: {
         parameters: {
             query?: never;
@@ -7774,6 +7901,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowVersionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_workflow_graph_version_api_v1_workflows__workflow_id__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowGraphVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowVersionRead"];
                 };
             };
             /** @description Validation Error */

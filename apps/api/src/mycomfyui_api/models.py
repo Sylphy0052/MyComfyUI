@@ -64,7 +64,9 @@ class Project(Base):
     thumbnail_artifact_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=True
     )
-    generation_defaults: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    generation_defaults: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
     local_overrides: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     source_type: Mapped[str] = mapped_column(Text, nullable=False)
     source_locator: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -226,6 +228,18 @@ class WorkflowVersion(Base):
     inputs: Mapped[list] = mapped_column(JSON, nullable=False)
     #: この版が生むArtifactの種別。
     outputs: Mapped[list] = mapped_column(JSON, nullable=False)
+    #: 利用者が編集したnode/edgeグラフ本体。同梱テンプレート由来の版はNULLのまま。
+    #: `graph_validation.validate_graph`を通過した内容だけを保存する。
+    graph: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: `graph`のSHA-256。immutableな版の識別に使う。テンプレート由来の版は
+    #: `template_sha256`を使うためNULLのまま。
+    graph_sha256: Mapped[str | None] = mapped_column(
+        String(SHA256_LENGTH), nullable=True
+    )
+    #: 差分表示の基準にした旧版。新規登録(既存版を編集元に持たない)ではNULL。
+    based_on_version_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("workflow_version.id"), nullable=True
+    )
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 
@@ -305,7 +319,12 @@ class GenerationJob(Base):
             deferrable=True,
             initially="DEFERRED",
         ),
-        Index("ix_generation_job_assignment", "assigned_project_id", "assigned_scene_id", "assigned_shot_id"),
+        Index(
+            "ix_generation_job_assignment",
+            "assigned_project_id",
+            "assigned_scene_id",
+            "assigned_shot_id",
+        ),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
@@ -370,7 +389,9 @@ class GenerationBatchItem(Base):
         String(UUID_LENGTH), ForeignKey("generation_batch.id"), nullable=False
     )
     scene_id: Mapped[str] = mapped_column(String(PROJECT_ID_LENGTH), nullable=False)
-    shot_id: Mapped[str | None] = mapped_column(String(PROJECT_ID_LENGTH), nullable=True)
+    shot_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), nullable=True
+    )
     job_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=True
     )
@@ -473,7 +494,12 @@ class Artifact(Base):
             "decision in ('undecided','accepted','rejected')",
             name="ck_artifact_decision",
         ),
-        Index("ix_artifact_assignment", "assigned_project_id", "assigned_scene_id", "assigned_shot_id"),
+        Index(
+            "ix_artifact_assignment",
+            "assigned_project_id",
+            "assigned_scene_id",
+            "assigned_shot_id",
+        ),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)

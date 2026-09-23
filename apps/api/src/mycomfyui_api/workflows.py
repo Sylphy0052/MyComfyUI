@@ -17,7 +17,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mycomfyui_api import schemas
+from mycomfyui_api import graph_validation, schemas
 from mycomfyui_api.adapters.comfyui import prepare as comfyui_prepare
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
@@ -312,6 +312,75 @@ async def load_version(
     )
     row = result.first()
     return None if row is None else (row[0], row[1])
+
+
+class GraphVersionConflict(Exception):
+    """同じ内容のグラフが既に別の版として登録されている。"""
+
+    def __init__(self, existing_version_id: str) -> None:
+        super().__init__("同じ内容のWorkflow版が既に存在します。")
+        self.existing_version_id = existing_version_id
+
+
+async def register_graph_version(
+    session: AsyncSession,
+    *,
+    workflow: Workflow,
+    graph: dict[str, Any],
+    variables: dict[str, Any],
+    model_slots: list[dict[str, Any]],
+    inputs: list[dict[str, Any]],
+    outputs: list[dict[str, Any]],
+    based_on_version_id: str | None,
+) -> WorkflowVersion:
+    """検証済みグラフから新しいWorkflow版を作る。
+
+    呼び出し側で`graph_validation.validate_graph`を通した`graph`だけを渡す。既存版は
+    書き換えず、常に新しい行を追加する。版のキーはグラフ内容のSHA-256とし、同じ内容を
+    二重登録しないよう先に既存版を探す。
+    """
+
+    digest = graph_validation.graph_sha256(graph)
+    existing = await _get_version(session, workflow.id, digest)
+    if existing is not None:
+        raise GraphVersionConflict(existing.id)
+
+    version = WorkflowVersion(
+        id=schemas.new_id(),
+        workflow_id=workflow.id,
+        version=digest,
+        template_sha256=None,
+        variables=variables,
+        model_slots=model_slots,
+        inputs=inputs,
+        outputs=outputs,
+        graph=graph,
+        graph_sha256=digest,
+        based_on_version_id=based_on_version_id,
+        created_at=schemas.now_iso(),
+    )
+    session.add(version)
+    await session.commit()
+    await session.refresh(version)
+    return version
+
+
+def diff_graph_versions(
+    old_version: WorkflowVersion, new_version: WorkflowVersion
+) -> dict[str, Any]:
+    """2つのWorkflow版のグラフ・入出力差分。承認前の確認画面に使う。"""
+
+    old_graph = old_version.graph if isinstance(old_version.graph, dict) else {}
+    new_graph = new_version.graph if isinstance(new_version.graph, dict) else {}
+    graph_diff = graph_validation.diff_graphs(old_graph, new_graph)
+    return {
+        "old_version_id": old_version.id,
+        "new_version_id": new_version.id,
+        **graph_diff,
+        "inputs_changed": old_version.inputs != new_version.inputs,
+        "outputs_changed": old_version.outputs != new_version.outputs,
+        "model_slots_changed": old_version.model_slots != new_version.model_slots,
+    }
 
 
 async def _get_or_create_workflow(

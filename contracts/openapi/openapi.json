@@ -6494,6 +6494,63 @@
         "title": "VoiceVerificationRead",
         "type": "object"
       },
+      "WorkflowGraphVersionCreate": {
+        "additionalProperties": false,
+        "description": "利用者が編集したグラフから新しいWorkflow版を登録する要求。\n\n`graph`はComfyUIのAPI形式(`{node_id: {\"class_type\": str, \"inputs\": {...}}}`)。\n登録前に`graph_validation.validate_graph`で許可node・循環・不正link・出力有無を\n検証し、通らなければ拒否する。",
+        "properties": {
+          "based_on_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Based On Version Id"
+          },
+          "graph": {
+            "additionalProperties": true,
+            "minProperties": 1,
+            "title": "Graph",
+            "type": "object"
+          },
+          "inputs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "model_slots": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Model Slots",
+            "type": "array"
+          },
+          "outputs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Outputs",
+            "type": "array"
+          },
+          "variables": {
+            "additionalProperties": true,
+            "title": "Variables",
+            "type": "object"
+          }
+        },
+        "required": [
+          "graph"
+        ],
+        "title": "WorkflowGraphVersionCreate",
+        "type": "object"
+      },
       "WorkflowModelOptionsRead": {
         "additionalProperties": false,
         "description": "任意node照会を許さず、Workflow版の宣言だけから解決したモデル在庫。",
@@ -6612,13 +6669,122 @@
         "title": "WorkflowRead",
         "type": "object"
       },
+      "WorkflowVersionDiffRead": {
+        "additionalProperties": false,
+        "description": "2つのWorkflow版のグラフ・入出力差分。承認前の確認表示に使う。",
+        "properties": {
+          "added_node_classes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Added Node Classes",
+            "type": "array"
+          },
+          "added_nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Added Nodes",
+            "type": "array"
+          },
+          "changed_nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Nodes",
+            "type": "array"
+          },
+          "inputs_changed": {
+            "title": "Inputs Changed",
+            "type": "boolean"
+          },
+          "model_slots_changed": {
+            "title": "Model Slots Changed",
+            "type": "boolean"
+          },
+          "new_version_id": {
+            "title": "New Version Id",
+            "type": "string"
+          },
+          "old_version_id": {
+            "title": "Old Version Id",
+            "type": "string"
+          },
+          "outputs_changed": {
+            "title": "Outputs Changed",
+            "type": "boolean"
+          },
+          "removed_node_classes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Node Classes",
+            "type": "array"
+          },
+          "removed_nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "old_version_id",
+          "new_version_id",
+          "added_nodes",
+          "removed_nodes",
+          "changed_nodes",
+          "added_node_classes",
+          "removed_node_classes",
+          "inputs_changed",
+          "outputs_changed",
+          "model_slots_changed"
+        ],
+        "title": "WorkflowVersionDiffRead",
+        "type": "object"
+      },
       "WorkflowVersionRead": {
         "additionalProperties": false,
         "description": "Workflowの1版。変数定義、対応モデル、入出力をそのまま返す。",
         "properties": {
+          "based_on_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Based On Version Id"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "graph": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph"
+          },
+          "graph_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Sha256"
           },
           "id": {
             "title": "Id",
@@ -12552,6 +12718,55 @@
         "summary": "Get Workflow Version"
       }
     },
+    "/api/v1/workflow-versions/{workflow_version_id}/diff": {
+      "get": {
+        "description": "2つのWorkflow版のグラフ・入出力差分。Recipe接続前の確認に使う。",
+        "operationId": "get_workflow_version_diff_api_v1_workflow_versions__workflow_version_id__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_version_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "against_version_id",
+            "required": true,
+            "schema": {
+              "title": "Against Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowVersionDiffRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow Version Diff"
+      }
+    },
     "/api/v1/workflow-versions/{workflow_version_id}/models": {
       "get": {
         "description": "登録済みWorkflow版が宣言したmodel slotだけをComfyUIへ照会する。",
@@ -12747,6 +12962,54 @@
           }
         },
         "summary": "List Workflow Versions"
+      },
+      "post": {
+        "description": "利用者が編集したグラフを検証し、新しいWorkflow版として登録する。\n\n許可node以外・循環・不正link・出力不足は登録前に拒否する(Issue #110)。既存版は\n書き換えず、常に新しい行を追加する。この版だけではRecipeへ接続されない。接続には\n別途Recipe作成の承認(`OPERATION_RECIPE_CREATE`)が要る。",
+        "operationId": "create_workflow_graph_version_api_v1_workflows__workflow_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowGraphVersionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowVersionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Workflow Graph Version"
       }
     }
   }
