@@ -10,6 +10,12 @@ import type {
   Recipe,
 } from "../api/client";
 import type { ShotEnvelope } from "../api/aimedia";
+import {
+  applyPlanPreset,
+  planPresetBlocker,
+  usePlanPresetDefaults,
+  type PlanPreset,
+} from "../state/productionPlan";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
@@ -18,6 +24,7 @@ import { ModelSelector } from "./ModelSelector";
 import { PromptAssistField } from "./PromptAssist";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffField } from "./PromptDiffReview";
+import { PlanPresetNote } from "./ProductionPlanPanel";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 
@@ -79,6 +86,8 @@ interface Props {
   suggestedFirstFrame?: PickedMedia[];
   suggestedReferences?: PickedMedia[];
   suggestedGuideAudio?: PickedMedia[];
+  /** 作品制作の計画で開始済みのとき、この工程に割り当てたPreset。 */
+  planPreset?: PlanPreset | null;
 }
 
 export function VideoPanel({
@@ -91,10 +100,12 @@ export function VideoPanel({
   suggestedFirstFrame,
   suggestedReferences,
   suggestedGuideAudio,
+  planPreset,
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
+  usePlanPresetDefaults(planPreset, shotId, recipes, setRecipeId, setUseInheritedDefaults);
   const [health, setHealth] = useState<ComfyUIBackendHealth | null>(null);
 
   const [prompt, setPrompt] = useState("");
@@ -335,7 +346,7 @@ export function VideoPanel({
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
-        inputs,
+        ...applyPlanPreset(planPreset, recipe, useInheritedDefaults, inputs),
       });
       onSubmittedJob(job);
     } catch (cause) {
@@ -360,7 +371,7 @@ export function VideoPanel({
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
-        inputs,
+        ...applyPlanPreset(planPreset, recipe, useInheritedDefaults, inputs),
       });
       setPreviewResult(preview);
       setPreviewError(null);
@@ -421,6 +432,10 @@ export function VideoPanel({
             ))}
           </select>
         </div>
+        <PlanPresetNote
+          preset={planPreset}
+          blocker={planPreset ? planPresetBlocker(planPreset, recipe, useInheritedDefaults) : null}
+        />
 
         <ModelSelector
           recipe={recipe}

@@ -9,9 +9,16 @@ import type {
   VoiceVerification,
 } from "../api/client";
 import type { CanonDescriptor, ShotEnvelope } from "../api/aimedia";
+import {
+  applyPlanPreset,
+  planPresetBlocker,
+  usePlanPresetDefaults,
+  type PlanPreset,
+} from "../state/productionPlan";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { MediaViewer } from "./MediaViewer";
 import type { MediaViewerItem } from "./MediaViewer";
+import { PlanPresetNote } from "./ProductionPlanPanel";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 import { EmptyState } from "./ui/EmptyState";
@@ -69,6 +76,8 @@ interface Props {
   shot: ShotEnvelope | null;
   jobs: GenerationJob[];
   onSubmittedJob: (job: GenerationJob) => void;
+  /** 作品制作の計画で開始済みのとき、この工程に割り当てたPreset。 */
+  planPreset?: PlanPreset | null;
 }
 
 export function VoicePanel({
@@ -78,10 +87,12 @@ export function VoicePanel({
   shot,
   jobs,
   onSubmittedJob,
+  planPreset,
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
+  usePlanPresetDefaults(planPreset, shotId, recipes, setRecipeId, setUseInheritedDefaults);
   const [canon, setCanon] = useState<CanonDescriptor[]>([]);
   const [health, setHealth] = useState<VoiceBackendHealth | null>(null);
   const [bindings, setBindings] = useState<Record<string, VoiceBinding>>({});
@@ -337,7 +348,7 @@ export function VoicePanel({
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
-        inputs,
+        ...applyPlanPreset(planPreset, recipe, useInheritedDefaults, inputs),
       });
       setSelectedJobId(job.id);
       onSubmittedJob(job);
@@ -364,7 +375,7 @@ export function VoicePanel({
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
-        inputs,
+        ...applyPlanPreset(planPreset, recipe, useInheritedDefaults, inputs),
       });
       setPreviewResult(preview);
       setPreviewError(null);
@@ -431,6 +442,10 @@ export function VoicePanel({
               ))}
             </select>
           </div>
+          <PlanPresetNote
+            preset={planPreset}
+            blocker={planPreset ? planPresetBlocker(planPreset, recipes.find((item) => item.id === recipeId), useInheritedDefaults) : null}
+          />
 
           {!shotId ? (
             <div className="stack">

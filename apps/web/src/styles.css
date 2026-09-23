@@ -1822,3 +1822,70 @@ button.primary:hover:not(:disabled) {
   justify-content: flex-end;
   gap: var(--space-2);
 }
+
+/* 作品制作の計画 (F-07)。工程バーの上に置き、開始後は1行に畳む。 */
+.production-plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2, 6px);
+  background: var(--color-surface);
+}
+
+.production-plan h3 {
+  margin: 0;
+}
+
+.production-plan-summary {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.production-plan-build {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.production-plan-brief {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.production-plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.production-plan-steps li,
+.production-plan-preset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.production-plan-steps label,
+.production-plan-preset label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.production-plan-presets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}

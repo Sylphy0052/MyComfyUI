@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
+import { planPresetBlocker, type PlanPreset } from "../state/productionPlan";
 import { ignoresShortcut } from "./ui/shortcuts";
 import type {
   AgentProvider,
@@ -12,6 +13,7 @@ import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
 import { PromptAssist } from "./PromptAssist";
+import { PlanPresetNote } from "./ProductionPlanPanel";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffField } from "./PromptDiffReview";
 import { conflictNotice } from "./BackendNotice";
@@ -109,6 +111,11 @@ interface Props {
   simple?: boolean;
   /** モードBで生成フォームが見えている間だけtrue。Gキーで投入する。 */
   shortcutActive?: boolean;
+  /**
+   * 作品制作の計画で開始済みのとき、この工程へ入れるPresetとプロンプト。
+   * `scope` (Shotと工程) とPresetの組ごとに1回だけ入れ、その後の使用者の変更は上書きしない。
+   */
+  plan?: { scope: string; preset: PlanPreset | null; prompt: string } | null;
 }
 
 export function GenerationForm({
@@ -123,6 +130,7 @@ export function GenerationForm({
   previewError,
   simple = false,
   shortcutActive = false,
+  plan = null,
 }: Props) {
   const [recipeId, setRecipeId] = useState<string>("");
   const recipe = useMemo(
@@ -199,6 +207,34 @@ export function GenerationForm({
     // 開いている差分レビューは切替前の値を比べているので閉じる。
     setPromptDiff(null);
   }, [recipe, allFields, defaultValues]);
+
+  // 計画のPresetとプロンプトを入れる。値は触った印を付け、上のRecipe変更の効果で持ち越させる。
+  const appliedPlanRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!plan || recipes.length === 0) return;
+    const preset = plan.preset;
+    const key = `${plan.scope}:${preset?.profile.id ?? ""}`;
+    if (appliedPlanRef.current === key) return;
+    appliedPlanRef.current = key;
+    const filled: Record<string, string> = {};
+    if (preset) {
+      setUseInheritedDefaults(false);
+      setLookProfileIds([preset.profile.id]);
+      const recipeIdOfPreset = preset.profile.recipe_id;
+      if (recipeIdOfPreset && recipes.some((item) => item.id === recipeIdOfPreset)) {
+        setRecipeId(recipeIdOfPreset);
+      }
+      for (const [name, value] of Object.entries(preset.choiceValues)) {
+        if (value.trim() !== "") filled[name] = value;
+      }
+    }
+    if (plan.prompt && !(valuesRef.current.positive_prompt ?? "").trim()) {
+      filled.positive_prompt = plan.prompt;
+    }
+    if (Object.keys(filled).length === 0) return;
+    setValues((current) => ({ ...current, ...filled }));
+    setTouchedFields((current) => new Set([...current, ...Object.keys(filled)]));
+  }, [plan, recipes]);
 
   useEffect(() => {
     void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
@@ -543,6 +579,15 @@ export function GenerationForm({
               ))}
             </select>
           </div>
+          {plan?.preset && (
+            <PlanPresetNote
+              preset={plan.preset}
+              blocker={
+                planPresetBlocker(plan.preset, recipe, useInheritedDefaults) ??
+                (lookProfileIds.includes(plan.preset.profile.id) ? null : "計画のPresetは適用を解除されています。")
+              }
+            />
+          )}
           {simple && recipe && !useInheritedDefaults && !modelsValid && (
             <p className="muted">
               このPresetはモデルの指定が揃っていません。ラボで確認してください。

@@ -9,12 +9,19 @@ import type {
   Recipe,
 } from "../api/client";
 import type { SceneEnvelope } from "../api/aimedia";
+import {
+  applyPlanPreset,
+  planPresetBlocker,
+  usePlanPresetDefaults,
+  type PlanPreset,
+} from "../state/productionPlan";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { MediaViewer } from "./MediaViewer";
 import { ModelSelector } from "./ModelSelector";
 import { PromptAssistField } from "./PromptAssist";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffField } from "./PromptDiffReview";
+import { PlanPresetNote } from "./ProductionPlanPanel";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 
@@ -32,6 +39,10 @@ interface Props {
   scene: SceneEnvelope | null;
   jobs: GenerationJob[];
   onSubmittedJob: (job: GenerationJob) => void;
+  /** 作品制作の計画で開始済みのとき、この工程に割り当てたPreset。 */
+  planPreset?: PlanPreset | null;
+  /** 作品制作の計画で開始済みのとき、計画で決めたBGMの雰囲気とジャンル。 */
+  planMusic?: { mood: string; genre: string } | null;
 }
 
 export function MusicPanel({
@@ -41,10 +52,13 @@ export function MusicPanel({
   scene,
   jobs,
   onSubmittedJob,
+  planPreset,
+  planMusic,
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
+  usePlanPresetDefaults(planPreset, shotId, recipes, setRecipeId, setUseInheritedDefaults);
 
   const [mood, setMood] = useState("");
   const [genre, setGenre] = useState("");
@@ -141,6 +155,16 @@ export function MusicPanel({
     }
   }, [scene]);
 
+  // 計画でBGMを決めてあれば、Scene本文の想定より優先する。空欄の項目はSceneの値を残す。
+  const planMood = planMusic?.mood.trim() ?? "";
+  const planGenre = planMusic?.genre.trim() ?? "";
+  useEffect(() => {
+    if (!planMood && !planGenre) return;
+    setPromptDiff(null);
+    if (planMood) setMood(planMood);
+    if (planGenre) setGenre(planGenre);
+  }, [scene, planMood, planGenre]);
+
   useEffect(() => {
     if (!succeededMusicJobIds) {
       setAudioArtifactsByJob({});
@@ -202,7 +226,7 @@ export function MusicPanel({
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
-        inputs,
+        ...applyPlanPreset(planPreset, recipe, useInheritedDefaults, inputs),
       });
       onSubmittedJob(job);
     } catch (cause) {
@@ -227,7 +251,7 @@ export function MusicPanel({
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
-        inputs,
+        ...applyPlanPreset(planPreset, recipe, useInheritedDefaults, inputs),
       });
       setPreviewResult(result);
       setPreviewError(null);
@@ -276,6 +300,10 @@ export function MusicPanel({
             ))}
           </select>
         </div>
+        <PlanPresetNote
+          preset={planPreset}
+          blocker={planPreset ? planPresetBlocker(planPreset, recipe, useInheritedDefaults) : null}
+        />
 
         <ModelSelector
           recipe={recipe}
