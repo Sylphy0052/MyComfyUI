@@ -11,6 +11,8 @@ import type {
 import type { ShotEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 /** フレーム数のグリッド。17k+5に合わない値はComfyUI側で切り上げられ、指定した尺とずれる。 */
 const FRAME_GRID_STEP = 17;
@@ -642,9 +644,12 @@ export function VideoPanel({
                 <li key={item.key}>
                   <span className="row">
                     <span>{`${index + 1}. ${item.label}`}</span>
-                    <button type="button" onClick={() => removeReference(item.key)}>
-                      削除
-                    </button>
+                    <IconButton
+                      icon={<Icon name="trash" />}
+                      label={`参照「${item.label}」を削除`}
+                      variant="danger"
+                      onClick={() => removeReference(item.key)}
+                    />
                   </span>
                 </li>
               ))}

@@ -105,7 +105,7 @@ export function JobQueue({
             <div className="row">
               <StateBadge state={selected.state} />
               {CANCELLABLE.has(selected.state) && (
-                <button type="button" onClick={() => onCancel(selected.id)}>
+                <button type="button" className="danger-button" onClick={() => onCancel(selected.id)}>
                   取消
                 </button>
               )}

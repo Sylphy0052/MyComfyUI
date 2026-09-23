@@ -6,6 +6,11 @@ import type { Artifact, ArtifactDecision, GenerationJob, GenerationManifest, Job
 import { ArtifactDetail } from "./ArtifactDetail";
 import { ArtifactPreview } from "./ArtifactPreview";
 import { LoadingPlaceholder } from "./LoadingPlaceholder";
+import { Badge } from "./ui/Badge";
+import { Card } from "./ui/Card";
+import { EmptyState } from "./ui/EmptyState";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 export const DECISION_OPTIONS: { value: string; label: string }[] = [
   { value: "undecided", label: "未判断" },
@@ -401,7 +406,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
         </p>
       )}
       {error && <p className="error">{error}</p>}
-      {candidates.length === 0 ? <p className="muted">成功したJobの画像がまだありません。</p> : <>
+      {candidates.length === 0 ? <EmptyState title="成功したJobの画像がまだありません。" description="生成が成功すると、ここに候補が並びます。" /> : <>
         {compare}
         {detailArtifactId && byId.has(detailArtifactId) && selectedDetail?.lineage && (
           <ArtifactDetail
@@ -424,25 +429,31 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
           <LoadingPlaceholder label="lineageを取得中です。" lines={2} />
         )}
         <div className={`gallery gallery-${thumbSize}`}>
-          {candidates.map(({ artifact }) => <figure key={artifact.id} className={artifact.decision}>
-            <span className={`badge decision decision-${artifact.decision}`}>
+          {candidates.map(({ artifact }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}`}>
+            <Badge tone={`decision decision-${artifact.decision}`}>
               {DECISION_LABEL[artifact.decision] ?? artifact.decision}
-            </span>
+            </Badge>
             <ArtifactPreview artifact={artifact} />
             <figcaption>
               <span className="row">{artifact.id === leftId && <span className="badge">A</span>}{artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
               <span className="mono">{artifact.sha256.slice(0, 12)}</span>
-              <div className="row">
-                <button type="button" onClick={() => setLeftId(artifact.id)}>Aへ</button>
-                <button type="button" onClick={() => setRightId(artifact.id)}>Bへ</button>
-                <button type="button" disabled={busyArtifactId === artifact.id} onClick={() => onDecide(artifact.id, "accepted")}>採用</button>
-                <button type="button" disabled={busyArtifactId === artifact.id} onClick={() => onDecide(artifact.id, "rejected")}>却下</button>
-                <button type="button" disabled={busyArtifactId === artifact.id} onClick={() => onDecide(artifact.id, "undecided")}>戻す</button>
-                <button type="button" onClick={() => setDetailArtifactId((current) => current === artifact.id ? null : artifact.id)}>詳細</button>
-                {onDerive && <button type="button" onClick={() => onDerive(artifact.id)}>派生生成</button>}
+              <div className="candidate-actions">
+                <div className="action-group" role="group" aria-label="比較">
+                  <IconButton icon={<span className="icon-glyph">A</span>} label="比較のAに置く" aria-pressed={artifact.id === leftId} onClick={() => setLeftId(artifact.id)} />
+                  <IconButton icon={<span className="icon-glyph">B</span>} label="比較のBに置く" aria-pressed={artifact.id === rightId} onClick={() => setRightId(artifact.id)} />
+                </div>
+                <div className="action-group" role="group" aria-label="採否">
+                  <IconButton icon={<Icon name="check" />} label="採用" className="tone-ok" aria-pressed={artifact.decision === "accepted"} disabled={busyArtifactId === artifact.id} onClick={() => onDecide(artifact.id, "accepted")} />
+                  <IconButton icon={<Icon name="x" />} label="却下" className="tone-danger" aria-pressed={artifact.decision === "rejected"} disabled={busyArtifactId === artifact.id} onClick={() => onDecide(artifact.id, "rejected")} />
+                  <IconButton icon={<Icon name="undo" />} label="判定を戻す" disabled={busyArtifactId === artifact.id || artifact.decision === "undecided"} onClick={() => onDecide(artifact.id, "undecided")} />
+                </div>
+                <div className="action-group" role="group" aria-label="その他">
+                  <IconButton icon={<Icon name="info" />} label="詳細" aria-pressed={artifact.id === detailArtifactId} onClick={() => setDetailArtifactId((current) => current === artifact.id ? null : artifact.id)} />
+                  {onDerive && <IconButton icon={<Icon name="branch" />} label="派生生成" onClick={() => onDerive(artifact.id)} />}
+                </div>
               </div>
             </figcaption>
-          </figure>)}
+          </Card>)}
         </div>
         <dialog
           ref={dialogRef}
