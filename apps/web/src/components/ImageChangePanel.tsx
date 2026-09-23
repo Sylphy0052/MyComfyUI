@@ -154,7 +154,7 @@ export function ImageChangePanel({
     }
     if (!recipe) {
       setError(
-        `Recipe「${CHANGE_TEMPLATE_RECIPE_LABELS[plan.templateName]}」が見つかりません。Workflow管理で登録してください。`,
+        `プリセット「${CHANGE_TEMPLATE_RECIPE_LABELS[plan.templateName]}」が見つかりません。ラボ (モードA) で登録してください。`,
       );
       return;
     }
@@ -174,7 +174,8 @@ export function ImageChangePanel({
         inputs: {
           source_image: sourceItem.source,
           positive_prompt: prompt,
-          negative_prompt: negative,
+          // 取り込めなかったときは送らず、プリセットの既定値を使わせる。
+          ...(negative ? { negative_prompt: negative } : {}),
           reference_strength: plan.referenceStrength,
         },
       });
@@ -190,7 +191,7 @@ export function ImageChangePanel({
     return (
       <section className="panel">
         <h2>画像を変更</h2>
-        <EmptyState title="Recipeを読み込んでいます…" />
+        <EmptyState title="プリセットを読み込んでいます…" />
       </section>
     );
   }
@@ -199,7 +200,7 @@ export function ImageChangePanel({
       <section className="panel">
         <h2>画像を変更</h2>
         <EmptyState
-          title="Recipeの取得に失敗しました。"
+          title="プリセットの取得に失敗しました。"
           description={recipesError}
           action={
             <button type="button" onClick={onRetryRecipes}>
@@ -215,11 +216,11 @@ export function ImageChangePanel({
       <section className="panel">
         <h2>画像を変更</h2>
         <EmptyState
-          title="使えるRecipeがまだありません。"
-          description="Workflow管理でRecipeを登録すると、画像の変更ができます。"
+          title="使えるプリセットがまだありません。"
+          description="ラボ (モードA) でプリセットを登録すると、画像の変更ができます。"
           action={
             <button type="button" onClick={onManageWorkflows}>
-              Workflow管理を開く
+              ラボで登録する
             </button>
           }
         />

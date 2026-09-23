@@ -1257,7 +1257,11 @@ export function App() {
                     sourceArtifactId={derivationSourceArtifactId}
                     onSourceArtifactChange={setDerivationSourceArtifactId}
                     onSubmittedJob={handleDerivedJob}
-                    onManageWorkflows={() => setView("workflows")}
+                    onManageWorkflows={() => {
+                      // Workflow管理はラボにだけあるため、作品制作から開いたときもラボへ移る。
+                      setMode("lab");
+                      setView("workflows");
+                    }}
                   />
                 </div>
 
