@@ -3,7 +3,7 @@ import type { DragEvent } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { Artifact, MediaRole, ProjectCharacterProfile } from "../api/client";
-import { hasArtifactDrag, hasFileDrag, readArtifactDrag } from "./artifactDrag";
+import { droppedFiles, hasArtifactDrag, hasFileDrag, readArtifactDrag } from "./artifactDrag";
 import type { ArtifactDragPayload } from "./artifactDrag";
 
 /**
@@ -376,6 +376,7 @@ export function MediaPicker({
   const canDrop = (dataTransfer: DataTransfer) =>
     !disabled &&
     !busy &&
+    !atMax &&
     ((acceptsFiles && hasFileDrag(dataTransfer)) ||
       (acceptsArtifacts && hasArtifactDrag(dataTransfer)));
 
@@ -401,7 +402,13 @@ export function MediaPicker({
       void assignDroppedArtifact(payload);
       return;
     }
-    if (acceptsFiles) void uploadFiles(Array.from(event.dataTransfer.files));
+    if (!acceptsFiles) return;
+    const files = droppedFiles(event.dataTransfer);
+    if (files.length === 0) {
+      setError("フォルダは取り込めません。ファイルをドロップしてください。");
+      return;
+    }
+    void uploadFiles(files);
   };
 
   const dropHint = [

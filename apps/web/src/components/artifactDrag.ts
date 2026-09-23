@@ -45,3 +45,14 @@ export function hasArtifactDrag(dataTransfer: DataTransfer): boolean {
 export function hasFileDrag(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes("Files");
 }
+
+/**
+ * ドロップされたファイルを取り出す。フォルダもFileとして並ぶが、typeが空のため
+ * 種別の検証をすり抜けるので、entryでファイルと判定できたものだけを返す。
+ */
+export function droppedFiles(dataTransfer: DataTransfer): File[] {
+  return Array.from(dataTransfer.items)
+    .filter((item) => item.kind === "file" && item.webkitGetAsEntry()?.isFile !== false)
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null);
+}
