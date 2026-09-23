@@ -879,6 +879,8 @@ export const api = {
     /** 画像を添付したときに、AI が直す土台とする現在の prompt と negative。 */
     current_positive_prompt?: string;
     current_negative_prompt?: string;
+    /** 選択中の Recipe。Workflow に応じて提案の書き方が変わる。 */
+    recipe_id?: string | null;
   }) =>
     request<ImagePromptAssist>("/image-prompt-assists", {
       method: "POST",

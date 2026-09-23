@@ -261,6 +261,7 @@ export function GenerationSweepPanel({
           <PromptAssist
             providers={providers}
             idPrefix="sweep"
+            recipeId={recipeId}
             current={{ positive: prompt, negative }}
             projectId={projectId}
             placeholder="例: 夕暮れの海辺に立つ少女。構図は引きで。"

@@ -16,6 +16,8 @@ interface Props {
   current: { positive: string; negative: string };
   /** 画像欄で生成物・登録素材を選ぶときの絞り込みに使う。 */
   projectId?: string | null;
+  /** 選択中の Recipe。Workflow に応じて、タグと自然文を併用するかタグだけで組むかを API が決める。 */
+  recipeId?: string | null;
   /** 補完結果の反映。呼び出し元の prompt と negative へ入れる。 */
   onApply: (result: { positive: string; negative: string }) => void;
 }
@@ -24,7 +26,7 @@ interface Props {
  * 日本語の説明から positive prompt と negative prompt を AI に補完させる入力欄。
  * 画像を添えると、画像と現在の prompt を突き合わせて直した案を返す。
  */
-export function PromptAssist({ current, onApply, ...rest }: Props) {
+export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
   return (
     <PromptAssistField
       {...rest}
@@ -35,6 +37,7 @@ export function PromptAssist({ current, onApply, ...rest }: Props) {
       onAssist={async ({ image, ...request }) => {
         const result = await api.assistImagePrompt({
           ...request,
+          recipe_id: recipeId || null,
           ...(image && {
             image,
             current_positive_prompt: current.positive,

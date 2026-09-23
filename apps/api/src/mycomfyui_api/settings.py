@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     #: 参照fixtureの差し替え先。上流が未実装の間、Canonが更新された状態を再現して
     #: 更新警告と再実行の判定を確かめるために使う。未設定なら同梱fixtureを読む。
     aimedia_fixture_path: Path | None = None
+    #: novel-writerのリポジトリの場所。prompt提案が作法・実測知見・既存作品のpromptを
+    #: 読み取り専用で参照する。未設定なら参照しない。
+    novel_writer_root: Path | None = None
     #: リクエストでProviderを指定しなかったときに使う既定値。APIキーを設定へ持たず、
     #: CLIの既存認証を使う。
     agent_provider: AgentProviderId = "claude_code"

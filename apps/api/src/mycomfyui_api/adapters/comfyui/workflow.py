@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
@@ -106,6 +106,10 @@ class OptionalNode:
     fallback_output: int = 0
 
 
+#: prompt案の書き方の種類。`WorkflowBinding.prompt_style`を参照。
+PromptStyle = Literal["anima", "tags"]
+
+
 @dataclass(frozen=True)
 class WorkflowBinding:
     """WorkflowテンプレートとMyComfyUIの変数の対応関係。"""
@@ -118,6 +122,9 @@ class WorkflowBinding:
     prompt_variable: str | None
     #: role名をキーにした、取り除けるノードの定義。
     optional_nodes: Mapping[str, OptionalNode] = field(default_factory=dict)
+    #: prompt案の書き方。`anima`はタグ行と自然文を併用し、`tags`はタグ行だけで組む。
+    #: promptを持たないテンプレートは`None`とする。
+    prompt_style: PromptStyle | None = None
 
 
 ANIMA_TXT2IMG = WorkflowBinding(
@@ -172,6 +179,7 @@ ANIMA_TXT2IMG = WorkflowBinding(
         ModelSlot("vae_name", "VAELoader", "vae_name"),
     ),
     prompt_variable="positive_prompt",
+    prompt_style="anima",
 )
 
 
@@ -240,6 +248,7 @@ ANIMA_IMG2IMG = WorkflowBinding(
     variables=_anima_derivation_variables(),
     model_slots=_ANIMA_MODEL_SLOTS,
     prompt_variable="positive_prompt",
+    prompt_style="anima",
 )
 
 
@@ -273,6 +282,7 @@ ANIMA_INPAINT = WorkflowBinding(
     },
     model_slots=_ANIMA_MODEL_SLOTS,
     prompt_variable="positive_prompt",
+    prompt_style="anima",
 )
 
 
@@ -372,6 +382,7 @@ SD15_CONTROLNET = WorkflowBinding(
         ModelSlot("control_net_name", "ControlNetLoader", "control_net_name"),
     ),
     prompt_variable="positive_prompt",
+    prompt_style="tags",
 )
 
 
@@ -696,6 +707,7 @@ ANIMA_REF_SIGLIP = WorkflowBinding(
         ModelSlot("ip_adapter_name", "AnimaIPAdapterLoader", "ip_adapter_name"),
     ),
     prompt_variable="positive_prompt",
+    prompt_style="anima",
 )
 
 
@@ -750,6 +762,7 @@ ANIMA_REF_INCONTEXT = WorkflowBinding(
         ModelSlot("lora_name", "LoraLoaderModelOnly", "lora_name"),
     ),
     prompt_variable="positive_prompt",
+    prompt_style="anima",
 )
 
 
@@ -1163,3 +1176,9 @@ def template_option_values(node_class: str, field_name: str) -> tuple[str, ...]:
 def model_slots(template_name: str) -> tuple[ModelSlot, ...]:
     """在庫確認に使うモデル変数の定義を返す。"""
     return _binding_of(template_name).model_slots
+
+
+def prompt_style_of(template_name: str | None) -> PromptStyle | None:
+    """テンプレートが求めるprompt案の書き方を返す。未知の名前なら`None`とする。"""
+    binding = ALLOWED_TEMPLATES.get(template_name) if template_name else None
+    return binding.prompt_style if binding is not None else None

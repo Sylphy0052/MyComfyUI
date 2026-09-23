@@ -483,6 +483,7 @@ export function GenerationForm({
               <PromptAssist
                 providers={providers}
                 idPrefix="image"
+                recipeId={recipeId}
                 current={{
                   positive: values.positive_prompt ?? "",
                   negative: values.negative_prompt ?? "",
