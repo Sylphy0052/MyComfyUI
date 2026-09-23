@@ -6147,6 +6147,476 @@
         "title": "StructureReorder",
         "type": "object"
       },
+      "UserScriptAuditEventRead": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "title": "Detail",
+            "type": "object"
+          },
+          "digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Digest"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "script_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Script Id"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "script_id",
+          "run_id",
+          "digest",
+          "detail",
+          "created_at"
+        ],
+        "title": "UserScriptAuditEventRead",
+        "type": "object"
+      },
+      "UserScriptCapabilities": {
+        "additionalProperties": false,
+        "description": "scriptが実行時に使う能力の宣言。上限は設定の値以下に限る。\n\nネットワークは使わせない。`none`以外の値は受け付けない。",
+        "properties": {
+          "cpu_seconds": {
+            "default": 60,
+            "minimum": 1.0,
+            "title": "Cpu Seconds",
+            "type": "integer"
+          },
+          "max_tasks": {
+            "default": 16,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "type": "integer"
+          },
+          "memory_bytes": {
+            "default": 536870912,
+            "minimum": 16777216.0,
+            "title": "Memory Bytes",
+            "type": "integer"
+          },
+          "network": {
+            "const": "none",
+            "default": "none",
+            "title": "Network",
+            "type": "string"
+          },
+          "output_bytes": {
+            "default": 67108864,
+            "minimum": 0.0,
+            "title": "Output Bytes",
+            "type": "integer"
+          },
+          "output_files": {
+            "default": 16,
+            "minimum": 0.0,
+            "title": "Output Files",
+            "type": "integer"
+          },
+          "wall_seconds": {
+            "default": 120,
+            "minimum": 1.0,
+            "title": "Wall Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "UserScriptCapabilities",
+        "type": "object"
+      },
+      "UserScriptCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/UserScriptCapabilities"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source"
+        ],
+        "title": "UserScriptCreate",
+        "type": "object"
+      },
+      "UserScriptDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": true,
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sha256",
+          "capabilities",
+          "created_at",
+          "source"
+        ],
+        "title": "UserScriptDetail",
+        "type": "object"
+      },
+      "UserScriptRead": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": true,
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sha256",
+          "capabilities",
+          "created_at"
+        ],
+        "title": "UserScriptRead",
+        "type": "object"
+      },
+      "UserScriptRunApprove": {
+        "additionalProperties": false,
+        "description": "承認CLIが鍵で署名したtoken。REST APIではtokenを作れない。",
+        "properties": {
+          "approval_token": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Approval Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approval_token"
+        ],
+        "title": "UserScriptRunApprove",
+        "type": "object"
+      },
+      "UserScriptRunCreate": {
+        "additionalProperties": false,
+        "description": "実行内容のpreview要求。これだけでは実行しない。",
+        "properties": {
+          "arguments": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Arguments",
+            "type": "array"
+          },
+          "input_artifact_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Input Artifact Ids",
+            "type": "array"
+          }
+        },
+        "title": "UserScriptRunCreate",
+        "type": "object"
+      },
+      "UserScriptRunInput": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "mount_path": {
+            "title": "Mount Path",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "sha256",
+          "mount_path"
+        ],
+        "title": "UserScriptRunInput",
+        "type": "object"
+      },
+      "UserScriptRunRead": {
+        "additionalProperties": false,
+        "description": "runの内容と結果。承認CLIはこの値からdigestを計算し直して照合する。",
+        "properties": {
+          "approval_expires_at": {
+            "title": "Approval Expires At",
+            "type": "string"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "arguments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Arguments",
+            "type": "array"
+          },
+          "capabilities": {
+            "additionalProperties": true,
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/UserScriptRunInput"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "interpreter": {
+            "title": "Interpreter",
+            "type": "string"
+          },
+          "output_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Output Artifact Ids",
+            "type": "array"
+          },
+          "output_destination": {
+            "title": "Output Destination",
+            "type": "string"
+          },
+          "script_id": {
+            "title": "Script Id",
+            "type": "string"
+          },
+          "script_name": {
+            "title": "Script Name",
+            "type": "string"
+          },
+          "script_sha256": {
+            "title": "Script Sha256",
+            "type": "string"
+          },
+          "script_source": {
+            "title": "Script Source",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "pending_approval",
+              "approved",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stderr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stderr"
+          },
+          "stdout": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stdout"
+          }
+        },
+        "required": [
+          "id",
+          "script_id",
+          "script_name",
+          "script_sha256",
+          "script_source",
+          "interpreter",
+          "arguments",
+          "inputs",
+          "capabilities",
+          "output_destination",
+          "digest",
+          "status",
+          "approval_expires_at",
+          "approved_at",
+          "started_at",
+          "finished_at",
+          "exit_code",
+          "failure_reason",
+          "stdout",
+          "stderr",
+          "output_artifact_ids",
+          "created_at"
+        ],
+        "title": "UserScriptRunRead",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -12652,6 +13122,427 @@
           }
         },
         "summary": "Get Recipe"
+      }
+    },
+    "/api/v1/user-scripts": {
+      "get": {
+        "operationId": "list_scripts_api_v1_user_scripts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserScriptRead"
+                  },
+                  "title": "Response List Scripts Api V1 User Scripts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Scripts",
+        "tags": [
+          "user-scripts"
+        ]
+      },
+      "post": {
+        "operationId": "register_script_api_v1_user_scripts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserScriptCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserScriptDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Script",
+        "tags": [
+          "user-scripts"
+        ]
+      }
+    },
+    "/api/v1/user-scripts/audit": {
+      "get": {
+        "operationId": "list_audit_events_api_v1_user_scripts_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "script_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Script Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserScriptAuditEventRead"
+                  },
+                  "title": "Response List Audit Events Api V1 User Scripts Audit Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audit Events",
+        "tags": [
+          "user-scripts"
+        ]
+      }
+    },
+    "/api/v1/user-scripts/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_user_scripts_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserScriptRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "user-scripts"
+        ]
+      }
+    },
+    "/api/v1/user-scripts/runs/{run_id}/approve": {
+      "post": {
+        "description": "承認CLIが鍵で署名したtokenを検証して記録する。",
+        "operationId": "approve_run_api_v1_user_scripts_runs__run_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserScriptRunApprove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserScriptRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Run",
+        "tags": [
+          "user-scripts"
+        ]
+      }
+    },
+    "/api/v1/user-scripts/runs/{run_id}/cancel": {
+      "post": {
+        "description": "未実行のrunは取り消し、実行中のrunは止める。止めるだけなので無効時も受け付ける。",
+        "operationId": "cancel_run_api_v1_user_scripts_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserScriptRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Run",
+        "tags": [
+          "user-scripts"
+        ]
+      }
+    },
+    "/api/v1/user-scripts/runs/{run_id}/execute": {
+      "post": {
+        "description": "承認済みのrunを、digestと承認を検証し直してからsandboxで起動する。",
+        "operationId": "execute_run_api_v1_user_scripts_runs__run_id__execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserScriptRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute Run",
+        "tags": [
+          "user-scripts"
+        ]
+      }
+    },
+    "/api/v1/user-scripts/{script_id}": {
+      "get": {
+        "operationId": "get_script_api_v1_user_scripts__script_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "script_id",
+            "required": true,
+            "schema": {
+              "title": "Script Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserScriptDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Script",
+        "tags": [
+          "user-scripts"
+        ]
+      }
+    },
+    "/api/v1/user-scripts/{script_id}/runs": {
+      "post": {
+        "description": "実行内容を確定してdigestを返す。承認されるまで実行しない。",
+        "operationId": "preview_run_api_v1_user_scripts__script_id__runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "script_id",
+            "required": true,
+            "schema": {
+              "title": "Script Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserScriptRunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserScriptRunRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Run",
+        "tags": [
+          "user-scripts"
+        ]
       }
     },
     "/api/v1/voice-references": {

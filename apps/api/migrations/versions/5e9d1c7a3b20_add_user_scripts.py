@@ -1,7 +1,7 @@
 """add user scripts
 
 Revision ID: 5e9d1c7a3b20
-Revises: 71e4b8c20f65
+Revises: 8c38759b8a34
 Create Date: 2026-09-23 10:00:00.000000
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "5e9d1c7a3b20"
-down_revision: str | Sequence[str] | None = "71e4b8c20f65"
+down_revision: str | Sequence[str] | None = "8c38759b8a34"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
