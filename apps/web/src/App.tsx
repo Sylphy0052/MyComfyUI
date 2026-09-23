@@ -50,6 +50,7 @@ import type {
 } from "./state/uiState";
 import { useFrozenWhenInactive } from "./state/useFrozenWhenInactive";
 import {
+  COLLAPSED_RAIL_WIDTH,
   clampPaneWidth,
   persistPaneLayoutState,
   readPaneLayoutState,
@@ -162,11 +163,17 @@ export function App() {
       paneDragRef.current = null;
       persistPaneLayoutState(paneLayoutRef.current);
     }
+    function handlePointerCancel() {
+      // ドラッグ中にポインタが失われた場合も掴んだ状態を残さない。
+      paneDragRef.current = null;
+    }
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
     };
   }, []);
 
@@ -184,6 +191,31 @@ export function App() {
     [],
   );
 
+  /** 矢印キーでの幅変更。ドラッグと同じ最小/最大幅にclampする。 */
+  const handlePaneResizeKeyDown = useCallback(
+    (paneId: PaneId) => (event: KeyboardEvent<HTMLDivElement>) => {
+      const stepMap: Record<string, number> = {
+        ArrowLeft: -10,
+        ArrowRight: 10,
+        ArrowUp: -10,
+        ArrowDown: 10,
+      };
+      const step = stepMap[event.key];
+      if (step === undefined) return;
+      event.preventDefault();
+      setPaneLayout((previous) => {
+        const nextWidth = clampPaneWidth(previous.widths[paneId] + step);
+        const next: PaneLayoutState = {
+          ...previous,
+          widths: { ...previous.widths, [paneId]: nextWidth },
+        };
+        persistPaneLayoutState(next);
+        return next;
+      });
+    },
+    [],
+  );
+
   const togglePaneCollapsed = useCallback((paneId: PaneId) => {
     setPaneLayout((previous) => {
       const next: PaneLayoutState = {
@@ -197,10 +229,10 @@ export function App() {
 
   const appStyle = {
     "--pane-scene-browser-width": paneLayout.collapsed.sceneBrowser
-      ? undefined
+      ? `${COLLAPSED_RAIL_WIDTH}px`
       : `${paneLayout.widths.sceneBrowser}px`,
     "--pane-job-queue-width": paneLayout.collapsed.jobQueue
-      ? undefined
+      ? `${COLLAPSED_RAIL_WIDTH}px`
       : `${paneLayout.widths.jobQueue}px`,
   } as CSSProperties;
   // URLとlocalStorageから復元した値で開く。以降の変更は永続化のeffectで書き戻す。
@@ -1019,6 +1051,7 @@ export function App() {
               collapsed={paneLayout.collapsed.sceneBrowser}
               onToggleCollapse={() => togglePaneCollapsed("sceneBrowser")}
               onResizeStart={startPaneResize("sceneBrowser", "left")}
+              onResizeKeyDown={handlePaneResizeKeyDown("sceneBrowser")}
             >
               <SceneBrowser
                 simple={isProduction}
@@ -1264,6 +1297,7 @@ export function App() {
               collapsed={paneLayout.collapsed.jobQueue}
               onToggleCollapse={() => togglePaneCollapsed("jobQueue")}
               onResizeStart={startPaneResize("jobQueue", "right")}
+              onResizeKeyDown={handlePaneResizeKeyDown("jobQueue")}
             >
               <JobQueue
                 jobs={jobs}

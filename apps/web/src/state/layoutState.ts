@@ -36,10 +36,6 @@ export function clampPaneWidth(value: number): number {
   return Math.min(MAX_PANE_WIDTH, Math.max(MIN_PANE_WIDTH, Math.round(value)));
 }
 
-function isPaneId(value: unknown): value is PaneId {
-  return typeof value === "string" && (PANE_IDS as readonly string[]).includes(value);
-}
-
 /** 壊れた・古い形式の値は既定値へ落とし、UIが起動できなくなるのを避ける。 */
 export function readPaneLayoutState(): PaneLayoutState {
   let raw: string | null = null;
@@ -95,8 +91,4 @@ export function persistPaneLayoutState(state: PaneLayoutState): void {
   } catch {
     // プライベートモードなどでstorageが使えない環境では永続化を諦める。
   }
-}
-
-export function isKnownPaneId(value: string): value is PaneId {
-  return isPaneId(value);
 }

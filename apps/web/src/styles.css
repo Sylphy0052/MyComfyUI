@@ -1197,7 +1197,9 @@ button[aria-pressed="true"] {
 
 @media (max-width: 1050px) {
   .app {
-    grid-template-columns: 280px 1fr;
+    /* この幅では3列目 (jobQueueペイン) が無くなり2列に畳む。左ペインの幅は
+       引き続きCSS変数 (ドラッグ・折りたたみ) を反映させ、挙動を1050px超と揃える。 */
+    grid-template-columns: var(--pane-scene-browser-width, 280px) 1fr;
   }
 
   .app > header,
@@ -1211,6 +1213,12 @@ button[aria-pressed="true"] {
 
   .project-list-panel {
     max-height: none;
+  }
+
+  /* 3列目自体が無いため、jobQueue側のハンドルは操作しても見た目が変わらない。
+     混乱を避けるため、この幅域では隠す (折りたたみボタンは残す)。 */
+  .pane-resize-handle[data-side="right"] {
+    display: none;
   }
 }
 

@@ -1,4 +1,8 @@
-import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 
 /**
  * 主要画面の左右ペインに幅変更・折りたたみを共通で与える部品。
@@ -14,6 +18,7 @@ export function ResizablePane({
   collapsed,
   onToggleCollapse,
   onResizeStart,
+  onResizeKeyDown,
   children,
 }: {
   /** グリッド内での位置。ハンドルの位置とアイコンの向きを決める。 */
@@ -23,6 +28,8 @@ export function ResizablePane({
   collapsed: boolean;
   onToggleCollapse: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  /** キーボードでの幅変更 (矢印キー)。マウス操作できない場合の代替手段。 */
+  onResizeKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   if (collapsed) {
@@ -50,7 +57,9 @@ export function ResizablePane({
       role="separator"
       aria-orientation="vertical"
       aria-label={`${label}の幅を変更`}
+      tabIndex={0}
       onPointerDown={onResizeStart}
+      onKeyDown={onResizeKeyDown}
     />
   );
   const toolbar = (
