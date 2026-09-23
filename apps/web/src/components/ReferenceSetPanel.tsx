@@ -152,6 +152,11 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
     void updateSlot(setId, slotKey, null);
   };
 
+  const abandonPending = (setId: string, slotKey: ReferenceSlotKey, jobId: string) => {
+    void api.cancelJob(jobId).catch(() => undefined);
+    void updateSlot(setId, slotKey, null);
+  };
+
   const generateEmptySlots = (referenceSet: ProjectReferenceSet) => {
     if (!recipeId) {
       setError("生成に使うRecipeを選んでください。");
@@ -193,7 +198,14 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
           }),
         }));
         if (!saved) {
-          await Promise.allSettled([...submitted.values()].map((jobId) => api.cancelJob(jobId)));
+          const cancels = await Promise.allSettled(
+            [...submitted.values()].map((jobId) => api.cancelJob(jobId)),
+          );
+          const leftover = cancels.filter((result) => result.status === "rejected").length;
+          const notes = ["枠へ記録できなかったため、投入したJobを取り消しました。"];
+          if (leftover > 0) notes.push(`${leftover}件のJobは取り消せず、実行が続いています。Job一覧から取り消してください。`);
+          if (failures.length > 0) notes.push(`${failures.length}枠は投入にも失敗しました。`);
+          setError(notes.join(""));
           setBusy(false);
           return;
         }
@@ -355,7 +367,7 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
                     <span className="muted">{def.label}</span>
                     {pending && <p className="muted">生成中...</p>}
                     {pending && (
-                      <Button disabled={busy} onClick={() => removeSlotImage(set.id, def.key)}>待つのをやめる</Button>
+                      <Button disabled={busy} onClick={() => abandonPending(set.id, def.key, slot?.pending_job_id ?? "")}>生成を取り消す</Button>
                     )}
                     {!pending && thumbUrl && <img src={thumbUrl} alt={def.label} style={{ width: "100%" }} />}
                     {!pending && !thumbUrl && slot?.image && <p>{slot.image.file_name}</p>}
