@@ -24,28 +24,78 @@ interface Props {
  * 日本語の説明から positive prompt と negative prompt を AI に補完させる入力欄。
  * 画像を添えると、画像と現在の prompt を突き合わせて直した案を返す。
  */
-export function PromptAssist({
+export function PromptAssist({ current, onApply, ...rest }: Props) {
+  return (
+    <PromptAssistField
+      {...rest}
+      subject="画像の説明"
+      outputLabel="PromptとNegative"
+      submitLabel="Promptを補完"
+      allowImage
+      onAssist={async ({ image, ...request }) => {
+        const result = await api.assistImagePrompt({
+          ...request,
+          ...(image && {
+            image,
+            current_positive_prompt: current.positive,
+            current_negative_prompt: current.negative,
+          }),
+        });
+        onApply({ positive: result.positive_prompt, negative: result.negative_prompt });
+      }}
+    />
+  );
+}
+
+/** 補完欄が呼び出し元へ渡す要求。`image` は画像を添付したときだけ入る。 */
+export interface AssistRequest {
+  instruction: string;
+  provider_id: AgentProviderId | null;
+  image: { content_base64: string; media_type: string } | null;
+}
+
+interface FieldProps {
+  providers: AgentProvider[];
+  idPrefix: string;
+  placeholder?: string;
+  /** 説明欄の見出し。例: 「動画の説明」。 */
+  subject: string;
+  /** AI が補完する項目の名前。説明文に使う。例: 「Prompt」。 */
+  outputLabel: string;
+  submitLabel: string;
+  /** 画像を添えて直せるようにするか。真のときだけ画像欄を出す。 */
+  allowImage?: boolean;
+  projectId?: string | null;
+  /** API を呼んで結果を反映する。失敗は例外で返すと欄の下に表示する。 */
+  onAssist: (request: AssistRequest) => Promise<void>;
+}
+
+/** 日本語の説明から、媒体ごとの生成条件を AI に補完させる入力欄。 */
+export function PromptAssistField({
   providers,
   idPrefix,
   placeholder,
-  current,
+  subject,
+  outputLabel,
+  submitLabel,
+  allowImage = false,
   projectId,
-  onApply,
-}: Props) {
+  onAssist,
+}: FieldProps) {
   const [description, setDescription] = useState("");
   const [providerId, setProviderId] = useState<AgentProviderId | "">("");
   const [images, setImages] = useState<PickedMedia[]>([]);
   const [assisting, setAssisting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const withImage = images.length > 0;
+  const withImage = allowImage && images.length > 0;
   const selectedProvider = providers.find((provider) => provider.id === providerId);
   // 既定のAIが画像に対応するかは画面から分からない。非対応ならAPIが理由を返す。
   const imageUnsupported = withImage && selectedProvider?.supports_images === false;
 
   const assist = async () => {
     if (!description.trim()) {
-      setError(withImage ? "直したい点を入力してください。" : "画像の説明を入力してください。");
+      setError(withImage ? "直したい点を入力してください。" : `${subject}を入力してください。`);
       return;
     }
     if (imageUnsupported) return;
@@ -53,16 +103,11 @@ export function PromptAssist({
     setError(null);
     try {
       const image = withImage ? await readPickedImage(images[0]) : null;
-      const result = await api.assistImagePrompt({
+      await onAssist({
         instruction: description,
         provider_id: providerId || null,
-        ...(image && {
-          image: { content_base64: image.base64, media_type: image.mediaType },
-          current_positive_prompt: current.positive,
-          current_negative_prompt: current.negative,
-        }),
+        image: image && { content_base64: image.base64, media_type: image.mediaType },
       });
-      onApply({ positive: result.positive_prompt, negative: result.negative_prompt });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -74,7 +119,7 @@ export function PromptAssist({
     <>
       <div>
         <label htmlFor={`${idPrefix}-description`}>
-          {withImage ? "直したい点" : "画像の説明"}
+          {withImage ? "直したい点" : subject}
         </label>
         <textarea
           id={`${idPrefix}-description`}
@@ -84,23 +129,25 @@ export function PromptAssist({
         />
         <p className="muted">
           {withImage
-            ? "画像と現在のPromptを見比べて、AIが直したPromptとNegativeを差分で示します。"
-            : "日本語で説明するとAIがPromptとNegativeを補完します。"}
+            ? `画像と現在のPromptを見比べて、AIが直した${outputLabel}を差分で示します。`
+            : `日本語で説明するとAIが${outputLabel}を補完します。`}
         </p>
       </div>
-      <MediaPicker
-        kind="image"
-        label="見せる画像 (任意)"
-        value={images}
-        onChange={(next) => {
-          setImages(next);
-          setError(null);
-        }}
-        multiple={false}
-        disabled={assisting}
-        projectId={projectId}
-        autoRegister={false}
-      />
+      {allowImage && (
+        <MediaPicker
+          kind="image"
+          label="見せる画像 (任意)"
+          value={images}
+          onChange={(next) => {
+            setImages(next);
+            setError(null);
+          }}
+          multiple={false}
+          disabled={assisting}
+          projectId={projectId}
+          autoRegister={false}
+        />
+      )}
       <div className="row">
         <label htmlFor={`${idPrefix}-provider`}>AI</label>
         <select
@@ -126,7 +173,7 @@ export function PromptAssist({
           disabled={assisting || imageUnsupported}
           onClick={() => void assist()}
         >
-          {assisting ? "補完中..." : withImage ? "画像を見て直す" : "Promptを補完"}
+          {assisting ? "補完中..." : withImage ? "画像を見て直す" : submitLabel}
         </button>
       </div>
       {imageUnsupported && (

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
+  AgentProvider,
   Artifact,
   ComfyUIBackendHealth,
   GenerationJob,
@@ -14,6 +15,9 @@ import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 import { MediaViewer } from "./MediaViewer";
 import { ModelSelector } from "./ModelSelector";
+import { PromptAssistField } from "./PromptAssist";
+import { PromptDiffReview } from "./PromptDiffReview";
+import type { PromptDiffField } from "./PromptDiffReview";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 
@@ -87,6 +91,8 @@ export function VideoPanel({
   const [health, setHealth] = useState<ComfyUIBackendHealth | null>(null);
 
   const [prompt, setPrompt] = useState("");
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
   const [secondsStr, setSecondsStr] = useState("5.2");
   const [widthStr, setWidthStr] = useState("864");
   const [heightStr, setHeightStr] = useState("480");
@@ -143,6 +149,10 @@ export function VideoPanel({
   const seconds = Number.parseFloat(secondsStr);
   const frames =
     Number.isFinite(seconds) && seconds > 0 ? framesFromSeconds(seconds) : null;
+
+  useEffect(() => {
+    void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -393,6 +403,32 @@ export function VideoPanel({
           onValidityChange={setModelsValid}
         />
 
+        {promptDiff ? (
+          <PromptDiffReview
+            fields={promptDiff}
+            onCancel={() => setPromptDiff(null)}
+            onAccept={(result) => {
+              if ("prompt" in result) setPrompt(result.prompt);
+              setPromptDiff(null);
+            }}
+          />
+        ) : (
+          <PromptAssistField
+            providers={providers}
+            idPrefix="video-assist"
+            subject="動画の説明"
+            outputLabel="Prompt"
+            submitLabel="Promptを補完"
+            placeholder="例: 赤いコートの女性が暗室をゆっくり歩き、カメラは横から追う。"
+            onAssist={async ({ instruction, provider_id }) => {
+              const result = await api.assistVideoPrompt({ instruction, provider_id });
+              // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+              setPromptDiff([
+                { key: "prompt", label: "プロンプト", current: prompt, proposed: result.prompt },
+              ]);
+            }}
+          />
+        )}
         <label htmlFor="video-prompt">プロンプト</label>
         <textarea
           id="video-prompt"

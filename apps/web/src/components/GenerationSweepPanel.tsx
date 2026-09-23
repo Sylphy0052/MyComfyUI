@@ -2,12 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
+  AgentProvider,
   GenerationExperiment,
   GenerationExperimentCreate,
   GenerationExperimentPreview,
   Recipe,
 } from "../api/client";
 import { LookProfileManager } from "./LookProfileManager";
+import { PromptAssist } from "./PromptAssist";
+import { PromptDiffReview } from "./PromptDiffReview";
+import type { PromptDiffField } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
 
 interface Props {
@@ -53,6 +57,8 @@ export function GenerationSweepPanel({
   const [mode, setMode] = useState<"cartesian" | "zip">("cartesian");
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState("");
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
   const [seedAxis, setSeedAxis] = useState("-1");
   const [cfgAxis, setCfgAxis] = useState("4,5");
   const [stepsAxis, setStepsAxis] = useState("20,30");
@@ -70,6 +76,10 @@ export function GenerationSweepPanel({
     () => recipes.find((item) => item.id === recipeId) ?? null,
     [recipeId, recipes],
   );
+
+  useEffect(() => {
+    void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
 
   useEffect(() => {
     if (!recipeId && recipes[0]) setRecipeId(recipes[0].id);
@@ -237,6 +247,32 @@ export function GenerationSweepPanel({
         <label>実験名<input value={name} onChange={(event) => setName(event.target.value)} /></label>
         <label>Recipe<select value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label>展開方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="cartesian">直積</option><option value="zip">zip</option></select></label>
+        {promptDiff ? (
+          <PromptDiffReview
+            fields={promptDiff}
+            onCancel={() => setPromptDiff(null)}
+            onAccept={(result) => {
+              if ("positive_prompt" in result) setPrompt(result.positive_prompt);
+              if ("negative_prompt" in result) setNegative(result.negative_prompt);
+              setPromptDiff(null);
+            }}
+          />
+        ) : (
+          <PromptAssist
+            providers={providers}
+            idPrefix="sweep"
+            current={{ positive: prompt, negative }}
+            projectId={projectId}
+            placeholder="例: 夕暮れの海辺に立つ少女。構図は引きで。"
+            onApply={(result) => {
+              // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+              setPromptDiff([
+                { key: "positive_prompt", label: "基本Prompt", current: prompt, proposed: result.positive },
+                { key: "negative_prompt", label: "Negative", current: negative, proposed: result.negative },
+              ]);
+            }}
+          />
+        )}
         <label>基本Prompt<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label>
         <label>Negative<textarea value={negative} onChange={(event) => setNegative(event.target.value)} /></label>
         <div className="row">

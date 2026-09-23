@@ -41,6 +41,13 @@ export type AgentProviderId =
   NonNullable<components["schemas"]["AgentProposalCreate"]["provider_id"]>;
 export type ImagePromptAssist =
   components["schemas"]["ImagePromptAssistRead"];
+export type VideoPromptAssist =
+  components["schemas"]["VideoPromptAssistRead"];
+export type MusicPromptAssist =
+  components["schemas"]["MusicPromptAssistRead"];
+/** 動画と音楽の補完の要求。画像は受け付けない。 */
+export type MediaPromptAssistPayload =
+  components["schemas"]["MediaPromptAssistCreate"];
 export type AgentProposalState = NonNullable<AgentProposal["state"]>;
 export type PlannedOperation = components["schemas"]["PlannedOperation"];
 export type ApprovalLog = components["schemas"]["ApprovalLogRead"];
@@ -874,6 +881,18 @@ export const api = {
     current_negative_prompt?: string;
   }) =>
     request<ImagePromptAssist>("/image-prompt-assists", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  assistVideoPrompt: (payload: MediaPromptAssistPayload) =>
+    request<VideoPromptAssist>("/video-prompt-assists", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  assistMusicPrompt: (payload: MediaPromptAssistPayload) =>
+    request<MusicPromptAssist>("/music-prompt-assists", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

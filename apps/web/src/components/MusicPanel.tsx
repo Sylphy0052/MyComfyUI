@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
+  AgentProvider,
   Artifact,
   GenerationJob,
   GenerationPreview,
@@ -11,6 +12,9 @@ import type { SceneEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { MediaViewer } from "./MediaViewer";
 import { ModelSelector } from "./ModelSelector";
+import { PromptAssistField } from "./PromptAssist";
+import { PromptDiffReview } from "./PromptDiffReview";
+import type { PromptDiffField } from "./PromptDiffReview";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 
@@ -44,6 +48,8 @@ export function MusicPanel({
 
   const [mood, setMood] = useState("");
   const [genre, setGenre] = useState("");
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
+  const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
   const [instrumental, setInstrumental] = useState(true);
   const [secondsStr, setSecondsStr] = useState("14");
   const [seedStr, setSeedStr] = useState("-1");
@@ -99,6 +105,10 @@ export function MusicPanel({
         .join(", "),
     [mood, genre, instrumental],
   );
+
+  useEffect(() => {
+    void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -273,6 +283,34 @@ export function MusicPanel({
           onValidityChange={setModelsValid}
         />
 
+        {promptDiff ? (
+          <PromptDiffReview
+            fields={promptDiff}
+            onCancel={() => setPromptDiff(null)}
+            onAccept={(result) => {
+              if ("mood" in result) setMood(result.mood);
+              if ("genre" in result) setGenre(result.genre);
+              setPromptDiff(null);
+            }}
+          />
+        ) : (
+          <PromptAssistField
+            providers={providers}
+            idPrefix="music-assist"
+            subject="曲の説明"
+            outputLabel="moodとgenre"
+            submitLabel="条件を補完"
+            placeholder="例: 夜の暗室で静かに作業する場面。落ち着いたピアノ中心で。"
+            onAssist={async ({ instruction, provider_id }) => {
+              const result = await api.assistMusicPrompt({ instruction, provider_id });
+              // 既存の条件をすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+              setPromptDiff([
+                { key: "mood", label: "mood", current: mood, proposed: result.mood },
+                { key: "genre", label: "genre", current: genre, proposed: result.genre },
+              ]);
+            }}
+          />
+        )}
         <div className="row">
           <div>
             <label htmlFor="music-mood">mood</label>
