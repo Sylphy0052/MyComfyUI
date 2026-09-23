@@ -507,26 +507,22 @@ export function ProjectWorkspace({
                     {home.statistics && <Metric label="生成成功" value={home.statistics.succeeded} />}
                     {home.statistics && <Metric label="処理時間(秒)" value={Math.round(home.statistics.processing_seconds)} />}
                   </div>
-                  {selected.source_type === "local" && (
-                    <>
-                      <h3>制作進捗</h3>
-                      <div className="progress-grid">
-                        {[
-                          ["未着手", "not_started"],
-                          ["制作中", "in_progress"],
-                          ["候補あり", "has_candidates"],
-                          ["採用済み", "accepted"],
-                          ["完了", "completed"],
-                        ].map(([label, key]) => (
-                          <div key={key} className="metric">
-                            <span>{label}</span>
-                            <strong>{home.progress.scenes[key] ?? 0}/{home.progress.shots[key] ?? 0}</strong>
-                            <span>Scene / Shot</span>
-                          </div>
-                        ))}
+                  <h3>制作進捗</h3>
+                  <div className="progress-grid">
+                    {[
+                      ["未着手", "not_started"],
+                      ["制作中", "in_progress"],
+                      ["候補あり", "has_candidates"],
+                      ["採用済み", "accepted"],
+                      ["完了", "completed"],
+                    ].map(([label, key]) => (
+                      <div key={key} className="metric">
+                        <span>{label}</span>
+                        <strong>{home.progress.scenes[key] ?? 0}/{home.progress.shots[key] ?? 0}</strong>
+                        <span>Scene / Shot</span>
                       </div>
-                    </>
-                  )}
+                    ))}
+                  </div>
                   <h3>最近の生成物</h3>
                   {home.artifacts.length === 0 ? (
                     <p className="muted">このProjectの生成物はまだありません。</p>
