@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     #: novel-writerのリポジトリの場所。prompt提案が作法・実測知見・既存作品のpromptを
     #: 読み取り専用で参照する。未設定なら参照しない。
     novel_writer_root: Path | None = None
+    #: 投入前にタグの実在を確かめる辞書。a1111-sd-webui-tagcompleteの`danbooru.csv`
+    #: と同じ形式を読む。未設定なら実在は確かめず、干渉する組み合わせだけを検出する。
+    tag_dictionary_path: Path | None = None
     #: リクエストでProviderを指定しなかったときに使う既定値。APIキーを設定へ持たず、
     #: CLIの既存認証を使う。
     agent_provider: AgentProviderId = "claude_code"

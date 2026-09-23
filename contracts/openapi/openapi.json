@@ -2816,6 +2816,16 @@
             "title": "Shot Ref",
             "type": "object"
           },
+          "tag_check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptTagCheckRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "template_sha256": {
             "anyOf": [
               {
@@ -2985,6 +2995,19 @@
               }
             ],
             "title": "Provider Id"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe Id"
           }
         },
         "required": [
@@ -5919,6 +5942,129 @@
           }
         },
         "title": "ProjectUpdate",
+        "type": "object"
+      },
+      "PromptTagCheckRead": {
+        "additionalProperties": false,
+        "description": "投入前に確かめた、プロンプトのタグの実在と干渉。",
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/PromptTagConflictRead"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "looked_up": {
+            "title": "Looked Up",
+            "type": "boolean"
+          },
+          "lookup_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lookup Error"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/PromptTagFindingRead"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tags",
+          "conflicts",
+          "looked_up",
+          "lookup_error"
+        ],
+        "title": "PromptTagCheckRead",
+        "type": "object"
+      },
+      "PromptTagConflictRead": {
+        "additionalProperties": false,
+        "description": "干渉する組み合わせ1件。",
+        "properties": {
+          "kind": {
+            "enum": [
+              "framing",
+              "solo_with_multiple",
+              "rating",
+              "both_sides"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "tags",
+          "message"
+        ],
+        "title": "PromptTagConflictRead",
+        "type": "object"
+      },
+      "PromptTagFindingRead": {
+        "additionalProperties": false,
+        "description": "実在を確かめたタグ1件。品質・rating・絵師のタグと自然文は含めない。",
+        "properties": {
+          "post_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Count"
+          },
+          "side": {
+            "enum": [
+              "positive",
+              "negative"
+            ],
+            "title": "Side",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "missing",
+              "unverified"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag",
+          "side",
+          "status",
+          "post_count"
+        ],
+        "title": "PromptTagFindingRead",
         "type": "object"
       },
       "RecipeCreate": {
@@ -10091,7 +10237,7 @@
     },
     "/api/v1/image-prompt-assists": {
       "post": {
-        "description": "日本語の説明を、SceneやShotに依存しない画像promptへ補完する。\n\nProviderへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。\nJob、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は\n利用者が明示的に投入するまで始まらない。\n\n画像を添付した場合は、画像と現在のpromptを突き合わせて直した案を返す。画像に\n対応しないProviderへは送らず、``AGENT_IMAGE_UNSUPPORTED``で理由を返す。",
+        "description": "日本語の説明を、SceneやShotに依存しない画像promptへ補完する。\n\nProviderへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。\nJob、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は\n利用者が明示的に投入するまで始まらない。\n\n画像を添付した場合は、画像と現在のpromptを突き合わせて直した案を返す。画像に\n対応しないProviderへは送らず、``AGENT_IMAGE_UNSUPPORTED``で理由を返す。\n\n``recipe_id``を渡すと、そのRecipeのモデルに合う書き方 (タグ型か、タグと自然文の\n併用か) で返す。novel-writerの場所が設定されていれば、その作法と既存promptを添える。",
         "operationId": "assist_image_prompt_api_v1_image_prompt_assists_post",
         "requestBody": {
           "content": {
