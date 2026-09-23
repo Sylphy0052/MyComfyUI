@@ -18,6 +18,7 @@ import { CanonWarning } from "./CanonWarning";
 import { DECISION_LABEL, DECISION_OPTIONS } from "./CandidateGallery";
 import { ExternalImageImportPanel } from "./ExternalImageImportPanel";
 import { AssignmentPicker } from "./AssignmentPicker";
+import { LoadingPlaceholder } from "./LoadingPlaceholder";
 
 const KIND_OPTIONS = [
   { value: "image", label: "画像" },
@@ -561,7 +562,9 @@ export function AssetBrowser({
 
       <div className="asset-body">
         <div>
-          {artifacts.length === 0 && !loading ? (
+          {loading && artifacts.length === 0 ? (
+            <LoadingPlaceholder label="取得中" lines={6} variant="tiles" />
+          ) : artifacts.length === 0 ? (
             <p className="muted">
               {listFailed
                 ? "一覧を取得できませんでした。条件を変えるか再取得してください。"
