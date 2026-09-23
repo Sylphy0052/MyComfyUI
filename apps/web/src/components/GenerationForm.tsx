@@ -192,6 +192,8 @@ export function GenerationForm({
     }
     setValues(nextValues);
     setTouchedFields(nextTouched);
+    // 開いている差分レビューは切替前の値を比べているので閉じる。
+    setPromptDiff(null);
   }, [recipe, allFields, defaultValues]);
 
   useEffect(() => {
