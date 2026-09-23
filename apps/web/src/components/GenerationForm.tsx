@@ -506,8 +506,9 @@ export function GenerationForm({
           {promptFields.map(renderField)}
         </fieldset>
 
+        {/* 生成に効くPreset (Project既定値・ベースのRecipe・重ねるPreset) をこの節1つに集める。 */}
         <fieldset className="form-section">
-          <legend>{simple ? "Preset" : "出力設定"}</legend>
+          <legend>Preset</legend>
           <button
             type="button"
             hidden={simple}
@@ -522,7 +523,7 @@ export function GenerationForm({
             <p className="muted">Project、Scene、Shotの設定だけで生成します。</p>
           )}
           <div>
-            <label htmlFor="recipe">プリセット</label>
+            <label htmlFor="recipe">{simple ? "プリセット" : "ベース (Recipe)"}</label>
             <select
               id="recipe"
               value={recipeId}
@@ -536,7 +537,28 @@ export function GenerationForm({
               ))}
             </select>
           </div>
-          {!simple && !useInheritedDefaults && changedFields.length > 0 && (
+          {simple && recipe && !useInheritedDefaults && !modelsValid && (
+            <p className="muted">
+              このPresetはモデルの指定が揃っていません。ラボで確認してください。
+            </p>
+          )}
+
+          {/* Presetの一覧・作成・編集・適用。作成と編集はラボだけで行う。 */}
+          <div hidden={simple}>
+            <fieldset disabled={useInheritedDefaults}>
+              <LookProfileManager
+                kind="image"
+                recipe={recipe}
+                selectedIds={lookProfileIds}
+                onSelectionChange={setLookProfileIds}
+              />
+            </fieldset>
+          </div>
+        </fieldset>
+
+        <fieldset className="form-section" hidden={simple}>
+          <legend>出力設定</legend>
+          {!useInheritedDefaults && changedFields.length > 0 && (
             <div className="recipe-diff">
               <p className="muted">
                 Recipe既定値と異なる項目: {changedFields.map((field) => field.label).join(", ")}
@@ -561,27 +583,12 @@ export function GenerationForm({
               onValidityChange={setModelsValid}
             />
           </div>
-          {simple && recipe && !useInheritedDefaults && !modelsValid && (
-            <p className="muted">
-              このPresetはモデルの指定が揃っていません。ラボで確認してください。
-            </p>
-          )}
-
           {parameterFields.map(renderField)}
         </fieldset>
 
         <details className="form-section collapsible" hidden={simple}>
-          <summary>ルックとバリエーション</summary>
+          <summary>バリエーション</summary>
           <div className="stack">
-            <fieldset disabled={useInheritedDefaults}>
-              <LookProfileManager
-                kind="image"
-                recipe={recipe}
-                selectedIds={lookProfileIds}
-                onSelectionChange={setLookProfileIds}
-              />
-            </fieldset>
-
             <div>
               <label htmlFor="batch-count">バッチ数</label>
               <input
