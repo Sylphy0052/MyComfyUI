@@ -3735,6 +3735,8 @@ export interface components {
             outfits?: components["schemas"]["ProjectCharacterOutfit"][];
             /** Reference Images */
             reference_images?: components["schemas"]["ProjectReferenceImage"][];
+            /** Reference Sets */
+            reference_sets?: components["schemas"]["ProjectReferenceSet"][];
             /** Tags */
             tags?: string[];
             /** Updated At */
@@ -4049,6 +4051,31 @@ export interface components {
             relative_path: string;
             /** Sha256 */
             sha256: string;
+        };
+        /**
+         * ProjectReferenceSet
+         * @description 衣装1つに対応する参照画像セット。`outfit_id`がNoneなら衣装指定なしのセット。
+         */
+        ProjectReferenceSet: {
+            /** Id */
+            id: string;
+            /** Outfit Id */
+            outfit_id?: string | null;
+            /** Slots */
+            slots?: {
+                [key: string]: components["schemas"]["ProjectReferenceSlot"];
+            };
+        };
+        /**
+         * ProjectReferenceSlot
+         * @description 参照画像セット内の1枠。`artifact_id`はサムネイル表示用、`pending_job_id`は生成中のJob。
+         */
+        ProjectReferenceSlot: {
+            /** Artifact Id */
+            artifact_id?: string | null;
+            image?: components["schemas"]["ProjectReferenceImage"] | null;
+            /** Pending Job Id */
+            pending_job_id?: string | null;
         };
         /** ProjectSource */
         ProjectSource: {

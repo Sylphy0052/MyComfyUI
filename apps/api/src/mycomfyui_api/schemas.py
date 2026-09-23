@@ -331,6 +331,34 @@ class ProjectReferenceImage(ApiModel):
         return media_type
 
 
+# 参照画像セットの枠。novel-writerの検証結果 (必要な画像リスト.md) の7枚構成に合わせる。
+ReferenceSlotKey = Literal[
+    "face_closed",
+    "face_open",
+    "face_angle",
+    "bust",
+    "full_body",
+    "pose",
+    "background",
+]
+
+
+class ProjectReferenceSlot(ApiModel):
+    """参照画像セット内の1枠。`artifact_id`はサムネイル表示用、`pending_job_id`は生成中のJob。"""
+
+    image: ProjectReferenceImage | None = None
+    artifact_id: ResourceId | None = None
+    pending_job_id: ResourceId | None = None
+
+
+class ProjectReferenceSet(ApiModel):
+    """衣装1つに対応する参照画像セット。`outfit_id`がNoneなら衣装指定なしのセット。"""
+
+    id: ResourceId
+    outfit_id: ResourceId | None = None
+    slots: dict[ReferenceSlotKey, ProjectReferenceSlot] = Field(default_factory=dict)
+
+
 class ProjectCharacterOutfit(ApiModel):
     """キャラクターの衣装。`prompt`は衣装を指定する生成プロンプトの断片。"""
 
@@ -350,6 +378,10 @@ class ProjectCharacterProfile(ApiModel):
     voice: str | None = Field(default=None, max_length=2_000)
     outfits: list[ProjectCharacterOutfit] = Field(default_factory=list, max_length=20)
     default_outfit_id: ResourceId | None = None
+    # 衣装ごとの参照画像セット。衣装が変わったときだけ新しいセットになる。
+    reference_sets: list[ProjectReferenceSet] = Field(
+        default_factory=list, max_length=21
+    )
     # 定義を最後に変えた時刻。保存時にサーバーが付け、クライアントの値は使わない。
     updated_at: str | None = None
 
@@ -380,12 +412,38 @@ class ProjectCharacterProfile(ApiModel):
             raise ValueError("衣装のIDを重複させられません。")
         return value
 
+    @field_validator("reference_sets")
+    @classmethod
+    def _unique_reference_sets(
+        cls, value: list[ProjectReferenceSet]
+    ) -> list[ProjectReferenceSet]:
+        ids = [item.id for item in value]
+        if len(set(ids)) != len(ids):
+            raise ValueError("参照セットのIDを重複させられません。")
+        outfit_ids = [item.outfit_id for item in value]
+        if len(set(outfit_ids)) != len(outfit_ids):
+            raise ValueError("参照セットはひとつの衣装につきひとつまでです。")
+        return value
+
     @model_validator(mode="after")
     def _default_outfit_exists(self) -> "ProjectCharacterProfile":
         if self.default_outfit_id is not None and self.default_outfit_id not in {
             item.id for item in self.outfits
         }:
             raise ValueError("既定の衣装は登録済みの衣装から選んでください。")
+        return self
+
+    @model_validator(mode="after")
+    def _reference_set_outfits_exist(self) -> "ProjectCharacterProfile":
+        outfit_ids = {item.id for item in self.outfits}
+        for reference_set in self.reference_sets:
+            if (
+                reference_set.outfit_id is not None
+                and reference_set.outfit_id not in outfit_ids
+            ):
+                raise ValueError(
+                    "参照セットの衣装は登録済みの衣装から選んでください。"
+                )
         return self
 
 

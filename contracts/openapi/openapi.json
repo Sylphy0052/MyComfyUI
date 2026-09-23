@@ -4616,6 +4616,14 @@
             "title": "Reference Images",
             "type": "array"
           },
+          "reference_sets": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectReferenceSet"
+            },
+            "maxItems": 21,
+            "title": "Reference Sets",
+            "type": "array"
+          },
           "tags": {
             "items": {
               "maxLength": 64,
@@ -5618,6 +5626,98 @@
           "media_type"
         ],
         "title": "ProjectReferenceImage",
+        "type": "object"
+      },
+      "ProjectReferenceSet": {
+        "additionalProperties": false,
+        "description": "衣装1つに対応する参照画像セット。`outfit_id`がNoneなら衣装指定なしのセット。",
+        "properties": {
+          "id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "outfit_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outfit Id"
+          },
+          "slots": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProjectReferenceSlot"
+            },
+            "propertyNames": {
+              "enum": [
+                "face_closed",
+                "face_open",
+                "face_angle",
+                "bust",
+                "full_body",
+                "pose",
+                "background"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ProjectReferenceSet",
+        "type": "object"
+      },
+      "ProjectReferenceSlot": {
+        "additionalProperties": false,
+        "description": "参照画像セット内の1枠。`artifact_id`はサムネイル表示用、`pending_job_id`は生成中のJob。",
+        "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectReferenceImage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_job_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Job Id"
+          }
+        },
+        "title": "ProjectReferenceSlot",
         "type": "object"
       },
       "ProjectSource": {
