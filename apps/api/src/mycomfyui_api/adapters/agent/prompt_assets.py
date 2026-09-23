@@ -138,14 +138,32 @@ def _skill_sections(base: Path) -> str:
         return ""
     kept: list[str] = []
     keep = False
-    for line in text.splitlines():
-        if line.startswith("## "):
+    for line, depth in _heading_depths(text):
+        if depth == 2:
             keep = line[3:].lstrip().startswith(SKILL_SECTIONS)
-        elif line.startswith("# "):
+        elif depth == 1:
             keep = False
         if keep:
             kept.append(line)
     return "\n".join(kept).strip()
+
+
+def _heading_depths(text: str) -> list[tuple[str, int]]:
+    """各行と見出しの深さの組。見出しでない行とコードフェンス内の行は深さ0とする。
+
+    フェンス内の`# comment`を見出しと読むと、節がそこで途切れる。
+    """
+    results: list[tuple[str, int]] = []
+    in_fence = False
+    for line in text.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            results.append((line, 0))
+            continue
+        depth = len(line) - len(line.lstrip("#"))
+        is_heading = not in_fence and 0 < depth and line[depth : depth + 1] == " "
+        results.append((line, depth if is_heading else 0))
+    return results
 
 
 def _findings(base: Path) -> list[tuple[str, str]]:
@@ -157,12 +175,10 @@ def _findings(base: Path) -> list[tuple[str, str]]:
             continue
         kept: list[str] = []
         level = 0
-        for line in text.splitlines():
-            depth = len(line) - len(line.lstrip("#"))
-            is_heading = 0 < depth and line[depth : depth + 1] == " "
-            if is_heading and level and depth <= level:
+        for line, depth in _heading_depths(text):
+            if depth and level and depth <= level:
                 level = 0
-            if is_heading and not level and FINDINGS_HEADING in line:
+            if depth and not level and FINDINGS_HEADING in line:
                 level = depth
             if level:
                 kept.append(line)
@@ -205,7 +221,8 @@ def _prompt_pair(text: str) -> tuple[str, str]:
     """YAMLの`prompt.positive`と`prompt.negative`を取り出す。形が違えば空にする。"""
     try:
         data: Any = yaml.safe_load(text)
-    except yaml.YAMLError:
+    except (yaml.YAMLError, RecursionError):
+        # 深い入れ子はYAMLErrorでなくRecursionErrorで落ちる。参照を諦めて続ける。
         return "", ""
     prompt = data.get("prompt") if isinstance(data, dict) else None
     if not isinstance(prompt, dict):
