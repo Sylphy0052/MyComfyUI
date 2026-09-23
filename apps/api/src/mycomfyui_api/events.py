@@ -19,6 +19,11 @@ HEARTBEAT_SECONDS = 20.0
 SEND_TIMEOUT_SECONDS = 5.0
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"}
 
+#: 終端に至っていないJobの状態。`contracts/events/job-event.schema.json`の
+#: `state`列挙のうち、`phase`が`terminal`にならないものと一致させる。schemaと
+#: 二重定義になっているため、どちらかを変えたらもう片方も直す。
+NON_TERMINAL_JOB_STATES = ("queued", "running", "cancelling")
+
 
 class SubscriberLimitReached(RuntimeError):
     """購読枠が埋まっていて新しい接続を受けられない。"""
@@ -61,11 +66,7 @@ class EventHub:
             {
                 "job_id": job_id,
                 "state": state,
-                "phase": (
-                    state
-                    if state in ("queued", "running", "cancelling")
-                    else "terminal"
-                ),
+                "phase": (state if state in NON_TERMINAL_JOB_STATES else "terminal"),
             },
         )
         for queue in tuple(self._subscribers):
