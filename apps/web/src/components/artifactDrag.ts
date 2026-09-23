@@ -52,7 +52,7 @@ export function hasFileDrag(dataTransfer: DataTransfer): boolean {
  */
 export function droppedFiles(dataTransfer: DataTransfer): File[] {
   return Array.from(dataTransfer.items)
-    .filter((item) => item.kind === "file" && item.webkitGetAsEntry()?.isFile !== false)
+    .filter((item) => item.kind === "file" && item.webkitGetAsEntry?.()?.isFile !== false)
     .map((item) => item.getAsFile())
     .filter((file): file is File => file !== null);
 }
