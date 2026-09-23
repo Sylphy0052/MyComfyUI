@@ -93,10 +93,10 @@ function ViewerMedia({ artifact }: { artifact: Artifact }) {
   }
   const url = api.artifactContentUrl(artifact.id);
   if (mediaType.startsWith("video/")) {
-    return <video className="media-viewer-media" onError={() => setFailed(true)} src={url} controls autoFocus />;
+    return <video className="media-viewer-media" onError={() => setFailed(true)} src={url} controls />;
   }
   if (mediaType.startsWith("audio/")) {
-    return <audio className="media-viewer-media" onError={() => setFailed(true)} src={url} controls autoFocus />;
+    return <audio className="media-viewer-media" onError={() => setFailed(true)} src={url} controls />;
   }
   return (
     <p className="media-viewer-empty">
@@ -120,6 +120,16 @@ export function MediaViewer({ items, index, onIndexChange, onClose }: Props) {
   const open = index !== null && index >= 0 && index < items.length;
   const item = open && index !== null ? items[index] : null;
 
+  // 表示中の項目を id で覚えておく (一覧が入れ替わっても同じ項目を指し続けるため)。
+  // items の参照が変わったレンダーでは更新しない (直後の追従effectがこの値を頼りに index を探し直す)。
+  const shownIdRef = useRef<string | null>(null);
+  const prevItemsRef = useRef(items);
+  const itemsChanged = prevItemsRef.current !== items;
+  prevItemsRef.current = items;
+  if (!itemsChanged) {
+    shownIdRef.current = open && item ? item.id : null;
+  }
+
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -129,6 +139,22 @@ export function MediaViewer({ items, index, onIndexChange, onClose }: Props) {
     }
     if (!open && dialog.open) dialog.close();
   }, [open]);
+
+  // 一覧が入れ替わったとき (ポーリング等による再取得・並び替え)、覚えていた id を探し直して
+  // 同じ項目を指すよう index を追従させる。見つからなくなっていたら閉じる。
+  // 前へ/次へによる意図的な移動 (onIndexChange呼び出し) はここでは行わない。
+  useEffect(() => {
+    if (!itemsChanged || index === null) return;
+    const id = shownIdRef.current;
+    if (id === null) return;
+    const nextIndex = items.findIndex((candidate) => candidate.id === id);
+    if (nextIndex === -1) {
+      onClose();
+    } else if (nextIndex !== index) {
+      onIndexChange(nextIndex);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsChanged, items, index, onClose, onIndexChange]);
 
   useEffect(() => {
     if (!open || index === null) return;
