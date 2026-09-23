@@ -351,6 +351,7 @@ export function ImageDerivationPanel({
           projectId={projectId}
           sceneId={sceneId}
           shotId={shotId}
+          enableRoleTagging
         />
         <ModelSelector recipe={recipe} values={modelValues} onChange={setModelValues} onValidityChange={setModelsValid} idPrefix="derivation-model" />
         <LookProfileManager

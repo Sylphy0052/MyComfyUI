@@ -23,6 +23,11 @@ export type ExternalImageImport =
   components["schemas"]["ExternalImageImportRead"];
 export type ArtifactDecision =
   components["schemas"]["ArtifactDecisionUpdate"]["decision"];
+export type MediaRole = components["schemas"]["MediaRoleTagUpsert"]["role"];
+export type MediaRoleTag = components["schemas"]["MediaRoleTagRead"];
+export type MediaRoleTagUpsert = components["schemas"]["MediaRoleTagUpsert"];
+export type MediaItem = components["schemas"]["MediaItemRead"];
+export type MediaItemSource = MediaItem["source"];
 export type JobState = GenerationJob["state"];
 export type CanonStatus = components["schemas"]["CanonStatusRead"];
 export type ReferenceChangeEntry =
@@ -948,6 +953,51 @@ export const api = {
         media_type: mediaType,
       }),
     }),
+
+  // 役割・キャラクターの紐付けを登録・更新する。既存の4取込endpointは変えず、
+  // 取込成功後にこの endpoint を呼んで後付けする (Issue #148)。
+  upsertMediaRoleTag: (payload: MediaRoleTagUpsert) =>
+    request<MediaRoleTag>("/media-role-tags", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteMediaRoleTag: (target: { artifactId?: string; relativePath?: string }) => {
+    const query = new URLSearchParams();
+    if (target.artifactId) query.set("artifact_id", target.artifactId);
+    if (target.relativePath) query.set("relative_path", target.relativePath);
+    return request<void>(`/media-role-tags?${query.toString()}`, {
+      method: "DELETE",
+    });
+  },
+
+  // 生成物・登録素材・外部取込・人物参照を1つの一覧で探す (Issue #148 受入基準3)。
+  listMediaItems: (params: {
+    projectId?: string;
+    sceneId?: string;
+    shotId?: string;
+    unassigned?: boolean;
+    kind?: string;
+    source?: MediaItemSource;
+    role?: MediaRole;
+    characterId?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.projectId) query.set("project_id", params.projectId);
+    if (params.sceneId) query.set("scene_id", params.sceneId);
+    if (params.shotId) query.set("shot_id", params.shotId);
+    if (params.unassigned) query.set("unassigned", "true");
+    if (params.kind) query.set("kind", params.kind);
+    if (params.source) query.set("source", params.source);
+    if (params.role) query.set("role", params.role);
+    if (params.characterId) query.set("character_id", params.characterId);
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.offset) query.set("offset", String(params.offset));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<MediaItem[]>(`/media-items${suffix}`);
+  },
 
   extractImageTags: (contentBase64: string, mediaType: string) =>
     request<ImageTagExtract>("/image-tags", {

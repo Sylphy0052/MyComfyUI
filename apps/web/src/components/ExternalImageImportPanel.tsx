@@ -1,11 +1,25 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { AssignmentTarget, ExternalImagePreview } from "../api/client";
+import type {
+  AssignmentTarget,
+  ExternalImagePreview,
+  MediaRole,
+  ProjectCharacterProfile,
+} from "../api/client";
 import { MediaPicker, mediaTypeOf, toBase64 } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+
+const ROLE_LABEL: Record<MediaRole, string> = {
+  appearance_reference: "外見参照",
+  pose: "ポーズ",
+  background: "背景",
+  costume: "衣装",
+  other: "その他",
+};
+const ROLE_OPTIONS = Object.keys(ROLE_LABEL) as MediaRole[];
 
 interface Props {
   assignment: AssignmentTarget;
@@ -27,6 +41,36 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
   const [preview, setPreview] = useState<ExternalImagePreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [characters, setCharacters] = useState<ProjectCharacterProfile[]>([]);
+  const [role, setRole] = useState<MediaRole | "">("");
+  const [characterIds, setCharacterIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!assignment.project_id) {
+      setCharacters([]);
+      return;
+    }
+    let active = true;
+    api
+      .getProjectLocalOverrides(assignment.project_id)
+      .then((overrides) => {
+        if (active) setCharacters(overrides.characters ?? []);
+      })
+      .catch(() => {
+        if (active) setCharacters([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [assignment.project_id]);
+
+  const toggleCharacter = (characterId: string) => {
+    setCharacterIds((current) =>
+      current.includes(characterId)
+        ? current.filter((id) => id !== characterId)
+        : [...current, characterId],
+    );
+  };
 
   const selectFile = (next: PickedMedia[]) => {
     setPicked(next);
@@ -65,7 +109,7 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await api.confirmExternalImageImport({
+      const result = await api.confirmExternalImageImport({
         preview_token: preview.preview_token,
         file_name: file.name,
         content_base64: contentBase64,
@@ -73,9 +117,25 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
         expected_sha256: preview.sha256,
         assignment,
       });
+      if (role) {
+        try {
+          await api.upsertMediaRoleTag({
+            artifact_id: result.artifact.id,
+            role,
+            character_ids: characterIds,
+            project_id: assignment.project_id ?? undefined,
+            scene_id: assignment.scene_id ?? undefined,
+          });
+        } catch (cause) {
+          // 取込自体は成功済み。役割タグ付けの失敗は別枠のエラーとして出す。
+          setError(describe(cause));
+        }
+      }
       setPicked([]);
       setContentBase64("");
       setPreview(null);
+      setRole("");
+      setCharacterIds([]);
       await onImported();
     } catch (cause) {
       setError(describe(cause));
@@ -100,6 +160,35 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
           maxBytes={MAX_IMAGE_BYTES}
           accept="image/png,image/jpeg,image/webp"
         />
+        <div className="row">
+          <select
+            value={role}
+            disabled={busy}
+            onChange={(event) => setRole(event.target.value as MediaRole | "")}
+          >
+            <option value="">役割を指定しない</option>
+            {ROLE_OPTIONS.map((item) => (
+              <option key={item} value={item}>
+                {ROLE_LABEL[item]}
+              </option>
+            ))}
+          </select>
+          {characters.length > 0 && (
+            <div className="row">
+              {characters.map((character) => (
+                <label key={character.id} className="row">
+                  <input
+                    type="checkbox"
+                    checked={characterIds.includes(character.id)}
+                    disabled={busy}
+                    onChange={() => toggleCharacter(character.id)}
+                  />
+                  {character.name}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
         <button type="button" disabled={!file || busy} onClick={runPreview}>
           {busy && !preview ? "確認中..." : "メタデータを確認"}
         </button>

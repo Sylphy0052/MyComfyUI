@@ -1347,6 +1347,134 @@ class ArtifactImportRead(ApiModel):
     created_at: str
 
 
+#: 画像取込物へ付ける役割。人物・キャラクターの外見参照、ポーズ、背景、衣装、その他。
+MediaRole = Literal["appearance_reference", "pose", "background", "costume", "other"]
+
+
+class MediaRoleTagTarget(ApiModel):
+    """役割タグを付ける対象。Artifact由来(生成物・外部取込・登録素材)か、入力cache
+    (`/image-references`が書く`inputs/`配下)のどちらか一方だけを指定する。
+    """
+
+    artifact_id: ResourceId | None = None
+    relative_path: str | None = Field(default=None, max_length=1_000)
+    sha256: Sha256 | None = None
+    #: 入力cacheファイルはDB上に他の記録が無いため、ここへ表示用の情報を保持する。
+    #: artifact_id指定時はArtifact側に同じ情報があるため省略してよい。
+    file_name: str | None = Field(default=None, max_length=255)
+    byte_size: int | None = Field(default=None, ge=0)
+    media_type: str | None = Field(default=None, min_length=1)
+
+    @field_validator("relative_path")
+    @classmethod
+    def _safe_relative_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        candidate = _reject_unsafe_path(value)
+        if not candidate.replace("\\", "/").startswith(f"{INPUTS_DIR_NAME}/"):
+            raise ValueError(
+                f"relative_pathは{INPUTS_DIR_NAME}/配下を指す必要があります。"
+            )
+        return candidate
+
+    @field_validator("media_type")
+    @classmethod
+    def _validate_media_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        media_type = value.split(";", 1)[0].strip().lower()
+        if media_type in REJECTED_MEDIA_TYPES or not media_type.startswith(
+            ("image/", "audio/")
+        ):
+            raise ValueError(f"扱えないmedia_typeです: {value}")
+        return media_type
+
+    @model_validator(mode="after")
+    def _validate_target(self) -> "MediaRoleTagTarget":
+        if bool(self.artifact_id) == bool(self.relative_path):
+            raise ValueError(
+                "artifact_idとrelative_pathはどちらか一方だけ指定してください。"
+            )
+        if self.relative_path is not None and (
+            self.sha256 is None
+            or self.file_name is None
+            or self.byte_size is None
+            or self.media_type is None
+        ):
+            raise ValueError(
+                "relative_path指定時はsha256・file_name・byte_size・media_typeも"
+                "指定してください。"
+            )
+        return self
+
+
+class MediaRoleTagUpsert(MediaRoleTagTarget):
+    """役割タグの登録・更新要求。同じ対象へ再送すると上書きする。"""
+
+    role: MediaRole
+    character_ids: list[ResourceId] = Field(default_factory=list, max_length=50)
+    project_id: AiMediaId | None = None
+    scene_id: AiMediaId | None = None
+
+    @model_validator(mode="after")
+    def _validate_hierarchy(self) -> "MediaRoleTagUpsert":
+        if self.scene_id is not None and self.project_id is None:
+            raise ValueError("scene_idの指定にはproject_idが必要です。")
+        if len(set(self.character_ids)) != len(self.character_ids):
+            raise ValueError("character_idsを重複させられません。")
+        return self
+
+
+class MediaRoleTagRead(ApiModel):
+    id: str
+    artifact_id: str | None
+    relative_path: str | None
+    sha256: str | None
+    file_name: str | None
+    byte_size: int | None
+    media_type: str | None
+    role: str
+    character_ids: list[str] = Field(default_factory=list)
+    assigned_project_id: str | None
+    assigned_scene_id: str | None
+    created_at: str
+    updated_at: str
+
+
+#: 横断一覧で1件がどの保管経路に由来するかを示す。
+MediaItemSource = Literal[
+    "generated",
+    "external_import",
+    "registered",
+    "registered_input",
+    "character_reference",
+]
+
+
+class MediaItemRead(ApiModel):
+    """生成物・登録素材・外部取込・人物参照を1つの一覧で探すための1件。
+
+    `key`は一覧内で一意な識別子(Artifact由来は`artifact_id`、それ以外は
+    `relative_path`ベース)。`role`・`character_ids`はタグ付け済みのときだけ埋まる。
+    """
+
+    key: str
+    source: MediaItemSource
+    kind: str
+    relative_path: str
+    sha256: str
+    byte_size: int
+    media_type: str
+    created_at: str
+    label: str | None = None
+    role: str | None = None
+    character_ids: list[str] = Field(default_factory=list)
+    artifact_id: str | None = None
+    assigned_project_id: str | None = None
+    assigned_scene_id: str | None = None
+    assigned_shot_id: str | None = None
+
+
 class AssignmentTarget(ApiModel):
     """現在の整理先。すべてNoneなら未所属へ戻す。"""
 
