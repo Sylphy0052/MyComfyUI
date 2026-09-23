@@ -158,7 +158,7 @@ export function LookProfileManager({
   };
 
   const remove = async (profile: LookProfile) => {
-    if (!window.confirm(`LookProfile「${profile.name}」を削除しますか。`)) return;
+    if (!window.confirm(`Preset「${profile.name}」を削除しますか。`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -183,13 +183,13 @@ export function LookProfileManager({
 
   return (
     <details className="stack">
-      <summary>ルックプロファイル {selectedIds.length}件適用</summary>
+      <summary>重ねるPreset {selectedIds.length}件適用</summary>
       <div className="stack">
         {error && <p className="error">{error}</p>}
         <label>検索<input value={query} onChange={(event) => setQuery(event.target.value)} /></label>
         <div className="row">
           <select value={pickId} onChange={(event) => setPickId(event.target.value)}>
-            <option value="">追加するプロファイル</option>
+            <option value="">追加するPreset</option>
             {visibleProfiles.filter((profile) => !selectedIds.includes(profile.id)).map((profile) => (
               <option key={profile.id} value={profile.id} disabled={!isCompatible(profile)}>
                 {profile.name} / {profile.category}{!isCompatible(profile) ? " (現在のRecipeでは利用不可)" : ""}
@@ -224,7 +224,7 @@ export function LookProfileManager({
           ))}
         </ol>
         <fieldset className="stack" disabled={busy}>
-          <legend>{editingId ? "プロファイル編集" : "プロファイル作成"}</legend>
+          <legend>{editingId ? "Preset編集" : "Preset作成"}</legend>
           <label>名前<input value={name} onChange={(event) => setName(event.target.value)} /></label>
           <label>分類<select value={category} onChange={(event) => setCategory(event.target.value as typeof category)}><option value="general">general</option><option value="style">画風</option><option value="character">人物</option><option value="background">背景</option></select></label>
           <label>説明<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
@@ -238,7 +238,7 @@ export function LookProfileManager({
             onRemove={removePromptField}
           />
           <label>入力overlay（Prompt、Negative Prompt以外）<textarea className="mono" rows={10} value={restJson} onChange={(event) => setRestJson(event.target.value)} /></label>
-          <p className="muted">後に並ぶプロファイルが前の値を上書きします。runtime入力は全プロファイルより優先されます。</p>
+          <p className="muted">後に並ぶPresetが前の値を上書きします。runtime入力は全Presetより優先されます。</p>
           <button type="button" className="primary" onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button>
         </fieldset>
       </div>
