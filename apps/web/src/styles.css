@@ -90,6 +90,41 @@
   font-family: var(--font-family-base);
 }
 
+/*
+ * ライトテーマ。R-10でシステム追随を含めて選べるようにする際に追加した。
+ * 起動直後の適用は index.html のインラインスクリプトが `data-theme` を書き、
+ * 実行時の切替は state/themeState.ts と App.tsx が担う。
+ * 主要な文字色と背景色の組み合わせは4.5:1以上のコントラストを確保している
+ * (docs/design 配下の検証記録、または対応PRの説明を参照)。
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-bg-deep: #f5f6f8;
+  --color-bg-sunken: #eef0f3;
+  --color-bg: #ffffff;
+  --color-surface-inset: #eef0f3;
+  --color-surface: #f7f8fa;
+  --color-surface-raised: #ffffff;
+  --color-border: #d7dbe0;
+  --color-text: #1a1d23;
+  --color-text-muted: #5b6270;
+  --color-text-on-accent: #ffffff;
+  --color-accent: #2f6fed;
+  --color-accent-hover: color-mix(in srgb, var(--color-accent) 85%, black);
+  --color-accent-subtle: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  --color-danger: #c62828;
+  --color-danger-subtle: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  --color-ok: #1e7d32;
+  --color-ok-subtle: color-mix(in srgb, var(--color-ok) 15%, transparent);
+  --color-warning: #8a5a00;
+  --color-warning-subtle: #f6d9a855;
+  --color-overlay-soft: rgba(255, 255, 255, 0.85);
+  --color-overlay: #ffffffcc;
+  --color-overlay-strong: #ffffffee;
+  --color-scrim: rgb(0 0 0 / 45%);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -558,6 +593,11 @@ details summary {
 
 /* モード切替は現在地を示すため、タイトルの近くに置く。ラボの画面切替だけ右端へ寄せる。 */
 .app > header nav.mode-switch {
+  margin-left: 0;
+}
+
+/* テーマ切替もモード切替と同じくタイトルの近くに置く。 */
+.app > header nav.theme-switch {
   margin-left: 0;
 }
 

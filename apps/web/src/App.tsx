@@ -48,6 +48,13 @@ import type {
   UiState,
   View,
 } from "./state/uiState";
+import {
+  applyResolvedTheme,
+  persistThemePreference,
+  readStoredThemePreference,
+  resolveTheme,
+} from "./state/themeState";
+import type { ThemePreference } from "./state/themeState";
 import { useFrozenWhenInactive } from "./state/useFrozenWhenInactive";
 
 /** WebSocketは再取得トリガーだけに使い、RESTで得られる状態を正本とする。 */
@@ -57,6 +64,12 @@ const CONNECTED_POLL_INTERVAL_MS = 15000;
 const MODES: { value: Mode; label: string }[] = [
   { value: "production", label: "作品制作 (モードB)" },
   { value: "lab", label: "ラボ (モードA)" },
+];
+
+const THEME_PREFERENCES: { value: ThemePreference; label: string }[] = [
+  { value: "light", label: "ライト" },
+  { value: "dark", label: "ダーク" },
+  { value: "system", label: "システム" },
 ];
 
 const VIEWS: { value: View; label: string }[] = [
@@ -125,6 +138,11 @@ function recipeTemplateName(recipe: Recipe): string {
 
 export function App() {
   const [error, setError] = useState<string | null>(null);
+  // index.htmlのインラインスクリプトが起動直後にdata-theme属性を書くため、
+  // ここではその続きとしてlocalStorageから選好を読み、以降の変更を反映・保存する。
+  const [themePreference, setThemePreference] = useState<ThemePreference>(
+    readStoredThemePreference,
+  );
   // URLとlocalStorageから復元した値で開く。以降の変更は永続化のeffectで書き戻す。
   const [initialUiState] = useState(readInitialUiState);
   const [mode, setMode] = useState<Mode>(initialUiState.mode);
@@ -189,6 +207,17 @@ export function App() {
       for (const timerId of timers) window.clearTimeout(timerId);
     };
   }, []);
+  // 選好を選ぶたびに保存し、data-theme属性へ反映する。systemのときはOS設定の変更も
+  // 都度追随させる (ページ再読み込みなしでライト⇔ダークが切り替わる環境向け)。
+  useEffect(() => {
+    persistThemePreference(themePreference);
+    applyResolvedTheme(resolveTheme(themePreference));
+    if (themePreference !== "system") return;
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    const handleChange = () => applyResolvedTheme(resolveTheme("system"));
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, [themePreference]);
   const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
     useState<string | null>(null);
   const [comparisonJobIds, setComparisonJobIds] = useState<string[] | null>(null);
@@ -894,6 +923,19 @@ export function App() {
               aria-pressed={mode === item.value}
               className={mode === item.value ? "primary" : undefined}
               onClick={() => switchMode(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <nav className="row theme-switch" aria-label="テーマ">
+          {THEME_PREFERENCES.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              aria-pressed={themePreference === item.value}
+              className={themePreference === item.value ? "primary" : undefined}
+              onClick={() => setThemePreference(item.value)}
             >
               {item.label}
             </button>
