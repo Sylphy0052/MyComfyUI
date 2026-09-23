@@ -21,7 +21,7 @@ export const GENERATION_TAB_VALUES = [
   "voice",
   "compose",
 ] as const;
-export const IMAGE_SUBTAB_VALUES = ["generate", "derive", "sweep"] as const;
+export const IMAGE_SUBTAB_VALUES = ["generate", "change", "derive", "sweep"] as const;
 
 export type Mode = (typeof MODE_VALUES)[number];
 export type View = (typeof VIEW_VALUES)[number];
