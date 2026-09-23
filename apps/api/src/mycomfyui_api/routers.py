@@ -28,7 +28,7 @@ from mycomfyui_api import (
 )
 from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters.agent import base as agent_base
-from mycomfyui_api.adapters.agent import proposals
+from mycomfyui_api.adapters.agent import prompt_assets, proposals
 from mycomfyui_api.adapters.agent.base import AgentProvider
 from mycomfyui_api.adapters.aimedia.client import (
     AiMediaNotFound,
@@ -4027,6 +4027,8 @@ async def _agent_context(
         context["shot"] = proposals.shot_context(shot_envelope.get("data"))
     if recipe is not None:
         context["recipe"] = proposals.recipe_context(recipe)
+    if payload.kind in proposals.PROMPT_STYLE_KINDS:
+        context["prompt_style"] = _prompt_style(recipe)
     if payload.kind == "reference_candidates":
         context["artifacts"] = proposals.artifact_context(
             await _context_artifacts(session, payload.scene_id)
@@ -4038,6 +4040,34 @@ async def _agent_context(
     if payload.kind == "batch_generation_plan":
         context["shots"] = proposals.shot_list_context(shot_items)
     return context
+
+
+def _prompt_style(recipe: Recipe | None) -> comfyui_workflow.PromptStyle:
+    """prompt案の書き方。Recipeが指すテンプレートで決め、無ければ既定のAnimaとする。"""
+    reference = recipe.workflow_template_ref if recipe is not None else None
+    template_name = reference.get("name") if isinstance(reference, dict) else None
+    return comfyui_workflow.prompt_style_of(template_name) or "anima"
+
+
+async def _prompt_guidance(
+    kind: str, instruction: str, context: dict[str, Any]
+) -> str:
+    """prompt案を持つ種別へ、novel-writerの資産から抜き出した作法と既存promptを添える。
+
+    読んだファイルの相対パスを`context`へ残し、提案の履歴から根拠を辿れるようにする。
+    本文は履歴へ残さない。
+    """
+    style = context.get("prompt_style")
+    if kind not in proposals.PROMPT_STYLE_KINDS or style is None:
+        return ""
+    hint = "\n".join([instruction, json.dumps(context, ensure_ascii=False)])
+    guidance = await run_in_threadpool(
+        prompt_assets.load_guidance, get_settings().novel_writer_root, style, hint
+    )
+    if guidance is None:
+        return ""
+    context["prompt_assets"] = list(guidance.sources)
+    return guidance.text
 
 
 def _context_shot_ids(context: dict[str, Any]) -> set[str]:
@@ -4456,6 +4486,7 @@ async def create_agent_proposal(
     context = await _agent_context(
         session, payload, recipe, scene_envelope, shot_envelope, shot_items
     )
+    guidance = await _prompt_guidance(payload.kind, payload.instruction, context)
     proposal = AgentProposal(
         id=schemas.new_id(),
         provider_id=provider.id,
@@ -4477,16 +4508,22 @@ async def create_agent_proposal(
         decided_at=None,
     )
     request = agent_base.ProposalRequest(
-        kind=payload.kind, instruction=payload.instruction, context=context
+        kind=payload.kind,
+        instruction=payload.instruction,
+        context=context,
+        guidance=guidance,
     )
     try:
         result = await provider.propose(request)
+        output = proposals.apply_prompt_style(
+            payload.kind, result.output, context.get("prompt_style")
+        )
     except agent_base.AgentError as error:
         await _record_proposal_failure(session, proposal, error)
         raise _agent_error(error) from error
     proposal.output = proposals.restrict_output(
         payload.kind,
-        result.output,
+        output,
         artifact_ids=_context_artifact_ids(context),
         shot_ids=_context_shot_ids(context),
         recipe_input_names=_context_recipe_input_names(context),
@@ -4526,6 +4563,7 @@ def _decode_assist_image(
 )
 async def assist_image_prompt(
     payload: schemas.ImagePromptAssistCreate,
+    session: SessionDep,
     providers: AgentProvidersDep,
 ):
     """日本語の説明を、SceneやShotに依存しない画像promptへ補完する。
@@ -4536,8 +4574,14 @@ async def assist_image_prompt(
 
     画像を添付した場合は、画像と現在のpromptを突き合わせて直した案を返す。画像に
     対応しないProviderへは送らず、``AGENT_IMAGE_UNSUPPORTED``で理由を返す。
+
+    ``recipe_id``を渡すと、そのRecipeのモデルに合う書き方 (タグ型か、タグと自然文の
+    併用か) で返す。novel-writerの場所が設定されていれば、その作法と既存promptを添える。
     """
     provider = _resolve_agent_provider(providers, payload.provider_id)
+    recipe: Recipe | None = None
+    if payload.recipe_id is not None:
+        recipe = await _get_or_404(session, Recipe, "Recipe", payload.recipe_id)
     images: tuple[agent_base.ProposalImage, ...] = ()
     if payload.image is not None:
         if not provider.supports_images:
@@ -4548,7 +4592,7 @@ async def assist_image_prompt(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
         images = (_decode_assist_image(payload.image),)
-    context = {
+    context: dict[str, Any] = {
         key: value
         for key, value in (
             ("current_positive_prompt", payload.current_positive_prompt),
@@ -4556,16 +4600,24 @@ async def assist_image_prompt(
         )
         if value.strip()
     }
+    context["prompt_style"] = _prompt_style(recipe)
+    guidance = await _prompt_guidance("image_prompt", payload.instruction, context)
     request = agent_base.ProposalRequest(
         kind="image_prompt",
         instruction=payload.instruction,
         context=context,
         images=images,
+        guidance=guidance,
     )
     result = await _propose_assist(provider, request)
     # Providerは検証とtag_line、positive_promptの組み立てを済ませて返す。ここで検証し
     # 直すと、組み立てた派生項目が余計なキーとして拒否される。
-    output = result.output
+    try:
+        output = proposals.apply_prompt_style(
+            "image_prompt", result.output, context["prompt_style"]
+        )
+    except agent_base.AgentError as error:
+        raise _agent_error(error) from error
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],
         tag_line=output.get("tag_line", ""),

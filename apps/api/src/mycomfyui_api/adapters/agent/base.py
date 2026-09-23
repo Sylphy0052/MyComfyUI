@@ -77,13 +77,15 @@ class ProposalRequest:
 
     `context`は参照APIの表示用フィールドだけを許可リストで組み立てた値とする。秘密情報、
     環境変数、ローカル絶対パスを入れない。`images`は`supports_images`が真のProviderへ
-    だけ渡す。
+    だけ渡す。`guidance`はnovel-writerの資産から抜き出した作法と既存promptで、履歴へ
+    残さずProviderへの指示にだけ添える。
     """
 
     kind: ProposalKind
     instruction: str
     context: dict[str, Any] = field(default_factory=dict)
     images: tuple[ProposalImage, ...] = ()
+    guidance: str = ""
 
 
 @dataclass(frozen=True)

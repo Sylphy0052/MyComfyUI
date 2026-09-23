@@ -290,6 +290,18 @@ PROMPT_DIRECTIVE = (
     "避けたい要素が無ければ空文字にする。区切りだけの値を返さない。"
 )
 
+#: 書き方をエンジンに応じて切り替えるprompt案の種別。
+PROMPT_STYLE_KINDS = frozenset({"image_prompt", "batch_generation_plan"})
+
+#: タグだけを解釈するモデル(SD1.5など)へ出すときに足す指示。`PROMPT_DIRECTIVE`のうち
+#: 自然文とAnima固有の書き方を打ち消す。自然文は`apply_prompt_style`でも落とす。
+TAGS_STYLE_DIRECTIVE = (
+    "## 対象モデルの書き方\n"
+    "対象のモデルはタグだけを解釈する。natural_textは空文字にし、位置関係、視線、光も"
+    "general_tagsのタグで表す。人数が2人以上でも、見分けに使う属性はgeneral_tagsへ"
+    "入れる。`@`付きの絵師タグと`score_`で始まる品質タグは使わない。"
+)
+
 #: 種別ごとの指示。Providerへ渡すsystem promptの本文へ埋め込む。
 KIND_DIRECTIVES: dict[ProposalKind, str] = {
     "image_prompt": (
@@ -590,6 +602,57 @@ def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
     return data
 
 
+def apply_prompt_style(
+    kind: ProposalKind, output: dict[str, Any], style: str | None
+) -> dict[str, Any]:
+    """タグだけを解釈するモデル向けなら、自然文を落としてpositive promptを組み直す。
+
+    指示だけでは自然文が混ざることがある。タグとして解釈されると意図しない要素が出るため、
+    実装側で空にする。内容を表すタグが無い案は、ratingを補うとpositiveが空にならず
+    通ってしまうため別に判定する。組み直せない案は、単発なら失敗とし、バッチ計画なら落とす。
+    """
+    if style != "tags" or kind not in PROMPT_STYLE_KINDS:
+        return output
+    data = dict(output)
+    if kind == "image_prompt":
+        if not _has_content_tags(data):
+            raise AgentInvalidResponse("prompt案に内容を表すタグがありません。")
+        data["natural_text"] = ""
+        _attach_prompt_text(data)
+        return data
+    original = data.get("items", [])
+    items: list[dict[str, Any]] = []
+    for item in original:
+        if not isinstance(item, dict) or not _has_content_tags(item):
+            continue
+        body = {**item, "natural_text": ""}
+        if _try_attach_prompt_text(body):
+            items.append(body)
+    if not items:
+        raise AgentInvalidResponse("バッチ生成計画に使えるprompt案がありません。")
+    data["items"] = items
+    _record_dropped_items(
+        data, len(original) - len(items), "内容を表すタグが無かった"
+    )
+    return data
+
+
+#: 画面の内容を表すタグ配列。品質と絵師のタグだけでは何を描くかが決まらない。
+CONTENT_TAG_FIELDS = tuple(
+    name for name in TAG_BLOCK_FIELDS if name not in {"quality_tags", "artist_tags"}
+)
+
+
+def _has_content_tags(body: Mapping[str, Any]) -> bool:
+    """`CONTENT_TAG_FIELDS`に空でないタグが1つでもあるか。"""
+    return any(
+        isinstance(tag, str) and _normalize_tag(tag)
+        for name in CONTENT_TAG_FIELDS
+        if isinstance(body.get(name), list)
+        for tag in body[name]
+    )
+
+
 #: 画像を添付したときに本文へ足す説明。画像そのものは本文と別の経路でProviderへ渡す。
 IMAGE_DIRECTIVE = (
     "## 添付画像\n"
@@ -601,15 +664,23 @@ IMAGE_DIRECTIVE = (
 
 def build_prompt(request: ProposalRequest) -> str:
     """Providerへ渡す本文。コマンド行ではなく標準入力へ流す。"""
-    sections = [
-        KIND_DIRECTIVES[request.kind],
-        "",
-        "## 利用者の指示",
-        request.instruction.strip() or "(指示なし)",
-        "",
-        "## 対象の情報",
-        json.dumps(request.context, ensure_ascii=False, indent=2),
-    ]
+    sections = [KIND_DIRECTIVES[request.kind], ""]
+    if (
+        request.kind in PROMPT_STYLE_KINDS
+        and request.context.get("prompt_style") == "tags"
+    ):
+        sections.extend([TAGS_STYLE_DIRECTIVE, ""])
+    if request.guidance:
+        sections.extend([request.guidance, ""])
+    sections.extend(
+        [
+            "## 利用者の指示",
+            request.instruction.strip() or "(指示なし)",
+            "",
+            "## 対象の情報",
+            json.dumps(request.context, ensure_ascii=False, indent=2),
+        ]
+    )
     if request.images:
         sections.extend(["", IMAGE_DIRECTIVE])
     return "\n".join(sections)

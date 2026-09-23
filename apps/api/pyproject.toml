@@ -15,6 +15,9 @@ dependencies = [
   "pillow>=12.3,<13",
   "platformdirs>=4.3,<5",
   "pydantic-settings>=2.6,<3",
+  # novel-writerの既存promptのYAMLを読む。uvicorn[standard]経由の推移的依存に
+  # 任せると、extrasが変わったときに資産の参照が黙って止まる。
+  "pyyaml>=6,<7",
   "sqlalchemy>=2.0,<3",
   # 受信バイト数で本文を打ち切るRequestBodyLimitMiddlewareを使う。FastAPI経由の
   # 推移的依存に任せると、版が下がったときに保護が消える。

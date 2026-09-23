@@ -1769,6 +1769,8 @@ class ImagePromptAssistCreate(ApiModel):
     provider_id: AgentProviderId | None = None
     instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
     image: ImagePromptAssistImage | None = None
+    #: 生成に使うRecipe。モデルに合うpromptの書き方を選ぶのに使う。無ければAnimaとみなす。
+    recipe_id: ResourceId | None = None
     #: 直す対象の現在のprompt。空なら新しく組み立てる。
     current_positive_prompt: str = Field(default="", max_length=4000)
     current_negative_prompt: str = Field(default="", max_length=4000)

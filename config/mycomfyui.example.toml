@@ -10,6 +10,9 @@
 # 参照API未提供時に検証用JSONを明示的に差し替える場合だけ指定する。
 # aimedia_fixture_path = "/absolute/path/to/reference.json"
 
+# prompt提案で作法と既存作品のpromptを読取り専用で参照するnovel-writerのルート。
+# novel_writer_root = "/absolute/path/to/novel-writer"
+
 # 外部画像Artifactの総保存量。既定は20GiB。
 # external_image_import_quota_bytes = 21474836480
 
