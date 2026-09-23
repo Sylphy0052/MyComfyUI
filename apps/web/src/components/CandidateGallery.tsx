@@ -31,6 +31,8 @@ interface Props {
   active?: boolean;
   comparisonActive?: boolean;
   onClearComparison?: () => void;
+  /** 作品制作 (モードB) 向けの表示。比較・詳細・派生を隠し、採否だけを出す。 */
+  simple?: boolean;
 }
 type ThumbSize = "s" | "m" | "l";
 const THUMB_SIZES: { value: ThumbSize; label: string }[] = [
@@ -136,7 +138,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true, comparisonActive = false, onClearComparison }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true, comparisonActive = false, onClearComparison, simple = false }: Props) {
   const [thumbSize, setThumbSize] = useState<ThumbSize>("m");
   const [leftId, setLeftId] = useState<string | null>(null);
   const [rightId, setRightId] = useState<string | null>(null);
@@ -241,7 +243,8 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   };
 
   useEffect(() => {
-    if (!active) return;
+    // モードBでは比較のA/Bを出さないため、どの候補に効くか見えないショートカットは止める。
+    if (!active || simple) return;
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && fullscreen) {
         event.preventDefault();
@@ -276,7 +279,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [active, activeId, activeSide, busyArtifactId, candidates, fullscreen, onDecide]);
+  }, [active, simple, activeId, activeSide, busyArtifactId, candidates, fullscreen, onDecide]);
 
   useEffect(() => {
     if (!active) setFullscreen(false);
@@ -386,7 +389,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
               実験の比較絞込みを解除
             </button>
           )}
-          <div className="thumb-size" role="group" aria-label="サムネイルの表示サイズ">
+          {!simple && <div className="thumb-size" role="group" aria-label="サムネイルの表示サイズ">
             {THUMB_SIZES.map((item) => (
               <button
                 key={item.value}
@@ -397,7 +400,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
                 {item.label}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
       {comparisonActive && (
@@ -407,8 +410,8 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
       )}
       {error && <p className="error">{error}</p>}
       {candidates.length === 0 ? <EmptyState title="成功したJobの画像がまだありません。" description="生成が成功すると、ここに候補が並びます。" /> : <>
-        {compare}
-        {detailArtifactId && byId.has(detailArtifactId) && selectedDetail?.lineage && (
+        {!simple && compare}
+        {!simple && detailArtifactId && byId.has(detailArtifactId) && selectedDetail?.lineage && (
           <ArtifactDetail
             artifact={byId.get(detailArtifactId)!.artifact}
             job={selectedDetail.job}
@@ -416,7 +419,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
             lineage={selectedDetail.lineage}
           />
         )}
-        {detailArtifactId && selectedDetailError && (
+        {!simple && detailArtifactId && selectedDetailError && (
           <div className="error">
             <p>{selectedDetailError}</p>
             <button type="button" onClick={() => {
@@ -425,7 +428,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
             }}>詳細を再取得</button>
           </div>
         )}
-        {detailArtifactId && selectedDetail && !selectedDetail.lineage && !selectedDetailError && (
+        {!simple && detailArtifactId && selectedDetail && !selectedDetail.lineage && !selectedDetailError && (
           <LoadingPlaceholder label="lineageを取得中です。" lines={2} />
         )}
         <div className={`gallery gallery-${thumbSize}`}>
@@ -438,19 +441,19 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
               <span className="row">{artifact.id === leftId && <span className="badge">A</span>}{artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
               <span className="mono">{artifact.sha256.slice(0, 12)}</span>
               <div className="candidate-actions">
-                <div className="action-group" role="group" aria-label="比較">
+                {!simple && <div className="action-group" role="group" aria-label="比較">
                   <IconButton icon={<span className="icon-glyph">A</span>} label="比較のAに置く" aria-pressed={artifact.id === leftId} onClick={() => setLeftId(artifact.id)} />
                   <IconButton icon={<span className="icon-glyph">B</span>} label="比較のBに置く" aria-pressed={artifact.id === rightId} onClick={() => setRightId(artifact.id)} />
-                </div>
+                </div>}
                 <div className="action-group" role="group" aria-label="採否">
                   <IconButton icon={<Icon name="check" />} label="採用" className="tone-ok" aria-pressed={artifact.decision === "accepted"} disabled={busyArtifactId === artifact.id} onClick={() => onDecide(artifact.id, "accepted")} />
                   <IconButton icon={<Icon name="x" />} label="却下" className="tone-danger" aria-pressed={artifact.decision === "rejected"} disabled={busyArtifactId === artifact.id} onClick={() => onDecide(artifact.id, "rejected")} />
                   <IconButton icon={<Icon name="undo" />} label="判定を戻す" disabled={busyArtifactId === artifact.id || artifact.decision === "undecided"} onClick={() => onDecide(artifact.id, "undecided")} />
                 </div>
-                <div className="action-group" role="group" aria-label="その他">
+                {!simple && <div className="action-group" role="group" aria-label="その他">
                   <IconButton icon={<Icon name="info" />} label="詳細" aria-pressed={artifact.id === detailArtifactId} onClick={() => setDetailArtifactId((current) => current === artifact.id ? null : artifact.id)} />
                   {onDerive && <IconButton icon={<Icon name="branch" />} label="派生生成" onClick={() => onDerive(artifact.id)} />}
-                </div>
+                </div>}
               </div>
             </figcaption>
           </Card>)}

@@ -556,6 +556,11 @@ details summary {
   margin-left: auto;
 }
 
+/* モード切替は現在地を示すため、タイトルの近くに置く。ラボの画面切替だけ右端へ寄せる。 */
+.app > header nav.mode-switch {
+  margin-left: 0;
+}
+
 .generation-workspace {
   min-width: 0;
   /* 画像タブの2カラム化は、ビューポートではなく中央カラムの実幅で判定する。 */
@@ -665,6 +670,13 @@ details summary {
   border: var(--border-default);
   border-radius: var(--radius-md);
   padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+/* displayを指定しているため、hidden属性だけでは消えない。モードBで隠す節とタブに使う。 */
+.form-section[hidden],
+.generation-tabs[hidden],
+.image-subtabs[hidden] {
+  display: none;
 }
 
 .form-section > legend,

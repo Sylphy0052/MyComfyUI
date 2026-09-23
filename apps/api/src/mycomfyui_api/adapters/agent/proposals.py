@@ -68,6 +68,11 @@ MAX_RATIONALE_LENGTH = 2000
 #: 値にする。短いタグを並べると区切りの分だけ膨らむため、連結後に改めて当てる。
 MAX_MERGED_NEGATIVE_LENGTH = 4000
 
+#: バッチ生成計画全体の`positive_prompt`合計の上限。1件あたりの上限
+#: (`MAX_POSITIVE_PROMPT_LENGTH`)を`MAX_PLAN_STEPS`件ぶん掛けると際限なく膨らみ、
+#: Proposal履歴としてDBへ載るサイズが大きくなりすぎる。件数によらず合計へ上限を課す。
+MAX_BATCH_POSITIVE_PROMPT_TOTAL = 20000
+
 #: タグ行を組み立てるブロックの順序。Qwen-Image(Anima)公式の並びに合わせる。
 #: Providerが書いた順序ではなくこの順で連結し、並びを実装側で固定する。
 TAG_BLOCK_FIELDS = (
@@ -87,6 +92,11 @@ DEFAULT_NEGATIVE_PROMPT = (
 
 #: prompt案のタグ1件。カンマはタグの区切りに使うため値へ含めない。
 PromptTag = Annotated[str, StringConstraints(max_length=MAX_PROMPT_TAG_LENGTH)]
+
+#: `quality_tags`へ必ず1つ入れるrating値。`PROMPT_DIRECTIVE`の指示文だけに頼ると、
+#: Providerやモデルを替えたときに抜け落ちても気付けない。ここで検査し、無ければ
+#: 安全側の既定値(`safe`)を実装側で補う。
+RATING_TAGS = frozenset({"safe", "sensitive", "nsfw", "explicit"})
 
 
 class ProposalOutput(BaseModel):
@@ -427,11 +437,32 @@ def merge_negative_prompt(baseline: str, extra: str) -> str:
     return ", ".join(_dedupe(values))
 
 
+def _ensure_rating_tag(quality_tags: list[Any]) -> list[Any]:
+    """`quality_tags`にratingが1つも無ければ`safe`を補う。
+
+    `PROMPT_DIRECTIVE`はratingを必ず入れるよう指示するが、指示文だけでは
+    Providerが守る保証がない。落ちていても提案自体は拒否せず、安全側の値を
+    実装側で足して先へ進める。判定は`_dedupe_key`と同じ基準にそろえ、
+    `(nsfw:1.3)`のような重み付きの書き方も見落とさないようにする。
+    """
+    has_rating = any(
+        isinstance(tag, str) and _dedupe_key(_normalize_tag(tag)) in RATING_TAGS
+        for tag in quality_tags
+    )
+    if has_rating:
+        return quality_tags
+    logger.warning("prompt案にratingタグが無かったためsafeを補いました。")
+    return [*quality_tags, "safe"]
+
+
 def _attach_prompt_text(body: dict[str, Any]) -> None:
     """タグ行と連結済みpositive promptを派生項目として足す。
 
     Providerにはタグ配列と自然文だけを返させ、生成Jobへ渡す文字列はここで作る。
     """
+    quality_tags = body.get("quality_tags")
+    if isinstance(quality_tags, list):
+        body["quality_tags"] = _ensure_rating_tag(quality_tags)
     tag_line = compose_tag_line(body)
     natural_text = str(body.get("natural_text") or "").strip()
     positive_prompt = compose_positive_prompt(tag_line, natural_text)
@@ -468,15 +499,17 @@ def _try_attach_prompt_text(body: dict[str, Any]) -> bool:
     return True
 
 
-def _record_dropped_items(data: dict[str, Any], dropped: int) -> None:
+def _record_dropped_items(data: dict[str, Any], dropped: int, reason: str) -> None:
     """落とした案があったことを`rationale`へ残す。
 
     `items`が黙って減ると、計画から外れたShotを利用者が計画外と読み違える。
+    形が不足していた場合と、許可範囲外のIDを指していた場合の両方から呼ぶため、
+    理由は呼び出し元が渡す。
     """
     if dropped <= 0:
         return
-    logger.warning("prompt案の形が不足するstepを除外しました。件数=%s", dropped)
-    note = f"{dropped}件は形が不足していたため計画から外した。"
+    logger.warning("提案のstepを除外しました。件数=%s 理由=%s", dropped, reason)
+    note = f"{dropped}件は{reason}ため計画から外した。"
     rationale = data.get("rationale") or ""
     # 注記は必ず残す。末尾から切ると、説明が上限まで書かれているときに注記だけ消える。
     room = MAX_RATIONALE_LENGTH - len(note) - 1
@@ -510,8 +543,14 @@ def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
         ]
         if not items:
             raise AgentInvalidResponse("バッチ生成計画に使えるprompt案がありません。")
+        total_length = sum(len(item.get("positive_prompt", "")) for item in items)
+        if total_length > MAX_BATCH_POSITIVE_PROMPT_TOTAL:
+            raise AgentInvalidResponse(
+                "バッチ生成計画のprompt合計が長すぎます。"
+                f"{MAX_BATCH_POSITIVE_PROMPT_TOTAL}文字以内にしてください。"
+            )
         data["items"] = items
-        _record_dropped_items(data, len(original) - len(items))
+        _record_dropped_items(data, len(original) - len(items), "形が不足していた")
     return data
 
 
@@ -587,14 +626,22 @@ def restrict_output(
 def _restrict_items(
     output: dict[str, Any], key: str, allowed: set[str]
 ) -> dict[str, Any]:
-    """計画のstepを、指定のIDが許可された範囲にあるものだけへ絞る。"""
+    """計画のstepを、指定のIDが許可された範囲にあるものだけへ絞る。
+
+    落としたstepは`_record_dropped_items`で`rationale`へ注記する。何も記録せずに
+    黙って`items`が減ると、計画から外れた対象を利用者が計画外と読み違える。
+    """
     items = output.get("items")
     if not isinstance(items, list):
         return output
     kept = [
         item for item in items if isinstance(item, dict) and item.get(key) in allowed
     ]
-    return {**output, "items": kept}
+    result = {**output, "items": kept}
+    _record_dropped_items(
+        result, len(items) - len(kept), "許可されていない対象を指していた"
+    )
+    return result
 
 
 def _restrict_defaults(
