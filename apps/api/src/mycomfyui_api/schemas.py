@@ -1794,6 +1794,33 @@ class ImagePromptAssistRead(ApiModel):
     model: str | None
 
 
+class MediaPromptAssistCreate(ApiModel):
+    """動画と音楽の条件補完の要求。画像は受け付けず、日本語の説明だけから組み立てる。"""
+
+    #: 未指定なら設定の既定Providerを使う。
+    provider_id: AgentProviderId | None = None
+    instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
+
+
+class VideoPromptAssistRead(ApiModel):
+    """構造化検証済みの動画prompt補完結果。動画のWorkflowはnegativeを持たない。"""
+
+    prompt: str = Field(min_length=1, max_length=4000)
+    rationale: str = Field(max_length=2000)
+    provider_id: AgentProviderId
+    model: str | None
+
+
+class MusicPromptAssistRead(ApiModel):
+    """構造化検証済みのBGM条件補完結果。音楽画面のmood欄とgenre欄へそのまま入れる。"""
+
+    mood: str = Field(min_length=1, max_length=1000)
+    genre: str = Field(max_length=1000)
+    rationale: str = Field(max_length=2000)
+    provider_id: AgentProviderId
+    model: str | None
+
+
 class PlannedOperation(ApiModel):
     """提案を承認したときに実行する操作。
 

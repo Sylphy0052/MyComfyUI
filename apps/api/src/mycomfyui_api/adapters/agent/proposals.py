@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from mycomfyui_api.adapters.agent.base import (
     AgentInvalidResponse,
     AgentProposalKind,
+    ProposalKind,
     ProposalRequest,
 )
 
@@ -57,6 +58,9 @@ MAX_NATURAL_TEXT_LENGTH = 2000
 #: 連結したpositive promptの長さ上限。API契約の`positive_prompt`と同じ値にする。
 #: ブロックごとの上限を全て使うとこの値を超えるため、連結後に改めて当てる。
 MAX_POSITIVE_PROMPT_LENGTH = 4000
+
+#: BGM条件案のmoodとgenreそれぞれの長さ上限。連結してpositive promptの上限に収める。
+MAX_MUSIC_TAGS_LENGTH = 1000
 
 #: prompt案が書けるnegative promptの長さ上限。
 MAX_NEGATIVE_PROMPT_LENGTH = 3000
@@ -145,6 +149,21 @@ class ImagePromptOutput(PromptBody):
     rationale: str = Field(default="", max_length=2000)
 
 
+class VideoPromptOutput(ProposalOutput):
+    """動画生成のprompt案。動画のWorkflowはnegativeを持たないため返さない。"""
+
+    prompt: str = Field(min_length=1, max_length=MAX_POSITIVE_PROMPT_LENGTH)
+    rationale: str = Field(default="", max_length=2000)
+
+
+class MusicPromptOutput(ProposalOutput):
+    """BGM生成の条件案。音楽画面のmood欄とgenre欄へそのまま入れる。"""
+
+    mood: str = Field(min_length=1, max_length=MAX_MUSIC_TAGS_LENGTH)
+    genre: str = Field(default="", max_length=MAX_MUSIC_TAGS_LENGTH)
+    rationale: str = Field(default="", max_length=2000)
+
+
 class ShotBreakdownItem(ProposalOutput):
     summary: str = Field(min_length=1, max_length=1000)
     camera: str = Field(default="", max_length=500)
@@ -230,7 +249,7 @@ class AssetOrganizationPlanOutput(ProposalOutput):
     rationale: str = Field(default="", max_length=2000)
 
 
-OUTPUT_MODELS: dict[AgentProposalKind, type[ProposalOutput]] = {
+OUTPUT_MODELS: dict[ProposalKind, type[ProposalOutput]] = {
     "image_prompt": ImagePromptOutput,
     "shot_breakdown": ShotBreakdownOutput,
     "reference_candidates": ReferenceCandidatesOutput,
@@ -238,6 +257,8 @@ OUTPUT_MODELS: dict[AgentProposalKind, type[ProposalOutput]] = {
     "workflow_registration_draft": WorkflowRegistrationDraftOutput,
     "batch_generation_plan": BatchGenerationPlanOutput,
     "asset_organization_plan": AssetOrganizationPlanOutput,
+    "video_prompt": VideoPromptOutput,
+    "music_prompt": MusicPromptOutput,
 }
 
 #: prompt案の書き方。prompt案を持つ種別で同じ規約を使う。
@@ -270,7 +291,7 @@ PROMPT_DIRECTIVE = (
 )
 
 #: 種別ごとの指示。Providerへ渡すsystem promptの本文へ埋め込む。
-KIND_DIRECTIVES: dict[AgentProposalKind, str] = {
+KIND_DIRECTIVES: dict[ProposalKind, str] = {
     "image_prompt": (
         "与えたShotまたは利用者説明に沿う画像生成promptを1件提案する。\n"
         + PROMPT_DIRECTIVE
@@ -302,6 +323,21 @@ KIND_DIRECTIVES: dict[AgentProposalKind, str] = {
         "Artifact store(`artifacts/`)基準の相対ディレクトリとし、絶対パスと`..`は"
         "使わない。移動しない場合は空文字にする。"
     ),
+    "video_prompt": (
+        "利用者説明に沿う動画生成promptを1件提案する。\n"
+        "promptには、被写体、動作とその速さ、カメラワーク(固定、パン、ドリー、"
+        "追従など)、場面、光と色調を、英語の自然文で2〜4文にまとめて書く。"
+        "タグを並べず、時間の流れに沿って何が起きるかを書く。"
+        "数秒の動画になるため、起きる出来事は1つに絞る。"
+        "利用者の指示が日本語でも、promptは英語で書く。"
+    ),
+    "music_prompt": (
+        "利用者説明に沿うBGMの条件を1件提案する。\n"
+        "moodには雰囲気、テンポ(bpmの目安)、主に使う楽器を、genreには音楽の"
+        "ジャンルを書く。どちらも英語の小文字のタグをカンマ区切りで並べる。"
+        "歌の有無は利用者が別の欄で選ぶため、vocals、instrumentalなど歌に関する"
+        "タグは入れない。歌詞は書かない。"
+    ),
 }
 
 SYSTEM_PROMPT = (
@@ -312,12 +348,12 @@ SYSTEM_PROMPT = (
 )
 
 
-def json_schema(kind: AgentProposalKind) -> dict[str, Any]:
+def json_schema(kind: ProposalKind) -> dict[str, Any]:
     """Providerへ渡す出力JSON Schema。"""
     return OUTPUT_MODELS[kind].model_json_schema()
 
 
-def strict_json_schema(kind: AgentProposalKind) -> dict[str, Any]:
+def strict_json_schema(kind: ProposalKind) -> dict[str, Any]:
     """OpenAI互換のstrict JSON Schemaを要求するProvider向けの出力Schema。
 
     strictな検証では`properties`にある項目を全て`required`へ含めないと要求ごと
@@ -517,7 +553,7 @@ def _record_dropped_items(data: dict[str, Any], dropped: int, reason: str) -> No
     data["rationale"] = f"{body}\n{note}" if body else note
 
 
-def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
+def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
     """Providerの応答を期待する形へ検証する。
 
     Providerが形を守る保証はない。履歴へ残す前にここで弾き、壊れた提案を

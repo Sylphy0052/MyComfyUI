@@ -4562,10 +4562,7 @@ async def assist_image_prompt(
         context=context,
         images=images,
     )
-    try:
-        result = await provider.propose(request)
-    except agent_base.AgentError as error:
-        raise _agent_error(error) from error
+    result = await _propose_assist(provider, request)
     # Providerは検証とtag_line、positive_promptの組み立てを済ませて返す。ここで検証し
     # 直すと、組み立てた派生項目が余計なキーとして拒否される。
     output = result.output
@@ -4577,6 +4574,74 @@ async def assist_image_prompt(
             proposals.DEFAULT_NEGATIVE_PROMPT, output.get("negative_prompt", "")
         ),
         rationale=output["rationale"],
+        provider_id=provider.id,
+        model=result.model,
+    )
+
+
+async def _propose_assist(
+    provider: AgentProvider, request: agent_base.ProposalRequest
+) -> agent_base.ProposalResult:
+    """フォームの補完を1件求める。Providerの失敗はAPIの失敗へ変換する。
+
+    Providerは応答の検証を済ませて返すため、ここでは検証し直さない。
+    """
+    try:
+        return await provider.propose(request)
+    except agent_base.AgentError as error:
+        raise _agent_error(error) from error
+
+
+@router.post(
+    "/video-prompt-assists",
+    response_model=schemas.VideoPromptAssistRead,
+)
+async def assist_video_prompt(
+    payload: schemas.MediaPromptAssistCreate,
+    providers: AgentProvidersDep,
+):
+    """日本語の説明を、動きとカメラワークを含む動画promptへ補完する。
+
+    画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。
+    """
+    provider = _resolve_agent_provider(providers, payload.provider_id)
+    result = await _propose_assist(
+        provider,
+        agent_base.ProposalRequest(
+            kind="video_prompt", instruction=payload.instruction
+        ),
+    )
+    return schemas.VideoPromptAssistRead(
+        prompt=result.output["prompt"],
+        rationale=result.output["rationale"],
+        provider_id=provider.id,
+        model=result.model,
+    )
+
+
+@router.post(
+    "/music-prompt-assists",
+    response_model=schemas.MusicPromptAssistRead,
+)
+async def assist_music_prompt(
+    payload: schemas.MediaPromptAssistCreate,
+    providers: AgentProvidersDep,
+):
+    """日本語の説明を、BGMのmoodとgenreのタグへ補完する。
+
+    画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。
+    """
+    provider = _resolve_agent_provider(providers, payload.provider_id)
+    result = await _propose_assist(
+        provider,
+        agent_base.ProposalRequest(
+            kind="music_prompt", instruction=payload.instruction
+        ),
+    )
+    return schemas.MusicPromptAssistRead(
+        mood=result.output["mood"],
+        genre=result.output["genre"],
+        rationale=result.output["rationale"],
         provider_id=provider.id,
         model=result.model,
     )
