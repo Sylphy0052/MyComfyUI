@@ -177,6 +177,7 @@ function describe(error: unknown): string {
       ? `${error.message} (${error.code} / request_id=${error.requestId})`
       : `${error.message} (${error.code})`;
   }
+  if (error instanceof Error) return error.message;
   return String(error);
 }
 
