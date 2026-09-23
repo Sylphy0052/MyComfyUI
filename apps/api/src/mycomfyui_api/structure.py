@@ -477,10 +477,10 @@ def _envelope_scene_id(envelope: dict[str, Any]) -> str | None:
     return scene_id if isinstance(scene_id, str) else None
 
 
-def _advance(statuses: dict[str, str], key: str | None, status: str) -> None:
+def _advance(statuses: dict[str, str], key: str | None, derived: str) -> None:
     """実績から導いた状態が現在の状態より先なら進める。手動ラベルより後ろへは戻さない。"""
-    if key is not None and key in statuses and PRODUCTION_RANK[status] > PRODUCTION_RANK[statuses[key]]:
-        statuses[key] = status
+    if key is not None and key in statuses and PRODUCTION_RANK[derived] > PRODUCTION_RANK[statuses[key]]:
+        statuses[key] = derived
 
 
 @router.get("/{project_id}/progress", response_model=schemas.ProjectProgress)
@@ -505,14 +505,15 @@ async def get_project_progress(project_id: schemas.AiMediaId, session: SessionDe
 
     artifact_rows = await session.execute(select(Artifact.assigned_scene_id, Artifact.assigned_shot_id, Artifact.decision).where(Artifact.assigned_project_id == project_id, Artifact.kind.in_(PROGRESS_ARTIFACT_KINDS)))
     for scene_id, shot_id, decision in artifact_rows:
-        status = {"accepted": "accepted", "undecided": "has_candidates"}.get(decision, "in_progress")
-        _advance(scene_statuses, scene_id or shot_scenes.get(shot_id or ""), status)
-        _advance(shot_statuses, shot_id, status)
-    job_rows = await session.execute(select(GenerationJob.assigned_scene_id, GenerationJob.assigned_shot_id, GenerationJob.kind, GenerationJob.state).where(GenerationJob.assigned_project_id == project_id))
+        derived = {"accepted": "accepted", "undecided": "has_candidates"}.get(decision, "in_progress")
+        _advance(scene_statuses, scene_id or shot_scenes.get(shot_id or ""), derived)
+        _advance(shot_statuses, shot_id, derived)
+    # 失敗・取消だけのJobは制作が進んだ根拠にしない。
+    job_rows = await session.execute(select(GenerationJob.assigned_scene_id, GenerationJob.assigned_shot_id, GenerationJob.kind, GenerationJob.state).where(GenerationJob.assigned_project_id == project_id, GenerationJob.state.in_((*ACTIVE_JOB_STATES, "succeeded"))))
     for scene_id, shot_id, kind, state in job_rows:
         # Pipelineの「仕上げ」と同じく、Sceneの合成Jobが成功したらSceneを完了とする。
-        scene_status = "completed" if kind == "compose" and state == "succeeded" else "in_progress"
-        _advance(scene_statuses, scene_id or shot_scenes.get(shot_id or ""), scene_status)
+        scene_derived = "completed" if kind == "compose" and state == "succeeded" else "in_progress"
+        _advance(scene_statuses, scene_id or shot_scenes.get(shot_id or ""), scene_derived)
         _advance(shot_statuses, shot_id, "in_progress")
 
     scenes = {key: 0 for key in PRODUCTION_STATUSES}
