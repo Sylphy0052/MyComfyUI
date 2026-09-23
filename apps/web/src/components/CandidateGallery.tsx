@@ -253,6 +253,9 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
     // モードBでは比較のA/Bと全画面を出さないため、選択中の候補への採否と候補の移動だけを受け付ける。
     if (!active || viewerIndex !== null) return;
     const keydown = (event: KeyboardEvent) => {
+      // ショートカット一覧など、全画面比較以外のdialogを開いている間は背後の候補を操作しない。
+      const dialogs = Array.from(document.querySelectorAll("dialog[open]"));
+      if (dialogs.some((dialog) => dialog !== dialogRef.current)) return;
       if (event.key === "Escape" && fullscreen) {
         event.preventDefault();
         setFullscreen(false);
@@ -262,7 +265,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       const key = event.key.toLowerCase();
-      const editing = target?.matches("input, textarea, select, [contenteditable='true']");
+      const editing = target?.closest("input, textarea, select, [contenteditable='true']") != null;
       if (!simple && key === "f" && !event.repeat && (!editing || fullscreen)) {
         event.preventDefault(); setFullscreen((current) => !current); return;
       }
