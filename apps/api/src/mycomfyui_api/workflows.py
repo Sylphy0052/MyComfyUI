@@ -341,14 +341,16 @@ async def register_graph_version(
     二重登録しないよう先に既存版を探す。
     """
 
+    # rollback後はORM属性が失効し、非同期セッションでは再読込できない。先に控える。
+    workflow_id = workflow.id
     digest = graph_validation.graph_sha256(graph)
-    existing = await _get_version(session, workflow.id, digest)
+    existing = await _get_version(session, workflow_id, digest)
     if existing is not None:
         raise GraphVersionConflict(existing.id)
 
     version = WorkflowVersion(
         id=schemas.new_id(),
-        workflow_id=workflow.id,
+        workflow_id=workflow_id,
         version=digest,
         template_sha256=None,
         variables=variables,
@@ -367,7 +369,7 @@ async def register_graph_version(
         # 既存版確認から書き込みまでの間に別リクエストが同じ内容を登録した場合、
         # UniqueConstraint違反になる。競合として再取得し、無ければそのまま送出する。
         await session.rollback()
-        existing_after_conflict = await _get_version(session, workflow.id, digest)
+        existing_after_conflict = await _get_version(session, workflow_id, digest)
         if existing_after_conflict is None:
             raise
         raise GraphVersionConflict(existing_after_conflict.id) from error
