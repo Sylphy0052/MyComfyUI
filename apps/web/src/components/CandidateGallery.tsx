@@ -31,6 +31,7 @@ interface Props {
   active?: boolean;
   comparisonActive?: boolean;
   onClearComparison?: () => void;
+  onDialogOpenChange?: (dialog: HTMLDialogElement | null) => void;
   /** 作品制作 (モードB) 向けの表示。比較・詳細・派生を隠し、採否だけを出す。 */
   simple?: boolean;
 }
@@ -138,7 +139,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true, comparisonActive = false, onClearComparison, simple = false }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
   const [thumbSize, setThumbSize] = useState<ThumbSize>("m");
   const [leftId, setLeftId] = useState<string | null>(null);
   const [rightId, setRightId] = useState<string | null>(null);
@@ -287,13 +288,33 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog) return;
+    if (!dialog) {
+      // 全画面を開いたまま候補が0件になるなどで<dialog>自体がアンマウントされた
+      // 場合。呼び出し側が切り離されたノードを指したままにならないよう、
+      // ここでも必ずnullを通知する。
+      onDialogOpenChange?.(null);
+      return;
+    }
     if (fullscreen && !dialog.open) {
       dialog.showModal();
       dialog.focus();
     }
     if (!fullscreen && dialog.open) dialog.close();
-  }, [fullscreen]);
+    // <dialog>のshowModal()はブラウザのtop layerに描画され、通常のDOM要素は
+    // z-indexに関わらずその下へ隠れる (#186)。全画面中だけdialog自身を通知先
+    // として渡し、呼び出し側でトースト表示先をportalできるようにする。
+    onDialogOpenChange?.(fullscreen ? dialog : null);
+    return () => {
+      // このeffectが再実行される前 (再レンダー・アンマウント問わず) に必ず
+      // 通知を落とす。dialog要素がアンマウントされて次回dialogRef.currentが
+      // nullになるケースも、このcleanupで確実にnullへ戻す。
+      onDialogOpenChange?.(null);
+    };
+    // candidates.length === 0 になると<dialog>ごと<EmptyState>へ差し替わり
+    // アンマウントされる (fullscreenの値自体は変わらない)。このeffectを
+    // 再実行させ、dialogRef.currentがnullになったことを検知するために
+    // candidates.lengthも依存に含める。
+  }, [fullscreen, onDialogOpenChange, candidates.length]);
 
   const downloadContactSheet = async () => {
     const selected = [left, right].filter((item): item is Artifact => item !== null);

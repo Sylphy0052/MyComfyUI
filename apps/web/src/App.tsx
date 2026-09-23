@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 
 import { ApiError, api } from "./api/client";
 import type {
@@ -171,6 +172,10 @@ export function App() {
   const [eventsConnected, setEventsConnected] = useState(false);
   const jobsRequestSequence = useRef(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  // 全画面A/B比較の<dialog>がtop layerで開いている間、通常DOMのToastRegionは
+  // z-indexに関わらず隠れる (#186)。開いているdialog要素をここへ受け取り、
+  // その中へToastRegionをportalして表示先を切り替える。
+  const [comparisonDialogEl, setComparisonDialogEl] = useState<HTMLDialogElement | null>(null);
   // ジョブ一覧を初めて取得した時点と、スコープ切替直後はnullに戻し、
   // 既存ジョブや無関係スコープのジョブを完了通知として出さないようにする。
   const previousJobStatesRef = useRef<Map<string, string> | null>(null);
@@ -1096,6 +1101,7 @@ export function App() {
                   active={shownView === "generate" && shownGenerationTab === "image"}
                   simple={isProduction}
                   comparisonActive={comparisonJobIds !== null}
+                  onDialogOpenChange={setComparisonDialogEl}
                   onClearComparison={() => {
                     comparisonRequestSequence.current += 1;
                     setComparisonJobIds(null);
@@ -1231,11 +1237,22 @@ export function App() {
         </div>
       )}
 
-      <ToastRegion
-        toasts={toasts}
-        onDismiss={dismissToast}
-        onNavigate={navigateToJob}
-      />
+      {comparisonDialogEl
+        ? createPortal(
+            <ToastRegion
+              toasts={toasts}
+              onDismiss={dismissToast}
+              onNavigate={navigateToJob}
+            />,
+            comparisonDialogEl,
+          )
+        : (
+          <ToastRegion
+            toasts={toasts}
+            onDismiss={dismissToast}
+            onNavigate={navigateToJob}
+          />
+        )}
     </div>
   );
 }
