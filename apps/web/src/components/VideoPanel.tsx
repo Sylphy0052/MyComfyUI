@@ -13,6 +13,7 @@ import type { ShotEnvelope } from "../api/aimedia";
 import {
   applyPlanPreset,
   planPresetBlocker,
+  planPresetKeys,
   usePlanPresetDefaults,
   type PlanPreset,
 } from "../state/productionPlan";
@@ -255,31 +256,33 @@ export function VideoPanel({
 
   const buildInputs = (): Record<string, unknown> | null => {
     if (useInheritedDefaults) return {};
+    // 計画のPresetが決める入力は送られないため、未入力でも止めない。
+    const fixed = planPresetKeys(planPreset, recipe, useInheritedDefaults);
     if (!mode) {
       setError("選んだRecipeのWorkflowテンプレートが未対応です。");
       return null;
     }
-    if (!prompt.trim()) {
+    if (!fixed.has("positive_prompt") && !prompt.trim()) {
       setError("プロンプトを入力してください。");
       return null;
     }
-    if (!Number.isFinite(seconds) || seconds <= 0) {
+    if (!fixed.has("length") && (!Number.isFinite(seconds) || seconds <= 0)) {
       setError("秒数は0より大きい数値で入力してください。");
       return null;
     }
     const length = framesFromSeconds(seconds);
     const width = Number.parseInt(widthStr, 10);
-    if (!Number.isFinite(width) || width <= 0) {
+    if (!fixed.has("width") && (!Number.isFinite(width) || width <= 0)) {
       setError("幅は正の整数で入力してください。");
       return null;
     }
     const height = Number.parseInt(heightStr, 10);
-    if (!Number.isFinite(height) || height <= 0) {
+    if (!fixed.has("height") && (!Number.isFinite(height) || height <= 0)) {
       setError("高さは正の整数で入力してください。");
       return null;
     }
     const seed = Number.parseInt(seedStr || "-1", 10);
-    if (!Number.isFinite(seed)) {
+    if (!fixed.has("seed") && !Number.isFinite(seed)) {
       setError("seedは整数で入力してください。");
       return null;
     }
@@ -295,36 +298,46 @@ export function VideoPanel({
     };
 
     if (mode === "ref2v") {
-      if (references.length < 1 || references.length > MAX_REFERENCES) {
+      if (
+        !fixed.has("references") &&
+        (references.length < 1 || references.length > MAX_REFERENCES)
+      ) {
         setError(`参照画像は1〜${MAX_REFERENCES}枚で指定してください。`);
         return null;
       }
       inputs.references = references.map((item) => item.source);
     } else {
       const firstFrameItem = firstFrame[0];
-      if (!firstFrameItem) {
+      if (!firstFrameItem && !fixed.has("first_frame")) {
         setError("開始フレームの画像を指定してください。");
         return null;
       }
-      inputs.first_frame = firstFrameItem.source;
+      if (firstFrameItem) inputs.first_frame = firstFrameItem.source;
     }
 
     if (audioMode === "external_voice") {
       const guideAudioItem = guideAudio[0];
-      if (!guideAudioItem) {
+      if (!guideAudioItem && !fixed.has("guide_audio")) {
         setError("ガイド音声を指定してください。");
         return null;
       }
       const guideFrameIdx = Number.parseInt(guideFrameIdxStr || "0", 10);
+      // 尺をPresetが決めるときはパネルの尺が使われないため、上限は確かめない。
+      const lengthKnown = !fixed.has("length");
       if (
-        !Number.isFinite(guideFrameIdx) ||
-        guideFrameIdx < 0 ||
-        guideFrameIdx >= length
+        !fixed.has("guide_frame_idx") &&
+        (!Number.isFinite(guideFrameIdx) ||
+          guideFrameIdx < 0 ||
+          (lengthKnown && guideFrameIdx >= length))
       ) {
-        setError(`guide_frame_idxは0以上${length}未満で指定してください。`);
+        setError(
+          lengthKnown
+            ? `guide_frame_idxは0以上${length}未満で指定してください。`
+            : "guide_frame_idxは0以上で指定してください。",
+        );
         return null;
       }
-      inputs.guide_audio = guideAudioItem.source;
+      if (guideAudioItem) inputs.guide_audio = guideAudioItem.source;
       inputs.guide_frame_idx = guideFrameIdx;
     }
 

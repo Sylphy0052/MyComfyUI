@@ -10,6 +10,7 @@ import type {
 import {
   applyPlanPreset,
   planPresetBlocker,
+  planPresetKeys,
   usePlanPresetDefaults,
   type PlanPreset,
 } from "../state/productionPlan";
@@ -209,7 +210,13 @@ export function ComposePanel({
 
   const buildInputs = (): Record<string, unknown> | null => {
     if (useInheritedDefaults) return {};
-    if (!selectedVideoArtifactId) {
+    // 計画のPresetが決める入力は送られないため、未入力でも止めない。
+    const fixed = planPresetKeys(
+      planPreset,
+      recipes.find((item) => item.id === recipeId),
+      useInheritedDefaults,
+    );
+    if (!fixed.has("video") && !selectedVideoArtifactId) {
       setError("合成する動画Artifactを選んでください。");
       return null;
     }
@@ -234,7 +241,7 @@ export function ComposePanel({
     }
 
     const inputs: Record<string, unknown> = {
-      video: { artifact_id: selectedVideoArtifactId },
+      ...(selectedVideoArtifactId ? { video: { artifact_id: selectedVideoArtifactId } } : {}),
       voices,
     };
 

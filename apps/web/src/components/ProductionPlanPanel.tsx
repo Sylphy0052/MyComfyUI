@@ -107,13 +107,19 @@ export function ProductionPlanPanel({
   }, [scene, canon, plan?.characters]);
 
   // 話者ごとの声。声の中身 (Voice Canon) は音声の工程でvoice_idごとに選ぶ。
+  // 同じIDのVoice Canonがあればその名前を出し、無ければvoice_idを出す。
   const voiceCast = useMemo(() => {
+    const voiceNames = new Map<string, string>();
+    for (const item of canon) {
+      if (item.kind === "voice" && item.display_name) voiceNames.set(item.canon_id, item.display_name);
+    }
     const cast = new Map<string, string>();
     for (const line of shot?.data.dialogue ?? []) {
-      cast.set(`${line.speaker}\u0000${line.voice_id}`, `${line.speaker}: ${line.voice_id}`);
+      const voice = voiceNames.get(line.voice_id) ?? line.voice_id;
+      cast.set(`${line.speaker}\u0000${line.voice_id}`, `${line.speaker}: ${voice}`);
     }
     return [...cast.values()];
-  }, [shot]);
+  }, [shot, canon]);
 
   if (!sceneId) return null;
 
