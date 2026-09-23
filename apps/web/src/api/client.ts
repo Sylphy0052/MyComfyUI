@@ -867,6 +867,11 @@ export const api = {
   assistImagePrompt: (payload: {
     instruction: string;
     provider_id?: AgentProviderId | null;
+    /** 添付する画像。画像に対応しないProviderを選ぶと AGENT_IMAGE_UNSUPPORTED で失敗する。 */
+    image?: { content_base64: string; media_type: string } | null;
+    /** 画像を添付したときに、AI が直す土台とする現在の prompt と negative。 */
+    current_positive_prompt?: string;
+    current_negative_prompt?: string;
   }) =>
     request<ImagePromptAssist>("/image-prompt-assists", {
       method: "POST",

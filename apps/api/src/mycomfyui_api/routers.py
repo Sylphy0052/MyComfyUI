@@ -3832,7 +3832,10 @@ async def _describe_agent_provider(
     describe = getattr(provider, "describe", None)
     if describe is None:
         return schemas.AgentProviderRead(
-            id=provider.id, label=provider.label, available=await provider.available()
+            id=provider.id,
+            label=provider.label,
+            available=await provider.available(),
+            supports_images=provider.supports_images,
         )
     available, status = await describe()
     backend = (
@@ -3849,6 +3852,7 @@ async def _describe_agent_provider(
         id=provider.id,
         label=provider.label,
         available=available,
+        supports_images=provider.supports_images,
         backend=backend,
     )
 
@@ -4494,6 +4498,28 @@ async def create_agent_proposal(
     return _proposal_read(proposal)
 
 
+def _decode_assist_image(
+    image: schemas.ImagePromptAssistImage,
+) -> agent_base.ProposalImage:
+    """プロンプト補完へ添付する画像を復号し、上限を確かめる。"""
+    limit = get_settings().agent_max_image_bytes
+    # 復号の前に文字数で弾く。base64は3バイトを4文字で表すため、文字数から上限を逆算する。
+    if len(image.content_base64) > (limit + 2) // 3 * 4:
+        raise _validation_error("添付画像が上限を超えています。", {"limit": limit})
+    try:
+        data = base64.b64decode(image.content_base64, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise _validation_error("content_base64を復号できません。") from error
+    if not data:
+        raise _validation_error("空の画像は添付できません。")
+    if len(data) > limit:
+        raise _validation_error(
+            "添付画像が上限を超えています。",
+            {"byte_size": len(data), "limit": limit},
+        )
+    return agent_base.ProposalImage(data=data, media_type=image.media_type)
+
+
 @router.post(
     "/image-prompt-assists",
     response_model=schemas.ImagePromptAssistRead,
@@ -4507,16 +4533,42 @@ async def assist_image_prompt(
     Providerへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。
     Job、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は
     利用者が明示的に投入するまで始まらない。
+
+    画像を添付した場合は、画像と現在のpromptを突き合わせて直した案を返す。画像に
+    対応しないProviderへは送らず、``AGENT_IMAGE_UNSUPPORTED``で理由を返す。
     """
     provider = _resolve_agent_provider(providers, payload.provider_id)
+    images: tuple[agent_base.ProposalImage, ...] = ()
+    if payload.image is not None:
+        if not provider.supports_images:
+            raise ApiError(
+                "AGENT_IMAGE_UNSUPPORTED",
+                f"{provider.label}は画像の入力に対応していません。"
+                "画像に対応するAIを選んでください。",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        images = (_decode_assist_image(payload.image),)
+    context = {
+        key: value
+        for key, value in (
+            ("current_positive_prompt", payload.current_positive_prompt),
+            ("current_negative_prompt", payload.current_negative_prompt),
+        )
+        if value.strip()
+    }
     request = agent_base.ProposalRequest(
-        kind="image_prompt", instruction=payload.instruction, context={}
+        kind="image_prompt",
+        instruction=payload.instruction,
+        context=context,
+        images=images,
     )
     try:
         result = await provider.propose(request)
-        output = proposals.validate_output("image_prompt", result.output)
     except agent_base.AgentError as error:
         raise _agent_error(error) from error
+    # Providerは検証とtag_line、positive_promptの組み立てを済ませて返す。ここで検証し
+    # 直すと、組み立てた派生項目が余計なキーとして拒否される。
+    output = result.output
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],
         tag_line=output.get("tag_line", ""),

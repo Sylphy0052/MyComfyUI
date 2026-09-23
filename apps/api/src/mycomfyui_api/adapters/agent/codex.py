@@ -11,6 +11,9 @@ APIキーをMyComfyUI側へ持たず、CLIの既存認証(`codex login`)をそ�
 - `--skip-git-repo-check`でGit repository外のcwdでも動かす。
 - cwdは提案ごとに作る空ディレクトリとする。リポジトリも`data_root`の他の領域も見せない。
 - 環境変数は`PATH`と`HOME`だけを渡す。`HOME`はCLIの既存認証(`~/.codex`)に必要なため残す。
+- 画像は提案ごとの作業ディレクトリへ書き出し、`--image`で添付する。`--image`は可変長
+  引数で、末尾のプロンプトの直前に置くとプロンプトまで画像として読まれて失敗する
+  (CLI 0.155.1で実測)。そのため他のオプションより前に置く。
 - 出力形式は`--output-schema`へ渡したJSON Schemaファイルで固定し、`-o`で最終応答だけを
   別ファイルへ書き出す。標準出力のJSONLイベント本文はログへ出さない。
 - Codexの`response_format`はOpenAIのstrict JSON Schemaを要求し、`properties`にある
@@ -52,6 +55,14 @@ from mycomfyui_api.settings import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 PROVIDER_ID = "codex"
+#: 添付画像を書き出すときの拡張子。CLIは拡張子で形式を判別する。
+IMAGE_SUFFIXES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+
 PROVIDER_LABEL = "Codex CLI"
 
 #: 応答から履歴へ残す実測値。認証情報も接続先も含まない項目だけを並べる。
@@ -77,6 +88,10 @@ class CodexProvider:
     def label(self) -> str:
         return PROVIDER_LABEL
 
+    @property
+    def supports_images(self) -> bool:
+        return True
+
     async def available(self) -> bool:
         """CLIを実行できるかだけを返す。認証状態はここでは確かめない。"""
         return self._executable() is not None
@@ -98,10 +113,12 @@ class CodexProvider:
         workspace: Path,
         schema_path: Path,
         output_path: Path,
+        image_paths: list[Path],
     ) -> list[str]:
-        argv = [
-            executable,
-            "exec",
+        argv = [executable, "exec"]
+        for image_path in image_paths:
+            argv.extend(["--image", str(image_path)])
+        argv += [
             "--sandbox",
             "read-only",
             "--skip-git-repo-check",
@@ -168,12 +185,23 @@ class CodexProvider:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         schema_path = workspace / "schema.json"
         output_path = workspace / "last-message.json"
-        schema_path.write_text(
-            json.dumps(_strict_schema(request.kind), ensure_ascii=False),
-            encoding="utf-8",
-        )
+        image_paths = [
+            workspace / f"image-{index}{IMAGE_SUFFIXES[image.media_type]}"
+            for index, image in enumerate(request.images)
+        ]
+        try:
+            schema_path.write_text(
+                json.dumps(_strict_schema(request.kind), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            for image_path, image in zip(image_paths, request.images, strict=True):
+                image_path.write_bytes(image.data)
+        except OSError as error:
+            raise AgentUnavailable("提案用の作業ファイルを書き込めません。") from error
         prompt = proposals.build_prompt(request)
-        argv = self._argv(executable, prompt, workspace, schema_path, output_path)
+        argv = self._argv(
+            executable, prompt, workspace, schema_path, output_path, image_paths
+        )
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,

@@ -554,19 +554,29 @@ def validate_output(kind: AgentProposalKind, payload: Any) -> dict[str, Any]:
     return data
 
 
+#: 画像を添付したときに本文へ足す説明。画像そのものは本文と別の経路でProviderへ渡す。
+IMAGE_DIRECTIVE = (
+    "## 添付画像\n"
+    "添付した画像は、対象の情報にある現在のpromptで生成した結果か、利用者が持ち込んだ"
+    "画像である。画像を見て利用者の指示と食い違う箇所を特定し、現在のpromptを土台に"
+    "その箇所だけを直したpromptを返す。直した理由はrationaleに書く。"
+)
+
+
 def build_prompt(request: ProposalRequest) -> str:
     """Providerへ渡す本文。コマンド行ではなく標準入力へ流す。"""
-    return "\n".join(
-        [
-            KIND_DIRECTIVES[request.kind],
-            "",
-            "## 利用者の指示",
-            request.instruction.strip() or "(指示なし)",
-            "",
-            "## 対象の情報",
-            json.dumps(request.context, ensure_ascii=False, indent=2),
-        ]
-    )
+    sections = [
+        KIND_DIRECTIVES[request.kind],
+        "",
+        "## 利用者の指示",
+        request.instruction.strip() or "(指示なし)",
+        "",
+        "## 対象の情報",
+        json.dumps(request.context, ensure_ascii=False, indent=2),
+    ]
+    if request.images:
+        sections.extend(["", IMAGE_DIRECTIVE])
+    return "\n".join(sections)
 
 
 def restrict_reference_candidates(

@@ -795,6 +795,9 @@ export interface paths {
          *     Providerへ渡す出力Schemaと応答検証は既存の``image_prompt``提案と共有する。
          *     Job、Artifact、Proposal履歴を作らないため、この結果をフォームへ反映しても生成は
          *     利用者が明示的に投入するまで始まらない。
+         *
+         *     画像を添付した場合は、画像と現在のpromptを突き合わせて直した案を返す。画像に
+         *     対応しないProviderへは送らず、``AGENT_IMAGE_UNSUPPORTED``で理由を返す。
          */
         post: operations["assist_image_prompt_api_v1_image_prompt_assists_post"];
         delete?: never;
@@ -2229,6 +2232,11 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+            /**
+             * Supports Images
+             * @default false
+             */
+            supports_images: boolean;
         };
         /** ApprovalLogCreate */
         ApprovalLogCreate: {
@@ -3081,12 +3089,35 @@ export interface components {
         /**
          * ImagePromptAssistCreate
          * @description SceneやShotに紐付けない画像prompt補完の要求。
+         *
+         *     `image`を渡すと、画像と現在のpromptを突き合わせて直した案を返す。
          */
         ImagePromptAssistCreate: {
+            /**
+             * Current Negative Prompt
+             * @default
+             */
+            current_negative_prompt: string;
+            /**
+             * Current Positive Prompt
+             * @default
+             */
+            current_positive_prompt: string;
+            image?: components["schemas"]["ImagePromptAssistImage"] | null;
             /** Instruction */
             instruction: string;
             /** Provider Id */
             provider_id?: ("claude_code" | "codex" | "qwen" | "stub") | null;
+        };
+        /**
+         * ImagePromptAssistImage
+         * @description プロンプト補完へ添付する画像。生成結果か利用者が持ち込んだ画像を1枚渡す。
+         */
+        ImagePromptAssistImage: {
+            /** Content Base64 */
+            content_base64: string;
+            /** Media Type */
+            media_type: string;
         };
         /**
          * ImagePromptAssistRead
