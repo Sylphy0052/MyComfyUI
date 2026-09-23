@@ -185,15 +185,19 @@ class CodexProvider:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         schema_path = workspace / "schema.json"
         output_path = workspace / "last-message.json"
-        schema_path.write_text(
-            json.dumps(_strict_schema(request.kind), ensure_ascii=False),
-            encoding="utf-8",
-        )
-        image_paths = []
-        for index, image in enumerate(request.images):
-            image_path = workspace / f"image-{index}{IMAGE_SUFFIXES[image.media_type]}"
-            image_path.write_bytes(image.data)
-            image_paths.append(image_path)
+        image_paths = [
+            workspace / f"image-{index}{IMAGE_SUFFIXES[image.media_type]}"
+            for index, image in enumerate(request.images)
+        ]
+        try:
+            schema_path.write_text(
+                json.dumps(_strict_schema(request.kind), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            for image_path, image in zip(image_paths, request.images, strict=True):
+                image_path.write_bytes(image.data)
+        except OSError as error:
+            raise AgentUnavailable("提案用の作業ファイルを書き込めません。") from error
         prompt = proposals.build_prompt(request)
         argv = self._argv(
             executable, prompt, workspace, schema_path, output_path, image_paths
