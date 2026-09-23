@@ -57,8 +57,18 @@ IMG2IMG_TEMPLATE = "anima_img2img"
 INPAINT_TEMPLATE = "anima_inpaint"
 CONTROLNET_TEMPLATE = "sd15_controlnet"
 UPSCALE_TEMPLATE = "image_upscale"
+#: img2imgではなくtxt2imgに元画像を参照として注入する派生(Issue #159)。
+REF_SIGLIP_TEMPLATE = "anima_ref_siglip"
+REF_INCONTEXT_TEMPLATE = "anima_ref_incontext"
 DERIVATION_TEMPLATES = frozenset(
-    {IMG2IMG_TEMPLATE, INPAINT_TEMPLATE, CONTROLNET_TEMPLATE, UPSCALE_TEMPLATE}
+    {
+        IMG2IMG_TEMPLATE,
+        INPAINT_TEMPLATE,
+        CONTROLNET_TEMPLATE,
+        UPSCALE_TEMPLATE,
+        REF_SIGLIP_TEMPLATE,
+        REF_INCONTEXT_TEMPLATE,
+    }
 )
 
 

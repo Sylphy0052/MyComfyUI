@@ -1,0 +1,27 @@
+{
+  "60": {"class_type": "UNETLoader", "inputs": {"unet_name": "chosenMixAnima_v10.safetensors", "weight_dtype": "default"}},
+  "61": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen_3_06b_base.safetensors", "type": "stable_diffusion"}},
+  "62": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_vae.safetensors"}},
+  "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["61", 0]}},
+  "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["61", 0]}},
+  "5": {"class_type": "EmptyLatentImage", "inputs": {"width": 896, "height": 1344, "batch_size": 1}},
+  "10": {"class_type": "LoadImage", "inputs": {"image": "input.png"}},
+  "13": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["60", 0], "lora_name": "anima-incontext-character.safetensors", "strength_model": 1.0}},
+  "14": {"class_type": "AnimaRefEncode", "inputs": {"vae": ["62", 0], "image": ["10", 0], "target_width": 896, "target_height": 1344}},
+  "15": {
+    "class_type": "AnimaInContextApply",
+    "inputs": {
+      "model": ["13", 0],
+      "ref_latent": ["14", 0],
+      "strength": 1.0,
+      "start_percent": 0.0,
+      "end_percent": 1.0,
+      "cond_only": true,
+      "fit_mode": "pad",
+      "ref_timestep": 0.0
+    }
+  },
+  "3": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 30, "cfg": 4.5, "sampler_name": "euler_ancestral", "scheduler": "normal", "denoise": 1.0, "model": ["15", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+  "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["62", 0]}},
+  "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "mycomfyui", "images": ["8", 0]}}
+}

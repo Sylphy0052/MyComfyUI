@@ -267,6 +267,8 @@ IMAGE_IMG2IMG_RECIPE_NAME = "Anima img2img"
 IMAGE_INPAINT_RECIPE_NAME = "Anima inpaint"
 IMAGE_UPSCALE_RECIPE_NAME = "画像アップスケール"
 IMAGE_CONTROLNET_RECIPE_NAME = "SD1.5 参照画像制御(ControlNet)"
+IMAGE_REF_SIGLIP_RECIPE_NAME = "Anima 参照 ポーズ・表情"
+IMAGE_REF_INCONTEXT_RECIPE_NAME = "Anima 参照 衣装"
 
 _IMAGE_MODEL_SCHEMA: dict[str, Any] = {
     name: dict(DEFAULT_INPUT_SCHEMA[name])
@@ -424,6 +426,78 @@ IMAGE_CONTROLNET_DEFAULTS: dict[str, Any] = {
     "control_end": 1.0,
     "canny_low": 0.4,
     "canny_high": 0.8,
+}
+
+#: img2imgではなくtxt2imgに元画像を参照として注入する派生(Issue #159)の共通入力欄。
+#: denoise/mask/controlnetの語を持たず、代わりに参照の強さを「参照強度」として出す。
+_IMAGE_REF_SCHEMA: dict[str, Any] = {
+    **_IMAGE_MODEL_SCHEMA,
+    "source_image": {
+        "type": "object",
+        "required": True,
+        "label": "元画像",
+        "control": "artifact",
+    },
+    "positive_prompt": dict(DEFAULT_INPUT_SCHEMA["positive_prompt"]),
+    "negative_prompt": dict(DEFAULT_INPUT_SCHEMA["negative_prompt"]),
+    "reference_strength": {
+        "type": "number",
+        "label": "参照強度",
+        "control": "number",
+        "help": "元画像をどれだけ強く反映するか。0〜2の範囲。",
+    },
+    "width": dict(DEFAULT_INPUT_SCHEMA["width"]),
+    "height": dict(DEFAULT_INPUT_SCHEMA["height"]),
+    "steps": dict(DEFAULT_INPUT_SCHEMA["steps"]),
+    "cfg": dict(DEFAULT_INPUT_SCHEMA["cfg"]),
+    "seed": dict(DEFAULT_INPUT_SCHEMA["seed"]),
+}
+_IMAGE_REF_DEFAULTS: dict[str, Any] = {
+    "unet_name": DEFAULT_VALUES["unet_name"],
+    "clip_name": DEFAULT_VALUES["clip_name"],
+    "vae_name": DEFAULT_VALUES["vae_name"],
+    "filename_prefix": DEFAULT_VALUES["filename_prefix"],
+    "negative_prompt": DEFAULT_VALUES["negative_prompt"],
+    "width": 896,
+    "height": 1344,
+    "steps": 30,
+    "cfg": 4.5,
+    "sampler_name": "euler_ancestral",
+    "scheduler": "normal",
+    "seed": workflow_module.AUTO_SEED,
+}
+
+#: SigLIP2 Character Reference(`AnimaIPAdapterLoader`)。ポーズ・表情を変えるときの既定
+#: 強度は検証値(`novel-writer/検証_reference/029_final_synthesis/README.md:20-25`)に
+#: 合わせて0.5とする。
+IMAGE_REF_SIGLIP_SCHEMA: dict[str, Any] = {
+    **_IMAGE_REF_SCHEMA,
+    "ip_adapter_name": {
+        "type": "string",
+        "label": "IPAdapterモデル",
+        "control": "model",
+    },
+}
+IMAGE_REF_SIGLIP_DEFAULTS: dict[str, Any] = {
+    **_IMAGE_REF_DEFAULTS,
+    "ip_adapter_name": "ip_adapter-Character_Reference-10.safetensors",
+    "reference_strength": 0.5,
+}
+
+#: Anima In-Context Character(`LoraLoaderModelOnly`+`AnimaRefEncode`+
+#: `AnimaInContextApply`)。衣装だけを変えるときの既定強度は検証値に合わせて1.0とする。
+IMAGE_REF_INCONTEXT_SCHEMA: dict[str, Any] = {
+    **_IMAGE_REF_SCHEMA,
+    "lora_name": {
+        "type": "string",
+        "label": "LoRAモデル",
+        "control": "model",
+    },
+}
+IMAGE_REF_INCONTEXT_DEFAULTS: dict[str, Any] = {
+    **_IMAGE_REF_DEFAULTS,
+    "lora_name": "anima-incontext-character.safetensors",
+    "reference_strength": 1.0,
 }
 
 #: H3の共通の入力欄。参照画像と開始フレームだけがテンプレートごとに変わる。
@@ -657,6 +731,20 @@ TEMPLATE_RECIPES: tuple[tuple[str, str, str, dict[str, Any], dict[str, Any]], ..
         "sd15_controlnet",
         IMAGE_CONTROLNET_SCHEMA,
         IMAGE_CONTROLNET_DEFAULTS,
+    ),
+    (
+        IMAGE_REF_SIGLIP_RECIPE_NAME,
+        "image",
+        "anima_ref_siglip",
+        IMAGE_REF_SIGLIP_SCHEMA,
+        IMAGE_REF_SIGLIP_DEFAULTS,
+    ),
+    (
+        IMAGE_REF_INCONTEXT_RECIPE_NAME,
+        "image",
+        "anima_ref_incontext",
+        IMAGE_REF_INCONTEXT_SCHEMA,
+        IMAGE_REF_INCONTEXT_DEFAULTS,
     ),
     (
         VIDEO_REF2V_RECIPE_NAME,

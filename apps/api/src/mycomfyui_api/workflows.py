@@ -44,6 +44,8 @@ _COMFYUI_KINDS: dict[str, str] = {
     "anima_txt2img": "image",
     "anima_img2img": "image",
     "anima_inpaint": "image",
+    "anima_ref_siglip": "image",
+    "anima_ref_incontext": "image",
     "sd15_controlnet": "image",
     "image_upscale": "image",
     "minimax_h3_ref2v": "video",

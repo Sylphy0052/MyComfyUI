@@ -601,6 +601,158 @@ ACE_STEP_BGM = WorkflowBinding(
 )
 
 
+def _anima_ref_common_nodes() -> dict[str, NodeRef]:
+    """参照注入系(SigLIP/In-Context)で共通のtxt2img骨格。
+
+    img2imgと違い元画像をVAEEncodeへは繋がず、EmptyLatentImageからのtxt2imgに
+    参照だけを注入する(Issue #159実装計画の方針1。採用値の出典は
+    novel-writerの`検証_reference/029_final_synthesis/README.md:20-25`)。
+    """
+    return {
+        "unet_loader": NodeRef("60", "UNETLoader", ("unet_name", "weight_dtype")),
+        "clip_loader": NodeRef("61", "CLIPLoader", ("clip_name", "type")),
+        "vae_loader": NodeRef("62", "VAELoader", ("vae_name",)),
+        "positive_prompt": NodeRef("6", "CLIPTextEncode", ("text",)),
+        "negative_prompt": NodeRef("7", "CLIPTextEncode", ("text",)),
+        "latent": NodeRef("5", "EmptyLatentImage", ("width", "height", "batch_size")),
+        "source_image": NodeRef("10", "LoadImage", ("image",)),
+        "ksampler": NodeRef(
+            "3",
+            "KSampler",
+            ("seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"),
+        ),
+        "vae_decode": NodeRef("8", "VAEDecode", ()),
+        "save_image": NodeRef("9", "SaveImage", ("filename_prefix",)),
+    }
+
+
+def _anima_ref_common_variables() -> dict[str, VariableRef]:
+    return {
+        "positive_prompt": VariableRef("positive_prompt", "text", "str", required=True),
+        "negative_prompt": VariableRef("negative_prompt", "text", "str"),
+        "source_image": VariableRef(
+            "source_image", "image", "image_name", required=True
+        ),
+        "seed": VariableRef("ksampler", "seed", "seed"),
+        "steps": VariableRef("ksampler", "steps", "sampling_steps"),
+        "cfg": VariableRef("ksampler", "cfg", "guidance_scale"),
+        "sampler_name": VariableRef("ksampler", "sampler_name", "str"),
+        "scheduler": VariableRef("ksampler", "scheduler", "str"),
+        "width": VariableRef("latent", "width", "positive_int"),
+        "height": VariableRef("latent", "height", "positive_int"),
+        "unet_name": VariableRef("unet_loader", "unet_name", "str", required=True),
+        "clip_name": VariableRef("clip_loader", "clip_name", "str", required=True),
+        "vae_name": VariableRef("vae_loader", "vae_name", "str", required=True),
+        "filename_prefix": VariableRef("save_image", "filename_prefix", "file_prefix"),
+    }
+
+
+ANIMA_REF_SIGLIP = WorkflowBinding(
+    name="anima_ref_siglip",
+    nodes={
+        **_anima_ref_common_nodes(),
+        "ip_adapter_loader": NodeRef(
+            "13", "AnimaIPAdapterLoader", ("ip_adapter_name", "auto_download")
+        ),
+        "ip_adapter_apply": NodeRef(
+            "14",
+            "AnimaIPAdapterApply",
+            (
+                "strength",
+                "ref_image_size",
+                "siglip_layer",
+                "ip_cfg_scale",
+                "ip_cfg_separate",
+                "gray_null",
+                "use_lora",
+            ),
+        ),
+    },
+    links=(
+        LinkRef("positive_prompt", "clip", "clip_loader"),
+        LinkRef("negative_prompt", "clip", "clip_loader"),
+        LinkRef("ip_adapter_apply", "model", "unet_loader"),
+        LinkRef("ip_adapter_apply", "ip_adapter", "ip_adapter_loader"),
+        LinkRef("ip_adapter_apply", "ref_image", "source_image"),
+        LinkRef("ksampler", "model", "ip_adapter_apply"),
+        LinkRef("ksampler", "positive", "positive_prompt"),
+        LinkRef("ksampler", "negative", "negative_prompt"),
+        LinkRef("ksampler", "latent_image", "latent"),
+        LinkRef("vae_decode", "samples", "ksampler"),
+        LinkRef("vae_decode", "vae", "vae_loader"),
+        LinkRef("save_image", "images", "vae_decode"),
+    ),
+    variables={
+        **_anima_ref_common_variables(),
+        "reference_strength": VariableRef(
+            "ip_adapter_apply", "strength", "reference_strength"
+        ),
+        "ip_adapter_name": VariableRef(
+            "ip_adapter_loader", "ip_adapter_name", "str", required=True
+        ),
+    },
+    model_slots=(
+        *_ANIMA_MODEL_SLOTS,
+        ModelSlot("ip_adapter_name", "AnimaIPAdapterLoader", "ip_adapter_name"),
+    ),
+    prompt_variable="positive_prompt",
+)
+
+
+ANIMA_REF_INCONTEXT = WorkflowBinding(
+    name="anima_ref_incontext",
+    nodes={
+        **_anima_ref_common_nodes(),
+        "lora_loader": NodeRef(
+            "13", "LoraLoaderModelOnly", ("lora_name", "strength_model")
+        ),
+        "ref_encode": NodeRef(
+            "14", "AnimaRefEncode", ("target_width", "target_height")
+        ),
+        "incontext_apply": NodeRef(
+            "15",
+            "AnimaInContextApply",
+            (
+                "strength",
+                "start_percent",
+                "end_percent",
+                "cond_only",
+                "fit_mode",
+                "ref_timestep",
+            ),
+        ),
+    },
+    links=(
+        LinkRef("positive_prompt", "clip", "clip_loader"),
+        LinkRef("negative_prompt", "clip", "clip_loader"),
+        LinkRef("lora_loader", "model", "unet_loader"),
+        LinkRef("ref_encode", "vae", "vae_loader"),
+        LinkRef("ref_encode", "image", "source_image"),
+        LinkRef("incontext_apply", "model", "lora_loader"),
+        LinkRef("incontext_apply", "ref_latent", "ref_encode"),
+        LinkRef("ksampler", "model", "incontext_apply"),
+        LinkRef("ksampler", "positive", "positive_prompt"),
+        LinkRef("ksampler", "negative", "negative_prompt"),
+        LinkRef("ksampler", "latent_image", "latent"),
+        LinkRef("vae_decode", "samples", "ksampler"),
+        LinkRef("vae_decode", "vae", "vae_loader"),
+        LinkRef("save_image", "images", "vae_decode"),
+    ),
+    variables={
+        **_anima_ref_common_variables(),
+        "reference_strength": VariableRef(
+            "incontext_apply", "strength", "reference_strength"
+        ),
+        "lora_name": VariableRef("lora_loader", "lora_name", "str", required=True),
+    },
+    model_slots=(
+        *_ANIMA_MODEL_SLOTS,
+        ModelSlot("lora_name", "LoraLoaderModelOnly", "lora_name"),
+    ),
+    prompt_variable="positive_prompt",
+)
+
+
 #: 実行を許可するテンプレート。利用者入力から任意のJSONを実行させないためのallowlist。
 ALLOWED_TEMPLATES: dict[str, WorkflowBinding] = {
     binding.name: binding
@@ -608,6 +760,8 @@ ALLOWED_TEMPLATES: dict[str, WorkflowBinding] = {
         ANIMA_TXT2IMG,
         ANIMA_IMG2IMG,
         ANIMA_INPAINT,
+        ANIMA_REF_SIGLIP,
+        ANIMA_REF_INCONTEXT,
         SD15_CONTROLNET,
         IMAGE_UPSCALE,
         MINIMAX_H3_REF2V,
@@ -772,9 +926,16 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
         if not minimum <= value <= maximum:
             raise WorkflowError(f"{name}は{minimum}以上{maximum}以下で指定します。")
         return value
-    if value_type in ("guidance_scale", "control_strength"):
+    if value_type in ("guidance_scale", "control_strength", "reference_strength"):
+        # 同じ「強さ」でもノードごとに意味が違うため、値の種別を分けて上限も変える。
+        # reference_strengthはAnimaのIPAdapter/In-Context参照注入で、検証済みの採用値
+        # (0.5〜1.5)を大きく外れない範囲(0〜2)だけを許す。
         number = _finite_number(name, value)
-        maximum = 100.0 if value_type == "guidance_scale" else 10.0
+        maximum = {
+            "guidance_scale": 100.0,
+            "control_strength": 10.0,
+            "reference_strength": 2.0,
+        }[value_type]
         if not 0 < number <= maximum:
             raise WorkflowError(f"{name}は0より大きく{maximum}以下で指定します。")
         return number
