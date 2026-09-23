@@ -31,21 +31,21 @@ export function ToastRegion({
 
   return (
     <div className="toast-region" aria-live="polite">
-      {toasts.map((toast) => (
+      {toasts.map(({ action, ...toast }) => (
         <Toast
           key={toast.id}
           tone={toast.tone}
           onDismiss={() => onDismiss(toast.id)}
           action={
-            toast.action && (
+            action && (
               <Button
                 variant="ghost"
                 onClick={() => {
                   onDismiss(toast.id);
-                  toast.action!.onAction();
+                  action.onAction();
                 }}
               >
-                {toast.action.label}
+                {action.label}
               </Button>
             )
           }

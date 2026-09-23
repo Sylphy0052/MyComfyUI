@@ -365,6 +365,8 @@ export function App() {
   // 既存ジョブや無関係スコープのジョブを完了通知として出さないようにする。
   const previousJobStatesRef = useRef<Map<string, string> | null>(null);
   const toastTimersRef = useRef<Set<number>>(new Set());
+  // group付きで表示中のトーストのタイマー。同じgroupで置き換えたとき、古い方を止める。
+  const groupToastTimersRef = useRef<Map<string, number>>(new Map());
   const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
@@ -375,12 +377,13 @@ export function App() {
       const id = `notice:${++toastSequenceRef.current}`;
       // 閉じる前の連打で同じ取り消しが二重に走らないよう、1回だけ通す。
       let isActionUsed = false;
-      const action = notice.action && {
-        label: notice.action.label,
+      const noticeAction = notice.action;
+      const action = noticeAction && {
+        label: noticeAction.label,
         onAction: () => {
           if (isActionUsed) return;
           isActionUsed = true;
-          notice.action!.onAction().catch((cause: unknown) => {
+          noticeAction.onAction().catch((cause: unknown) => {
             notify({ tone: "danger", message: `取り消せませんでした: ${describe(cause)}` });
           });
         },
@@ -391,15 +394,26 @@ export function App() {
         ),
         { id, tone: notice.tone, message: notice.message, group: notice.group, action },
       ]);
+      const group = notice.group;
+      const replacedTimerId = group ? groupToastTimersRef.current.get(group) : undefined;
+      if (group && replacedTimerId !== undefined) {
+        window.clearTimeout(replacedTimerId);
+        toastTimersRef.current.delete(replacedTimerId);
+        groupToastTimersRef.current.delete(group);
+      }
       if (notice.tone === "danger") return;
       const timerId = window.setTimeout(
         () => {
           toastTimersRef.current.delete(timerId);
+          if (group && groupToastTimersRef.current.get(group) === timerId) {
+            groupToastTimersRef.current.delete(group);
+          }
           dismissToast(id);
         },
         action ? TOAST_UNDO_TTL_MS : TOAST_SUCCESS_TTL_MS,
       );
       toastTimersRef.current.add(timerId);
+      if (group) groupToastTimersRef.current.set(group, timerId);
     },
     [dismissToast],
   );
@@ -1322,14 +1336,24 @@ export function App() {
     });
   };
 
+  // 更新中は同じArtifactの判定操作を止める。取り消しも同じ扱いにし、
+  // 2つのPATCHが競合して表示とDBがずれないようにする。
+  const applyDecisionWhileBusy = async (artifactId: string, decision: ArtifactDecision) => {
+    setBusyArtifactId(artifactId);
+    try {
+      await applyDecision(artifactId, decision);
+    } finally {
+      setBusyArtifactId((current) => (current === artifactId ? null : current));
+    }
+  };
+
   const decide = async (artifactId: string, decision: ArtifactDecision) => {
     const previous = Object.values(artifactsByJob)
       .flat()
       .find((artifact) => artifact.id === artifactId)?.decision;
-    setBusyArtifactId(artifactId);
     setError(null);
     try {
-      await applyDecision(artifactId, decision);
+      await applyDecisionWhileBusy(artifactId, decision);
       if (previous && previous !== decision) {
         notify({
           tone: "success",
@@ -1337,14 +1361,12 @@ export function App() {
           group: "decision",
           action: {
             label: "取り消す",
-            onAction: () => applyDecision(artifactId, previous),
+            onAction: () => applyDecisionWhileBusy(artifactId, previous),
           },
         });
       }
     } catch (cause) {
       setError(describe(cause));
-    } finally {
-      setBusyArtifactId(null);
     }
   };
 

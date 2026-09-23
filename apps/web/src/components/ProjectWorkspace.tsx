@@ -263,10 +263,21 @@ export function ProjectWorkspace({
             ? {
                 label: "取り消す",
                 onAction: async () => {
-                  await api.restoreProject(project.id);
-                  await refresh();
-                  setFocusedId(project.id);
-                  if (wasSelected) onRestoreSelection(project.id);
+                  setBusy(true);
+                  try {
+                    await api.restoreProject(project.id);
+                    // 復元は済んでいるので、一覧の取り直しの失敗は取り消しの失敗として扱わない。
+                    // 取り消しの失敗として出すと、もう一度押されて409になる。
+                    try {
+                      await refresh();
+                    } catch (cause) {
+                      setActionError(`取り消しましたが、一覧を更新できませんでした: ${describe(cause)}`);
+                    }
+                    setFocusedId(project.id);
+                    if (wasSelected) onRestoreSelection(project.id);
+                  } finally {
+                    setBusy(false);
+                  }
                 },
               }
             : undefined,
