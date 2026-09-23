@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { api, type LookProfile } from "../api/client";
+import { api, type LookProfile, type ProjectCharacterProfile } from "../api/client";
 import type { CanonDescriptor, SceneEnvelope, ShotEnvelope } from "../api/aimedia";
 import {
   PRESET_SLOTS,
@@ -12,6 +12,7 @@ import {
   type PresetSlotId,
   type ProductionPlan,
 } from "../state/productionPlan";
+import { findLocalCharacter, type SceneOutfits } from "../state/characterPrompt";
 import { Button } from "./ui/Button";
 
 /** ai-media の場面の `time_of_day` の値。 */
@@ -38,13 +39,29 @@ interface Props {
   plan: ProductionPlan | null;
   onPlanChange: (plan: ProductionPlan | null) => void;
   profiles: LookProfile[];
+  /** Projectのローカルキャラクター定義。衣装を持つキャラクターだけ場面ごとの衣装選択を出す。 */
+  localCharacters: ProjectCharacterProfile[];
+  /** `scene_outfits`: `{ [sceneId]: { [characterId]: outfitId } }`。 */
+  sceneOutfits: SceneOutfits;
+  onOutfitChange: (characterId: string, outfitId: string | null) => void;
 }
 
 /**
  * 作品制作の計画を組み、開始前に確認・修正する (F-07)。
  * 開始後は1行の要約に畳み、「組み直す」で未開始へ戻せる。
  */
-export function ProductionPlanPanel({ projectId, sceneId, scene, shot, plan, onPlanChange, profiles }: Props) {
+export function ProductionPlanPanel({
+  projectId,
+  sceneId,
+  scene,
+  shot,
+  plan,
+  onPlanChange,
+  profiles,
+  localCharacters,
+  sceneOutfits,
+  onOutfitChange,
+}: Props) {
   const [brief, setBrief] = useState("");
   const [canon, setCanon] = useState<CanonDescriptor[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -221,16 +238,37 @@ export function ProductionPlanPanel({ projectId, sceneId, scene, shot, plan, onP
             <li>
               <strong>キャラクター</strong>
               {characterOptions.length === 0 && <span className="muted">候補がありません。</span>}
-              {characterOptions.map((item) => (
-                <label key={item.id} className="production-plan-check">
-                  <input
-                    type="checkbox"
-                    checked={plan.characters.some((current) => current.id === item.id)}
-                    onChange={(event) => toggleCharacter(item, event.target.checked)}
-                  />
-                  {item.name}
-                </label>
-              ))}
+              {characterOptions.map((item) => {
+                const checked = plan.characters.some((current) => current.id === item.id);
+                const localCharacter = findLocalCharacter(item, localCharacters);
+                const outfits = localCharacter?.outfits ?? [];
+                return (
+                  <div key={item.id} className="production-plan-check">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => toggleCharacter(item, event.target.checked)}
+                      />
+                      {item.name}
+                    </label>
+                    {checked && localCharacter && outfits.length > 0 && sceneId && (
+                      <select
+                        aria-label={`${item.name}の衣装`}
+                        value={sceneOutfits[sceneId]?.[localCharacter.id] ?? ""}
+                        onChange={(event) => onOutfitChange(localCharacter.id, event.target.value || null)}
+                      >
+                        <option value="">既定の衣装</option>
+                        {outfits.map((outfit) => (
+                          <option key={outfit.id} value={outfit.id}>
+                            {outfit.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
             </li>
             <li>
               <strong>音声・BGM</strong>

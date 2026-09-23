@@ -331,6 +331,14 @@ class ProjectReferenceImage(ApiModel):
         return media_type
 
 
+class ProjectCharacterOutfit(ApiModel):
+    """キャラクターの衣装。`prompt`は衣装を指定する生成プロンプトの断片。"""
+
+    id: ResourceId
+    name: ProjectName
+    prompt: str = Field(default="", max_length=2_000)
+
+
 class ProjectCharacterProfile(ApiModel):
     id: ResourceId
     name: ProjectName
@@ -338,6 +346,12 @@ class ProjectCharacterProfile(ApiModel):
     reference_images: list[ProjectReferenceImage] = Field(
         default_factory=list, max_length=20
     )
+    appearance: str | None = Field(default=None, max_length=2_000)
+    voice: str | None = Field(default=None, max_length=2_000)
+    outfits: list[ProjectCharacterOutfit] = Field(default_factory=list, max_length=20)
+    default_outfit_id: ResourceId | None = None
+    # 定義を最後に変えた時刻。保存時にサーバーが付け、クライアントの値は使わない。
+    updated_at: str | None = None
 
     @field_validator("tags")
     @classmethod
@@ -356,6 +370,24 @@ class ProjectCharacterProfile(ApiModel):
             raise ValueError("同じ参照画像を重複して登録できません。")
         return value
 
+    @field_validator("outfits")
+    @classmethod
+    def _unique_outfits(
+        cls, value: list[ProjectCharacterOutfit]
+    ) -> list[ProjectCharacterOutfit]:
+        ids = [item.id for item in value]
+        if len(set(ids)) != len(ids):
+            raise ValueError("衣装のIDを重複させられません。")
+        return value
+
+    @model_validator(mode="after")
+    def _default_outfit_exists(self) -> "ProjectCharacterProfile":
+        if self.default_outfit_id is not None and self.default_outfit_id not in {
+            item.id for item in self.outfits
+        }:
+            raise ValueError("既定の衣装は登録済みの衣装から選んでください。")
+        return self
+
 
 class ProjectLocalOverrides(ApiModel):
     characters: list[ProjectCharacterProfile] = Field(
@@ -363,6 +395,8 @@ class ProjectLocalOverrides(ApiModel):
     )
     scene_prompts: dict[str, str] = Field(default_factory=dict)
     shot_prompts: dict[str, str] = Field(default_factory=dict)
+    # 場面ごとに選んだ衣装。{scene_id: {character_id: outfit_id}}。
+    scene_outfits: dict[str, dict[str, str]] = Field(default_factory=dict)
 
     @field_validator("characters")
     @classmethod
@@ -373,6 +407,25 @@ class ProjectLocalOverrides(ApiModel):
         if len(set(ids)) != len(ids):
             raise ValueError("人物・キャラクターのIDを重複させられません。")
         return value
+
+    @model_validator(mode="after")
+    def _scene_outfits_exist(self) -> "ProjectLocalOverrides":
+        if len(self.scene_outfits) > 10_000:
+            raise ValueError("場面の衣装指定を10,000件より多く登録できません。")
+        outfits = {
+            character.id: {outfit.id for outfit in character.outfits}
+            for character in self.characters
+        }
+        for scene_id, selection in self.scene_outfits.items():
+            if not scene_id or len(scene_id) > 128:
+                raise ValueError("Scene IDは1〜128文字で指定してください。")
+            for character_id, outfit_id in selection.items():
+                if outfit_id not in outfits.get(character_id, set()):
+                    raise ValueError(
+                        f"場面{scene_id}の衣装指定が登録済みの衣装を指していません: "
+                        f"{character_id} / {outfit_id}"
+                    )
+        return self
 
     @field_validator("scene_prompts", "shot_prompts")
     @classmethod

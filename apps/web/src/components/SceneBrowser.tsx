@@ -56,6 +56,7 @@ interface Props {
   projectId: string | null;
   onSelectProject: (projectId: string | null) => void;
   onManageProjects: () => void;
+  onManageCharacters: () => void;
   onStructureChanged: () => void;
   scenes: SceneSummary[];
   sceneId: string | null;
@@ -76,7 +77,8 @@ type Editor = "create-scene" | "edit-scene" | "create-shot" | "edit-shot" | null
 
 export function SceneBrowser(props: Props) {
   const {
-    projects, projectId, onSelectProject, onManageProjects, onStructureChanged,
+    projects, projectId, onSelectProject, onManageProjects, onManageCharacters,
+    onStructureChanged,
     scenes, sceneId, onSelectScene, scene, shots, shotId, onSelectShot, shot,
     simple = false,
   } = props;
@@ -192,6 +194,7 @@ export function SceneBrowser(props: Props) {
             projectId={projectId}
             sceneId={sceneId}
             shotId={shotId}
+            onOpenCharacters={onManageCharacters}
           />
         </div>
       )}

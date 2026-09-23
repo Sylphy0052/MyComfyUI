@@ -7,8 +7,6 @@ import type {
   ProjectLocalOverrides,
   ProjectReferenceImage,
 } from "../api/client";
-import { MediaPicker } from "./MediaPicker";
-import type { PickedMedia } from "./MediaPicker";
 import { EmptyState } from "./ui/EmptyState";
 
 /** Sceneのstructure-panelへ移り、フォーカスして選ばせる。 */
@@ -21,13 +19,6 @@ function focusSceneSection(): void {
 function describe(error: unknown): string {
   if (error instanceof ApiError) return `${error.message}(${error.code})`;
   return String(error);
-}
-
-interface CharacterDraft {
-  id: string;
-  name: string;
-  tags: string;
-  reference_images: ProjectReferenceImage[];
 }
 
 type CharacterProfile = ProjectCharacterProfile & {
@@ -51,12 +42,6 @@ function normalize(settings: ProjectLocalOverrides): LocalOverrides {
     scene_prompts: settings.scene_prompts ?? {},
     shot_prompts: settings.shot_prompts ?? {},
   };
-}
-
-function toDraft(profile?: CharacterProfile): CharacterDraft {
-  return profile
-    ? { ...profile, tags: profile.tags.join(", ") }
-    : { id: crypto.randomUUID(), name: "", tags: "", reference_images: [] };
 }
 
 function PromptField({
@@ -108,21 +93,21 @@ export function ProjectLocalOverridesEditor({
   projectId,
   sceneId,
   shotId,
+  onOpenCharacters,
 }: {
   projectId: string;
   sceneId: string | null;
   shotId: string | null;
+  /** 「キャラクター」画面へ移らせる案内ボタンのハンドラ。省略時は文言のみ表示する。 */
+  onOpenCharacters?: () => void;
 }) {
   const [settings, setSettings] = useState<LocalOverrides | null>(null);
-  const [draft, setDraft] = useState<CharacterDraft | null>(null);
-  const [pickedReference, setPickedReference] = useState<PickedMedia[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     setSettings(null);
-    setDraft(null);
     setError(null);
     api.getProjectLocalOverrides(projectId)
       .then((loaded) => active && setSettings(normalize(loaded)))
@@ -132,99 +117,20 @@ export function ProjectLocalOverridesEditor({
     };
   }, [projectId]);
 
-  const persist = async (next: LocalOverrides) => {
+  // 全体置換のPUTのため、保存直前に最新を読み直してから変更を当てる。手元の古い
+  // キャラクター定義や衣装指定で、他の画面での編集を巻き戻さないようにする。
+  const persist = async (update: (latest: ProjectLocalOverrides) => ProjectLocalOverrides) => {
     setBusy(true);
     setError(null);
     try {
-      const saved = await api.updateProjectLocalOverrides(projectId, next);
+      const latest = await api.getProjectLocalOverrides(projectId);
+      const saved = await api.updateProjectLocalOverrides(projectId, update(latest));
       setSettings(normalize(saved));
     } catch (cause) {
       setError(describe(cause));
       throw cause;
     } finally {
       setBusy(false);
-    }
-  };
-
-  const handleReferencePicked = (next: PickedMedia[]) => {
-    const item = next[0];
-    setPickedReference([]);
-    if (!item) return;
-    setError(null);
-    if (item.artifact) {
-      const artifact = item.artifact;
-      const fileName = artifact.relative_path.split("/").pop() ?? item.label;
-      setDraft((current) => current && ({
-        ...current,
-        reference_images: [
-          ...current.reference_images,
-          {
-            file_name: fileName,
-            relative_path: artifact.relative_path,
-            sha256: artifact.sha256,
-            byte_size: artifact.byte_size,
-            media_type: artifact.media_type,
-          },
-        ],
-      }));
-      return;
-    }
-    const source = item.source;
-    if ("relative_path" in source && source.relative_path) {
-      setDraft((current) => current && ({
-        ...current,
-        reference_images: [
-          ...current.reference_images,
-          {
-            file_name: item.label,
-            relative_path: source.relative_path,
-            sha256: source.sha256,
-            byte_size: item.file?.size ?? 0,
-            media_type: item.mediaType ?? "application/octet-stream",
-          },
-        ],
-      }));
-      return;
-    }
-    // artifact情報もrelative_pathも無い場合は追加せず、握りつぶさずに知らせる。
-    setError("選択した画像を取り込めませんでした。選び直してください。");
-  };
-
-  const saveCharacter = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!settings || !draft) return;
-    const tags = [...new Set(
-      draft.tags.split(",").map((value) => value.trim()).filter(Boolean),
-    )];
-    const profile: CharacterProfile = {
-      id: draft.id,
-      name: draft.name.trim(),
-      tags,
-      reference_images: draft.reference_images,
-    };
-    const exists = settings.characters.some((item) => item.id === profile.id);
-    try {
-      await persist({
-        ...settings,
-        characters: exists
-          ? settings.characters.map((item) => item.id === profile.id ? profile : item)
-          : [...settings.characters, profile],
-      });
-      setDraft(null);
-    } catch {
-      // persistが画面へAPIエラーを表示する。
-    }
-  };
-
-  const removeCharacter = async (profile: CharacterProfile) => {
-    if (!settings || !window.confirm(`${profile.name}の登録を削除しますか？`)) return;
-    try {
-      await persist({
-        ...settings,
-        characters: settings.characters.filter((item) => item.id !== profile.id),
-      });
-    } catch {
-      // persistが画面へAPIエラーを表示する。
     }
   };
 
@@ -235,10 +141,12 @@ export function ProjectLocalOverridesEditor({
   ) => {
     if (!settings) return;
     const field = kind === "scene" ? "scene_prompts" : "shot_prompts";
-    const prompts = { ...settings[field] };
-    if (prompt) prompts[resourceId] = prompt;
-    else delete prompts[resourceId];
-    await persist({ ...settings, [field]: prompts });
+    await persist((latest) => {
+      const prompts = { ...(latest[field] ?? {}) };
+      if (prompt) prompts[resourceId] = prompt;
+      else delete prompts[resourceId];
+      return { ...latest, [field]: prompts };
+    });
   };
 
   if (!settings) {
@@ -251,54 +159,10 @@ export function ProjectLocalOverridesEditor({
         <div className="row spread">
           <div>
             <h2>人物・キャラクター</h2>
-            <p className="muted">タグと参照画像をProject固有の設定として保存します。</p>
+            <p className="muted">名前・外見・声・衣装・参照画像は「キャラクター」画面で編集します（登録{settings.characters.length}件）。</p>
           </div>
-          <button type="button" disabled={busy} onClick={() => setDraft(toDraft())}>追加</button>
+          {onOpenCharacters && <button type="button" onClick={onOpenCharacters}>キャラクター画面を開く</button>}
         </div>
-        {settings.characters.length === 0 && <p className="muted">登録はありません。</p>}
-        <ul className="list structure-list">
-          {settings.characters.map((profile) => (
-            <li key={profile.id}>
-              <div>
-                <strong>{profile.name}</strong>
-                <p className="muted">{profile.tags.join(", ") || "タグなし"} / 参照画像{profile.reference_images.length}件</p>
-              </div>
-              <div className="row structure-actions">
-                <button type="button" disabled={busy} onClick={() => setDraft(toDraft(profile))}>編集</button>
-                <button type="button" className="danger-button" disabled={busy} onClick={() => void removeCharacter(profile)}>削除</button>
-              </div>
-            </li>
-          ))}
-        </ul>
-        {draft && (
-          <form className="stack" onSubmit={saveCharacter}>
-            <h3>{settings.characters.some((item) => item.id === draft.id) ? "人物・キャラクターを編集" : "人物・キャラクターを追加"}</h3>
-            <label>名前<input required maxLength={120} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-            <label>タグ（カンマ区切り）<input value={draft.tags} onChange={(event) => setDraft({ ...draft, tags: event.target.value })} /></label>
-            <MediaPicker
-              kind="image"
-              label="参照画像"
-              value={pickedReference}
-              onChange={handleReferencePicked}
-              multiple={false}
-              disabled={busy || draft.reference_images.length >= 20}
-              maxBytes={25 * 1024 * 1024}
-              projectId={projectId}
-            />
-            <ul className="list">
-              {draft.reference_images.map((image) => (
-                <li key={image.relative_path} className="row spread">
-                  <span>{image.file_name}<span className="muted"> ({image.byte_size} bytes)</span></span>
-                  <button type="button" disabled={busy} onClick={() => setDraft({ ...draft, reference_images: draft.reference_images.filter((item) => item.relative_path !== image.relative_path) })}>登録から外す</button>
-                </li>
-              ))}
-            </ul>
-            <div className="row">
-              <button type="button" disabled={busy} onClick={() => setDraft(null)}>キャンセル</button>
-              <button type="submit" className="primary" disabled={busy}>{busy ? "保存中..." : "保存"}</button>
-            </div>
-          </form>
-        )}
         {error && <p className="error">{error}</p>}
       </section>
 

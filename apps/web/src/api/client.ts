@@ -96,6 +96,8 @@ export type ProjectCharacterProfile =
   components["schemas"]["ProjectCharacterProfile"];
 export type ProjectReferenceImage =
   components["schemas"]["ProjectReferenceImage"];
+export type ProjectCharacterOutfit =
+  components["schemas"]["ProjectCharacterOutfit"];
 export type ProjectDeletionImpact =
   components["schemas"]["ProjectDeletionImpact"];
 export type SceneCreate = components["schemas"]["SceneCreate"];

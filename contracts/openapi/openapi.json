@@ -4530,8 +4530,9 @@
         "title": "PortableShot",
         "type": "object"
       },
-      "ProjectCharacterProfile": {
+      "ProjectCharacterOutfit": {
         "additionalProperties": false,
+        "description": "キャラクターの衣装。`prompt`は衣装を指定する生成プロンプトの断片。",
         "properties": {
           "id": {
             "maxLength": 36,
@@ -4544,6 +4545,68 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "prompt": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ProjectCharacterOutfit",
+        "type": "object"
+      },
+      "ProjectCharacterProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appearance"
+          },
+          "default_outfit_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Outfit Id"
+          },
+          "id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "outfits": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectCharacterOutfit"
+            },
+            "maxItems": 20,
+            "title": "Outfits",
+            "type": "array"
           },
           "reference_images": {
             "items": {
@@ -4562,6 +4625,29 @@
             "maxItems": 50,
             "title": "Tags",
             "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
           }
         },
         "required": [
@@ -5017,6 +5103,16 @@
             "maxItems": 100,
             "title": "Characters",
             "type": "array"
+          },
+          "scene_outfits": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Scene Outfits",
+            "type": "object"
           },
           "scene_prompts": {
             "additionalProperties": {

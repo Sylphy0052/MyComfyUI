@@ -3706,16 +3706,41 @@ export interface components {
             /** Todo */
             todo?: string | null;
         };
-        /** ProjectCharacterProfile */
-        ProjectCharacterProfile: {
+        /**
+         * ProjectCharacterOutfit
+         * @description キャラクターの衣装。`prompt`は衣装を指定する生成プロンプトの断片。
+         */
+        ProjectCharacterOutfit: {
             /** Id */
             id: string;
             /** Name */
             name: string;
+            /**
+             * Prompt
+             * @default
+             */
+            prompt: string;
+        };
+        /** ProjectCharacterProfile */
+        ProjectCharacterProfile: {
+            /** Appearance */
+            appearance?: string | null;
+            /** Default Outfit Id */
+            default_outfit_id?: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Outfits */
+            outfits?: components["schemas"]["ProjectCharacterOutfit"][];
             /** Reference Images */
             reference_images?: components["schemas"]["ProjectReferenceImage"][];
             /** Tags */
             tags?: string[];
+            /** Updated At */
+            updated_at?: string | null;
+            /** Voice */
+            voice?: string | null;
         };
         /** ProjectCloneRequest */
         ProjectCloneRequest: {
@@ -3857,6 +3882,12 @@ export interface components {
         ProjectLocalOverrides: {
             /** Characters */
             characters?: components["schemas"]["ProjectCharacterProfile"][];
+            /** Scene Outfits */
+            scene_outfits?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
             /** Scene Prompts */
             scene_prompts?: {
                 [key: string]: string;
