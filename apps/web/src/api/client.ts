@@ -708,6 +708,9 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  getArtifact: (artifactId: string) =>
+    request<Artifact>(`/artifacts/${encodeURIComponent(artifactId)}`),
+
   getArtifactImport: (artifactId: string) =>
     request<ArtifactImport>(
       `/artifacts/${encodeURIComponent(artifactId)}/import`,

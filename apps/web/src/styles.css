@@ -944,6 +944,26 @@ details summary {
   object-fit: contain;
 }
 
+img.preview[draggable="true"] {
+  cursor: grab;
+}
+
+/* 画像のドロップ先 (Issue #150)。常に破線で示し、ドラッグ中の重なりで強調する。 */
+.media-picker.drop-zone {
+  border: var(--border-width) dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.media-picker.drop-zone.is-drag-over {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.media-picker .drop-hint {
+  font-size: 0.85em;
+}
+
 .preview-missing,
 .preview-link {
   margin: 0;

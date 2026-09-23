@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import type { Artifact } from "../api/client";
+import { startArtifactDrag } from "./artifactDrag";
 
 /**
  * 種別ごとのプレビュー。分岐は kind ではなく media_type で行う。
@@ -66,6 +67,10 @@ export function ArtifactPreview({ artifact, compact = false }: Props) {
         src={url}
         alt={`Artifact ${artifact.id}`}
         loading="lazy"
+        draggable
+        onDragStart={(event) =>
+          startArtifactDrag(event, { id: artifact.id, media_type: mediaType })
+        }
       />
     );
   }

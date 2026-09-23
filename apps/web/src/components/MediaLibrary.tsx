@@ -7,6 +7,7 @@ import type {
   MediaRole,
   ProjectCharacterProfile,
 } from "../api/client";
+import { startArtifactDrag } from "./artifactDrag";
 import { LoadingPlaceholder } from "./LoadingPlaceholder";
 import { MediaViewer } from "./MediaViewer";
 import type { MediaViewerItem } from "./MediaViewer";
@@ -236,6 +237,13 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
                   alt=""
                   loading="lazy"
                   className="preview compact"
+                  draggable
+                  onDragStart={(event) =>
+                    startArtifactDrag(event, {
+                      id: item.artifact_id as string,
+                      media_type: item.media_type,
+                    })
+                  }
                 />
               )}
               <span className="mono">{item.label ?? item.relative_path}</span>
