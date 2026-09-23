@@ -10,6 +10,10 @@ import type {
 } from "../api/client";
 import type { CanonDescriptor, ShotEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { MediaViewer } from "./MediaViewer";
+import type { MediaViewerItem } from "./MediaViewer";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 import { EmptyState } from "./ui/EmptyState";
 
 /** 1 つの voice_id に対する Voice Canon と参照音声の指定。 */
@@ -100,6 +104,19 @@ export function VoicePanel({
   );
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+
+  // 読み検証は artifact_id だけを持つ。音声Jobの成果物は常に audio/wav で保存される
+  // (voice executor の AUDIO_MEDIA_TYPE) ため、ビューア用の項目はここで組み立てる。
+  const verificationViewerItems = useMemo<MediaViewerItem[]>(
+    () =>
+      verifications.map((item) => ({
+        id: item.artifact_id,
+        media_type: "audio/wav",
+        availability: "complete",
+      })),
+    [verifications],
+  );
 
   const dialogue = useMemo(() => shot?.data.dialogue ?? [], [shot]);
   const voiceIds = useMemo(
@@ -668,6 +685,15 @@ export function VoicePanel({
                 preload="none"
                 src={api.artifactContentUrl(item.artifact_id)}
               />
+              <IconButton
+                icon={<Icon name="expand" />}
+                label="拡大"
+                onClick={() =>
+                  setViewerIndex(
+                    verifications.findIndex((entry) => entry.id === item.id),
+                  )
+                }
+              />
               <span>期待: {item.expected_text}</span>
               <span className="muted">
                 {item.expected_reading
@@ -688,6 +714,12 @@ export function VoicePanel({
           ))}
         </ul>
       )}
+      <MediaViewer
+        items={verificationViewerItems}
+        index={viewerIndex}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </section>
   );
 }

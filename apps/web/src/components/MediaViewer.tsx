@@ -11,11 +11,17 @@ import { mediaLabel } from "./ArtifactPreview";
  * A/B比較やコンタクトシートなど `CandidateGallery` 固有の機能は持たない。
  * ここでは「1件を大きく見る・前後へ移動する」だけに絞る。
  */
+
+/**
+ * ビューアが表示に使う Artifact の項目だけを切り出した型。
+ * 読み検証や素材一覧のように Artifact 本体を持たない一覧も、artifact_id と media_type から組み立てて渡せる。
+ */
+export type MediaViewerItem = Pick<Artifact, "id" | "media_type" | "availability">;
 interface ViewTransform { zoom: number; x: number; y: number; }
 const INITIAL_TRANSFORM: ViewTransform = { zoom: 1, x: 0, y: 0 };
 function clampZoom(value: number): number { return Math.min(8, Math.max(0.25, value)); }
 
-function ZoomableImage({ artifact }: { artifact: Artifact }) {
+function ZoomableImage({ artifact }: { artifact: MediaViewerItem }) {
   const [transform, setTransform] = useState(INITIAL_TRANSFORM);
   const [failed, setFailed] = useState(false);
   const drag = useRef<{ x: number; y: number } | null>(null);
@@ -75,7 +81,7 @@ function ZoomableImage({ artifact }: { artifact: Artifact }) {
   );
 }
 
-function ViewerMedia({ artifact }: { artifact: Artifact }) {
+function ViewerMedia({ artifact }: { artifact: MediaViewerItem }) {
   const [failed, setFailed] = useState(false);
   const mediaType = artifact.media_type;
 
@@ -108,7 +114,7 @@ function ViewerMedia({ artifact }: { artifact: Artifact }) {
 
 interface Props {
   /** 前後移動の対象になる一覧。表示順そのままで渡す。 */
-  items: Artifact[];
+  items: MediaViewerItem[];
   /** 開いている項目の index。null なら閉じている (制御コンポーネント)。 */
   index: number | null;
   onIndexChange: (index: number) => void;
