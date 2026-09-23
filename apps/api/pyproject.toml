@@ -26,6 +26,7 @@ dependencies = [
 
 [project.scripts]
 mycomfyui-api = "mycomfyui_api.__main__:main"
+mycomfyui-script-approve = "mycomfyui_api.script_approval_cli:main"
 
 [build-system]
 requires = ["hatchling>=1.26"]
