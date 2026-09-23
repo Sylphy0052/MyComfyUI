@@ -331,8 +331,10 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
         if (draft.existing) {
           const stored = current.find((item) => item.id === profile.id);
           if (!stored || (stored.updated_at ?? null) !== draft.base_updated_at) {
+            // 一覧を最新へ差し替え、開き直したときに新しいupdated_atで編集できるようにする。
+            setOverrides(latest);
             throw new Error(
-              "このキャラクターは他の画面で更新されたため保存しませんでした。キャンセルして開き直してから編集してください。",
+              "このキャラクターは他の画面で更新されたため保存しませんでした。一覧を最新にしたので、キャンセルして開き直してから編集してください。",
             );
           }
         }
