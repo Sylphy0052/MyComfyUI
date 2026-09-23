@@ -73,13 +73,9 @@ const IMAGE_SUBTABS: { value: ImageSubTab; label: string }[] = [
   { value: "sweep", label: "スイープ" },
 ];
 
-const JOB_KIND_LABELS: Record<string, string> = {
-  image: "画像",
-  video: "動画",
-  music: "音楽",
-  voice: "音声",
-  compose: "合成",
-};
+const JOB_KIND_LABELS: Record<string, string> = Object.fromEntries(
+  GENERATION_TABS.map((tab) => [tab.value, tab.label]),
+);
 
 // 成功トーストは自動で消す。失敗は見落としを避けるため手動で閉じるまで残す。
 const TOAST_SUCCESS_TTL_MS = 5000;
@@ -168,8 +164,15 @@ export function App() {
   // ジョブ一覧を初めて取得した時点と、スコープ切替直後はnullに戻し、
   // 既存ジョブや無関係スコープのジョブを完了通知として出さないようにする。
   const previousJobStatesRef = useRef<Map<string, string> | null>(null);
+  const toastTimersRef = useRef<Set<number>>(new Set());
   const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      for (const timerId of timers) window.clearTimeout(timerId);
+    };
   }, []);
   const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
     useState<string | null>(null);
@@ -439,7 +442,11 @@ export function App() {
         setToasts((current) => [...current, ...newToasts]);
         for (const toast of newToasts) {
           if (toast.tone === "success") {
-            window.setTimeout(() => dismissToast(toast.id), TOAST_SUCCESS_TTL_MS);
+            const timerId = window.setTimeout(() => {
+              toastTimersRef.current.delete(timerId);
+              dismissToast(toast.id);
+            }, TOAST_SUCCESS_TTL_MS);
+            toastTimersRef.current.add(timerId);
           }
         }
       }
