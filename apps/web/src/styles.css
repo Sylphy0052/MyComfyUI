@@ -1409,6 +1409,33 @@ button.primary:hover:not(:disabled) {
   flex: 1;
 }
 
+.toast-region {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 24rem;
+  pointer-events: none;
+}
+
+.toast-region .toast {
+  pointer-events: auto;
+}
+
+.toast-message-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+}
+
 /* 動きを減らす設定では遷移とアニメーションを止める。スケルトンは静止した面として残る */
 @media (prefers-reduced-motion: reduce) {
   *,
