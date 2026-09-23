@@ -31,6 +31,7 @@ interface Props {
   active?: boolean;
   comparisonActive?: boolean;
   onClearComparison?: () => void;
+  onDialogOpenChange?: (dialog: HTMLDialogElement | null) => void;
 }
 type ThumbSize = "s" | "m" | "l";
 const THUMB_SIZES: { value: ThumbSize; label: string }[] = [
@@ -136,7 +137,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true, comparisonActive = false, onClearComparison }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange }: Props) {
   const [thumbSize, setThumbSize] = useState<ThumbSize>("m");
   const [leftId, setLeftId] = useState<string | null>(null);
   const [rightId, setRightId] = useState<string | null>(null);
@@ -290,7 +291,11 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
       dialog.focus();
     }
     if (!fullscreen && dialog.open) dialog.close();
-  }, [fullscreen]);
+    // <dialog>のshowModal()はブラウザのtop layerに描画され、通常のDOM要素は
+    // z-indexに関わらずその下へ隠れる (#186)。全画面中だけdialog自身を通知先
+    // として渡し、呼び出し側でトースト表示先をportalできるようにする。
+    onDialogOpenChange?.(fullscreen ? dialog : null);
+  }, [fullscreen, onDialogOpenChange]);
 
   const downloadContactSheet = async () => {
     const selected = [left, right].filter((item): item is Artifact => item !== null);
