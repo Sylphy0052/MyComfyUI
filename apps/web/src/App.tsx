@@ -53,6 +53,7 @@ import {
   persistThemePreference,
   readStoredThemePreference,
   resolveTheme,
+  subscribeSystemTheme,
 } from "./state/themeState";
 import type { ThemePreference } from "./state/themeState";
 import { useFrozenWhenInactive } from "./state/useFrozenWhenInactive";
@@ -213,10 +214,7 @@ export function App() {
     persistThemePreference(themePreference);
     applyResolvedTheme(resolveTheme(themePreference));
     if (themePreference !== "system") return;
-    const media = window.matchMedia("(prefers-color-scheme: light)");
-    const handleChange = () => applyResolvedTheme(resolveTheme("system"));
-    media.addEventListener("change", handleChange);
-    return () => media.removeEventListener("change", handleChange);
+    return subscribeSystemTheme(() => applyResolvedTheme(resolveTheme("system")));
   }, [themePreference]);
   const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
     useState<string | null>(null);

@@ -54,3 +54,17 @@ export function resolveTheme(preference: ThemePreference): ResolvedTheme {
 export function applyResolvedTheme(theme: ResolvedTheme): void {
   document.documentElement.setAttribute("data-theme", theme);
 }
+
+/**
+ * OS設定の変更を購読し、解除関数を返す。matchMediaや`addEventListener`が使えない環境では
+ * resolveThemeと同じく例外を投げず、追随だけを諦める (選択時点の解決結果は反映済み)。
+ */
+export function subscribeSystemTheme(onChange: () => void): () => void {
+  try {
+    const media = window.matchMedia(SYSTEM_LIGHT_QUERY);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  } catch {
+    return () => {};
+  }
+}
