@@ -541,28 +541,36 @@ export function App() {
 
   // 場面ごとの衣装選択 (制作計画のキャラクター行から呼ぶ)。全体置換PUTのため、直前に
   // 読み直してから他フィールドをそのまま返し、他画面での編集を極力踏まない。
+  // 衣装selectを続けて変えるとGET→GET→PUT→PUTと交差して先の選択が消えるため、1件ずつ保存する。
+  const sceneOutfitQueueRef = useRef<Promise<void>>(Promise.resolve());
   const changeSceneOutfit = useCallback(
-    async (characterId: string, outfitId: string | null) => {
-      if (!projectId || !sceneId) return;
-      try {
-        const current = await api.getProjectLocalOverrides(projectId);
-        const forScene = { ...(current.scene_outfits?.[sceneId] ?? {}) };
-        if (outfitId) forScene[characterId] = outfitId;
-        else delete forScene[characterId];
-        const nextSceneOutfits = { ...(current.scene_outfits ?? {}) };
-        if (Object.keys(forScene).length > 0) nextSceneOutfits[sceneId] = forScene;
-        else delete nextSceneOutfits[sceneId];
-        const saved = await api.updateProjectLocalOverrides(projectId, {
-          ...current,
-          scene_outfits: nextSceneOutfits,
-        });
-        // 保存中に別Projectへ切り替えていたら、古いProjectの値を画面へ入れない。
-        if (projectIdRef.current !== projectId) return;
-        setLocalCharacters(saved.characters ?? []);
-        setSceneOutfits((saved.scene_outfits ?? {}) as SceneOutfits);
-      } catch (cause) {
-        notify({ tone: "danger", message: `衣装の選択を保存できませんでした: ${describe(cause)}` });
-      }
+    (characterId: string, outfitId: string | null) => {
+      if (!projectId || !sceneId) return Promise.resolve();
+      const run = async () => {
+        try {
+          const current = await api.getProjectLocalOverrides(projectId);
+          const forScene = { ...(current.scene_outfits?.[sceneId] ?? {}) };
+          if (outfitId) forScene[characterId] = outfitId;
+          else delete forScene[characterId];
+          const nextSceneOutfits = { ...(current.scene_outfits ?? {}) };
+          if (Object.keys(forScene).length > 0) nextSceneOutfits[sceneId] = forScene;
+          else delete nextSceneOutfits[sceneId];
+          const saved = await api.updateProjectLocalOverrides(projectId, {
+            ...current,
+            scene_outfits: nextSceneOutfits,
+          });
+          // 保存中に別Projectへ切り替えていたら、古いProjectの値を画面へ入れない。
+          if (projectIdRef.current !== projectId) return;
+          setLocalCharacters(saved.characters ?? []);
+          setSceneOutfits((saved.scene_outfits ?? {}) as SceneOutfits);
+        } catch (cause) {
+          notify({ tone: "danger", message: `衣装の選択を保存できませんでした: ${describe(cause)}` });
+        }
+      };
+      // runは例外を外へ出さないので、キューが途中で止まることはない。
+      const queued = sceneOutfitQueueRef.current.then(run);
+      sceneOutfitQueueRef.current = queued;
+      return queued;
     },
     [projectId, sceneId, notify],
   );

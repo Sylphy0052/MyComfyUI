@@ -18,6 +18,7 @@ type SceneOutfitMap = NonNullable<ProjectLocalOverrides["scene_outfits"]>;
 
 function describe(error: unknown): string {
   if (error instanceof ApiError) return `${error.message}(${error.code})`;
+  if (error instanceof Error) return error.message;
   return String(error);
 }
 
@@ -30,6 +31,10 @@ interface CharacterDraft {
   reference_images: ProjectReferenceImage[];
   outfits: ProjectCharacterOutfit[];
   default_outfit_id: string;
+  /** フォームを開いた時点のupdated_at。保存直前の最新値と違えば他で更新されたとみなす。 */
+  base_updated_at: string | null;
+  /** 既存キャラクターの編集か。新規追加では保存時の競合判定をしない。 */
+  existing: boolean;
 }
 
 function toDraft(profile?: ProjectCharacterProfile): CharacterDraft {
@@ -43,6 +48,8 @@ function toDraft(profile?: ProjectCharacterProfile): CharacterDraft {
         reference_images: profile.reference_images ?? [],
         outfits: profile.outfits ?? [],
         default_outfit_id: profile.default_outfit_id ?? "",
+        base_updated_at: profile.updated_at ?? null,
+        existing: true,
       }
     : {
         id: crypto.randomUUID(),
@@ -53,6 +60,8 @@ function toDraft(profile?: ProjectCharacterProfile): CharacterDraft {
         reference_images: [],
         outfits: [],
         default_outfit_id: "",
+        base_updated_at: null,
+        existing: false,
       };
 }
 
@@ -317,6 +326,16 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
     try {
       await persist((latest) => {
         const current = latest.characters ?? [];
+        // フォームを開いてから別の画面・タブで同じキャラクターが更新・削除されていたら、
+        // 手元の値で丸ごと置き換えると相手の変更が消えるため保存しない。
+        if (draft.existing) {
+          const stored = current.find((item) => item.id === profile.id);
+          if (!stored || (stored.updated_at ?? null) !== draft.base_updated_at) {
+            throw new Error(
+              "このキャラクターは他の画面で更新されたため保存しませんでした。キャンセルして開き直してから編集してください。",
+            );
+          }
+        }
         const characters = current.some((item) => item.id === profile.id)
           ? current.map((item) => (item.id === profile.id ? profile : item))
           : [...current, profile];
