@@ -226,6 +226,18 @@ class WorkflowVersion(Base):
     inputs: Mapped[list] = mapped_column(JSON, nullable=False)
     #: この版が生むArtifactの種別。
     outputs: Mapped[list] = mapped_column(JSON, nullable=False)
+    #: 利用者が編集したnode/edgeグラフ本体。同梱テンプレート由来の版はNULLのまま。
+    #: `graph_validation.validate_graph`を通過した内容だけを保存する。
+    graph: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: `graph`のSHA-256。immutableな版の識別に使う。テンプレート由来の版は
+    #: `template_sha256`を使うためNULLのまま。
+    graph_sha256: Mapped[str | None] = mapped_column(
+        String(SHA256_LENGTH), nullable=True
+    )
+    #: 差分表示の基準にした旧版。新規登録(既存版を編集元に持たない)ではNULL。
+    based_on_version_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("workflow_version.id"), nullable=True
+    )
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 

@@ -18,7 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from starlette.concurrency import run_in_threadpool
 
-from mycomfyui_api import approvals, image_imports, provenance, schemas, storage
+from mycomfyui_api import (
+    approvals,
+    graph_validation,
+    image_imports,
+    provenance,
+    schemas,
+    storage,
+)
 from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import proposals
@@ -314,6 +321,84 @@ async def get_workflow_model_options(workflow_version_id: str, session: SessionD
         reason=None if reachable else MODEL_INVENTORY_UNAVAILABLE,
         slots=slots,
     )
+
+
+@router.post(
+    "/workflows/{workflow_id}/versions",
+    response_model=schemas.WorkflowVersionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workflow_graph_version(
+    workflow_id: str, body: schemas.WorkflowGraphVersionCreate, session: SessionDep
+):
+    """利用者が編集したグラフを検証し、新しいWorkflow版として登録する。
+
+    許可node以外・循環・不正link・出力不足は登録前に拒否する(Issue #110)。既存版は
+    書き換えず、常に新しい行を追加する。この版だけではRecipeへ接続されない。接続には
+    別途Recipe作成の承認(`OPERATION_RECIPE_CREATE`)が要る。
+    """
+    workflow = await _get_or_404(session, Workflow, "Workflow", workflow_id)
+    if body.based_on_version_id is not None:
+        based_on = await session.get(WorkflowVersion, body.based_on_version_id)
+        if based_on is None or based_on.workflow_id != workflow.id:
+            raise _validation_error(
+                "based_on_version_idが同じWorkflowの版を指していません。"
+            )
+    try:
+        validation_result = graph_validation.validate_graph(body.graph)
+        graph_validation.validate_slot_references(
+            body.graph,
+            validation_result.node_classes,
+            model_slots=body.model_slots,
+            inputs=body.inputs,
+            outputs=body.outputs,
+        )
+    except graph_validation.GraphValidationError as error:
+        raise _validation_error(
+            "Workflowグラフの検証に失敗しました。", {"issues": error.issues}
+        ) from error
+
+    try:
+        version = await workflow_registry.register_graph_version(
+            session,
+            workflow=workflow,
+            graph=body.graph,
+            variables=body.variables,
+            model_slots=body.model_slots,
+            inputs=body.inputs,
+            outputs=body.outputs,
+            based_on_version_id=body.based_on_version_id,
+        )
+    except workflow_registry.GraphVersionConflict as error:
+        raise ApiError(
+            "WORKFLOW_VERSION_DUPLICATE",
+            "同じ内容のWorkflow版が既に存在します。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"existing_version_id": error.existing_version_id},
+        ) from error
+    # `capability_warnings`はDBへ保持しないため、登録時の検証結果をレスポンスへ
+    # その場で載せる。ORMインスタンスへの非mapped属性設定であり永続化はされない。
+    version.capability_warnings = list(validation_result.capability_warnings)
+    return version
+
+
+@router.get(
+    "/workflow-versions/{workflow_version_id}/diff",
+    response_model=schemas.WorkflowVersionDiffRead,
+)
+async def get_workflow_version_diff(
+    workflow_version_id: str, against_version_id: str, session: SessionDep
+):
+    """2つのWorkflow版のグラフ・入出力差分。Recipe接続前の確認に使う。"""
+    new_version = await _get_or_404(
+        session, WorkflowVersion, "WorkflowVersion", workflow_version_id
+    )
+    old_version = await _get_or_404(
+        session, WorkflowVersion, "WorkflowVersion", against_version_id
+    )
+    if old_version.workflow_id != new_version.workflow_id:
+        raise _validation_error("比較対象が別のWorkflowの版です。")
+    return workflow_registry.diff_graph_versions(old_version, new_version)
 
 
 async def _validate_resolved_models(
