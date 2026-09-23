@@ -24,6 +24,8 @@ PRODUCTION_STATUSES = (
     "accepted",
     "completed",
 )
+PRODUCTION_RANK = {key: index for index, key in enumerate(PRODUCTION_STATUSES)}
+PROGRESS_ARTIFACT_KINDS = ("image", "video", "audio")
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -463,14 +465,60 @@ async def restore_shot(project_id: schemas.AiMediaId, scene_id: schemas.Resource
     return shot_envelope(shot)
 
 
+def _snapshot_group(project: Project, group: str) -> dict[str, Any]:
+    snapshot = project.source_snapshot if isinstance(project.source_snapshot, dict) else {}
+    values = snapshot.get(group)
+    return {key: value for key, value in values.items() if isinstance(value, dict)} if isinstance(values, dict) else {}
+
+
+def _envelope_scene_id(envelope: dict[str, Any]) -> str | None:
+    data = envelope.get("data")
+    scene_id = data.get("scene_id") if isinstance(data, dict) else None
+    return scene_id if isinstance(scene_id, str) else None
+
+
+def _advance(statuses: dict[str, str], key: str | None, status: str) -> None:
+    """実績から導いた状態が現在の状態より先なら進める。手動ラベルより後ろへは戻さない。"""
+    if key is not None and key in statuses and PRODUCTION_RANK[status] > PRODUCTION_RANK[statuses[key]]:
+        statuses[key] = status
+
+
 @router.get("/{project_id}/progress", response_model=schemas.ProjectProgress)
 async def get_project_progress(project_id: schemas.AiMediaId, session: SessionDep):
+    """Scene・Shotごとに手動ラベルと生成実績の進んでいる方を実効状態とし、件数を返す。"""
     project = await require_project(session, project_id)
+    if project.source_type == "local":
+        scene_rows = await session.execute(select(ProjectScene.id, ProjectScene.production_status).where(ProjectScene.project_id == project_id, ProjectScene.deleted_at.is_(None)))
+        shot_rows = await session.execute(select(ProjectShot.id, ProjectShot.scene_id, ProjectShot.production_status).where(ProjectShot.project_id == project_id, ProjectShot.deleted_at.is_(None)))
+        scene_statuses = {scene_id: production_status for scene_id, production_status in scene_rows}
+        shot_statuses: dict[str, str] = {}
+        shot_scenes: dict[str, str | None] = {}
+        for shot_id, scene_id, production_status in shot_rows:
+            shot_statuses[shot_id] = production_status
+            shot_scenes[shot_id] = scene_id
+    else:
+        # 外部ソースは制作状態を持たないため、手動ラベルは未着手とみなして実績だけで判定する。
+        scene_statuses = {scene_id: "not_started" for scene_id in _snapshot_group(project, "scene_envelopes")}
+        shot_envelopes = _snapshot_group(project, "shot_envelopes")
+        shot_statuses = {shot_id: "not_started" for shot_id in shot_envelopes}
+        shot_scenes = {shot_id: _envelope_scene_id(envelope) for shot_id, envelope in shot_envelopes.items()}
+
+    artifact_rows = await session.execute(select(Artifact.assigned_scene_id, Artifact.assigned_shot_id, Artifact.decision).where(Artifact.assigned_project_id == project_id, Artifact.kind.in_(PROGRESS_ARTIFACT_KINDS)))
+    for scene_id, shot_id, decision in artifact_rows:
+        status = {"accepted": "accepted", "undecided": "has_candidates"}.get(decision, "in_progress")
+        _advance(scene_statuses, scene_id or shot_scenes.get(shot_id or ""), status)
+        _advance(shot_statuses, shot_id, status)
+    job_rows = await session.execute(select(GenerationJob.assigned_scene_id, GenerationJob.assigned_shot_id, GenerationJob.kind, GenerationJob.state).where(GenerationJob.assigned_project_id == project_id))
+    for scene_id, shot_id, kind, state in job_rows:
+        # Pipelineの「仕上げ」と同じく、Sceneの合成Jobが成功したらSceneを完了とする。
+        scene_status = "completed" if kind == "compose" and state == "succeeded" else "in_progress"
+        _advance(scene_statuses, scene_id or shot_scenes.get(shot_id or ""), scene_status)
+        _advance(shot_statuses, shot_id, "in_progress")
+
     scenes = {key: 0 for key in PRODUCTION_STATUSES}
     shots = {key: 0 for key in PRODUCTION_STATUSES}
-    if project.source_type == "local":
-        scene_rows = await session.execute(select(ProjectScene.production_status, func.count()).where(ProjectScene.project_id == project_id, ProjectScene.deleted_at.is_(None)).group_by(ProjectScene.production_status))
-        shot_rows = await session.execute(select(ProjectShot.production_status, func.count()).where(ProjectShot.project_id == project_id, ProjectShot.deleted_at.is_(None)).group_by(ProjectShot.production_status))
-        scenes.update({key: int(value) for key, value in scene_rows})
-        shots.update({key: int(value) for key, value in shot_rows})
+    for production_status in scene_statuses.values():
+        scenes[production_status] += 1
+    for production_status in shot_statuses.values():
+        shots[production_status] += 1
     return schemas.ProjectProgress(project_id=project_id, scenes=scenes, shots=shots)
