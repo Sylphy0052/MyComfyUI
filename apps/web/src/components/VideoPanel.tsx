@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -193,8 +193,12 @@ export function VideoPanel({
     }
   }, [mode]);
 
+  // 前の工程の成果物を自動投入済みの欄。Shot ごとに1回だけ入れ、使い手が空にした欄へは入れ直さない。
+  const autoFilled = useRef(new Set<string>());
+
   // Shot が変わったら参照素材の指定をやり直す。別 Shot の指定を引き継がない。
   useEffect(() => {
+    autoFilled.current.clear();
     setReferences([]);
     setFirstFrame([]);
     setGuideAudio([]);
@@ -202,15 +206,18 @@ export function VideoPanel({
 
   // 前の工程の成果物が届いたら、使い手がまだ選んでいない欄へ入れる。選び直しは上書きしない。
   useEffect(() => {
-    if (suggestedFirstFrame?.length) {
-      setFirstFrame((current) => (current.length ? current : suggestedFirstFrame));
-    }
-    if (suggestedReferences?.length) {
-      setReferences((current) => (current.length ? current : suggestedReferences.slice(0, MAX_REFERENCES)));
-    }
-    if (suggestedGuideAudio?.length) {
-      setGuideAudio((current) => (current.length ? current : suggestedGuideAudio));
-    }
+    const fill = (
+      field: string,
+      suggested: PickedMedia[] | undefined,
+      set: (update: (current: PickedMedia[]) => PickedMedia[]) => void,
+    ) => {
+      if (!suggested?.length || autoFilled.current.has(field)) return;
+      autoFilled.current.add(field);
+      set((current) => (current.length ? current : suggested));
+    };
+    fill("firstFrame", suggestedFirstFrame, setFirstFrame);
+    fill("references", suggestedReferences?.slice(0, MAX_REFERENCES), setReferences);
+    fill("guideAudio", suggestedGuideAudio, setGuideAudio);
   }, [projectId, shotId, suggestedFirstFrame, suggestedReferences, suggestedGuideAudio]);
 
   useEffect(() => {
