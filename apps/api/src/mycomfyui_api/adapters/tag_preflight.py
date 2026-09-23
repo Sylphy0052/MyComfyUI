@@ -109,8 +109,8 @@ class TagCheck:
 def split_prompt(prompt: str) -> list[str]:
     """プロンプトから強調の構文を外し、タグ単位に区切る。
 
-    強調の括弧`(` `)` `[` `]`と、閉じ括弧の直前にある重み`:1.2`を外してから、括弧の
-    内側も含めてカンマと改行で区切る。`((smile))`は`smile`、
+    強調の括弧`(` `)` `[` `]`と、閉じ括弧の直前にある重み`:1.2`を外し、括弧の内側も
+    含めてカンマと改行と括弧で区切る。`((smile))`は`smile`、
     `(masterpiece, best quality:1.2)`は`masterpiece`と`best quality`になる。
     `hoshino ai \\(oshi no ko\\)`のようなエスケープ済みの括弧はタグの一部として残す。
     """
@@ -124,19 +124,18 @@ def split_prompt(prompt: str) -> list[str]:
             index += 2
             continue
         index += 1
-        if char == ")":
+        if char not in "()[],\n":
+            current.append(char)
+            continue
+        text = "".join(current)
+        if char in ")]":
             # `(:3)`のように重みを外すと空になるものは、重みでなくタグとして残す。
-            text = "".join(current)
             stripped = WEIGHT_SUFFIX.sub("", text)
             if stripped.strip():
-                current = [stripped]
-        elif char in "([]":
-            continue
-        elif char in ",\n":
-            segments.append("".join(current))
-            current = []
-        else:
-            current.append(char)
+                text = stripped
+        # 括弧も区切りとし、`(a:1.2)(b:1.1)`のような区切りの無い並びも分ける。
+        segments.append(text)
+        current = []
     segments.append("".join(current))
     return [segment.strip() for segment in segments if segment.strip()]
 
