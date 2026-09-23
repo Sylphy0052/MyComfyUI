@@ -523,12 +523,12 @@ export function ProjectWorkspace({
               )}
 
               {selected.lifecycle !== "trashed" && (
-                <ProjectOperations key={selected.id} project={selected} />
+                <ProjectOperations key={`operations-${selected.id}`} project={selected} />
               )}
 
               {selected.source_type === "external" && (
                 <ProjectSyncPanel
-                  key={selected.id}
+                  key={`sync-${selected.id}`}
                   project={selected}
                   onChanged={async (project) => {
                     setFocusedId(project.id);
