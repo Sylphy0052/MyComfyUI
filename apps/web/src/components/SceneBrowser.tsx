@@ -190,7 +190,7 @@ export function SceneBrowser(props: Props) {
         {simple && scenes.length > 0 && (
           <select aria-label="Scene" value={sceneId ?? ""}
             onChange={(event) => { if (event.target.value) onSelectScene(event.target.value); }}>
-            {!sceneId && <option value="">選択してください</option>}
+            {(!sceneId || !scenes.some((s) => s.id === sceneId)) && <option value="">選択してください</option>}
             {scenes.map((item) => (
               <option key={item.id} value={item.id}>#{item.sequence} {item.summary}</option>
             ))}
@@ -240,7 +240,7 @@ export function SceneBrowser(props: Props) {
         {simple && shots.length > 0 && (
           <select aria-label="Shot" value={shotId ?? ""}
             onChange={(event) => { if (event.target.value) onSelectShot(event.target.value); }}>
-            {!shotId && <option value="">選択してください</option>}
+            {(!shotId || !shots.some((s) => s.id === shotId)) && <option value="">選択してください</option>}
             {shots.map((item) => (
               <option key={item.id} value={item.id}>#{item.sequence} {item.summary}</option>
             ))}

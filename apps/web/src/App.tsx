@@ -515,6 +515,7 @@ export function App() {
         setError(`Job ${jobId} が現在のJob一覧に見つかりません。`);
         return;
       }
+      setError(null);
       setGenerationTab(job.kind as GenerationTab);
       // Job一覧はラボにだけあるため、作品制作から開いたときもラボへ移る。
       setMode("lab");
