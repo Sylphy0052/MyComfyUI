@@ -21,9 +21,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Flag, auto
 from typing import Any
+
+#: 検証を受け付けるグラフのnode数上限。同梱テンプレートの最大構成(数十node)の
+#: 数倍を見込む。再帰DFSに依らない構造にしても、上限が無いと巨大グラフによる
+#: DoSの余地が残るため、`validate_graph`側で先に拒否する。
+MAX_GRAPH_NODES = 500
 
 
 class NodeCapability(Flag):
@@ -122,6 +128,10 @@ def validate_graph(graph: dict[str, Any]) -> GraphValidationResult:
 
     if not isinstance(graph, dict) or not graph:
         raise GraphValidationError(["グラフが空、または不正な形式です。"])
+    if len(graph) > MAX_GRAPH_NODES:
+        raise GraphValidationError(
+            [f"グラフのnode数が上限({MAX_GRAPH_NODES})を超えています。"]
+        )
 
     node_classes: set[str] = set()
     capability_warnings: list[str] = []
@@ -185,31 +195,40 @@ def validate_graph(graph: dict[str, Any]) -> GraphValidationResult:
 
 
 def _find_cycle(adjacency: dict[str, set[str]]) -> list[str] | None:
-    """深さ優先探索で循環を1つ見つける。無ければNone。"""
+    """深さ優先探索で循環を1つ見つける。無ければNone。
+
+    再帰は使わない。`MAX_GRAPH_NODES`で上限を設けていても、直列に長く繋がった
+    グラフでは再帰DFSが`RecursionError`を起こしうるため、明示的なスタックで
+    深さ優先探索を行う。
+    """
     WHITE, GRAY, BLACK = 0, 1, 2
     color: dict[str, int] = dict.fromkeys(adjacency, WHITE)
-    path: list[str] = []
 
-    def visit(node_id: str) -> list[str] | None:
-        color[node_id] = GRAY
-        path.append(node_id)
-        for neighbor in adjacency.get(node_id, ()):
-            if color.get(neighbor, WHITE) == GRAY:
-                cycle_start = path.index(neighbor)
-                return [*path[cycle_start:], neighbor]
-            if color.get(neighbor, WHITE) == WHITE:
-                found = visit(neighbor)
-                if found is not None:
-                    return found
-        path.pop()
-        color[node_id] = BLACK
-        return None
-
-    for node_id in adjacency:
-        if color[node_id] == WHITE:
-            found = visit(node_id)
-            if found is not None:
-                return found
+    for start in adjacency:
+        if color[start] != WHITE:
+            continue
+        path: list[str] = [start]
+        stack: list[tuple[str, Iterator[str]]] = [
+            (start, iter(adjacency.get(start, ())))
+        ]
+        color[start] = GRAY
+        while stack:
+            node_id, neighbors = stack[-1]
+            advanced = False
+            for neighbor in neighbors:
+                if color.get(neighbor, WHITE) == GRAY:
+                    cycle_start = path.index(neighbor)
+                    return [*path[cycle_start:], neighbor]
+                if color.get(neighbor, WHITE) == WHITE:
+                    color[neighbor] = GRAY
+                    path.append(neighbor)
+                    stack.append((neighbor, iter(adjacency.get(neighbor, ()))))
+                    advanced = True
+                    break
+            if not advanced:
+                color[node_id] = BLACK
+                path.pop()
+                stack.pop()
     return None
 
 
@@ -251,3 +270,41 @@ def diff_graphs(old_graph: dict[str, Any], new_graph: dict[str, Any]) -> dict[st
         "added_node_classes": sorted(c for c in (new_classes - old_classes) if c),
         "removed_node_classes": sorted(c for c in (old_classes - new_classes) if c),
     }
+
+
+def validate_slot_references(
+    graph: dict[str, Any],
+    node_classes: frozenset[str],
+    *,
+    model_slots: list[dict[str, Any]],
+    inputs: list[dict[str, Any]],
+    outputs: list[dict[str, Any]],
+) -> None:
+    """登録要求の`model_slots`/`inputs`/`outputs`が`graph`と矛盾しないか確かめる。
+
+    宣言したnode id・node classがgraphに実在しないと、Recipe接続後の値の差し替えや
+    モデル在庫確認が解決できず失敗する。フィールド構造全体は検証せず、参照先の実在
+    だけを確かめる最小限の照合に留める。`node_classes`は`validate_graph`が返した
+    グラフ内の既知class_type集合を再利用する。
+    """
+    issues: list[str] = []
+    for slot in model_slots:
+        if not isinstance(slot, dict):
+            continue
+        node_class = slot.get("node_class")
+        if isinstance(node_class, str) and node_class not in node_classes:
+            issues.append(
+                f"model_slots '{slot.get('variable')}' が参照するnode_class "
+                f"'{node_class}' はグラフに存在しません。"
+            )
+    for label, entries in (("inputs", inputs), ("outputs", outputs)):
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            node_id = entry.get("node_id")
+            if isinstance(node_id, str) and node_id not in graph:
+                issues.append(
+                    f"{label}が参照するnode {node_id} はグラフに存在しません。"
+                )
+    if issues:
+        raise GraphValidationError(issues)

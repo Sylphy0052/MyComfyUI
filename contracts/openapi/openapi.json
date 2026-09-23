@@ -6687,6 +6687,13 @@
             "title": "Added Nodes",
             "type": "array"
           },
+          "capability_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capability Warnings",
+            "type": "array"
+          },
           "changed_nodes": {
             "items": {
               "type": "string"
@@ -6758,6 +6765,13 @@
               }
             ],
             "title": "Based On Version Id"
+          },
+          "capability_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capability Warnings",
+            "type": "array"
           },
           "created_at": {
             "title": "Created At",

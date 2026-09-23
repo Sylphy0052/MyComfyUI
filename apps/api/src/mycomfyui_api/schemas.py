@@ -843,6 +843,9 @@ class WorkflowVersionRead(ApiModel):
     graph_sha256: str | None = None
     based_on_version_id: str | None = None
     created_at: str
+    #: `graph_validation.validate_graph`が返した、審査対象の能力を持つnodeの警告。
+    #: graphを持たない版(同梱テンプレート由来)では空のまま。
+    capability_warnings: list[str] = Field(default_factory=list)
 
 
 class WorkflowGraphVersionCreate(ApiModel):
@@ -875,6 +878,8 @@ class WorkflowVersionDiffRead(ApiModel):
     inputs_changed: bool
     outputs_changed: bool
     model_slots_changed: bool
+    #: 新版のgraphから再計算した、審査対象の能力を持つnodeの警告。
+    capability_warnings: list[str] = Field(default_factory=list)
 
 
 class WorkflowModelSlotOptions(ApiModel):

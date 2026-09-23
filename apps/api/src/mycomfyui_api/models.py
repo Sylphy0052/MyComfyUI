@@ -64,9 +64,7 @@ class Project(Base):
     thumbnail_artifact_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("artifact.id"), nullable=True
     )
-    generation_defaults: Mapped[dict] = mapped_column(
-        JSON, nullable=False, default=dict
-    )
+    generation_defaults: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     local_overrides: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     source_type: Mapped[str] = mapped_column(Text, nullable=False)
     source_locator: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -319,12 +317,7 @@ class GenerationJob(Base):
             deferrable=True,
             initially="DEFERRED",
         ),
-        Index(
-            "ix_generation_job_assignment",
-            "assigned_project_id",
-            "assigned_scene_id",
-            "assigned_shot_id",
-        ),
+        Index("ix_generation_job_assignment", "assigned_project_id", "assigned_scene_id", "assigned_shot_id"),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
@@ -389,9 +382,7 @@ class GenerationBatchItem(Base):
         String(UUID_LENGTH), ForeignKey("generation_batch.id"), nullable=False
     )
     scene_id: Mapped[str] = mapped_column(String(PROJECT_ID_LENGTH), nullable=False)
-    shot_id: Mapped[str | None] = mapped_column(
-        String(PROJECT_ID_LENGTH), nullable=True
-    )
+    shot_id: Mapped[str | None] = mapped_column(String(PROJECT_ID_LENGTH), nullable=True)
     job_id: Mapped[str | None] = mapped_column(
         String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=True
     )
@@ -494,12 +485,7 @@ class Artifact(Base):
             "decision in ('undecided','accepted','rejected')",
             name="ck_artifact_decision",
         ),
-        Index(
-            "ix_artifact_assignment",
-            "assigned_project_id",
-            "assigned_scene_id",
-            "assigned_shot_id",
-        ),
+        Index("ix_artifact_assignment", "assigned_project_id", "assigned_scene_id", "assigned_shot_id"),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mycomfyui_api import graph_validation, schemas
@@ -360,7 +361,16 @@ async def register_graph_version(
         created_at=schemas.now_iso(),
     )
     session.add(version)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as error:
+        # 既存版確認から書き込みまでの間に別リクエストが同じ内容を登録した場合、
+        # UniqueConstraint違反になる。競合として再取得し、無ければそのまま送出する。
+        await session.rollback()
+        existing_after_conflict = await _get_version(session, workflow.id, digest)
+        if existing_after_conflict is None:
+            raise
+        raise GraphVersionConflict(existing_after_conflict.id) from error
     await session.refresh(version)
     return version
 
@@ -368,11 +378,25 @@ async def register_graph_version(
 def diff_graph_versions(
     old_version: WorkflowVersion, new_version: WorkflowVersion
 ) -> dict[str, Any]:
-    """2つのWorkflow版のグラフ・入出力差分。承認前の確認画面に使う。"""
+    """2つのWorkflow版のグラフ・入出力差分。承認前の確認画面に使う。
+
+    `capability_warnings`は新版のgraphから登録時と同じ検証を再実行して求める。
+    保存時点では警告を保持しないため、確認のたびに計算し直す。
+    """
 
     old_graph = old_version.graph if isinstance(old_version.graph, dict) else {}
     new_graph = new_version.graph if isinstance(new_version.graph, dict) else {}
     graph_diff = graph_validation.diff_graphs(old_graph, new_graph)
+    capability_warnings: list[str] = []
+    if new_graph:
+        try:
+            capability_warnings = list(
+                graph_validation.validate_graph(new_graph).capability_warnings
+            )
+        except graph_validation.GraphValidationError:
+            # 登録済みの版は登録時に検証を通っているはずだが、テンプレート由来の
+            # 版などgraphを持たない場合の再検証失敗は警告無しとして扱う。
+            capability_warnings = []
     return {
         "old_version_id": old_version.id,
         "new_version_id": new_version.id,
@@ -380,6 +404,7 @@ def diff_graph_versions(
         "inputs_changed": old_version.inputs != new_version.inputs,
         "outputs_changed": old_version.outputs != new_version.outputs,
         "model_slots_changed": old_version.model_slots != new_version.model_slots,
+        "capability_warnings": capability_warnings,
     }
 
 

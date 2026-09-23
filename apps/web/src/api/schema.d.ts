@@ -4106,6 +4106,8 @@ export interface components {
             added_node_classes: string[];
             /** Added Nodes */
             added_nodes: string[];
+            /** Capability Warnings */
+            capability_warnings?: string[];
             /** Changed Nodes */
             changed_nodes: string[];
             /** Inputs Changed */
@@ -4130,6 +4132,8 @@ export interface components {
         WorkflowVersionRead: {
             /** Based On Version Id */
             based_on_version_id?: string | null;
+            /** Capability Warnings */
+            capability_warnings?: string[];
             /** Created At */
             created_at: string;
             /** Graph */
