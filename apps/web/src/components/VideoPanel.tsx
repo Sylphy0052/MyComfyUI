@@ -433,6 +433,8 @@ export function VideoPanel({
         <textarea
           id="video-prompt"
           value={prompt}
+          // 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。
+          readOnly={promptDiff !== null}
           onChange={(event) => setPrompt(event.target.value)}
         />
 

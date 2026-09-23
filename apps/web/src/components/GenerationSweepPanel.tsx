@@ -273,8 +273,9 @@ export function GenerationSweepPanel({
             }}
           />
         )}
-        <label>基本Prompt<textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label>
-        <label>Negative<textarea value={negative} onChange={(event) => setNegative(event.target.value)} /></label>
+        {/* 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。 */}
+        <label>基本Prompt<textarea value={prompt} readOnly={promptDiff !== null} onChange={(event) => setPrompt(event.target.value)} /></label>
+        <label>Negative<textarea value={negative} readOnly={promptDiff !== null} onChange={(event) => setNegative(event.target.value)} /></label>
         <div className="row">
           <label>seed<input value={seedAxis} onChange={(event) => setSeedAxis(event.target.value)} placeholder="-1,1,2" /></label>
           <label>CFG<input value={cfgAxis} onChange={(event) => setCfgAxis(event.target.value)} placeholder="4,5,6" /></label>

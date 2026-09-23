@@ -131,6 +131,8 @@ export function MusicPanel({
   useEffect(() => {
     const music = scene?.data.music;
     if (!music) return;
+    // 開いている差分は読み込み前の mood と genre を土台にしているため閉じる。
+    setPromptDiff(null);
     setMood(music.mood ?? "");
     setGenre(music.genre ?? "");
     setInstrumental(music.instrumental ?? true);
@@ -317,6 +319,8 @@ export function MusicPanel({
             <input
               id="music-mood"
               value={mood}
+              // 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。
+              readOnly={promptDiff !== null}
               onChange={(event) => setMood(event.target.value)}
             />
           </div>
@@ -325,6 +329,7 @@ export function MusicPanel({
             <input
               id="music-genre"
               value={genre}
+              readOnly={promptDiff !== null}
               onChange={(event) => setGenre(event.target.value)}
             />
           </div>
