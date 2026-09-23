@@ -134,6 +134,29 @@ class Settings(BaseSettings):
     #: CORSのheaderを返さず、開発時のViteのproxyのように同一originからの呼び出し
     #: だけが通る。
     allowed_origins: str = ""
+    #: ユーザースクリプトの登録と実行を有効にする。任意コードの実行経路を開くため、
+    #: 利用者が明示的に有効にするまで閉じておく(ADR 0003)。
+    user_scripts_enabled: bool = False
+    #: sandboxを組み立てる実行ファイル。PATHの探索で別の実行ファイルを掴まないよう、
+    #: 絶対パスだけを受け付ける。
+    user_scripts_bwrap_path: str = "/usr/bin/bwrap"
+    user_scripts_prlimit_path: str = "/usr/bin/prlimit"
+    user_scripts_systemd_run_path: str = "/usr/bin/systemd-run"
+    user_scripts_systemctl_path: str = "/usr/bin/systemctl"
+    #: sandboxの中でscriptを実行するinterpreter。sandboxへは`/usr`だけを見せるため、
+    #: `/usr`配下のパスに限る。
+    user_scripts_python_path: str = "/usr/bin/python3"
+    #: previewから承認と実行までの期限。過ぎたrunは承認を取り直す。
+    user_scripts_approval_ttl_seconds: int = Field(default=900, gt=0)
+    #: scriptの能力manifestが宣言できる上限。manifestはこれ以下の値だけを持てる。
+    user_scripts_max_cpu_seconds: int = Field(default=300, gt=0)
+    user_scripts_max_memory_bytes: int = Field(default=2 * 1024 * 1024 * 1024, gt=0)
+    user_scripts_max_tasks: int = Field(default=64, gt=0)
+    user_scripts_max_wall_seconds: int = Field(default=600, gt=0)
+    user_scripts_max_output_bytes: int = Field(default=256 * 1024 * 1024, gt=0)
+    user_scripts_max_output_files: int = Field(default=64, gt=0)
+    #: stdoutとstderrそれぞれの保存上限。超えたらrunを止める。
+    user_scripts_max_log_bytes: int = Field(default=1024 * 1024, gt=0)
 
     @classmethod
     def settings_customise_sources(
@@ -194,6 +217,16 @@ class Settings(BaseSettings):
         `tmp/`配下のため、終端後に消しても他の記録へ影響しない。
         """
         return self.data_root / "tmp" / "agent"
+
+    @property
+    def user_script_approval_key_path(self) -> Path:
+        """ユーザースクリプトの承認tokenを署名する鍵。応答にもログにも出さない。"""
+        return self.data_root / "secrets" / "user-script-approval.key"
+
+    @property
+    def user_script_runs_root(self) -> Path:
+        """runごとの作業ディレクトリの親。終了後に消す。"""
+        return self.data_root / "tmp" / "script-runs"
 
 
 @lru_cache
