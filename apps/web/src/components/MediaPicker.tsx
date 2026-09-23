@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import type { DragEvent } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { Artifact, MediaRole, ProjectCharacterProfile } from "../api/client";
+import { hasArtifactDrag, hasFileDrag, readArtifactDrag } from "./artifactDrag";
+import type { ArtifactDragPayload } from "./artifactDrag";
 
 /**
  * Job入力として渡す画像・音声の指定。既存Artifactを指すか、アップロード直後に
@@ -148,6 +151,7 @@ export function MediaPicker({
   const [characters, setCharacters] = useState<ProjectCharacterProfile[]>([]);
   const [role, setRole] = useState<MediaRole | "">("");
   const [characterIds, setCharacterIds] = useState<string[]>([]);
+  const [dragOver, setDragOver] = useState(false);
 
   const needsArtifacts = sources.includes("generated") || sources.includes("registered");
 
@@ -244,55 +248,79 @@ export function MediaPicker({
       setError("選択した素材が見つかりません。一覧を確認して選び直してください。");
       return;
     }
+    addArtifact(artifact);
+    setPickedArtifactId("");
+  };
+
+  const addArtifact = (artifact: Artifact) => {
     setError(null);
     appendOrReplace({
       key: crypto.randomUUID(),
       label: `${artifact.id.slice(0, 8)} / ${artifact.created_at}`,
-      source: { artifact_id: artifactId },
+      source: { artifact_id: artifact.id },
       mediaType: artifact.media_type,
       artifact,
     });
-    tagRoleFor({ artifact_id: artifactId });
-    setPickedArtifactId("");
+    tagRoleFor({ artifact_id: artifact.id });
   };
 
-  const uploadFile = async (file: File) => {
+  /** 一覧からドロップされた生成物を割り当てる。一覧に無ければAPIから取り直す。 */
+  const assignDroppedArtifact = async (payload: ArtifactDragPayload) => {
     if (atMax) {
       setError(`選べるのは${max}件までです。`);
       return;
     }
+    if (!payload.media_type.startsWith(`${kind}/`)) {
+      setError(kind === "image" ? "画像の素材をドロップしてください。" : "音声の素材をドロップしてください。");
+      return;
+    }
+    let artifact = artifacts.find((item) => item.id === payload.id);
+    if (!artifact) {
+      setBusy(true);
+      try {
+        artifact = await api.getArtifact(payload.id);
+      } catch (cause) {
+        setError(describe(cause));
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
+    if (artifact.availability !== "complete") {
+      setError("実ファイルが無い素材は選べません。");
+      return;
+    }
+    addArtifact(artifact);
+  };
+
+  /** 1件を検証し、必要なら入力cacheへ登録する。失敗時はエラーを出してnullを返す。 */
+  const prepareUpload = async (file: File): Promise<PickedMedia | null> => {
     if (file.size > maxBytes) {
       setError(`ファイルは${Math.floor(maxBytes / (1024 * 1024))}MB以下にしてください。`);
-      return;
+      return null;
     }
     // typeが取得できないブラウザ環境もあるため、判別できた場合のみ弾く。
     if (kind === "image" && file.type && !file.type.startsWith("image/")) {
       setError("画像ファイルを選択してください。");
-      return;
+      return null;
     }
-    setError(null);
+    if (kind === "audio" && file.type && !file.type.startsWith("audio/")) {
+      setError("音声ファイルを選択してください。");
+      return null;
+    }
     const resolvedMediaType = mediaTypeOf(file, kind);
     if (!autoRegister) {
-      appendOrReplace({
+      return {
         key: crypto.randomUUID(),
         label: file.name,
         // 未登録のため実際には使わない。呼び出し側はfileを直接扱う契約。
         source: { relative_path: "", sha256: "" },
         mediaType: resolvedMediaType,
         file,
-      });
-      return;
+      };
     }
-    setBusy(true);
     try {
       const stored = await api.createImageReference(file.name, await toBase64(file), resolvedMediaType);
-      appendOrReplace({
-        key: crypto.randomUUID(),
-        label: file.name,
-        source: { relative_path: stored.relative_path, sha256: stored.sha256 },
-        mediaType: resolvedMediaType,
-        file,
-      });
       tagRoleFor({
         relative_path: stored.relative_path,
         sha256: stored.sha256,
@@ -300,12 +328,88 @@ export function MediaPicker({
         byte_size: stored.byte_size,
         media_type: stored.media_type,
       });
+      return {
+        key: crypto.randomUUID(),
+        label: file.name,
+        source: { relative_path: stored.relative_path, sha256: stored.sha256 },
+        mediaType: resolvedMediaType,
+        file,
+      };
     } catch (cause) {
       setError(describe(cause));
+      return null;
+    }
+  };
+
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+    const room = typeof max === "number" ? max - value.length : Number.POSITIVE_INFINITY;
+    if (room <= 0) {
+      setError(`選べるのは${max}件までです。`);
+      return;
+    }
+    const targets = multiple ? files.slice(0, room) : files.slice(0, 1);
+    setError(null);
+    setBusy(true);
+    const picked: PickedMedia[] = [];
+    try {
+      for (const file of targets) {
+        const item = await prepareUpload(file);
+        if (item) picked.push(item);
+      }
     } finally {
       setBusy(false);
     }
+    if (picked.length > 0) onChange(multiple ? [...value, ...picked] : picked);
+    if (files.length > targets.length) {
+      setError(
+        multiple
+          ? `選べるのは${max}件までのため、${files.length - targets.length}件は取り込んでいません。`
+          : "1件だけ選べます。最初の1件を取り込みました。",
+      );
+    }
   };
+
+  const acceptsFiles = sources.includes("upload");
+  // ドラッグ元は画像の一覧だけのため、生成物のドロップは画像のピッカーだけで受ける。
+  const acceptsArtifacts = needsArtifacts && kind === "image";
+  const canDrop = (dataTransfer: DataTransfer) =>
+    !disabled &&
+    !busy &&
+    ((acceptsFiles && hasFileDrag(dataTransfer)) ||
+      (acceptsArtifacts && hasArtifactDrag(dataTransfer)));
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!canDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    // 子要素へ移っただけのときは強調を消さない。
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDragOver(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    setDragOver(false);
+    if (!canDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    const payload = acceptsArtifacts ? readArtifactDrag(event.dataTransfer) : null;
+    if (payload) {
+      void assignDroppedArtifact(payload);
+      return;
+    }
+    if (acceptsFiles) void uploadFiles(Array.from(event.dataTransfer.files));
+  };
+
+  const dropHint = [
+    acceptsFiles ? `${kind === "image" ? "画像" : "音声"}ファイル` : null,
+    acceptsArtifacts ? "一覧の画像" : null,
+  ]
+    .filter(Boolean)
+    .join("や");
 
   const remove = (key: string) => {
     onChange(value.filter((item) => item.key !== key));
@@ -319,11 +423,19 @@ export function MediaPicker({
         : null;
 
   return (
-    <div className="media-picker stack">
+    <div
+      className={`media-picker stack drop-zone${dragOver ? " is-drag-over" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="row spread">
         <span className="muted">{label}</span>
         {counter && <span className="muted">{counter}</span>}
       </div>
+      {dropHint && !disabled && (
+        <span className="muted drop-hint">{`${dropHint}をここへドロップできます`}</span>
+      )}
       {sources.length > 1 && (
         <div className="row media-picker-tabs">
           {sources.map((item) => (
@@ -370,7 +482,7 @@ export function MediaPicker({
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
-            if (file) void uploadFile(file);
+            if (file) void uploadFiles([file]);
           }}
         />
       )}
