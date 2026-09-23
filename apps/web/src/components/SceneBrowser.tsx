@@ -62,6 +62,11 @@ interface Props {
   shotId: string | null;
   onSelectShot: (shotId: string) => void;
   shot: ShotEnvelope | null;
+  /**
+   * 作品制作 (モードB) 向けの表示。Project・Scene・Shotの選択だけを出す。
+   * 検索語や編集中の入力はマウントしたまま隠し、ラボへ移ったときに残す。
+   */
+  simple?: boolean;
 }
 
 type Editor = "create-scene" | "edit-scene" | "create-shot" | "edit-shot" | null;
@@ -70,6 +75,7 @@ export function SceneBrowser(props: Props) {
   const {
     projects, projectId, onSelectProject, onManageProjects, onStructureChanged,
     scenes, sceneId, onSelectScene, scene, shots, shotId, onSelectShot, shot,
+    simple = false,
   } = props;
   const [projectQuery, setProjectQuery] = useState("");
   const [editor, setEditor] = useState<Editor>(null);
@@ -79,6 +85,7 @@ export function SceneBrowser(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const selectedProject = projects.find((item) => item.id === projectId) ?? null;
   const editable = selectedProject?.source_type === "local";
+  const structureEditable = editable && !simple;
   const visibleProjects = useMemo(() => {
     const query = projectQuery.trim().toLocaleLowerCase();
     if (!query) return projects;
@@ -141,9 +148,11 @@ export function SceneBrowser(props: Props) {
     <div>
       <section className="panel">
         <h2>Project</h2>
-        <label htmlFor="generation-project-search">Project検索</label>
-        <input id="generation-project-search" type="search" value={projectQuery}
-          placeholder="名前、ID、タグ" onChange={(event) => setProjectQuery(event.target.value)} />
+        <div hidden={simple}>
+          <label htmlFor="generation-project-search">Project検索</label>
+          <input id="generation-project-search" type="search" value={projectQuery}
+            placeholder="名前、ID、タグ" onChange={(event) => setProjectQuery(event.target.value)} />
+        </div>
         <label htmlFor="generation-project" style={{ marginTop: 8 }}>使用するProject</label>
         <select id="generation-project" value={projectId ?? ""}
           onChange={(event) => onSelectProject(event.target.value || null)}>
@@ -154,26 +163,28 @@ export function SceneBrowser(props: Props) {
             </option>
           ))}
         </select>
-        <button type="button" onClick={onManageProjects} style={{ marginTop: 8 }}>Projectを管理</button>
+        <button type="button" hidden={simple} onClick={onManageProjects} style={{ marginTop: 8 }}>Projectを管理</button>
       </section>
 
       {error && <p className="error">{error}</p>}
       {selectedProject && projectId && (
-        <ProjectLocalOverridesEditor
-          key={projectId}
-          projectId={projectId}
-          sceneId={sceneId}
-          shotId={shotId}
-        />
+        <div hidden={simple}>
+          <ProjectLocalOverridesEditor
+            key={projectId}
+            projectId={projectId}
+            sceneId={sceneId}
+            shotId={shotId}
+          />
+        </div>
       )}
-      {selectedProject && !editable && (
+      {selectedProject && !editable && !simple && (
         <p className="muted">外部同期Projectの原文と構造は読取り専用です。人物設定と生成プロンプトはMyComfyUI側で編集できます。</p>
       )}
 
       <section className="panel structure-panel">
         <div className="row spread">
           <h2>Scene</h2>
-          {editable && <button type="button" disabled={busy} onClick={() => { setEditingScene(null); setEditor("create-scene"); }}>追加</button>}
+          {structureEditable && <button type="button" disabled={busy} onClick={() => { setEditingScene(null); setEditor("create-scene"); }}>追加</button>}
         </div>
         <ul className="list structure-list">
           {scenes.map((item, index) => (
@@ -188,7 +199,7 @@ export function SceneBrowser(props: Props) {
                   </span>
                 )}
               </button>
-              {editable && <div className="row structure-actions">
+              {structureEditable && <div className="row structure-actions">
                 <button type="button" disabled={busy || index === 0} onClick={() => move("scene", index, -1)}>↑</button>
                 <button type="button" disabled={busy || index === scenes.length - 1} onClick={() => move("scene", index, 1)}>↓</button>
                 <button type="button" disabled={busy} onClick={() => { setEditingScene(item); setEditor("edit-scene"); }}>編集</button>
@@ -213,7 +224,7 @@ export function SceneBrowser(props: Props) {
       <section className="panel structure-panel">
         <div className="row spread">
           <h2>Shot</h2>
-          {editable && sceneId && <button type="button" disabled={busy} onClick={() => { setEditingShot(null); setEditor("create-shot"); }}>追加</button>}
+          {structureEditable && sceneId && <button type="button" disabled={busy} onClick={() => { setEditingShot(null); setEditor("create-shot"); }}>追加</button>}
         </div>
         <ul className="list structure-list">
           {shots.map((item, index) => (
@@ -228,7 +239,7 @@ export function SceneBrowser(props: Props) {
                   </span>
                 )}
               </button>
-              {editable && <div className="row structure-actions">
+              {structureEditable && <div className="row structure-actions">
                 <button type="button" disabled={busy || index === 0} onClick={() => move("shot", index, -1)}>↑</button>
                 <button type="button" disabled={busy || index === shots.length - 1} onClick={() => move("shot", index, 1)}>↓</button>
                 <button type="button" disabled={busy} onClick={() => { setEditingShot(item); setEditor("edit-shot"); }}>編集</button>
@@ -254,6 +265,7 @@ export function SceneBrowser(props: Props) {
         </div>}
       </section>
 
+      <div hidden={simple}>
       {(editor === "create-scene" || editor === "edit-scene") && projectId && (
         <StructureEditor kind="scene" initial={editor === "edit-scene" ? editingScene ?? undefined : undefined}
           onCancel={() => setEditor(null)} onSave={async (values) => {
@@ -270,6 +282,7 @@ export function SceneBrowser(props: Props) {
             setEditor(null); onStructureChanged();
           }} />
       )}
+      </div>
     </div>
   );
 }
