@@ -184,7 +184,10 @@ export function ProjectLocalOverridesEditor({
           },
         ],
       }));
+      return;
     }
+    // artifact情報もrelative_pathも無い場合は追加せず、握りつぶさずに知らせる。
+    setError("選択した画像を取り込めませんでした。選び直してください。");
   };
 
   const saveCharacter = async (event: FormEvent) => {

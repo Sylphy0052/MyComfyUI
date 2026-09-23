@@ -333,6 +333,10 @@ export function GenerationForm({
         mediaType = item.mediaType ?? item.file.type;
       } else if ("artifact_id" in item.source) {
         const response = await fetch(api.artifactContentUrl(item.source.artifact_id));
+        if (!response.ok) {
+          setTagError("画像を取得できませんでした。選び直してください。");
+          return;
+        }
         const blob = await response.blob();
         base64 = await blobToBase64(blob);
         mediaType = item.mediaType ?? blob.type;

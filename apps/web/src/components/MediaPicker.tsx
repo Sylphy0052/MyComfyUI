@@ -172,12 +172,16 @@ export function MediaPicker({
       return;
     }
     const artifact = filteredArtifacts.find((item) => item.id === artifactId);
+    if (!artifact) {
+      setError("選択した素材が見つかりません。一覧を確認して選び直してください。");
+      return;
+    }
     setError(null);
     appendOrReplace({
       key: crypto.randomUUID(),
-      label: artifact ? `${artifact.id.slice(0, 8)} / ${artifact.created_at}` : artifactId.slice(0, 8),
+      label: `${artifact.id.slice(0, 8)} / ${artifact.created_at}`,
       source: { artifact_id: artifactId },
-      mediaType: artifact?.media_type,
+      mediaType: artifact.media_type,
       artifact,
     });
     setPickedArtifactId("");
@@ -190,6 +194,11 @@ export function MediaPicker({
     }
     if (file.size > maxBytes) {
       setError(`ファイルは${Math.floor(maxBytes / (1024 * 1024))}MB以下にしてください。`);
+      return;
+    }
+    // typeが取得できないブラウザ環境もあるため、判別できた場合のみ弾く。
+    if (kind === "image" && file.type && !file.type.startsWith("image/")) {
+      setError("画像ファイルを選択してください。");
       return;
     }
     setError(null);
