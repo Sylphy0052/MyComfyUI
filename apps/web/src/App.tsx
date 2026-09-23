@@ -27,6 +27,7 @@ import { ComposePanel } from "./components/ComposePanel";
 import { GenerationForm } from "./components/GenerationForm";
 import { GenerationSweepPanel } from "./components/GenerationSweepPanel";
 import { IntegrityList } from "./components/IntegrityList";
+import { ImageChangePanel } from "./components/ImageChangePanel";
 import { ImageDerivationPanel } from "./components/ImageDerivationPanel";
 import { JobQueue } from "./components/JobQueue";
 import { MediaLibrary } from "./components/MediaLibrary";
@@ -100,9 +101,13 @@ const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
 
 const IMAGE_SUBTABS: { value: ImageSubTab; label: string }[] = [
   { value: "generate", label: "生成" },
+  { value: "change", label: "変更" },
   { value: "derive", label: "派生" },
   { value: "sweep", label: "スイープ" },
 ];
+
+/** 作品制作 (モードB) で出すサブタブ。技術寄りの派生・スイープは隠す。 */
+const PRODUCTION_IMAGE_SUBTABS = new Set<ImageSubTab>(["generate", "change"]);
 
 const JOB_KIND_LABELS: Record<string, string> = Object.fromEntries(
   GENERATION_TABS.map((tab) => [tab.value, tab.label]),
@@ -353,11 +358,17 @@ export function App() {
         "anima_inpaint",
         "image_upscale",
         "sd15_controlnet",
+        "anima_ref_siglip",
+        "anima_ref_incontext",
       ]);
       return recipes.filter((recipe) => allowed.has(recipeTemplateName(recipe)));
     },
     [recipes],
   );
+  const changeRecipes = useMemo(() => {
+    const allowed = new Set(["anima_ref_siglip", "anima_ref_incontext"]);
+    return recipes.filter((recipe) => allowed.has(recipeTemplateName(recipe)));
+  }, [recipes]);
 
   const jobScope = useMemo<Parameters<typeof api.listJobs>[0]>(() => {
     if (!projectId) return { unassigned: true };
@@ -393,7 +404,8 @@ export function App() {
   const isProduction = mode === "production";
   const shownView: View = isProduction ? "generate" : view;
   const shownGenerationTab: GenerationTab = isProduction ? "image" : generationTab;
-  const shownImageSubTab: ImageSubTab = isProduction ? "generate" : imageSubTab;
+  const shownImageSubTab: ImageSubTab =
+    isProduction && !PRODUCTION_IMAGE_SUBTABS.has(imageSubTab) ? "generate" : imageSubTab;
 
   // 作品制作の「次へ」。未選択なら先頭、最後のShotなら次は無い。
   const nextShotId = useMemo(() => {
@@ -1182,11 +1194,13 @@ export function App() {
               <div className="image-input-column">
                 <nav
                   className="image-subtabs"
-                  hidden={isProduction}
                   role="tablist"
                   aria-label="画像の入力種別"
                 >
-                  {IMAGE_SUBTABS.map((item) => (
+                  {(isProduction
+                    ? IMAGE_SUBTABS.filter((item) => PRODUCTION_IMAGE_SUBTABS.has(item.value))
+                    : IMAGE_SUBTABS
+                  ).map((item) => (
                     <button
                       key={item.value}
                       id={`image-subtab-${item.value}`}
@@ -1223,6 +1237,31 @@ export function App() {
                     preview={previewResult}
                     previewError={previewError}
                     simple={isProduction}
+                  />
+                </div>
+
+                <div
+                  id="image-subpanel-change"
+                  role="tabpanel"
+                  aria-labelledby="image-subtab-change"
+                  hidden={shownImageSubTab !== "change"}
+                >
+                  <ImageChangePanel
+                    projectId={projectId}
+                    sceneId={sceneId}
+                    shotId={shotId}
+                    recipes={changeRecipes}
+                    recipesLoading={recipesLoading}
+                    recipesError={recipesError}
+                    onRetryRecipes={() => setRecipesRetryToken((token) => token + 1)}
+                    sourceArtifactId={derivationSourceArtifactId}
+                    onSourceArtifactChange={setDerivationSourceArtifactId}
+                    onSubmittedJob={handleDerivedJob}
+                    onManageWorkflows={() => {
+                      // Workflow管理はラボにだけあるため、作品制作から開いたときもラボへ移る。
+                      setMode("lab");
+                      setView("workflows");
+                    }}
                   />
                 </div>
 
@@ -1285,6 +1324,10 @@ export function App() {
                   onDerive={(artifactId) => {
                     setDerivationSourceArtifactId(artifactId);
                     setImageSubTab("derive");
+                  }}
+                  onChangeSource={(artifactId) => {
+                    setDerivationSourceArtifactId(artifactId);
+                    setImageSubTab("change");
                   }}
                   onPromoteToPreset={setPromotionArtifactId}
                   active={shownView === "generate" && shownGenerationTab === "image"}

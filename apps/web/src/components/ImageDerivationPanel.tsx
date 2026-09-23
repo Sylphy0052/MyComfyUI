@@ -17,7 +17,7 @@ import { EmptyState } from "./ui/EmptyState";
 import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 
-type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet";
+type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet" | "reference";
 
 interface Props {
   projectId: string | null;
@@ -48,6 +48,8 @@ function modeOf(recipe: Recipe | null): DerivationMode | null {
     case "anima_inpaint": return "inpaint";
     case "image_upscale": return "upscale";
     case "sd15_controlnet": return "controlnet";
+    case "anima_ref_siglip": return "reference";
+    case "anima_ref_incontext": return "reference";
     default: return null;
   }
 }
@@ -76,6 +78,7 @@ export function ImageDerivationPanel({
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState("");
   const [denoise, setDenoise] = useState("0.65");
+  const [referenceStrength, setReferenceStrength] = useState("1.0");
   const [seed, setSeed] = useState("-1");
   const [width, setWidth] = useState("832");
   const [height, setHeight] = useState("1216");
@@ -172,6 +175,9 @@ export function ImageDerivationPanel({
     if (defaults.control_strength !== undefined) {
       setControlStrength(String(defaults.control_strength));
     }
+    if (defaults.reference_strength !== undefined) {
+      setReferenceStrength(String(defaults.reference_strength));
+    }
     setTouchedFields(new Set());
   }, [recipe]);
 
@@ -185,6 +191,7 @@ export function ImageDerivationPanel({
     prompt,
     negative,
     denoise,
+    referenceStrength,
     seed,
     width,
     height,
@@ -212,19 +219,28 @@ export function ImageDerivationPanel({
       setError("プロンプトを入力してください。");
       return null;
     }
-    const denoiseValue = Number(denoise);
     const seedValue = Number(seed);
-    if (!Number.isFinite(denoiseValue) || denoiseValue < 0 || denoiseValue > 1) {
-      setError("denoiseは0以上1以下で入力してください。");
-      return null;
-    }
     if (!Number.isInteger(seedValue)) {
       setError("seedは整数で入力してください。");
       return null;
     }
     if (include("positive_prompt")) inputs.positive_prompt = prompt;
     if (include("negative_prompt")) inputs.negative_prompt = negative;
-    if (include("denoise")) inputs.denoise = denoiseValue;
+    if (mode === "reference") {
+      const referenceStrengthValue = Number(referenceStrength);
+      if (!Number.isFinite(referenceStrengthValue) || referenceStrengthValue < 0 || referenceStrengthValue > 2) {
+        setError("参照強度は0以上2以下で入力してください。");
+        return null;
+      }
+      if (include("reference_strength")) inputs.reference_strength = referenceStrengthValue;
+    } else {
+      const denoiseValue = Number(denoise);
+      if (!Number.isFinite(denoiseValue) || denoiseValue < 0 || denoiseValue > 1) {
+        setError("denoiseは0以上1以下で入力してください。");
+        return null;
+      }
+      if (include("denoise")) inputs.denoise = denoiseValue;
+    }
     if (include("seed")) inputs.seed = seedValue;
     if (mode === "inpaint") {
       const grow = Number(growMaskBy);
@@ -410,7 +426,11 @@ export function ImageDerivationPanel({
           <label htmlFor="derivation-negative">除外したい要素</label>
           <textarea id="derivation-negative" value={negative} readOnly={promptDiff !== null} onChange={(event) => { setNegative(event.target.value); setTouchedFields((current) => new Set(current).add("negative_prompt")); }} />
           <div className="row">
-            <label>denoise<input type="number" min="0" max="1" step="0.05" value={denoise} onChange={(event) => { setDenoise(event.target.value); setTouchedFields((current) => new Set(current).add("denoise")); }} /></label>
+            {mode === "reference" ? (
+              <label>参照強度<input type="number" min="0" max="2" step="0.05" value={referenceStrength} onChange={(event) => { setReferenceStrength(event.target.value); setTouchedFields((current) => new Set(current).add("reference_strength")); }} /></label>
+            ) : (
+              <label>denoise<input type="number" min="0" max="1" step="0.05" value={denoise} onChange={(event) => { setDenoise(event.target.value); setTouchedFields((current) => new Set(current).add("denoise")); }} /></label>
+            )}
             <label>seed<input type="number" value={seed} onChange={(event) => { setSeed(event.target.value); setTouchedFields((current) => new Set(current).add("seed")); }} /></label>
           </div>
         </>}
