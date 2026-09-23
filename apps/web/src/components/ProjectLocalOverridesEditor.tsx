@@ -117,11 +117,14 @@ export function ProjectLocalOverridesEditor({
     };
   }, [projectId]);
 
-  const persist = async (next: LocalOverrides) => {
+  // 全体置換のPUTのため、保存直前に最新を読み直してから変更を当てる。手元の古い
+  // キャラクター定義や衣装指定で、他の画面での編集を巻き戻さないようにする。
+  const persist = async (update: (latest: ProjectLocalOverrides) => ProjectLocalOverrides) => {
     setBusy(true);
     setError(null);
     try {
-      const saved = await api.updateProjectLocalOverrides(projectId, next);
+      const latest = await api.getProjectLocalOverrides(projectId);
+      const saved = await api.updateProjectLocalOverrides(projectId, update(latest));
       setSettings(normalize(saved));
     } catch (cause) {
       setError(describe(cause));
@@ -138,10 +141,12 @@ export function ProjectLocalOverridesEditor({
   ) => {
     if (!settings) return;
     const field = kind === "scene" ? "scene_prompts" : "shot_prompts";
-    const prompts = { ...settings[field] };
-    if (prompt) prompts[resourceId] = prompt;
-    else delete prompts[resourceId];
-    await persist({ ...settings, [field]: prompts });
+    await persist((latest) => {
+      const prompts = { ...(latest[field] ?? {}) };
+      if (prompt) prompts[resourceId] = prompt;
+      else delete prompts[resourceId];
+      return { ...latest, [field]: prompts };
+    });
   };
 
   if (!settings) {

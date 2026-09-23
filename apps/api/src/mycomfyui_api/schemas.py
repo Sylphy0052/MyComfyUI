@@ -353,6 +353,23 @@ class ProjectCharacterProfile(ApiModel):
     # 定義を最後に変えた時刻。保存時にサーバーが付け、クライアントの値は使わない。
     updated_at: str | None = None
 
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("人物・キャラクターのタグを重複させられません。")
+        return value
+
+    @field_validator("reference_images")
+    @classmethod
+    def _unique_references(
+        cls, value: list[ProjectReferenceImage]
+    ) -> list[ProjectReferenceImage]:
+        paths = [item.relative_path for item in value]
+        if len(set(paths)) != len(paths):
+            raise ValueError("同じ参照画像を重複して登録できません。")
+        return value
+
     @field_validator("outfits")
     @classmethod
     def _unique_outfits(
@@ -370,23 +387,6 @@ class ProjectCharacterProfile(ApiModel):
         }:
             raise ValueError("既定の衣装は登録済みの衣装から選んでください。")
         return self
-
-    @field_validator("tags")
-    @classmethod
-    def _unique_tags(cls, value: list[str]) -> list[str]:
-        if len(set(value)) != len(value):
-            raise ValueError("人物・キャラクターのタグを重複させられません。")
-        return value
-
-    @field_validator("reference_images")
-    @classmethod
-    def _unique_references(
-        cls, value: list[ProjectReferenceImage]
-    ) -> list[ProjectReferenceImage]:
-        paths = [item.relative_path for item in value]
-        if len(set(paths)) != len(paths):
-            raise ValueError("同じ参照画像を重複して登録できません。")
-        return value
 
 
 class ProjectLocalOverrides(ApiModel):

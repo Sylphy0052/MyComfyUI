@@ -56,36 +56,21 @@ function toDraft(profile?: ProjectCharacterProfile): CharacterDraft {
       };
 }
 
-/** 衣装を削除・変更した後、scene_outfitsの参照切れ (422) を保存前に落とす。 */
+/**
+ * scene_outfitsから、指定キャラクターの衣装指定のうち`validOutfitIds`に無いものを落とす。
+ * 衣装の削除後やキャラクターの削除時 (空集合を渡す) に、参照切れ (422) を保存前に防ぐ。
+ */
 function pruneSceneOutfits(
   sceneOutfits: SceneOutfitMap | undefined,
   characterId: string,
-  validOutfitIds: Set<string>,
-): SceneOutfitMap {
-  const next: SceneOutfitMap = {};
-  for (const [sceneId, forScene] of Object.entries(sceneOutfits ?? {})) {
-    const outfitId = forScene[characterId];
-    if (outfitId && !validOutfitIds.has(outfitId)) {
-      const rest = Object.fromEntries(
-        Object.entries(forScene).filter(([id]) => id !== characterId),
-      );
-      if (Object.keys(rest).length > 0) next[sceneId] = rest;
-    } else if (Object.keys(forScene).length > 0) {
-      next[sceneId] = forScene;
-    }
-  }
-  return next;
-}
-
-/** 削除したキャラクターへの参照をscene_outfitsからすべて落とす。 */
-function removeCharacterFromSceneOutfits(
-  sceneOutfits: SceneOutfitMap | undefined,
-  characterId: string,
+  validOutfitIds: ReadonlySet<string>,
 ): SceneOutfitMap {
   const next: SceneOutfitMap = {};
   for (const [sceneId, forScene] of Object.entries(sceneOutfits ?? {})) {
     const rest = Object.fromEntries(
-      Object.entries(forScene).filter(([id]) => id !== characterId),
+      Object.entries(forScene).filter(
+        ([id, outfitId]) => id !== characterId || validOutfitIds.has(outfitId),
+      ),
     );
     if (Object.keys(rest).length > 0) next[sceneId] = rest;
   }
@@ -219,12 +204,15 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
     };
   }, [active, projectId, selectedCharacter]);
 
-  const persist = async (next: ProjectLocalOverrides) => {
+  // 全体置換のPUTのため、保存直前に最新を読み直してから変更を当てる。制作計画での
+  // 衣装選択や場面プロンプトの編集を、手元の古い値で巻き戻さないようにする。
+  const persist = async (update: (latest: ProjectLocalOverrides) => ProjectLocalOverrides) => {
     if (!projectId) return;
     setBusy(true);
     setError(null);
     try {
-      const saved = await api.updateProjectLocalOverrides(projectId, next);
+      const latest = await api.getProjectLocalOverrides(projectId);
+      const saved = await api.updateProjectLocalOverrides(projectId, update(latest));
       setOverrides(saved);
       onChanged();
     } catch (cause) {
@@ -326,13 +314,18 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
       outfits,
       default_outfit_id: outfitIds.has(draft.default_outfit_id) ? draft.default_outfit_id : null,
     };
-    const exists = characters.some((item) => item.id === profile.id);
-    const nextCharacters = exists
-      ? characters.map((item) => (item.id === profile.id ? profile : item))
-      : [...characters, profile];
-    const nextSceneOutfits = pruneSceneOutfits(overrides.scene_outfits, profile.id, outfitIds);
     try {
-      await persist({ ...overrides, characters: nextCharacters, scene_outfits: nextSceneOutfits });
+      await persist((latest) => {
+        const current = latest.characters ?? [];
+        const characters = current.some((item) => item.id === profile.id)
+          ? current.map((item) => (item.id === profile.id ? profile : item))
+          : [...current, profile];
+        return {
+          ...latest,
+          characters,
+          scene_outfits: pruneSceneOutfits(latest.scene_outfits, profile.id, outfitIds),
+        };
+      });
       setDraft(null);
       setSelectedId(profile.id);
     } catch {
@@ -342,10 +335,12 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
 
   const removeCharacter = async (profile: ProjectCharacterProfile) => {
     if (!overrides || !window.confirm(`${profile.name}の登録を削除しますか？`)) return;
-    const nextCharacters = characters.filter((item) => item.id !== profile.id);
-    const nextSceneOutfits = removeCharacterFromSceneOutfits(overrides.scene_outfits, profile.id);
     try {
-      await persist({ ...overrides, characters: nextCharacters, scene_outfits: nextSceneOutfits });
+      await persist((latest) => ({
+        ...latest,
+        characters: (latest.characters ?? []).filter((item) => item.id !== profile.id),
+        scene_outfits: pruneSceneOutfits(latest.scene_outfits, profile.id, new Set()),
+      }));
       if (selectedId === profile.id) {
         setSelectedId(null);
         setDraft(null);

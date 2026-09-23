@@ -556,6 +556,8 @@ export function App() {
           ...current,
           scene_outfits: nextSceneOutfits,
         });
+        // 保存中に別Projectへ切り替えていたら、古いProjectの値を画面へ入れない。
+        if (projectIdRef.current !== projectId) return;
         setLocalCharacters(saved.characters ?? []);
         setSceneOutfits((saved.scene_outfits ?? {}) as SceneOutfits);
       } catch (cause) {
