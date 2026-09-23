@@ -28,6 +28,7 @@ import { GenerationSweepPanel } from "./components/GenerationSweepPanel";
 import { IntegrityList } from "./components/IntegrityList";
 import { ImageDerivationPanel } from "./components/ImageDerivationPanel";
 import { JobQueue } from "./components/JobQueue";
+import { MediaLibrary } from "./components/MediaLibrary";
 import { MusicPanel } from "./components/MusicPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { SceneBrowser } from "./components/SceneBrowser";
@@ -1407,6 +1408,13 @@ export function App() {
           </div>
           <div className="full" hidden={shownView !== "assets"}>
             <IntegrityList sceneId={assetsSceneId} shotId={assetsShotId} />
+          </div>
+          <div className="full" hidden={shownView !== "assets"}>
+            <MediaLibrary
+              projectId={assetsProjectId}
+              sceneId={assetsSceneId}
+              shotId={assetsShotId}
+            />
           </div>
         </>
       )}
