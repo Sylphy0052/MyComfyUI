@@ -22,6 +22,7 @@ import { AgentPanel } from "./components/AgentPanel";
 import { AssetBrowser } from "./components/AssetBrowser";
 import { CandidateGallery } from "./components/CandidateGallery";
 import type { Candidate } from "./components/CandidateGallery";
+import { PresetPromotionPanel } from "./components/PresetPromotionPanel";
 import { ComposePanel } from "./components/ComposePanel";
 import { GenerationForm } from "./components/GenerationForm";
 import { GenerationSweepPanel } from "./components/GenerationSweepPanel";
@@ -333,6 +334,7 @@ export function App() {
   }, [themePreference]);
   const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
     useState<string | null>(null);
+  const [promotionArtifactId, setPromotionArtifactId] = useState<string | null>(null);
   const [comparisonJobIds, setComparisonJobIds] = useState<string[] | null>(null);
   const [comparisonArtifactsByJob, setComparisonArtifactsByJob] = useState<
     Record<string, Artifact[]>
@@ -858,6 +860,10 @@ export function App() {
     },
     [candidates, comparisonArtifactsByJob, comparisonJobIds],
   );
+  const promotionCandidate = useMemo(
+    () => visibleCandidates.find((item) => item.artifact.id === promotionArtifactId) ?? null,
+    [visibleCandidates, promotionArtifactId],
+  );
 
   useEffect(() => {
     comparisonRequestSequence.current += 1;
@@ -1265,6 +1271,13 @@ export function App() {
               </div>
 
               <div className="image-result-column">
+                {promotionCandidate && !isProduction && (
+                  <PresetPromotionPanel
+                    key={promotionCandidate.artifact.id}
+                    candidate={promotionCandidate}
+                    onClose={() => setPromotionArtifactId(null)}
+                  />
+                )}
                 <CandidateGallery
                   candidates={visibleCandidates}
                   busyArtifactId={busyArtifactId}
@@ -1273,6 +1286,7 @@ export function App() {
                     setDerivationSourceArtifactId(artifactId);
                     setImageSubTab("derive");
                   }}
+                  onPromoteToPreset={setPromotionArtifactId}
                   active={shownView === "generate" && shownGenerationTab === "image"}
                   simple={isProduction}
                   comparisonActive={comparisonJobIds !== null}

@@ -28,6 +28,8 @@ interface Props {
   busyArtifactId: string | null;
   onDecide: (artifactId: string, decision: ArtifactDecision) => void;
   onDerive?: (artifactId: string) => void;
+  /** 候補の生成条件からPresetを作る。処理は呼び出し側 (PresetPromotionPanel) へ委ねる。 */
+  onPromoteToPreset?: (artifactId: string) => void;
   active?: boolean;
   comparisonActive?: boolean;
   onClearComparison?: () => void;
@@ -139,7 +141,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onPromoteToPreset, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
   const [thumbSize, setThumbSize] = useState<ThumbSize>("m");
   const [leftId, setLeftId] = useState<string | null>(null);
   const [rightId, setRightId] = useState<string | null>(null);
@@ -474,6 +476,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
                 {!simple && <div className="action-group" role="group" aria-label="その他">
                   <IconButton icon={<Icon name="info" />} label="詳細" aria-pressed={artifact.id === detailArtifactId} onClick={() => setDetailArtifactId((current) => current === artifact.id ? null : artifact.id)} />
                   {onDerive && <IconButton icon={<Icon name="branch" />} label="派生生成" onClick={() => onDerive(artifact.id)} />}
+                  {onPromoteToPreset && <IconButton icon={<Icon name="bookmark" />} label="Presetにする" onClick={() => onPromoteToPreset(artifact.id)} />}
                 </div>}
               </div>
             </figcaption>

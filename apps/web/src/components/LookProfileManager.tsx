@@ -7,6 +7,7 @@ import { IconButton } from "./ui/IconButton";
 import { PromptFieldsEditor } from "./PromptFieldsEditor";
 import { mergePromptFields, splitPromptFields } from "../prompt/fields";
 import type { PromptFieldName } from "../prompt/fields";
+import { productionChoiceWarning, subscribeLookProfilesChanged } from "../preset/productionChoices";
 
 interface Props {
   kind: string;
@@ -36,6 +37,7 @@ export function LookProfileManager({
   const [restJson, setRestJson] = useState("{}");
   const [promptFields, setPromptFields] = useState<Partial<Record<PromptFieldName, string>>>({});
   const [scopeRecipeId, setScopeRecipeId] = useState<string | null>(null);
+  const [choiceInputs, setChoiceInputs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -47,6 +49,23 @@ export function LookProfileManager({
       .catch((cause) => { if (active) setError(describe(cause)); });
     return () => { active = false; };
   }, [kind, reload]);
+
+  // 候補ギャラリーなど、別の場所で作られたPresetを一覧へすぐ出す。
+  useEffect(() => subscribeLookProfilesChanged(() => setReload((current) => current + 1)), []);
+
+  const choiceLabels = useMemo(() => {
+    const schema = (recipe?.input_schema ?? {}) as Record<string, unknown>;
+    const labels = new Map<string, string>();
+    for (const [inputName, entry] of Object.entries(schema)) {
+      const label = entry && typeof entry === "object" ? (entry as Record<string, unknown>).label : undefined;
+      labels.set(inputName, typeof label === "string" && label ? label : inputName);
+    }
+    for (const inputName of choiceInputs) {
+      if (!labels.has(inputName)) labels.set(inputName, inputName);
+    }
+    return labels;
+  }, [recipe?.input_schema, choiceInputs]);
+  const choiceWarning = productionChoiceWarning(choiceInputs.length);
 
   const visibleProfiles = useMemo(
     () => profiles.filter((profile) => profile.name.toLowerCase().includes(query.trim().toLowerCase())),
@@ -82,6 +101,7 @@ export function LookProfileManager({
     setRestJson("{}");
     setPromptFields({});
     setScopeRecipeId(recipe?.id ?? null);
+    setChoiceInputs([]);
   };
 
   const edit = (profile: LookProfile, duplicate = false) => {
@@ -93,6 +113,13 @@ export function LookProfileManager({
     setRestJson(JSON.stringify(split.rest, null, 2));
     setPromptFields(split.prompts);
     setScopeRecipeId(profile.recipe_id);
+    setChoiceInputs(profile.production_choice_inputs ?? []);
+  };
+
+  const toggleChoiceInput = (inputName: string, checked: boolean) => {
+    setChoiceInputs((current) => (
+      checked ? [...current, inputName] : current.filter((item) => item !== inputName)
+    ));
   };
 
   const changePromptField = (fieldName: PromptFieldName, value: string) => {
@@ -137,6 +164,7 @@ export function LookProfileManager({
           description: description.trim() || null,
           recipe_id: scopeRecipeId,
           inputs,
+          production_choice_inputs: choiceInputs,
         });
       } else {
         await api.createLookProfile({
@@ -146,6 +174,7 @@ export function LookProfileManager({
           description: description.trim() || null,
           recipe_id: scopeRecipeId,
           inputs,
+          production_choice_inputs: choiceInputs,
         });
       }
       resetEditor();
@@ -203,6 +232,7 @@ export function LookProfileManager({
           {visibleProfiles.map((profile) => (
             <li key={profile.id} className="row">
               <span>{profile.name} / {profile.category}</span>
+              {profile.production_choice_inputs.length > 0 && <span className="muted">モードBで選ばせる: {profile.production_choice_inputs.join(", ")}</span>}
               <button type="button" disabled={!isCompatible(profile) || selectedIds.includes(profile.id)} onClick={() => onSelectionChange([...selectedIds, profile.id])}>適用</button>
               <button type="button" onClick={() => edit(profile)}>編集</button>
               <button type="button" onClick={() => edit(profile, true)}>複製</button>
@@ -238,6 +268,19 @@ export function LookProfileManager({
             onRemove={removePromptField}
           />
           <label>入力overlay（Prompt、Negative Prompt以外）<textarea className="mono" rows={10} value={restJson} onChange={(event) => setRestJson(event.target.value)} /></label>
+          <fieldset className="stack">
+            <legend>モードBで選ばせる項目</legend>
+            {choiceLabels.size === 0 ? <p className="muted">Recipeを選ぶと、入力から選べます。</p> : (
+              [...choiceLabels].map(([inputName, label]) => (
+                <label key={inputName}>
+                  <input type="checkbox" checked={choiceInputs.includes(inputName)} onChange={(event) => toggleChoiceInput(inputName, event.target.checked)} />
+                  {label}
+                </label>
+              ))
+            )}
+            <p className="muted">入力overlayで固定した項目とは重ねられません。固定も選ばせる指定もしない項目は、キャラクター・場面・Recipe既定値から自動で埋まります。</p>
+            {choiceWarning && <p className="error" role="status">{choiceWarning}</p>}
+          </fieldset>
           <p className="muted">後に並ぶPresetが前の値を上書きします。runtime入力は全Presetより優先されます。</p>
           <button type="button" className="primary" onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button>
         </fieldset>

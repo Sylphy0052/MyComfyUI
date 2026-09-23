@@ -36,6 +36,7 @@ const PATHS = {
   ),
   "arrow-up": <path d="M12 19V5M5 12l7-7 7 7" />,
   "arrow-down": <path d="M12 5v14M19 12l-7 7-7-7" />,
+  bookmark: <path d="M6 3h12v18l-6-4-6 4z" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;
