@@ -10,6 +10,7 @@ import type {
   GenerationManifest,
   GenerationPreview,
   LookProfile,
+  ProjectCharacterProfile,
   ProjectRecord,
   Recipe,
 } from "./api/client";
@@ -22,6 +23,7 @@ import type {
 import { AgentPanel } from "./components/AgentPanel";
 import { AssetBrowser } from "./components/AssetBrowser";
 import { CandidateGallery } from "./components/CandidateGallery";
+import { CharacterManager } from "./components/CharacterManager";
 import type { Candidate } from "./components/CandidateGallery";
 import { PresetPromotionPanel } from "./components/PresetPromotionPanel";
 import { ComposePanel } from "./components/ComposePanel";
@@ -57,6 +59,8 @@ import {
   readProductionPlan,
 } from "./state/productionPlan";
 import type { ProductionPlan } from "./state/productionPlan";
+import { characterPrompt } from "./state/characterPrompt";
+import type { SceneOutfits } from "./state/characterPrompt";
 import { subscribeLookProfilesChanged } from "./preset/productionChoices";
 import type { PickedMedia } from "./components/MediaPicker";
 import {
@@ -107,6 +111,7 @@ const VIEWS: { value: View; label: string }[] = [
   { value: "projects", label: "Project" },
   { value: "generate", label: "生成" },
   { value: "assets", label: "資産ブラウザ" },
+  { value: "characters", label: "キャラクター" },
   { value: "workflows", label: "Workflow" },
 ];
 
@@ -509,6 +514,57 @@ export function App() {
     [sceneId],
   );
 
+  // キャラクター定義とscene_outfits (F-15 #154)。工程プロンプトの組立と、制作計画の
+  // 衣装選択に使う。キャラクター画面で編集されたら token を進めて読み直す。
+  const [localCharacters, setLocalCharacters] = useState<ProjectCharacterProfile[]>([]);
+  const [sceneOutfits, setSceneOutfits] = useState<SceneOutfits>({});
+  const [characterOverridesToken, setCharacterOverridesToken] = useState(0);
+  useEffect(() => {
+    setLocalCharacters([]);
+    setSceneOutfits({});
+    if (!projectId) return;
+    let active = true;
+    api
+      .getProjectLocalOverrides(projectId)
+      .then((loaded) => {
+        if (!active) return;
+        setLocalCharacters(loaded.characters ?? []);
+        setSceneOutfits((loaded.scene_outfits ?? {}) as SceneOutfits);
+      })
+      .catch((cause) => {
+        if (active) notify({ tone: "danger", message: `キャラクター定義を取得できませんでした: ${describe(cause)}` });
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, characterOverridesToken, notify]);
+
+  // 場面ごとの衣装選択 (制作計画のキャラクター行から呼ぶ)。全体置換PUTのため、直前に
+  // 読み直してから他フィールドをそのまま返し、他画面での編集を極力踏まない。
+  const changeSceneOutfit = useCallback(
+    async (characterId: string, outfitId: string | null) => {
+      if (!projectId || !sceneId) return;
+      try {
+        const current = await api.getProjectLocalOverrides(projectId);
+        const forScene = { ...(current.scene_outfits?.[sceneId] ?? {}) };
+        if (outfitId) forScene[characterId] = outfitId;
+        else delete forScene[characterId];
+        const nextSceneOutfits = { ...(current.scene_outfits ?? {}) };
+        if (Object.keys(forScene).length > 0) nextSceneOutfits[sceneId] = forScene;
+        else delete nextSceneOutfits[sceneId];
+        const saved = await api.updateProjectLocalOverrides(projectId, {
+          ...current,
+          scene_outfits: nextSceneOutfits,
+        });
+        setLocalCharacters(saved.characters ?? []);
+        setSceneOutfits((saved.scene_outfits ?? {}) as SceneOutfits);
+      } catch (cause) {
+        notify({ tone: "danger", message: `衣装の選択を保存できませんでした: ${describe(cause)}` });
+      }
+    },
+    [projectId, sceneId, notify],
+  );
+
   // Presetの一覧は作品制作のときだけ取る。ラボや候補ギャラリーで作られたら取り直す。
   useEffect(() => subscribeLookProfilesChanged(() => setLookProfilesVersion((current) => current + 1)), []);
   useEffect(() => {
@@ -545,14 +601,14 @@ export function App() {
     if (!activePlan) return null;
     const prompt =
       imagePlanSlot === "character"
-        ? activePlan.characters.map((item) => item.name).join(", ")
+        ? characterPrompt(activePlan.characters, localCharacters, sceneOutfits, sceneId)
         : backgroundPrompt(activePlan);
     return {
       scope: `${activePlan.sceneId}:${shotId ?? ""}:${imagePlanSlot}`,
       preset: planPresets[imagePlanSlot],
       prompt,
     };
-  }, [activePlan, imagePlanSlot, planPresets, shotId]);
+  }, [activePlan, imagePlanSlot, planPresets, shotId, localCharacters, sceneOutfits, sceneId]);
   const planMusic = useMemo(
     () => (activePlan ? { mood: activePlan.audio.bgmMood, genre: activePlan.audio.bgmGenre } : null),
     [activePlan],
@@ -701,6 +757,10 @@ export function App() {
   const workflowsActive = shownView === "workflows";
   const workflowsSceneId = useFrozenWhenInactive(sceneId, workflowsActive);
   const workflowsShotId = useFrozenWhenInactive(shotId, workflowsActive);
+
+  const charactersActive = shownView === "characters";
+  const charactersProjectId = useFrozenWhenInactive(projectId, charactersActive);
+  const charactersScenes = useFrozenWhenInactive(scenes, charactersActive);
 
   // 初回取得の往復中に選択が変わることがある。書き戻す前に現在値を見る。
   const projectIdRef = useRef(projectId);
@@ -1394,6 +1454,7 @@ export function App() {
                 projectId={projectId}
                 onSelectProject={selectProject}
                 onManageProjects={() => setView("projects")}
+                onManageCharacters={() => setView("characters")}
                 onStructureChanged={() => setStructureToken((value) => value + 1)}
                 scenes={scenes}
                 sceneId={sceneId}
@@ -1426,6 +1487,9 @@ export function App() {
                 plan={productionPlan}
                 onPlanChange={changeProductionPlan}
                 profiles={lookProfiles}
+                localCharacters={localCharacters}
+                sceneOutfits={sceneOutfits}
+                onOutfitChange={changeSceneOutfit}
               />
             )}
             {isProduction && (
@@ -1766,6 +1830,17 @@ export function App() {
             />
           </div>
         </>
+      )}
+
+      {visitedViews.has("characters") && (
+        <div className="full" hidden={shownView !== "characters"}>
+          <CharacterManager
+            projectId={charactersProjectId}
+            active={charactersActive}
+            scenes={charactersScenes}
+            onChanged={() => setCharacterOverridesToken((value) => value + 1)}
+          />
+        </div>
       )}
 
       {visitedViews.has("workflows") && (

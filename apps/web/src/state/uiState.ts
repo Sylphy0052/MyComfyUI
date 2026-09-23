@@ -12,6 +12,7 @@ export const VIEW_VALUES = [
   "projects",
   "generate",
   "assets",
+  "characters",
   "workflows",
 ] as const;
 export const GENERATION_TAB_VALUES = [
