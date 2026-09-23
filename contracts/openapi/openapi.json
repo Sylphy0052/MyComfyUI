@@ -13281,6 +13281,59 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/scenes/{scene_id}/restore": {
+      "post": {
+        "description": "削除したSceneを戻す。同じ削除でまとめて消えたShotも一緒に戻す。",
+        "operationId": "restore_scene_api_v1_projects__project_id__scenes__scene_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Scene",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/scenes/{scene_id}/shots": {
       "get": {
         "operationId": "list_shots_api_v1_projects__project_id__scenes__scene_id__shots_get",
@@ -13719,6 +13772,70 @@
           }
         },
         "summary": "Get Shot Deletion Impact",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}/restore": {
+      "post": {
+        "description": "削除したShotを戻す。親Sceneが削除済みなら、先にSceneを戻す必要がある。",
+        "operationId": "restore_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Scene Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "shot_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Shot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Shot",
         "tags": [
           "projects"
         ]

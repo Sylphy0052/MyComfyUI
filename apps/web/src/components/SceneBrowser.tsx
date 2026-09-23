@@ -13,6 +13,7 @@ import type {
   ShotSummary,
 } from "../api/aimedia";
 import { ProjectLocalOverridesEditor } from "./ProjectLocalOverridesEditor";
+import { useNotify } from "./ui/notify";
 
 const STATUSES: { value: ProductionStatus; label: string }[] = [
   { value: "not_started", label: "未着手" },
@@ -81,6 +82,7 @@ export function SceneBrowser(props: Props) {
   const [editor, setEditor] = useState<Editor>(null);
   const [editingScene, setEditingScene] = useState<SceneSummary | null>(null);
   const [editingShot, setEditingShot] = useState<ShotSummary | null>(null);
+  const notify = useNotify();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selectedProject = projects.find((item) => item.id === projectId) ?? null;
@@ -134,9 +136,22 @@ export function SceneBrowser(props: Props) {
         return;
       }
       if (!window.confirm(message)) return;
+      const parentSceneId = sceneId;
       if (kind === "scene") await api.deleteScene(projectId, id, true);
-      else await api.deleteShot(projectId, sceneId!, id, true);
+      else await api.deleteShot(projectId, parentSceneId!, id, true);
       onStructureChanged();
+      notify({
+        tone: "success",
+        message: `${kind === "scene" ? "Scene" : "Shot"}を削除しました`,
+        action: {
+          label: "取り消す",
+          onAction: async () => {
+            if (kind === "scene") await api.restoreScene(projectId, id);
+            else await api.restoreShot(projectId, parentSceneId!, id);
+            onStructureChanged();
+          },
+        },
+      });
     } catch (cause) {
       setError(describe(cause));
     } finally {

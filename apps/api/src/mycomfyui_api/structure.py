@@ -356,6 +356,28 @@ async def delete_scene(project_id: schemas.AiMediaId, scene_id: schemas.Resource
     return {"id": scene_id, "deleted_at": now}
 
 
+@router.post("/{project_id}/scenes/{scene_id}/restore")
+async def restore_scene(project_id: schemas.AiMediaId, scene_id: schemas.ResourceId, session: SessionDep):
+    """削除したSceneを戻す。同じ削除でまとめて消えたShotも一緒に戻す。"""
+    project = await _require_editable_project(session, project_id)
+    scene = await session.get(ProjectScene, scene_id)
+    if scene is None or scene.project_id != project_id:
+        raise _not_found("Scene", scene_id)
+    if scene.deleted_at is None:
+        raise ApiError("STRUCTURE_NOT_DELETED", "削除されていないSceneは復元できません。", status_code=status.HTTP_409_CONFLICT, details={"scene_id": scene_id})
+    deleted_at = scene.deleted_at
+    now = schemas.now_iso()
+    scene.deleted_at = None
+    scene.updated_at = now
+    shots = await session.scalars(select(ProjectShot).where(ProjectShot.scene_id == scene_id, ProjectShot.deleted_at == deleted_at))
+    for shot in shots:
+        shot.deleted_at = None
+        shot.updated_at = now
+    await _refresh_counts(session, project)
+    await session.commit()
+    return await scene_envelope(session, scene)
+
+
 @router.post("/{project_id}/scenes/{scene_id}/shots", status_code=status.HTTP_201_CREATED)
 async def create_shot(project_id: schemas.AiMediaId, scene_id: schemas.ResourceId, payload: schemas.ShotCreate, session: SessionDep):
     project = await _require_editable_project(session, project_id)
@@ -418,6 +440,27 @@ async def delete_shot(project_id: schemas.AiMediaId, scene_id: schemas.ResourceI
     await _refresh_counts(session, project)
     await session.commit()
     return {"id": shot_id, "deleted_at": now}
+
+
+@router.post("/{project_id}/scenes/{scene_id}/shots/{shot_id}/restore")
+async def restore_shot(project_id: schemas.AiMediaId, scene_id: schemas.ResourceId, shot_id: schemas.ResourceId, session: SessionDep):
+    """削除したShotを戻す。親Sceneが削除済みなら、先にSceneを戻す必要がある。"""
+    project = await _require_editable_project(session, project_id)
+    scene = await session.get(ProjectScene, scene_id)
+    if scene is None or scene.project_id != project_id:
+        raise _not_found("Scene", scene_id)
+    if scene.deleted_at is not None:
+        raise ApiError("STRUCTURE_PARENT_DELETED", "Shotを戻す前にSceneを復元してください。", status_code=status.HTTP_409_CONFLICT, details={"scene_id": scene_id, "shot_id": shot_id})
+    shot = await session.get(ProjectShot, shot_id)
+    if shot is None or shot.project_id != project_id or shot.scene_id != scene_id:
+        raise _not_found("Shot", shot_id)
+    if shot.deleted_at is None:
+        raise ApiError("STRUCTURE_NOT_DELETED", "削除されていないShotは復元できません。", status_code=status.HTTP_409_CONFLICT, details={"shot_id": shot_id})
+    shot.deleted_at = None
+    shot.updated_at = schemas.now_iso()
+    await _refresh_counts(session, project)
+    await session.commit()
+    return shot_envelope(shot)
 
 
 @router.get("/{project_id}/progress", response_model=schemas.ProjectProgress)

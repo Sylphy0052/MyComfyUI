@@ -229,6 +229,12 @@ export function ProjectOperations({ project }: { project: ProjectRecord }) {
     batchId: string,
     operation: "cancel" | "retry",
   ) => {
+    if (
+      operation === "cancel" &&
+      !window.confirm("未実行のジョブをまとめてキャンセルします。キャンセルは取り消せません。続けますか？")
+    ) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

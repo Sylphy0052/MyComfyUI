@@ -22,6 +22,7 @@ import { LoadingPlaceholder } from "./LoadingPlaceholder";
 import { MediaViewer } from "./MediaViewer";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
+import { useNotify } from "./ui/notify";
 
 const KIND_OPTIONS = [
   { value: "image", label: "画像" },
@@ -87,6 +88,7 @@ export function AssetBrowser({
   onDeriveArtifact,
   onRerunJob,
 }: Props) {
+  const notify = useNotify();
   const [kind, setKind] = useState("");
   const [decision, setDecision] = useState("");
   const [availability, setAvailability] = useState("");
@@ -287,6 +289,17 @@ export function AssetBrowser({
     try {
       await api.removeArtifactTag(artifact.id, tag);
       setReloadToken((current) => current + 1);
+      notify({
+        tone: "success",
+        message: `タグ「${tag}」を外しました`,
+        action: {
+          label: "取り消す",
+          onAction: async () => {
+            await api.addArtifactTag(artifact.id, tag);
+            setReloadToken((current) => current + 1);
+          },
+        },
+      });
     } catch (cause) {
       setError(describe(cause));
     } finally {

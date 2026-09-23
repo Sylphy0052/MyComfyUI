@@ -189,6 +189,12 @@ export function GenerationSweepPanel({
 
   const operate = async (experiment: GenerationExperiment, action: "cancel" | "retry") => {
     if (!projectId) return;
+    if (
+      action === "cancel" &&
+      !window.confirm("実験の未実行ジョブをキャンセルします。キャンセルは取り消せません。続けますか？")
+    ) {
+      return;
+    }
     requestSequence.current += 1;
     busyRef.current = true;
     setBusy(true); setError(null);

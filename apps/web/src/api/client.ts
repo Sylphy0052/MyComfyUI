@@ -457,6 +457,12 @@ export const api = {
       { method: "DELETE" },
     ),
 
+  restoreScene: (projectId: string, sceneId: string) =>
+    request<SceneEnvelope>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/restore`,
+      { method: "POST" },
+    ),
+
   listShots: (projectId: string, sceneId: string) =>
     request<ShotList>(
       `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots`,
@@ -509,6 +515,12 @@ export const api = {
     request<{ id: string; deleted_at: string }>(
       `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots/${encodeURIComponent(shotId)}?confirm=${String(confirm)}`,
       { method: "DELETE" },
+    ),
+
+  restoreShot: (projectId: string, sceneId: string, shotId: string) =>
+    request<ShotEnvelope>(
+      `/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/shots/${encodeURIComponent(shotId)}/restore`,
+      { method: "POST" },
     ),
 
   getProjectProgress: (projectId: string) =>

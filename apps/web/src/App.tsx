@@ -37,6 +37,8 @@ import { SceneBrowser } from "./components/SceneBrowser";
 import { ResizablePane } from "./components/ui/ResizablePane";
 import { ToastRegion } from "./components/ui/ToastRegion";
 import type { ToastItem } from "./components/ui/ToastRegion";
+import { NotifyContext } from "./components/ui/notify";
+import type { Notice } from "./components/ui/notify";
 import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
@@ -116,6 +118,14 @@ const JOB_KIND_LABELS: Record<string, string> = Object.fromEntries(
 
 // 成功トーストは自動で消す。失敗は見落としを避けるため手動で閉じるまで残す。
 const TOAST_SUCCESS_TTL_MS = 5000;
+// 取り消しの付いた通知は、ボタンを押す余裕を持たせて成功通知より長く残す。
+const TOAST_UNDO_TTL_MS = 8000;
+
+const DECISION_NOTICES: Record<ArtifactDecision, string> = {
+  accepted: "採用しました",
+  rejected: "却下しました",
+  undecided: "判定を戻しました",
+};
 
 function nextTabForKey<T extends string>(
   key: string,
@@ -324,6 +334,41 @@ export function App() {
   const dismissToast = useCallback((id: string) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
+  const toastSequenceRef = useRef(0);
+  // 操作の結果を知らせる。取り消しに失敗したら、失敗の通知を閉じるまで残す。
+  const notify = useCallback(
+    (notice: Notice) => {
+      const id = `notice:${++toastSequenceRef.current}`;
+      // 閉じる前の連打で同じ取り消しが二重に走らないよう、1回だけ通す。
+      let isActionUsed = false;
+      const action = notice.action && {
+        label: notice.action.label,
+        onAction: () => {
+          if (isActionUsed) return;
+          isActionUsed = true;
+          notice.action!.onAction().catch((cause: unknown) => {
+            notify({ tone: "danger", message: `取り消せませんでした: ${describe(cause)}` });
+          });
+        },
+      };
+      setToasts((current) => [
+        ...current.filter(
+          (toast) => !notice.group || toast.group !== notice.group,
+        ),
+        { id, tone: notice.tone, message: notice.message, group: notice.group, action },
+      ]);
+      if (notice.tone === "danger") return;
+      const timerId = window.setTimeout(
+        () => {
+          toastTimersRef.current.delete(timerId);
+          dismissToast(id);
+        },
+        action ? TOAST_UNDO_TTL_MS : TOAST_SUCCESS_TTL_MS,
+      );
+      toastTimersRef.current.add(timerId);
+    },
+    [dismissToast],
+  );
   useEffect(() => {
     const timers = toastTimersRef.current;
     return () => {
@@ -1015,6 +1060,9 @@ export function App() {
   };
 
   const cancel = async (jobId: string) => {
+    if (!window.confirm("ジョブをキャンセルします。キャンセルは取り消せません。続けますか？")) {
+      return;
+    }
     setError(null);
     try {
       await api.cancelJob(jobId);
@@ -1024,20 +1072,38 @@ export function App() {
     }
   };
 
+  const applyDecision = async (artifactId: string, decision: ArtifactDecision) => {
+    const updated = await api.updateDecision(artifactId, decision);
+    setArtifactsByJob((current) => {
+      const next: Record<string, Artifact[]> = {};
+      for (const [jobId, artifacts] of Object.entries(current)) {
+        next[jobId] = artifacts.map((artifact) =>
+          artifact.id === updated.id ? updated : artifact,
+        );
+      }
+      return next;
+    });
+  };
+
   const decide = async (artifactId: string, decision: ArtifactDecision) => {
+    const previous = Object.values(artifactsByJob)
+      .flat()
+      .find((artifact) => artifact.id === artifactId)?.decision;
     setBusyArtifactId(artifactId);
     setError(null);
     try {
-      const updated = await api.updateDecision(artifactId, decision);
-      setArtifactsByJob((current) => {
-        const next: Record<string, Artifact[]> = {};
-        for (const [jobId, artifacts] of Object.entries(current)) {
-          next[jobId] = artifacts.map((artifact) =>
-            artifact.id === updated.id ? updated : artifact,
-          );
-        }
-        return next;
-      });
+      await applyDecision(artifactId, decision);
+      if (previous && previous !== decision) {
+        notify({
+          tone: "success",
+          message: DECISION_NOTICES[decision],
+          group: "decision",
+          action: {
+            label: "取り消す",
+            onAction: () => applyDecision(artifactId, previous),
+          },
+        });
+      }
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -1080,6 +1146,7 @@ export function App() {
   };
 
   return (
+    <NotifyContext.Provider value={notify}>
     <div className="app" ref={appRef} style={appStyle}>
       <header>
         <h1>MyComfyUI</h1>
@@ -1150,6 +1217,7 @@ export function App() {
           hidden={!projectsActive}
           selectedProjectId={projectsSelectedId}
           onSelectProject={useProject}
+          onRestoreSelection={setProjectId}
           onActiveProjectsChanged={setProjects}
         />
       )}
@@ -1540,5 +1608,6 @@ export function App() {
           />
         )}
     </div>
+    </NotifyContext.Provider>
   );
 }

@@ -38,6 +38,12 @@ export function ProjectSyncPanel({
   const autoAttempted = useRef(false);
 
   const apply = async (choice?: "local" | "external") => {
+    if (
+      choice === "external" &&
+      !window.confirm("競合したローカル変更を外部変更で上書きします。上書きは取り消せません。続けますか？")
+    ) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

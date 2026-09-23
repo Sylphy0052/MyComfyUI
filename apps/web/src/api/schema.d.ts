@@ -1579,6 +1579,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/scenes/{scene_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Scene
+         * @description 削除したSceneを戻す。同じ削除でまとめて消えたShotも一緒に戻す。
+         */
+        post: operations["restore_scene_api_v1_projects__project_id__scenes__scene_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/scenes/{scene_id}/shots": {
         parameters: {
             query?: never;
@@ -1644,6 +1664,26 @@ export interface paths {
         get: operations["get_shot_deletion_impact_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__deletion_impact_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/scenes/{scene_id}/shots/{shot_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Shot
+         * @description 削除したShotを戻す。親Sceneが削除済みなら、先にSceneを戻す必要がある。
+         */
+        post: operations["restore_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7991,6 +8031,38 @@ export interface operations {
             };
         };
     };
+    restore_scene_api_v1_projects__project_id__scenes__scene_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_shots_api_v1_projects__project_id__scenes__scene_id__shots_get: {
         parameters: {
             query?: never;
@@ -8224,6 +8296,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StructureDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_shot_api_v1_projects__project_id__scenes__scene_id__shots__shot_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+                shot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
