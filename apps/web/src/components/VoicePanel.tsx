@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -165,32 +165,46 @@ export function VoicePanel({
     );
   }, [voiceIds]);
 
+  // Job を素早く切り替えたとき、遅れて届いた前の Job の応答で表示を上書きしない。
+  const verificationsSequence = useRef(0);
+
   const loadVerifications = useCallback(async (jobId: string) => {
+    const sequence = ++verificationsSequence.current;
     setVerificationsLoading(true);
     setVerificationsError(null);
     try {
-      setVerifications(await api.listVoiceVerifications(jobId));
+      const items = await api.listVoiceVerifications(jobId);
+      if (sequence === verificationsSequence.current) setVerifications(items);
     } catch (cause) {
-      setVerificationsError(describe(cause));
+      if (sequence === verificationsSequence.current) {
+        setVerificationsError(describe(cause));
+      }
     } finally {
-      setVerificationsLoading(false);
+      if (sequence === verificationsSequence.current) {
+        setVerificationsLoading(false);
+      }
     }
+  }, []);
+
+  const clearVerifications = useCallback(() => {
+    verificationsSequence.current += 1;
+    setVerifications([]);
+    setVerificationsError(null);
+    setVerificationsLoading(false);
   }, []);
 
   useEffect(() => {
     if (!selectedJobId) {
-      setVerifications([]);
-      setVerificationsError(null);
+      clearVerifications();
       return;
     }
     const job = voiceJobs.find((item) => item.id === selectedJobId);
     if (!job || job.state !== "succeeded") {
-      setVerifications([]);
-      setVerificationsError(null);
+      clearVerifications();
       return;
     }
     void loadVerifications(selectedJobId);
-  }, [selectedJobId, voiceJobs, loadVerifications]);
+  }, [selectedJobId, voiceJobs, loadVerifications, clearVerifications]);
 
   const update = (voiceId: string, patch: Partial<VoiceBinding>) => {
     setBindings((current) => ({
