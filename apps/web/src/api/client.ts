@@ -65,6 +65,7 @@ export type GenerationPreview =
   components["schemas"]["GenerationPreviewRead"];
 export type GenerationPreviewDiff =
   components["schemas"]["GenerationPreviewDiff"];
+export type PromptTagCheck = components["schemas"]["PromptTagCheckRead"];
 export type Workflow = components["schemas"]["WorkflowRead"];
 export type WorkflowVersion = components["schemas"]["WorkflowVersionRead"];
 export type WorkflowModelOptions =

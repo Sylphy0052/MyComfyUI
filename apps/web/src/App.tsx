@@ -40,6 +40,7 @@ import type { ToastItem } from "./components/ui/ToastRegion";
 import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
+import { tagCheckWarnings } from "./prompt/tagCheck";
 import {
   persistUiState,
   readInitialUiState,
@@ -909,19 +910,24 @@ export function App() {
   ) => {
     setSubmitting(true);
     setError(null);
+    const payload = {
+      kind: "image",
+      project_id: projectId,
+      scene_id: sceneId,
+      shot_id: shotId,
+      recipe_id: recipe?.id,
+      use_inherited_defaults: useInheritedDefaults,
+      look_profile_ids: lookProfileIds,
+      inputs,
+    };
+    if (!(await confirmPromptTags(payload))) {
+      setSubmitting(false);
+      return;
+    }
     const createdJobs: GenerationJob[] = [];
     try {
       for (let index = 0; index < batchCount; index += 1) {
-        const job = await api.createJob({
-          kind: "image",
-          project_id: projectId,
-          scene_id: sceneId,
-          shot_id: shotId,
-          recipe_id: recipe?.id,
-          use_inherited_defaults: useInheritedDefaults,
-          look_profile_ids: lookProfileIds,
-          inputs,
-        });
+        const job = await api.createJob(payload);
         createdJobs.push(job);
       }
       const lastJob = createdJobs.at(-1);
@@ -940,6 +946,38 @@ export function App() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /**
+   * 投入の前にプロンプトのタグを確かめる。実在しないタグや干渉する組み合わせが
+   * あれば確認を求め、取り消されたら結果を確認欄に残して偽を返す。
+   *
+   * タグの確認は助言なので、プレビュー自体が失敗したときは投入を止めない。解決
+   * できない入力なら、続く投入が同じ理由で失敗して利用者へ伝わる。
+   */
+  const confirmPromptTags = async (
+    payload: Parameters<typeof api.previewJob>[0],
+  ): Promise<boolean> => {
+    let result: GenerationPreview;
+    try {
+      result = await api.previewJob(payload);
+    } catch {
+      return true;
+    }
+    const warnings = tagCheckWarnings(result.tag_check);
+    if (warnings.length === 0) {
+      return true;
+    }
+    const proceed = window.confirm(
+      `プロンプトのタグに確認が必要な点があります。\n\n${warnings
+        .map((warning) => `- ${warning}`)
+        .join("\n")}\n\nこのまま投入しますか？`,
+    );
+    if (!proceed) {
+      setPreviewResult(result);
+      setPreviewError(null);
+    }
+    return proceed;
   };
 
   /** 投入せずに解決済み入力とWorkflow差分だけを取る。Jobは作られない。 */

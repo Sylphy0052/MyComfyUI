@@ -1093,6 +1093,36 @@ class GenerationPreviewDiff(ApiModel):
     origin: GenerationDefaultOrigin
 
 
+class PromptTagFindingRead(ApiModel):
+    """実在を確かめたタグ1件。品質・rating・絵師のタグと自然文は含めない。"""
+
+    tag: str
+    side: Literal["positive", "negative"]
+    #: `missing`は辞書に無いか0件、`unverified`は辞書を読めず判らない。
+    status: Literal["ok", "missing", "unverified"]
+    #: 辞書にある投稿件数。別名は正規のタグの件数。辞書に無いタグと未確認はNone。
+    post_count: int | None
+
+
+class PromptTagConflictRead(ApiModel):
+    """干渉する組み合わせ1件。"""
+
+    kind: Literal["framing", "solo_with_multiple", "rating", "both_sides"]
+    tags: list[str]
+    message: str
+
+
+class PromptTagCheckRead(ApiModel):
+    """投入前に確かめた、プロンプトのタグの実在と干渉。"""
+
+    tags: list[PromptTagFindingRead]
+    conflicts: list[PromptTagConflictRead]
+    #: 辞書で実在を確かめたか。辞書を設定していないときと、対象のタグが無いときは偽。
+    looked_up: bool
+    #: 辞書を読めなかった理由。読めたときはNone。
+    lookup_error: str | None
+
+
 class GenerationPreviewRead(ApiModel):
     """投入前に確認する、解決済みの実行内容とWorkflow差分。
 
@@ -1121,6 +1151,8 @@ class GenerationPreviewRead(ApiModel):
     diff: list[GenerationPreviewDiff]
     parent_job_id: str | None
     look_profile_ids: list[str] = Field(default_factory=list)
+    #: ComfyUIの画像生成だけで返す。プロンプトがタグ列でない媒体ではNone。
+    tag_check: PromptTagCheckRead | None = None
 
 
 SweepMode = Literal["cartesian", "zip"]

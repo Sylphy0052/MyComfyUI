@@ -2,6 +2,7 @@ import type { ApiError } from "../api/client";
 import type { GenerationPreview, GenerationPreviewDiff } from "../api/client";
 import { KIND_LABEL, shorten } from "./CanonWarning";
 import { LoadingPlaceholder } from "./LoadingPlaceholder";
+import { tagCheckNotice, tagCheckWarnings } from "../prompt/tagCheck";
 
 /** 値の出所を画面の語へ直す。API が新しい値を返しても値をそのまま出す。 */
 const ORIGIN_LABEL: Record<string, string> = {
@@ -77,6 +78,8 @@ export function ExecutionPreview({
         <p className="mono">{preview.resolved_prompt || "-"}</p>
       </div>
 
+      <TagCheckSummary preview={preview} />
+
       <div className="row">
         <span className="muted">seed</span>
         <span className="mono">{preview.seed}</span>
@@ -149,6 +152,28 @@ export function ExecutionPreview({
           })}
         </ul>
       </details>
+    </div>
+  );
+}
+
+/** タグ検証の警告を出す。警告が無く、実在を確かめられたときは何も出さない。 */
+function TagCheckSummary({ preview }: { preview: GenerationPreview }) {
+  const warnings = tagCheckWarnings(preview.tag_check);
+  const notice = tagCheckNotice(preview.tag_check);
+  if (warnings.length === 0 && !notice) {
+    return null;
+  }
+  return (
+    <div>
+      <p className="muted">タグの確認</p>
+      <ul className="list plain">
+        {warnings.map((warning) => (
+          <li key={warning} className="error">
+            {warning}
+          </li>
+        ))}
+        {notice && <li className="muted">{notice}</li>}
+      </ul>
     </div>
   );
 }

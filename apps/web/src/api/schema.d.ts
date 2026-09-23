@@ -798,6 +798,9 @@ export interface paths {
          *
          *     画像を添付した場合は、画像と現在のpromptを突き合わせて直した案を返す。画像に
          *     対応しないProviderへは送らず、``AGENT_IMAGE_UNSUPPORTED``で理由を返す。
+         *
+         *     ``recipe_id``を渡すと、そのRecipeのモデルに合う書き方 (タグ型か、タグと自然文の
+         *     併用か) で返す。novel-writerの場所が設定されていれば、その作法と既存promptを添える。
          */
         post: operations["assist_image_prompt_api_v1_image_prompt_assists_post"];
         delete?: never;
@@ -3105,6 +3108,7 @@ export interface components {
             shot_ref: {
                 [key: string]: unknown;
             };
+            tag_check?: components["schemas"]["PromptTagCheckRead"] | null;
             /** Template Sha256 */
             template_sha256: string | null;
             /** Version */
@@ -3152,6 +3156,8 @@ export interface components {
             instruction: string;
             /** Provider Id */
             provider_id?: ("claude_code" | "codex" | "qwen" | "stub") | null;
+            /** Recipe Id */
+            recipe_id?: string | null;
         };
         /**
          * ImagePromptAssistImage
@@ -4102,6 +4108,55 @@ export interface components {
             tags?: string[] | null;
             /** Thumbnail Artifact Id */
             thumbnail_artifact_id?: string | null;
+        };
+        /**
+         * PromptTagCheckRead
+         * @description 投入前に確かめた、プロンプトのタグの実在と干渉。
+         */
+        PromptTagCheckRead: {
+            /** Conflicts */
+            conflicts: components["schemas"]["PromptTagConflictRead"][];
+            /** Looked Up */
+            looked_up: boolean;
+            /** Lookup Error */
+            lookup_error: string | null;
+            /** Tags */
+            tags: components["schemas"]["PromptTagFindingRead"][];
+        };
+        /**
+         * PromptTagConflictRead
+         * @description 干渉する組み合わせ1件。
+         */
+        PromptTagConflictRead: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "framing" | "solo_with_multiple" | "rating" | "both_sides";
+            /** Message */
+            message: string;
+            /** Tags */
+            tags: string[];
+        };
+        /**
+         * PromptTagFindingRead
+         * @description 実在を確かめたタグ1件。品質・rating・絵師のタグと自然文は含めない。
+         */
+        PromptTagFindingRead: {
+            /** Post Count */
+            post_count: number | null;
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "positive" | "negative";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "missing" | "unverified";
+            /** Tag */
+            tag: string;
         };
         /** RecipeCreate */
         RecipeCreate: {

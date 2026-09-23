@@ -27,6 +27,7 @@ from mycomfyui_api import (
     storage,
 )
 from mycomfyui_api import workflows as workflow_registry
+from mycomfyui_api.adapters import tag_preflight
 from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import prompt_assets, proposals
 from mycomfyui_api.adapters.agent.base import AgentProvider
@@ -786,7 +787,40 @@ async def preview_generation_job(
         ),
         parent_job_id=_resolve_parent_job_id(payload, prepared),
         look_profile_ids=look_profile_ids,
+        tag_check=await _check_prompt_tags(recipe, prepared),
     )
+
+
+#: 設定したパスごとのタグ辞書。読み込んだ内容をファイルが変わるまで使い回す。
+_tag_dictionaries: dict[Path, tag_preflight.TagDictionary] = {}
+
+
+async def _check_prompt_tags(
+    recipe: Recipe, prepared: PreparedExecution
+) -> schemas.PromptTagCheckRead | None:
+    """画像生成のpositiveとnegativeについて、タグの実在と干渉する組み合わせを調べる。
+
+    検証するのはLook Profileなどを合成した後の値とし、合成で入るタグも見落とさない。
+    """
+    if recipe.kind != "image" or recipe.engine != ENGINE_COMFYUI:
+        return None
+    inputs = prepared.resolved_inputs
+    positive = inputs.get("positive_prompt")
+    negative = inputs.get("negative_prompt")
+    if not isinstance(positive, str):
+        return None
+    path = get_settings().tag_dictionary_path
+    dictionary = None
+    if path is not None:
+        dictionary = _tag_dictionaries.setdefault(path, tag_preflight.TagDictionary(path))
+    # 初回は数MBのCSVを読むため、イベントループを塞がない。
+    check = await run_in_threadpool(
+        tag_preflight.check_prompt_tags,
+        positive,
+        negative if isinstance(negative, str) else "",
+        dictionary,
+    )
+    return schemas.PromptTagCheckRead.model_validate(check, from_attributes=True)
 
 
 async def _load_recipe_version(
