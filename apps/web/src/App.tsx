@@ -33,6 +33,7 @@ import { JobQueue } from "./components/JobQueue";
 import { MediaLibrary } from "./components/MediaLibrary";
 import { MusicPanel } from "./components/MusicPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
+import { PipelineStepper, usePipelineReadiness } from "./components/PipelineStepper";
 import { SceneBrowser } from "./components/SceneBrowser";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { ResizablePane } from "./components/ui/ResizablePane";
@@ -45,6 +46,9 @@ import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
 import { tagCheckWarnings } from "./prompt/tagCheck";
+import { PIPELINE_STEPS, persistPipelineStep, readPipelineStep } from "./state/pipelineState";
+import type { PipelineStepId } from "./state/pipelineState";
+import type { PickedMedia } from "./components/MediaPicker";
 import {
   persistUiState,
   readInitialUiState,
@@ -298,6 +302,10 @@ export function App() {
   );
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [sceneId, setSceneId] = useState<string | null>(initialUiState.sceneId);
+  const [pipelineStep, setPipelineStep] = useState<PipelineStepId>(() =>
+    readPipelineStep(initialUiState.sceneId),
+  );
+  const [audioTab, setAudioTab] = useState<"voice" | "music">("voice");
   const [scene, setScene] = useState<SceneEnvelope | null>(null);
   const [shots, setShots] = useState<ShotSummary[]>([]);
   const [shotId, setShotId] = useState<string | null>(initialUiState.shotId);
@@ -451,9 +459,44 @@ export function App() {
   // ラボへ戻ったときに元の位置を残すため、表示用の値だけをここで差し替える。
   const isProduction = mode === "production";
   const shownView: View = isProduction ? "generate" : view;
-  const shownGenerationTab: GenerationTab = isProduction ? "image" : generationTab;
-  const shownImageSubTab: ImageSubTab =
-    isProduction && !PRODUCTION_IMAGE_SUBTABS.has(imageSubTab) ? "generate" : imageSubTab;
+  const pipelineDef = PIPELINE_STEPS.find((item) => item.id === pipelineStep) ?? PIPELINE_STEPS[0];
+  const shownGenerationTab: GenerationTab = isProduction
+    ? pipelineDef.tab === "voice"
+      ? audioTab
+      : pipelineDef.tab
+    : generationTab;
+  const shownImageSubTab: ImageSubTab = isProduction ? (pipelineDef.imageSubTab ?? "generate") : imageSubTab;
+  const pipelineReadiness = usePipelineReadiness(projectId, sceneId, jobs);
+
+  // 場面を切り替えたら、その場面で最後にいた工程へ戻る。
+  useEffect(() => {
+    setPipelineStep(readPipelineStep(sceneId));
+  }, [sceneId]);
+  const changePipelineStep = useCallback(
+    (step: PipelineStepId) => {
+      setPipelineStep(step);
+      if (sceneId) persistPipelineStep(sceneId, step);
+    },
+    [sceneId],
+  );
+
+  // 前の工程の成果物を次の工程の入力へ入れる。動画の開始フレームは採用済みの最新の画像、
+  // 参照画像は登録済みの参照、音声は場面の最新の音声。
+  const pickedFromArtifact = (artifact: Artifact): PickedMedia => ({
+    key: `artifact:${artifact.id}`,
+    label: artifact.relative_path.split("/").pop() ?? artifact.id,
+    source: { artifact_id: artifact.id },
+    mediaType: artifact.media_type ?? undefined,
+    artifact,
+  });
+  const suggestedFirstFrame = useMemo(
+    () => pipelineReadiness.acceptedImages.slice(0, 1).map(pickedFromArtifact),
+    [pipelineReadiness.acceptedImages],
+  );
+  const suggestedGuideAudio = useMemo(
+    () => pipelineReadiness.audios.slice(0, 1).map(pickedFromArtifact),
+    [pipelineReadiness.audios],
+  );
 
   // 作品制作の「次へ」。未選択なら先頭、最後のShotなら次は無い。
   const nextShotId = useMemo(() => {
@@ -1277,6 +1320,16 @@ export function App() {
           </div>
 
           <div className="generation-workspace" hidden={shownView !== "generate"}>
+            {isProduction && (
+              <PipelineStepper
+                step={pipelineStep}
+                onStepChange={changePipelineStep}
+                readiness={pipelineReadiness}
+                audioTab={audioTab}
+                onAudioTabChange={setAudioTab}
+                disabled={!sceneId}
+              />
+            )}
             <nav
               className="generation-tabs"
               hidden={isProduction}
@@ -1315,6 +1368,7 @@ export function App() {
               <div className="image-input-column">
                 <nav
                   className="image-subtabs"
+                  hidden={isProduction}
                   role="tablist"
                   aria-label="画像の入力種別"
                 >
@@ -1479,6 +1533,8 @@ export function App() {
                 shot={shot}
                 jobs={jobs}
                 onSubmittedJob={handleDerivedJob}
+                suggestedFirstFrame={suggestedFirstFrame}
+                suggestedGuideAudio={suggestedGuideAudio}
               />
             </div>
 

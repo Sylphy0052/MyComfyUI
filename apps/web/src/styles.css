@@ -1773,3 +1773,52 @@ button.primary:hover:not(:disabled) {
 .shortcut-help-button {
   white-space: nowrap;
 }
+
+.pipeline-stepper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2, 6px);
+  background: var(--color-surface);
+}
+
+.pipeline-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pipeline-step-no {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.badge.pipeline-missing {
+  color: var(--color-warning);
+  background: var(--color-warning-subtle);
+}
+
+.pipeline-missing-note {
+  margin: 0;
+  color: var(--color-warning);
+}
+
+.pipeline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
