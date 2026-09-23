@@ -91,6 +91,10 @@ export function VoicePanel({
   const [error, setError] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [verifications, setVerifications] = useState<VoiceVerification[]>([]);
+  const [verificationsLoading, setVerificationsLoading] = useState(false);
+  const [verificationsError, setVerificationsError] = useState<string | null>(
+    null,
+  );
   const [previewResult, setPreviewResult] = useState<GenerationPreview | null>(
     null,
   );
@@ -108,6 +112,10 @@ export function VoicePanel({
   const voiceJobs = useMemo(
     () => jobs.filter((job) => job.kind === "voice"),
     [jobs],
+  );
+  const selectedVoiceJob = useMemo(
+    () => voiceJobs.find((item) => item.id === selectedJobId) ?? null,
+    [voiceJobs, selectedJobId],
   );
 
   useEffect(() => {
@@ -158,21 +166,27 @@ export function VoicePanel({
   }, [voiceIds]);
 
   const loadVerifications = useCallback(async (jobId: string) => {
+    setVerificationsLoading(true);
+    setVerificationsError(null);
     try {
       setVerifications(await api.listVoiceVerifications(jobId));
     } catch (cause) {
-      setError(describe(cause));
+      setVerificationsError(describe(cause));
+    } finally {
+      setVerificationsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (!selectedJobId) {
       setVerifications([]);
+      setVerificationsError(null);
       return;
     }
     const job = voiceJobs.find((item) => item.id === selectedJobId);
     if (!job || job.state !== "succeeded") {
       setVerifications([]);
+      setVerificationsError(null);
       return;
     }
     void loadVerifications(selectedJobId);
@@ -579,7 +593,22 @@ export function VoicePanel({
         </select>
       </div>
 
-      {verifications.length === 0 ? (
+      {verificationsLoading ? (
+        <EmptyState title="読み検証を取得しています…" />
+      ) : verificationsError ? (
+        <EmptyState
+          title="読み検証の取得に失敗しました。"
+          description={verificationsError}
+          action={
+            <button
+              type="button"
+              onClick={() => selectedJobId && void loadVerifications(selectedJobId)}
+            >
+              再試行
+            </button>
+          }
+        />
+      ) : !selectedJobId ? (
         <EmptyState
           title="成功した音声Jobを選ぶと、台詞ごとの読み検証と尺を表示する。"
           action={
@@ -591,6 +620,10 @@ export function VoicePanel({
             </button>
           }
         />
+      ) : selectedVoiceJob?.state !== "succeeded" ? (
+        <EmptyState title="選択した音声Jobはまだ完了していません。完了すると読み検証と尺を表示する。" />
+      ) : verifications.length === 0 ? (
+        <EmptyState title="この音声Jobには読み検証がありません。" />
       ) : (
         <ul className="list plain">
           {verifications.map((item) => (

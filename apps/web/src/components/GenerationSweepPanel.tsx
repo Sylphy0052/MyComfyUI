@@ -85,6 +85,7 @@ export function GenerationSweepPanel({
         .then((items) => {
           if (alive && sequence === requestSequence.current) {
             setExperiments(items);
+            setError(null);
             const comparing = items.find((item) => item.id === activeComparisonId);
             if (comparing) {
               onCompare(

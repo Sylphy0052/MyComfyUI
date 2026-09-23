@@ -22,6 +22,12 @@ interface Props {
   sceneId: string | null;
   shotId: string | null;
   recipes: Recipe[];
+  /** Recipe一覧の初回取得中。取得未完了を0件と区別するために使う。 */
+  recipesLoading: boolean;
+  /** Recipe一覧の取得失敗時のメッセージ。取得失敗を0件と区別するために使う。 */
+  recipesError: string | null;
+  /** Recipe一覧の取得に失敗したとき、再取得を促す導線に使う。 */
+  onRetryRecipes: () => void;
   sourceArtifactId: string | null;
   onSourceArtifactChange: (artifactId: string | null) => void;
   onSubmittedJob: (job: GenerationJob) => void;
@@ -71,6 +77,9 @@ export function ImageDerivationPanel({
   sceneId,
   shotId,
   recipes,
+  recipesLoading,
+  recipesError,
+  onRetryRecipes,
   sourceArtifactId,
   onSourceArtifactChange,
   onSubmittedJob,
@@ -339,6 +348,30 @@ export function ImageDerivationPanel({
     }
   };
 
+  if (recipesLoading) {
+    return (
+      <section className="panel">
+        <h2>画像派生生成</h2>
+        <EmptyState title="Recipeを読み込んでいます…" />
+      </section>
+    );
+  }
+  if (recipesError) {
+    return (
+      <section className="panel">
+        <h2>画像派生生成</h2>
+        <EmptyState
+          title="Recipeの取得に失敗しました。"
+          description={recipesError}
+          action={
+            <button type="button" onClick={onRetryRecipes}>
+              再取得
+            </button>
+          }
+        />
+      </section>
+    );
+  }
   if (recipes.length === 0) {
     return (
       <section className="panel">
