@@ -4,8 +4,9 @@
 と同じ`name,category,post_count,"alias,..."`の形式とし、辞書に無いタグと0件のタグを
 「実在しない」として警告する。0件のタグはpositiveでもnegativeでも効かない。
 Danbooruへ直接問い合わせないのは、User-AgentにComfyUIを含む要求を先方が拒むためで
-ある。分割・正規化と対象外の判定は、novel-writerの`anima-prompt/scripts/tagcheck.py`
-とWeb側の`prompt/merge.ts`に揃える。
+ある。正規化と対象外の判定は、novel-writerの`anima-prompt/scripts/tagcheck.py`
+とWeb側の`prompt/merge.ts`に揃える。分割は`merge.ts`と違い、強調の括弧の内側も
+タグ単位に区切る。
 
 辞書を読めなくても投入は妨げず、実在を断定しない「未確認」として返す。
 """
@@ -65,10 +66,8 @@ FRAMING_TAGS = (
 MULTIPLE_PEOPLE = re.compile(
     r"^(?:(?:[2-9]|\d{2,})\+?(?:girls|boys|others)|multiple (?:girls|boys|others))$"
 )
-WEIGHTED = re.compile(r"^\((.*):\s*-?\d+(?:\.\d+)?\)$", re.DOTALL)
-BRACKETED = re.compile(r"^\[(.*)\]$", re.DOTALL)
-#: 重みを付けない強調`(tag)`。内側に括弧を含まないものだけを剥がす。
-EMPHASIZED = re.compile(r"^\(([^()]*)\)$")
+#: 強調の括弧を閉じる直前に付く重み`:1.2`。
+WEIGHT_SUFFIX = re.compile(r":\s*-?\d+(?:\.\d+)?\s*$")
 #: 版権名などの末尾の括弧。自然文かどうかの語数に数えない。
 QUALIFIER = re.compile(r"\([^()]*\)$")
 
@@ -108,14 +107,15 @@ class TagCheck:
 
 
 def split_prompt(prompt: str) -> list[str]:
-    """プロンプトをカンマと改行で区切る。
+    """プロンプトから強調の構文を外し、タグ単位に区切る。
 
-    `hoshino ai \\(oshi no ko\\)`のようなエスケープ済みの括弧と、`(chibi:2)`のような
-    重み付けの括弧の内側にあるカンマでは区切らない。
+    強調の括弧`(` `)` `[` `]`と、閉じ括弧の直前にある重み`:1.2`を外してから、括弧の
+    内側も含めてカンマと改行で区切る。`((smile))`は`smile`、
+    `(masterpiece, best quality:1.2)`は`masterpiece`と`best quality`になる。
+    `hoshino ai \\(oshi no ko\\)`のようなエスケープ済みの括弧はタグの一部として残す。
     """
     segments: list[str] = []
     current: list[str] = []
-    depth = 0
     index = 0
     while index < len(prompt):
         char = prompt[index]
@@ -123,36 +123,30 @@ def split_prompt(prompt: str) -> list[str]:
             current.append(prompt[index : index + 2])
             index += 2
             continue
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth = max(0, depth - 1)
-        elif char == "\n" or (char == "," and depth == 0):
+        index += 1
+        if char == ")":
+            # `(:3)`のように重みを外すと空になるものは、重みでなくタグとして残す。
+            text = "".join(current)
+            stripped = WEIGHT_SUFFIX.sub("", text)
+            if stripped.strip():
+                current = [stripped]
+        elif char in "([]":
+            continue
+        elif char in ",\n":
             segments.append("".join(current))
             current = []
-            index += 1
-            continue
-        current.append(char)
-        index += 1
+        else:
+            current.append(char)
     segments.append("".join(current))
     return [segment.strip() for segment in segments if segment.strip()]
 
 
 def normalize_tag(segment: str) -> str:
-    """重み付けの括弧を外し、辞書の表記と比べられる形へ寄せる。
+    """辞書の表記と比べられる形へ寄せる。
 
-    入れ子の重み付けは外側から順に剥がす。版権名の`\\(` `\\)`は素の括弧へ戻し、
-    アンダースコアはスペースへ寄せる。
+    版権名の`\\(` `\\)`は素の括弧へ戻し、アンダースコアはスペースへ寄せる。
     """
-    text = segment.strip()
-    previous = None
-    while previous != text:
-        previous = text
-        for pattern in (WEIGHTED, BRACKETED, EMPHASIZED):
-            matched = pattern.match(text)
-            if matched:
-                text = matched.group(1).strip()
-    text = text.replace("\\(", "(").replace("\\)", ")").replace("_", " ")
+    text = segment.replace("\\(", "(").replace("\\)", ")").replace("_", " ")
     return " ".join(text.lower().split())
 
 
