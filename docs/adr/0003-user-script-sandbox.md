@@ -71,6 +71,7 @@ systemd-run --user --scope --quiet --collect --unit=<run固有の名前>
     -p TasksMax=<上限> -p MemoryMax=<上限> -p MemorySwapMax=0 --
   prlimit --cpu=<秒> --fsize=<bytes> --core=0 --nofile=<数> --
   bwrap --unshare-all --die-with-parent --new-session --clearenv
+    --setenv PATH /usr/bin:/bin --setenv LANG C.UTF-8 --setenv HOME /tmp
     --ro-bind /usr /usr (/bin、/lib、/lib64、/sbinはホストに合わせてsymlinkかro-bind)
     --proc /proc --dev /dev --tmpfs /tmp
     --ro-bind <scriptの複製> /sandbox/script.py
@@ -84,6 +85,7 @@ systemd-run --user --scope --quiet --collect --unit=<run固有の名前>
 - 実行できる言語はPythonだけとし、interpreterは`/usr/bin/python3`を`-I`(isolated mode)で起動する。
 - sandboxの中で利用者が触れる場所は3つに限る。入力は`/sandbox/inputs`に読み取り専用で置く。出力は`/sandbox/output`に書く。一時領域は`/tmp`のtmpfsとする。
 - 実行ファイルは絶対パスで設定する。`PATH`の探索に頼らない。
+- 環境変数は`--clearenv`で空にしてから、`--setenv`で`PATH`、`LANG`、`HOME=/tmp`の3つだけを渡す。APIの認証情報や親プロセスの環境変数は渡らない。
 
 ### 資源の上限
 
@@ -104,7 +106,11 @@ RLIMIT_NPROCはsandboxの外にある利用者の全プロセスを数えるた�
 ### 既知の制約
 
 - RLIMIT_CPUはプロセスごとの上限である。scriptが子プロセスを作ると、全体のCPU時間は最大で`TasksMax × CPU時間`まで伸びる。cgroupの`CPUQuota`で全体を絞る案は採らなかった。実測で、この環境のsystemd user managerに委譲されているcontrollerは`memory`と`pids`だけで、`cpu`が無かった。この状態で`CPUQuota`を付けても効かない。全体の抑止は経過時間の上限に頼る。
-- 同時に1件しか実行しない制約は、APIプロセスのメモリ上で管理している。APIを複数workerで動かすとこの制約が崩れる。本機能はAPIを単一プロセスで動かす前提とする。
+- 同時に1件しか実行しない制約は、3段で守る。
+  - プロセスの中では、実行中のrunをメモリ上で数える。
+  - DBでは、`status='running'`の行に部分unique index(`ux_user_script_run_single_running`)を張る。複数のプロセスが同時に`running`へ遷移させても、通るのは1件だけになる。
+  - 実行を担当するのは、起動時に`tmp/script-runs.lock`のファイルロックを取れた1プロセスだけとする。担当でないプロセスは実行を`503 SCRIPT_RUNNER_UNAVAILABLE`で断り、起動時の回収もしない。多重起動したプロセスが、実行中の別プロセスのscopeを回収で止めるのを防ぐためである。
+- 取消はプロセスのメモリ上のイベントで伝える。実行を担当するプロセス以外は、実行中のrunを止められない。
 - 出力の総量は0.5秒ごとの計測で止める。止めるまでの間に、上限を一時的に超えることがある。1ファイルの大きさはRLIMIT_FSIZEで抑える。
 
 ### 比較した案
@@ -144,7 +150,9 @@ sequenceDiagram
 ## 失敗時の扱い
 
 - sandboxの起動確認(同じ引数構成で`/usr/bin/true`を実行する)に失敗したら、runを実行せず`SANDBOX_UNAVAILABLE`で拒否し、監査記録へ残す。
-- 実行中にAPIが停止したrunは、次の起動で`failed`にする。sandboxは`--die-with-parent`で道連れにする。
+- 実行中にAPIが停止したrunは、次の起動で`failed`にする。sandboxは`--die-with-parent`で道連れにする。道連れを逃れてscopeにプロセスが残った場合に備え、起動時の回収ではscope(`mycomfyui-script-<run_id>`)へSIGKILLを送り、作業ディレクトリを消す。scopeを止めたときのsystemctlの終了コードと、作業ディレクトリを消せたかを監査記録へ残す。
+- `running`への遷移を記録するcommitに失敗したら、押さえた実行枠と作業ディレクトリを戻す。次の実行はそのまま受け付ける。
+- 実行の後に作業ディレクトリを消せなかったときは、`run.cleanup_failed`として監査記録へ残す。
 - 上限を超えたrunは`failed`とし、理由(`timeout`、`output_limit`など)を記録する。上限超過時のArtifactは回収しない。
 - 出力の回収に失敗したら、保存済みのファイルを消し、runを`failed`にする。
 

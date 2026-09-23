@@ -11,6 +11,7 @@ APIは認証を持たないため、tokenを作る経路はREST APIに置かな�
 """
 
 import asyncio
+import fcntl
 import logging
 import os
 import re
@@ -22,6 +23,7 @@ from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -67,6 +69,12 @@ _MAX_INPUT_NAME = 100
 #: 実行中のrunと、その取消の合図。同時に実行するrunは1件に限る。
 _active: dict[str, asyncio.Event] = {}
 _tasks: dict[str, asyncio.Task] = {}
+#: 実行の担当を示すファイルロック。持っているプロセスだけが起動時の回収と実行を
+#: 行う。多重起動した別プロセスが、実行中のscopeを回収で止めるのを防ぐ。
+_runner_lock: int | None = None
+#: 実行中のrunを1件に限る部分unique indexに当たったときの、SQLiteのエラー文。
+#: statusに張ったunique indexはこれだけなので、この文で違反を判別できる。
+_SINGLE_RUNNING_VIOLATION = "UNIQUE constraint failed: user_script_run.status"
 
 
 class _Rejected(Exception):
@@ -494,10 +502,13 @@ def _make_private_dir(path: Path) -> None:
     path.mkdir(mode=0o700, parents=False)
 
 
-def _remove_tree(path: Path) -> None:
-    """作業ディレクトリを消す。script が権限を落としたディレクトリも消せるようにする。"""
+def _remove_tree(path: Path) -> bool:
+    """作業ディレクトリを消す。script が権限を落としたディレクトリも消せるようにする。
+
+    消せたか、元から無かったときにTrueを返す。
+    """
     if not path.exists():
-        return
+        return True
     for root, dirs, _ in os.walk(path, followlinks=False):
         for name in dirs:
             target = Path(root) / name
@@ -510,6 +521,8 @@ def _remove_tree(path: Path) -> None:
         shutil.rmtree(path)
     except OSError:
         logger.warning("scriptの作業ディレクトリを消せません: %s", path, exc_info=True)
+        return False
+    return True
 
 
 def _file_sha256(path: Path) -> str:
@@ -574,6 +587,13 @@ async def execute_run(run_id: str, session: SessionDep) -> UserScriptRunRead:
             status_code=status.HTTP_409_CONFLICT,
             details={"status": run.status},
         )
+    if _runner_lock is None:
+        raise ApiError(
+            "SCRIPT_RUNNER_UNAVAILABLE",
+            "このAPIプロセスはscriptの実行を担当していません。"
+            "別のプロセスが担当しているか、起動時に担当になれませんでした。",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     if _active:
         raise ApiError(
             "RUN_BUSY",
@@ -616,11 +636,36 @@ async def execute_run(run_id: str, session: SessionDep) -> UserScriptRunRead:
         await asyncio.to_thread(_remove_tree, staging)
         raise
     started_at = _now().isoformat()
-    result = await session.execute(
-        update(UserScriptRun)
-        .where(UserScriptRun.id == run.id, UserScriptRun.status == "approved")
-        .values(status="running", started_at=started_at)
-    )
+    script_id, digest = script.id, run.digest
+    try:
+        result = await session.execute(
+            update(UserScriptRun)
+            .where(UserScriptRun.id == run_id, UserScriptRun.status == "approved")
+            .values(status="running", started_at=started_at)
+        )
+        if result.rowcount == 1:
+            _audit(
+                session,
+                "run.started",
+                script_id=script_id,
+                run_id=run_id,
+                digest=digest,
+                detail={"command": command},
+            )
+            await session.commit()
+    except BaseException as error:
+        _active.pop(run_id, None)
+        await asyncio.to_thread(_remove_tree, staging)
+        await session.rollback()
+        if isinstance(error, IntegrityError) and _SINGLE_RUNNING_VIOLATION in str(
+            error
+        ):
+            raise ApiError(
+                "RUN_BUSY",
+                "別のscriptを実行中です。終了してから実行してください。",
+                status_code=status.HTTP_409_CONFLICT,
+            ) from error
+        raise
     if result.rowcount != 1:
         await session.rollback()
         _active.pop(run_id, None)
@@ -630,15 +675,6 @@ async def execute_run(run_id: str, session: SessionDep) -> UserScriptRunRead:
             "承認済みのrunではありません。",
             status_code=status.HTTP_409_CONFLICT,
         )
-    _audit(
-        session,
-        "run.started",
-        script_id=script.id,
-        run_id=run.id,
-        digest=run.digest,
-        detail={"command": command},
-    )
-    await session.commit()
     _tasks[run.id] = asyncio.create_task(
         _drive(run.id, tools, limits, command, staging, output_dir, cancel)
     )
@@ -897,7 +933,23 @@ async def _drive(
     finally:
         _active.pop(run_id, None)
         _tasks.pop(run_id, None)
-        await asyncio.to_thread(_remove_tree, staging)
+        if not await asyncio.to_thread(_remove_tree, staging):
+            await _audit_cleanup_failure(run_id, staging)
+
+
+async def _audit_cleanup_failure(run_id: str, staging: Path) -> None:
+    """作業ディレクトリを消せなかったことを監査へ残す。記録の失敗はログだけにする。"""
+    try:
+        async with get_session_factory()() as session:
+            _audit(
+                session,
+                "run.cleanup_failed",
+                run_id=run_id,
+                detail={"staging": str(staging)},
+            )
+            await session.commit()
+    except Exception:
+        logger.exception("作業ディレクトリの削除失敗を記録できません: %s", run_id)
 
 
 async def _mark_failed(run_id: str, reason: str) -> None:
@@ -963,8 +1015,51 @@ async def cancel_run(run_id: str, session: SessionDep) -> UserScriptRunRead:
     )
 
 
+def _acquire_runner_lock(settings: Settings) -> bool:
+    """実行の担当を示すロックを取る。取れなければ別のプロセスが担当している。"""
+    global _runner_lock
+    if _runner_lock is not None:
+        return True
+    lock_path = settings.user_script_runs_root.with_name("script-runs.lock")
+    lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return False
+    _runner_lock = fd
+    return True
+
+
+async def _stop_interrupted_scope(settings: Settings, run_id: str) -> int | None:
+    """前回のプロセスが残したscopeを止める。systemctlを起動できなければNone。"""
+    try:
+        return await script_sandbox.stop_unit(
+            settings.user_scripts_systemctl_path, script_sandbox.unit_name(run_id)
+        )
+    except OSError:
+        logger.exception("中断したscriptのscopeを止められません: %s", run_id)
+        return None
+
+
 async def recover_interrupted_runs(session: AsyncSession) -> int:
-    """前回の停止で実行中のまま残ったrunを失敗へ倒す。"""
+    """前回の停止で実行中のまま残ったrunを片付け、失敗へ倒す。
+
+    実行の担当になれたプロセスだけが行う。担当になれなかったときは、別の
+    プロセスのrunを止めないよう何もしない。そのプロセスはscriptを実行しない。
+    """
+    settings = get_settings()
+    try:
+        if not _acquire_runner_lock(settings):
+            logger.warning(
+                "別のAPIプロセスがscriptの実行を担当しています。"
+                "このプロセスではscriptを実行しません。"
+            )
+            return 0
+    except OSError:
+        logger.exception("scriptの実行を担当できません。実行はすべて拒否されます。")
+        return 0
     rows = (
         await session.scalars(
             select(UserScriptRun).where(UserScriptRun.status == "running")
@@ -972,6 +1067,9 @@ async def recover_interrupted_runs(session: AsyncSession) -> int:
     ).all()
     now = _now().isoformat()
     for run in rows:
+        stop_exit_code = await _stop_interrupted_scope(settings, run.id)
+        staging = settings.user_script_runs_root / run.id
+        staging_removed = await asyncio.to_thread(_remove_tree, staging)
         run.status = "failed"
         run.failure_reason = "interrupted"
         run.finished_at = now
@@ -981,7 +1079,13 @@ async def recover_interrupted_runs(session: AsyncSession) -> int:
             script_id=run.script_id,
             run_id=run.id,
             digest=run.digest,
-            detail={"status": "failed", "failure_reason": "interrupted"},
+            detail={
+                "status": "failed",
+                "failure_reason": "interrupted",
+                "scope": script_sandbox.unit_name(run.id),
+                "scope_stop_exit_code": stop_exit_code,
+                "staging_removed": staging_removed,
+            },
         )
     await session.commit()
     return len(rows)
@@ -1004,3 +1108,7 @@ async def shutdown() -> None:
     tasks = list(_tasks.values())
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+    global _runner_lock
+    if _runner_lock is not None:
+        os.close(_runner_lock)
+        _runner_lock = None

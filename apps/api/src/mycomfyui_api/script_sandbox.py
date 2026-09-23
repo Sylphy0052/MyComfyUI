@@ -266,18 +266,28 @@ def _kill_group(pid: int) -> None:
 
 async def _stop_unit(tools: SandboxTools, unit: str) -> None:
     """scopeに残ったプロセスを止める。bwrapの道連れで既に空なら何もしない。"""
+    await stop_unit(tools.systemctl, unit)
+
+
+async def stop_unit(systemctl: str, unit: str) -> int:
+    """scopeの全プロセスへSIGKILLを送り、systemctlの終了コードを返す。
+
+    scopeが既に無いときは非0が返る。呼び出し側はそれを「止める対象が無かった」と
+    読む。
+    """
     process = await asyncio.create_subprocess_exec(
-        tools.systemctl,
+        systemctl,
         "--user",
         "kill",
         "--signal=SIGKILL",
-        unit,
+        # 接尾辞を省くとsystemctlは`.service`として探し、scopeに当たらない。
+        f"{unit}.scope",
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
         env=launcher_env(),
     )
-    await process.wait()
+    return await process.wait()
 
 
 def output_usage(

@@ -4,7 +4,16 @@
 他の生成機能から切り離して読めるようにするためである。
 """
 
-from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mycomfyui_api.models import SHA256_LENGTH, UUID_LENGTH, Base
@@ -20,6 +29,10 @@ RUN_STATUSES = (
 )
 #: これ以上状態が変わらないrunの状態。
 TERMINAL_RUN_STATUSES = ("succeeded", "failed", "cancelled")
+
+
+#: 実行中のrunを1件に限る部分unique index。違反の判別にも使う。
+SINGLE_RUNNING_INDEX = "ux_user_script_run_single_running"
 
 
 class UserScript(Base):
@@ -50,6 +63,13 @@ class UserScriptRun(Base):
         ),
         Index("ix_user_script_run_script_id", "script_id"),
         Index("ix_user_script_run_status", "status"),
+        # 実行中のrunを、APIのプロセスの数に関わらずDBで1件に限る。
+        Index(
+            SINGLE_RUNNING_INDEX,
+            "status",
+            unique=True,
+            sqlite_where=text("status = 'running'"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(UUID_LENGTH), primary_key=True)
