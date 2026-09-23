@@ -9,6 +9,7 @@ import type {
   GenerationJob,
   GenerationManifest,
   GenerationPreview,
+  LookProfile,
   ProjectRecord,
   Recipe,
 } from "./api/client";
@@ -32,6 +33,7 @@ import { ImageDerivationPanel } from "./components/ImageDerivationPanel";
 import { JobQueue } from "./components/JobQueue";
 import { MediaLibrary } from "./components/MediaLibrary";
 import { MusicPanel } from "./components/MusicPanel";
+import { ProductionPlanPanel } from "./components/ProductionPlanPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { PipelineStepper, usePipelineReadiness } from "./components/PipelineStepper";
 import { SceneBrowser } from "./components/SceneBrowser";
@@ -48,6 +50,14 @@ import { WorkflowRegistry } from "./components/WorkflowRegistry";
 import { tagCheckWarnings } from "./prompt/tagCheck";
 import { PIPELINE_STEPS, persistPipelineStep, readPipelineStep } from "./state/pipelineState";
 import type { PipelineStepId } from "./state/pipelineState";
+import {
+  backgroundPrompt,
+  persistProductionPlan,
+  planPresetFor,
+  readProductionPlan,
+} from "./state/productionPlan";
+import type { ProductionPlan } from "./state/productionPlan";
+import { subscribeLookProfilesChanged } from "./preset/productionChoices";
 import type { PickedMedia } from "./components/MediaPicker";
 import {
   persistUiState,
@@ -305,6 +315,12 @@ export function App() {
   const [pipelineStep, setPipelineStep] = useState<PipelineStepId>(() =>
     readPipelineStep(initialUiState.sceneId),
   );
+  const [productionPlan, setProductionPlan] = useState<ProductionPlan | null>(() =>
+    readProductionPlan(initialUiState.sceneId),
+  );
+  // 計画のPresetの選択肢と、開始後に各工程へ渡すPresetの本体。
+  const [lookProfiles, setLookProfiles] = useState<LookProfile[]>([]);
+  const [lookProfilesVersion, setLookProfilesVersion] = useState(0);
   // 採用の変更などJobが増えない更新の後に、工程の「揃っている」判定を取り直すための値。
   const [readinessVersion, setReadinessVersion] = useState(0);
   const [audioTab, setAudioTab] = useState<"voice" | "music">("voice");
@@ -481,6 +497,67 @@ export function App() {
   useEffect(() => {
     setPipelineStep(readPipelineStep(sceneId));
   }, [sceneId]);
+  // 場面を切り替えたら、その場面の計画を読み直す。
+  useEffect(() => {
+    setProductionPlan(readProductionPlan(sceneId));
+  }, [sceneId]);
+  const changeProductionPlan = useCallback(
+    (plan: ProductionPlan | null) => {
+      setProductionPlan(plan);
+      if (sceneId) persistProductionPlan(sceneId, plan);
+    },
+    [sceneId],
+  );
+
+  // Presetの一覧は作品制作のときだけ取る。ラボや候補ギャラリーで作られたら取り直す。
+  useEffect(() => subscribeLookProfilesChanged(() => setLookProfilesVersion((current) => current + 1)), []);
+  useEffect(() => {
+    if (!isProduction) return;
+    let active = true;
+    api
+      .listLookProfiles({ limit: 200 })
+      .then((items) => {
+        if (active) setLookProfiles(items);
+      })
+      .catch((cause) => {
+        if (active) notify({ tone: "danger", message: `Presetの一覧を取得できませんでした: ${describe(cause)}` });
+      });
+    return () => {
+      active = false;
+    };
+  }, [isProduction, lookProfilesVersion, notify]);
+
+  // 開始済みの計画から、工程ごとのPresetを組む。未開始やラボでは何も渡さない。
+  const activePlan = isProduction && productionPlan?.started ? productionPlan : null;
+  const planPresets = useMemo(
+    () => ({
+      background: planPresetFor(activePlan, "background", lookProfiles),
+      character: planPresetFor(activePlan, "character", lookProfiles),
+      voice: planPresetFor(activePlan, "voice", lookProfiles),
+      music: planPresetFor(activePlan, "music", lookProfiles),
+      video: planPresetFor(activePlan, "video", lookProfiles),
+      finish: planPresetFor(activePlan, "finish", lookProfiles),
+    }),
+    [activePlan, lookProfiles],
+  );
+  const imagePlanSlot = pipelineStep === "character" ? "character" : "background";
+  const generationPlan = useMemo(() => {
+    if (!activePlan) return null;
+    const prompt =
+      imagePlanSlot === "character"
+        ? activePlan.characters.map((item) => item.name).join(", ")
+        : backgroundPrompt(activePlan);
+    return {
+      scope: `${activePlan.sceneId}:${shotId ?? ""}:${imagePlanSlot}`,
+      preset: planPresets[imagePlanSlot],
+      prompt,
+    };
+  }, [activePlan, imagePlanSlot, planPresets, shotId]);
+  const planMusic = useMemo(
+    () => (activePlan ? { mood: activePlan.audio.bgmMood, genre: activePlan.audio.bgmGenre } : null),
+    [activePlan],
+  );
+
   const changePipelineStep = useCallback(
     (step: PipelineStepId) => {
       setPipelineStep(step);
@@ -1341,6 +1418,16 @@ export function App() {
 
           <div className="generation-workspace" hidden={shownView !== "generate"}>
             {isProduction && (
+              <ProductionPlanPanel
+                projectId={projectId}
+                sceneId={sceneId}
+                scene={scene}
+                plan={productionPlan}
+                onPlanChange={changeProductionPlan}
+                profiles={lookProfiles}
+              />
+            )}
+            {isProduction && (
               <PipelineStepper
                 step={pipelineStep}
                 onStepChange={changePipelineStep}
@@ -1432,6 +1519,7 @@ export function App() {
                     previewError={previewError}
                     simple={isProduction}
                     shortcutActive={isProduction && shownImageSubTab === "generate"}
+                    plan={generationPlan}
                   />
                 </div>
 
@@ -1555,6 +1643,7 @@ export function App() {
                 suggestedFirstFrame={suggestedFirstFrame}
                 suggestedReferences={suggestedReferences}
                 suggestedGuideAudio={suggestedGuideAudio}
+                planPreset={planPresets.video}
               />
             </div>
 
@@ -1571,6 +1660,8 @@ export function App() {
                 scene={scene}
                 jobs={jobs}
                 onSubmittedJob={handleDerivedJob}
+                planPreset={planPresets.music}
+                planMusic={planMusic}
               />
             </div>
 
@@ -1587,6 +1678,7 @@ export function App() {
                 shot={shot}
                 jobs={jobs}
                 onSubmittedJob={handleDerivedJob}
+                planPreset={planPresets.voice}
               />
             </div>
 
@@ -1602,6 +1694,7 @@ export function App() {
                 shotId={shotId}
                 jobs={jobs}
                 onSubmittedJob={handleDerivedJob}
+                planPreset={planPresets.finish}
               />
             </div>
           </div>

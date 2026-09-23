@@ -41,11 +41,13 @@ export function LookProfileManager({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  // 一覧を取得するまでは適用中のPresetの互換を判定できない。空の一覧で選択を消さないために持つ。
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let active = true;
     api.listLookProfiles({ kind, limit: 200 })
-      .then((items) => { if (active) setProfiles(items); })
+      .then((items) => { if (active) { setProfiles(items); setLoaded(true); } })
       .catch((cause) => { if (active) setError(describe(cause)); });
     return () => { active = false; };
   }, [kind, reload]);
@@ -79,6 +81,7 @@ export function LookProfileManager({
   };
 
   useEffect(() => {
+    if (!loaded) return;
     const compatible = new Set(
       profiles
         .filter(isCompatible)
@@ -86,7 +89,7 @@ export function LookProfileManager({
     );
     const next = selectedIds.filter((id) => compatible.has(id));
     if (next.length !== selectedIds.length) onSelectionChange(next);
-  }, [profiles, recipe?.id, selectedIds]);
+  }, [loaded, profiles, recipe?.id, selectedIds]);
 
   const selected = useMemo(
     () => selectedIds.map((id) => profiles.find((profile) => profile.id === id)).filter((item): item is LookProfile => Boolean(item)),

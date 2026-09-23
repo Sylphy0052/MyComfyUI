@@ -7,8 +7,15 @@ import type {
   GenerationPreview,
   Recipe,
 } from "../api/client";
+import {
+  applyPlanPreset,
+  planPresetBlocker,
+  usePlanPresetDefaults,
+  type PlanPreset,
+} from "../state/productionPlan";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { MediaViewer } from "./MediaViewer";
+import { PlanPresetNote } from "./ProductionPlanPanel";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 
@@ -40,6 +47,8 @@ interface Props {
   shotId: string | null;
   jobs: GenerationJob[];
   onSubmittedJob: (job: GenerationJob) => void;
+  /** 作品制作の計画で開始済みのとき、この工程に割り当てたPreset。 */
+  planPreset?: PlanPreset | null;
 }
 
 export function ComposePanel({
@@ -48,10 +57,12 @@ export function ComposePanel({
   shotId,
   jobs,
   onSubmittedJob,
+  planPreset,
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
+  usePlanPresetDefaults(planPreset, shotId, recipes, setRecipeId, setUseInheritedDefaults);
 
   const [videoArtifacts, setVideoArtifacts] = useState<Artifact[]>([]);
   const [audioArtifacts, setAudioArtifacts] = useState<Artifact[]>([]);
@@ -255,7 +266,7 @@ export function ComposePanel({
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
-        inputs,
+        ...applyPlanPreset(planPreset, recipe, useInheritedDefaults, inputs),
       });
       onSubmittedJob(job);
       const { videos, audios } = await loadArtifacts();
@@ -284,7 +295,7 @@ export function ComposePanel({
         shot_id: shotId,
         recipe_id: recipe?.id,
         use_inherited_defaults: useInheritedDefaults,
-        inputs,
+        ...applyPlanPreset(planPreset, recipe, useInheritedDefaults, inputs),
       });
       setPreviewResult(preview);
       setPreviewError(null);
@@ -329,6 +340,10 @@ export function ComposePanel({
             ))}
           </select>
         </div>
+        <PlanPresetNote
+          preset={planPreset}
+          blocker={planPreset ? planPresetBlocker(planPreset, recipes.find((item) => item.id === recipeId), useInheritedDefaults) : null}
+        />
 
         <div>
           <label htmlFor="compose-video">合成する動画</label>
