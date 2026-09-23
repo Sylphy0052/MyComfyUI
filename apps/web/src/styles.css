@@ -102,11 +102,92 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 320px 1fr 360px;
+  /* R-05: 左右ペインの幅はJS側 (state/layoutState.ts) がCSS変数として書き込む。
+     未設定時 (初回描画・var未対応環境) は既定値へ落ちる。 */
+  grid-template-columns:
+    var(--pane-scene-browser-width, 320px) 1fr
+    var(--pane-job-queue-width, 360px);
   gap: var(--space-6);
   padding: var(--space-6);
   min-height: 100vh;
   align-items: start;
+}
+
+/* R-05: 左右ペインの幅変更・折りたたみ (components/ui/ResizablePane.tsx)。 */
+.pane-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+
+.pane-shell--collapsed {
+  align-items: center;
+  padding-top: var(--space-2);
+}
+
+.pane-shell__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pane-shell__toolbar[data-side="left"] {
+  justify-content: flex-end;
+}
+
+.pane-shell__toolbar[data-side="right"] {
+  justify-content: flex-start;
+}
+
+.pane-shell__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.pane-collapse-toggle {
+  background: var(--color-surface);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+}
+
+.pane-collapse-toggle:hover {
+  color: var(--color-text);
+}
+
+.pane-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.pane-resize-handle:hover,
+.pane-resize-handle:active {
+  background: var(--color-accent);
+  opacity: 0.4;
+}
+
+.pane-resize-handle[data-side="left"] {
+  right: calc(var(--space-6) / -2 - 4px);
+}
+
+.pane-resize-handle[data-side="right"] {
+  left: calc(var(--space-6) / -2 - 4px);
+}
+
+/* 700px以下は.appがdisplay:blockへ落ち、ドラッグでの幅変更に意味が無くなるため隠す。 */
+@media (max-width: 700px) {
+  .pane-resize-handle {
+    display: none;
+  }
 }
 
 .app > header {
