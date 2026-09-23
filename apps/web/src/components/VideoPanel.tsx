@@ -322,13 +322,19 @@ export function VideoPanel({
         return null;
       }
       const guideFrameIdx = Number.parseInt(guideFrameIdxStr || "0", 10);
+      // 尺をPresetが決めるときはパネルの尺が使われないため、上限は確かめない。
+      const lengthKnown = !fixed.has("length");
       if (
         !fixed.has("guide_frame_idx") &&
         (!Number.isFinite(guideFrameIdx) ||
           guideFrameIdx < 0 ||
-          guideFrameIdx >= length)
+          (lengthKnown && guideFrameIdx >= length))
       ) {
-        setError(`guide_frame_idxは0以上${length}未満で指定してください。`);
+        setError(
+          lengthKnown
+            ? `guide_frame_idxは0以上${length}未満で指定してください。`
+            : "guide_frame_idxは0以上で指定してください。",
+        );
         return null;
       }
       if (guideAudioItem) inputs.guide_audio = guideAudioItem.source;
