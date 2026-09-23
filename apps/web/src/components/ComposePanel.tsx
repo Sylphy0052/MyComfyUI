@@ -8,6 +8,9 @@ import type {
   Recipe,
 } from "../api/client";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { MediaViewer } from "./MediaViewer";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 /** BGMは台詞の約3分の1を既定値とする (台詞1.0に対しBGM0.33)。 */
 const DEFAULT_VOICE_VOLUME = "1.0";
@@ -68,6 +71,7 @@ export function ComposePanel({
   );
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const composeJobs = useMemo(
     () => jobs.filter((job) => job.kind === "compose"),
@@ -77,6 +81,18 @@ export function ComposePanel({
     .filter((job) => job.state === "succeeded")
     .map((job) => job.id)
     .join(",");
+
+  const succeededComposeArtifacts = useMemo(
+    () =>
+      composeJobs
+        .filter((job) => job.state === "succeeded")
+        .flatMap((job) =>
+          (videoArtifactsByJob[job.id] ?? []).filter(
+            (artifact) => artifact.kind === "video",
+          ),
+        ),
+    [composeJobs, videoArtifactsByJob],
+  );
 
   useEffect(() => {
     let active = true;
@@ -481,16 +497,31 @@ export function ComposePanel({
                 {(videoArtifactsByJob[job.id] ?? [])
                   .filter((artifact) => artifact.kind === "video")
                   .map((artifact) => (
-                    <video
-                      key={artifact.id}
-                      controls
-                      src={api.artifactContentUrl(artifact.id)}
-                    />
+                    <div key={artifact.id} className="stack">
+                      <video controls src={api.artifactContentUrl(artifact.id)} />
+                      <IconButton
+                        icon={<Icon name="expand" />}
+                        label="拡大"
+                        onClick={() =>
+                          setViewerIndex(
+                            succeededComposeArtifacts.findIndex(
+                              (item) => item.id === artifact.id,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
                   ))}
               </li>
             ))}
         </ul>
       )}
+      <MediaViewer
+        items={succeededComposeArtifacts}
+        index={viewerIndex}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </section>
   );
 }
