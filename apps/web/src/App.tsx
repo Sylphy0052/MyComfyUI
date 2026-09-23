@@ -33,6 +33,7 @@ import { JobQueue } from "./components/JobQueue";
 import { MediaLibrary } from "./components/MediaLibrary";
 import { MusicPanel } from "./components/MusicPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
+import { PipelineStepper, usePipelineReadiness } from "./components/PipelineStepper";
 import { SceneBrowser } from "./components/SceneBrowser";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { ResizablePane } from "./components/ui/ResizablePane";
@@ -45,6 +46,9 @@ import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
 import { tagCheckWarnings } from "./prompt/tagCheck";
+import { PIPELINE_STEPS, persistPipelineStep, readPipelineStep } from "./state/pipelineState";
+import type { PipelineStepId } from "./state/pipelineState";
+import type { PickedMedia } from "./components/MediaPicker";
 import {
   persistUiState,
   readInitialUiState,
@@ -298,6 +302,12 @@ export function App() {
   );
   const [scenes, setScenes] = useState<SceneSummary[]>([]);
   const [sceneId, setSceneId] = useState<string | null>(initialUiState.sceneId);
+  const [pipelineStep, setPipelineStep] = useState<PipelineStepId>(() =>
+    readPipelineStep(initialUiState.sceneId),
+  );
+  // 採用の変更などJobが増えない更新の後に、工程の「揃っている」判定を取り直すための値。
+  const [readinessVersion, setReadinessVersion] = useState(0);
+  const [audioTab, setAudioTab] = useState<"voice" | "music">("voice");
   const [scene, setScene] = useState<SceneEnvelope | null>(null);
   const [shots, setShots] = useState<ShotSummary[]>([]);
   const [shotId, setShotId] = useState<string | null>(initialUiState.shotId);
@@ -451,9 +461,61 @@ export function App() {
   // ラボへ戻ったときに元の位置を残すため、表示用の値だけをここで差し替える。
   const isProduction = mode === "production";
   const shownView: View = isProduction ? "generate" : view;
-  const shownGenerationTab: GenerationTab = isProduction ? "image" : generationTab;
+  const pipelineDef = PIPELINE_STEPS.find((item) => item.id === pipelineStep) ?? PIPELINE_STEPS[0];
+  const shownGenerationTab: GenerationTab = isProduction
+    ? pipelineDef.tab === "voice"
+      ? audioTab
+      : pipelineDef.tab
+    : generationTab;
   const shownImageSubTab: ImageSubTab =
     isProduction && !PRODUCTION_IMAGE_SUBTABS.has(imageSubTab) ? "generate" : imageSubTab;
+  // ラボでは工程を使わないので、判定用の一覧取得も走らせない。
+  const pipelineReadiness = usePipelineReadiness(
+    isProduction ? projectId : null,
+    isProduction ? sceneId : null,
+    jobs,
+    `${readinessVersion}:${pipelineStep}`,
+  );
+
+  // 場面を切り替えたら、その場面で最後にいた工程へ戻る。
+  useEffect(() => {
+    setPipelineStep(readPipelineStep(sceneId));
+  }, [sceneId]);
+  const changePipelineStep = useCallback(
+    (step: PipelineStepId) => {
+      setPipelineStep(step);
+      if (sceneId) persistPipelineStep(sceneId, step);
+      // 画像の工程は、対応する画像サブタブを開く。開いた後は使い手が切り替えられる。
+      const subTab = PIPELINE_STEPS.find((item) => item.id === step)?.imageSubTab;
+      if (subTab) setImageSubTab(subTab);
+    },
+    [sceneId],
+  );
+
+  // 前の工程の成果物を次の工程の入力へ入れる。動画の開始フレームは採用済みの最新の画像、
+  // 参照画像は登録済みの参照、音声は場面の最新の音声。
+  const pickedFromArtifact = (artifact: Artifact): PickedMedia => ({
+    key: `artifact:${artifact.id}`,
+    label: artifact.relative_path.split("/").pop() ?? artifact.id,
+    source: { artifact_id: artifact.id },
+    mediaType: artifact.media_type ?? undefined,
+    artifact,
+  });
+  const suggestedFirstFrame = useMemo(
+    () => pipelineReadiness.acceptedImages.slice(0, 1).map(pickedFromArtifact),
+    [pipelineReadiness.acceptedImages],
+  );
+  const suggestedReferences = useMemo(
+    () =>
+      pipelineReadiness.referenceArtifactIds.map(
+        (id): PickedMedia => ({ key: `artifact:${id}`, label: id, source: { artifact_id: id } }),
+      ),
+    [pipelineReadiness.referenceArtifactIds],
+  );
+  const suggestedGuideAudio = useMemo(
+    () => pipelineReadiness.audios.slice(0, 1).map(pickedFromArtifact),
+    [pipelineReadiness.audios],
+  );
 
   // 作品制作の「次へ」。未選択なら先頭、最後のShotなら次は無い。
   const nextShotId = useMemo(() => {
@@ -1088,6 +1150,7 @@ export function App() {
 
   const applyDecision = async (artifactId: string, decision: ArtifactDecision) => {
     const updated = await api.updateDecision(artifactId, decision);
+    setReadinessVersion((version) => version + 1);
     setArtifactsByJob((current) => {
       const next: Record<string, Artifact[]> = {};
       for (const [jobId, artifacts] of Object.entries(current)) {
@@ -1277,6 +1340,16 @@ export function App() {
           </div>
 
           <div className="generation-workspace" hidden={shownView !== "generate"}>
+            {isProduction && (
+              <PipelineStepper
+                step={pipelineStep}
+                onStepChange={changePipelineStep}
+                readiness={pipelineReadiness}
+                audioTab={audioTab}
+                onAudioTabChange={setAudioTab}
+                disabled={!sceneId}
+              />
+            )}
             <nav
               className="generation-tabs"
               hidden={isProduction}
@@ -1479,6 +1552,9 @@ export function App() {
                 shot={shot}
                 jobs={jobs}
                 onSubmittedJob={handleDerivedJob}
+                suggestedFirstFrame={suggestedFirstFrame}
+                suggestedReferences={suggestedReferences}
+                suggestedGuideAudio={suggestedGuideAudio}
               />
             </div>
 

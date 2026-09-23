@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -75,6 +75,10 @@ interface Props {
   shot: ShotEnvelope | null;
   jobs: GenerationJob[];
   onSubmittedJob: (job: GenerationJob) => void;
+  /** 前の工程の成果物。未指定の入力欄にだけ初期値として入れる。 */
+  suggestedFirstFrame?: PickedMedia[];
+  suggestedReferences?: PickedMedia[];
+  suggestedGuideAudio?: PickedMedia[];
 }
 
 export function VideoPanel({
@@ -84,6 +88,9 @@ export function VideoPanel({
   shot,
   jobs,
   onSubmittedJob,
+  suggestedFirstFrame,
+  suggestedReferences,
+  suggestedGuideAudio,
 }: Props) {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeId, setRecipeId] = useState("");
@@ -186,12 +193,32 @@ export function VideoPanel({
     }
   }, [mode]);
 
+  // 前の工程の成果物を自動投入済みの欄。Shot ごとに1回だけ入れ、使い手が空にした欄へは入れ直さない。
+  const autoFilled = useRef(new Set<string>());
+
   // Shot が変わったら参照素材の指定をやり直す。別 Shot の指定を引き継がない。
   useEffect(() => {
+    autoFilled.current.clear();
     setReferences([]);
     setFirstFrame([]);
     setGuideAudio([]);
   }, [projectId, shotId]);
+
+  // 前の工程の成果物が届いたら、使い手がまだ選んでいない欄へ入れる。選び直しは上書きしない。
+  useEffect(() => {
+    const fill = (
+      field: string,
+      suggested: PickedMedia[] | undefined,
+      set: (update: (current: PickedMedia[]) => PickedMedia[]) => void,
+    ) => {
+      if (!suggested?.length || autoFilled.current.has(field)) return;
+      autoFilled.current.add(field);
+      set((current) => (current.length ? current : suggested));
+    };
+    fill("firstFrame", suggestedFirstFrame, setFirstFrame);
+    fill("references", suggestedReferences?.slice(0, MAX_REFERENCES), setReferences);
+    fill("guideAudio", suggestedGuideAudio, setGuideAudio);
+  }, [projectId, shotId, suggestedFirstFrame, suggestedReferences, suggestedGuideAudio]);
 
   useEffect(() => {
     if (!succeededVideoJobIds) {
