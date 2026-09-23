@@ -946,6 +946,14 @@ def _look_profile_inputs(value: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
+def _production_choice_inputs(value: list[str]) -> list[str]:
+    if any(not name or len(name) > 100 for name in value):
+        raise ValueError("モードBで選ばせる入力名は1〜100文字で指定します。")
+    if len(set(value)) != len(value):
+        raise ValueError("モードBで選ばせる入力名を重複させられません。")
+    return value
+
+
 class LookProfileCreate(ApiModel):
     name: str = Field(min_length=1, max_length=120)
     kind: GenerationKind
@@ -953,8 +961,13 @@ class LookProfileCreate(ApiModel):
     description: str | None = Field(default=None, max_length=2_000)
     recipe_id: ResourceId | None = None
     inputs: dict[str, Any] = Field(min_length=1, max_length=64)
+    #: モードBで使用者に選ばせる入力名。2個を超えても拒否せず、UIで警告する。
+    production_choice_inputs: list[str] = Field(default_factory=list, max_length=10)
 
     _inputs_limit = field_validator("inputs")(_look_profile_inputs)
+    _choices_limit = field_validator("production_choice_inputs")(
+        _production_choice_inputs
+    )
 
 
 class LookProfileUpdate(ApiModel):
@@ -963,11 +976,17 @@ class LookProfileUpdate(ApiModel):
     description: str | None = Field(default=None, max_length=2_000)
     recipe_id: ResourceId | None = None
     inputs: dict[str, Any] = Field(default=None, min_length=1, max_length=64)  # type: ignore[assignment]
+    production_choice_inputs: list[str] = Field(default=None, max_length=10)  # type: ignore[assignment]
 
     @field_validator("inputs")
     @classmethod
     def _validate_inputs(cls, value: dict[str, Any]) -> dict[str, Any]:
         return _look_profile_inputs(value)
+
+    @field_validator("production_choice_inputs")
+    @classmethod
+    def _validate_choices(cls, value: list[str]) -> list[str]:
+        return _production_choice_inputs(value)
 
 
 class LookProfileRead(ApiModel):
@@ -978,6 +997,7 @@ class LookProfileRead(ApiModel):
     description: str | None
     recipe_id: str | None
     inputs: dict[str, Any]
+    production_choice_inputs: list[str]
     created_at: str
     updated_at: str
 

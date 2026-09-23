@@ -288,6 +288,11 @@ class LookProfile(Base):
         String(UUID_LENGTH), ForeignKey("recipe.id"), nullable=True
     )
     inputs: Mapped[dict] = mapped_column(JSON, nullable=False)
+    #: モードBで使用者に選ばせる入力名。値は持たず、`inputs`とは重ねない。
+    #: `inputs`にもここにも無い入力は、キャラクター・場面・Recipe既定値から埋まる。
+    production_choice_inputs: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 

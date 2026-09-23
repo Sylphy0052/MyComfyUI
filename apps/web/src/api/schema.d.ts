@@ -3223,6 +3223,8 @@ export interface components {
             kind: "image" | "video" | "voice" | "music" | "compose";
             /** Name */
             name: string;
+            /** Production Choice Inputs */
+            production_choice_inputs?: string[];
             /** Recipe Id */
             recipe_id?: string | null;
         };
@@ -3244,6 +3246,8 @@ export interface components {
             kind: string;
             /** Name */
             name: string;
+            /** Production Choice Inputs */
+            production_choice_inputs: string[];
             /** Recipe Id */
             recipe_id: string | null;
             /** Updated At */
@@ -3264,6 +3268,8 @@ export interface components {
             };
             /** Name */
             name?: string;
+            /** Production Choice Inputs */
+            production_choice_inputs?: string[];
             /** Recipe Id */
             recipe_id?: string | null;
         };
