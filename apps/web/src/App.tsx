@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { ApiError, api } from "./api/client";
@@ -31,6 +31,7 @@ import { JobQueue } from "./components/JobQueue";
 import { MusicPanel } from "./components/MusicPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { SceneBrowser } from "./components/SceneBrowser";
+import { ResizablePane } from "./components/ui/ResizablePane";
 import { ToastRegion } from "./components/ui/ToastRegion";
 import type { ToastItem } from "./components/ui/ToastRegion";
 import { VideoPanel } from "./components/VideoPanel";
@@ -49,6 +50,13 @@ import type {
   View,
 } from "./state/uiState";
 import { useFrozenWhenInactive } from "./state/useFrozenWhenInactive";
+import {
+  COLLAPSED_RAIL_WIDTH,
+  clampPaneWidth,
+  persistPaneLayoutState,
+  readPaneLayoutState,
+} from "./state/layoutState";
+import type { PaneId, PaneLayoutState } from "./state/layoutState";
 
 /** WebSocketは再取得トリガーだけに使い、RESTで得られる状態を正本とする。 */
 const POLL_INTERVAL_MS = 2000;
@@ -125,6 +133,109 @@ function recipeTemplateName(recipe: Recipe): string {
 
 export function App() {
   const [error, setError] = useState<string | null>(null);
+  // ペイン幅・折りたたみはURLに載せず、端末ごとのlocalStorageだけへ保存する。
+  const [paneLayout, setPaneLayout] = useState<PaneLayoutState>(
+    readPaneLayoutState,
+  );
+  const appRef = useRef<HTMLDivElement>(null);
+  const paneDragRef = useRef<{
+    paneId: PaneId;
+    side: "left" | "right";
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const paneLayoutRef = useRef(paneLayout);
+  paneLayoutRef.current = paneLayout;
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const drag = paneDragRef.current;
+      if (!drag) return;
+      const deltaX = event.clientX - drag.startX;
+      const signedDelta = drag.side === "left" ? deltaX : -deltaX;
+      const nextWidth = clampPaneWidth(drag.startWidth + signedDelta);
+      setPaneLayout((previous) => ({
+        ...previous,
+        widths: { ...previous.widths, [drag.paneId]: nextWidth },
+      }));
+    }
+    function handlePointerUp() {
+      if (!paneDragRef.current) return;
+      paneDragRef.current = null;
+      persistPaneLayoutState(paneLayoutRef.current);
+    }
+    function handlePointerCancel() {
+      // ドラッグ中にポインタが失われた場合も掴んだ状態を残さない。
+      paneDragRef.current = null;
+    }
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, []);
+
+  const startPaneResize = useCallback(
+    (paneId: PaneId, side: "left" | "right") =>
+      (event: ReactPointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        paneDragRef.current = {
+          paneId,
+          side,
+          startX: event.clientX,
+          startWidth: paneLayoutRef.current.widths[paneId],
+        };
+      },
+    [],
+  );
+
+  /** 矢印キーでの幅変更。ドラッグと同じ最小/最大幅にclampする。 */
+  const handlePaneResizeKeyDown = useCallback(
+    (paneId: PaneId) => (event: KeyboardEvent<HTMLDivElement>) => {
+      const stepMap: Record<string, number> = {
+        ArrowLeft: -10,
+        ArrowRight: 10,
+        ArrowUp: -10,
+        ArrowDown: 10,
+      };
+      const step = stepMap[event.key];
+      if (step === undefined) return;
+      event.preventDefault();
+      setPaneLayout((previous) => {
+        const nextWidth = clampPaneWidth(previous.widths[paneId] + step);
+        const next: PaneLayoutState = {
+          ...previous,
+          widths: { ...previous.widths, [paneId]: nextWidth },
+        };
+        persistPaneLayoutState(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const togglePaneCollapsed = useCallback((paneId: PaneId) => {
+    setPaneLayout((previous) => {
+      const next: PaneLayoutState = {
+        ...previous,
+        collapsed: { ...previous.collapsed, [paneId]: !previous.collapsed[paneId] },
+      };
+      persistPaneLayoutState(next);
+      return next;
+    });
+  }, []);
+
+  const appStyle = {
+    "--pane-scene-browser-width": paneLayout.collapsed.sceneBrowser
+      ? `${COLLAPSED_RAIL_WIDTH}px`
+      : `${paneLayout.widths.sceneBrowser}px`,
+    "--pane-job-queue-width": paneLayout.collapsed.jobQueue
+      ? `${COLLAPSED_RAIL_WIDTH}px`
+      : `${paneLayout.widths.jobQueue}px`,
+  } as CSSProperties;
   // URLとlocalStorageから復元した値で開く。以降の変更は永続化のeffectで書き戻す。
   const [initialUiState] = useState(readInitialUiState);
   const [mode, setMode] = useState<Mode>(initialUiState.mode);
@@ -875,7 +986,7 @@ export function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" ref={appRef} style={appStyle}>
       <header>
         <h1>MyComfyUI</h1>
         <span className="muted">
@@ -939,31 +1050,40 @@ export function App() {
       {visitedViews.has("generate") && (
         <>
           <div hidden={shownView !== "generate"}>
-            <SceneBrowser
-              simple={isProduction}
-              projects={projects}
-              projectId={projectId}
-              onSelectProject={selectProject}
-              onManageProjects={() => setView("projects")}
-              onStructureChanged={() => setStructureToken((value) => value + 1)}
-              scenes={scenes}
-              sceneId={sceneId}
-              onSelectScene={setSceneId}
-              scene={scene}
-              shots={shots}
-              shotId={shotId}
-              onSelectShot={setShotId}
-              shot={shot}
-            />
-            {isProduction && (
-              <button
-                type="button"
-                disabled={!nextShotId}
-                onClick={() => nextShotId && setShotId(nextShotId)}
-              >
-                次のShotへ
-              </button>
-            )}
+            <ResizablePane
+              side="left"
+              label="シーン一覧"
+              collapsed={paneLayout.collapsed.sceneBrowser}
+              onToggleCollapse={() => togglePaneCollapsed("sceneBrowser")}
+              onResizeStart={startPaneResize("sceneBrowser", "left")}
+              onResizeKeyDown={handlePaneResizeKeyDown("sceneBrowser")}
+            >
+              <SceneBrowser
+                simple={isProduction}
+                projects={projects}
+                projectId={projectId}
+                onSelectProject={selectProject}
+                onManageProjects={() => setView("projects")}
+                onStructureChanged={() => setStructureToken((value) => value + 1)}
+                scenes={scenes}
+                sceneId={sceneId}
+                onSelectScene={setSceneId}
+                scene={scene}
+                shots={shots}
+                shotId={shotId}
+                onSelectShot={setShotId}
+                shot={shot}
+              />
+              {isProduction && (
+                <button
+                  type="button"
+                  disabled={!nextShotId}
+                  onClick={() => nextShotId && setShotId(nextShotId)}
+                >
+                  次のShotへ
+                </button>
+              )}
+            </ResizablePane>
           </div>
 
           <div className="generation-workspace" hidden={shownView !== "generate"}>
@@ -1177,16 +1297,25 @@ export function App() {
           </div>
 
           <div hidden={shownView !== "generate" || isProduction}>
-            <JobQueue
-              jobs={jobs}
-              selectedJobId={selectedJobId}
-              manifest={manifest}
-              onSelect={setSelectedJobId}
-              onCancel={cancel}
-              projects={projects}
-              unassigned={!projectId}
-              onAssignmentChanged={refreshJobs}
-            />
+            <ResizablePane
+              side="right"
+              label="ジョブ一覧"
+              collapsed={paneLayout.collapsed.jobQueue}
+              onToggleCollapse={() => togglePaneCollapsed("jobQueue")}
+              onResizeStart={startPaneResize("jobQueue", "right")}
+              onResizeKeyDown={handlePaneResizeKeyDown("jobQueue")}
+            >
+              <JobQueue
+                jobs={jobs}
+                selectedJobId={selectedJobId}
+                manifest={manifest}
+                onSelect={setSelectedJobId}
+                onCancel={cancel}
+                projects={projects}
+                unassigned={!projectId}
+                onAssignmentChanged={refreshJobs}
+              />
+            </ResizablePane>
           </div>
 
           <div className="full" hidden={shownView !== "generate" || isProduction}>
