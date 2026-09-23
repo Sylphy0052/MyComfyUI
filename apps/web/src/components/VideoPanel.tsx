@@ -564,7 +564,7 @@ export function VideoPanel({
         {mode === "ref2v" && (
           <MediaPicker
             kind="image"
-            label={`参照画像 (1〜${MAX_REFERENCES}枚)`}
+            label="参照画像"
             value={references}
             onChange={setReferences}
             multiple
