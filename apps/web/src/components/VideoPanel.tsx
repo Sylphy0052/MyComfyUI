@@ -10,9 +10,9 @@ import type {
 } from "../api/client";
 import type { ShotEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { MediaPicker } from "./MediaPicker";
+import type { PickedMedia } from "./MediaPicker";
 import { ModelSelector } from "./ModelSelector";
-import { Icon } from "./ui/Icon";
-import { IconButton } from "./ui/IconButton";
 
 /** フレーム数のグリッド。17k+5に合わない値はComfyUI側で切り上げられ、指定した尺とずれる。 */
 const FRAME_GRID_STEP = 17;
@@ -26,29 +26,11 @@ const MAX_REFERENCES = 9;
 
 type VideoMode = "ref2v" | "i2v";
 
-/** 投入用の素材指定。取り込んだ入力cacheか、既存Artifactのどちらかを指す。 */
-type MaterialSource = { relative_path: string; sha256: string } | { artifact_id: string };
-
-interface MaterialItem {
-  key: string;
-  label: string;
-  source: MaterialSource;
-}
-
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
     return `${error.message} (${error.code})`;
   }
   return String(error);
-}
-
-async function toBase64(file: File): Promise<string> {
-  const buffer = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (const byte of buffer) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -113,15 +95,9 @@ export function VideoPanel({
   const [modelValues, setModelValues] = useState<Record<string, string>>({});
   const [modelsValid, setModelsValid] = useState(false);
 
-  const [imageArtifacts, setImageArtifacts] = useState<Artifact[]>([]);
-  const [audioArtifacts, setAudioArtifacts] = useState<Artifact[]>([]);
-
-  const [references, setReferences] = useState<MaterialItem[]>([]);
-  const [pickedRefArtifact, setPickedRefArtifact] = useState("");
-  const [firstFrame, setFirstFrame] = useState<MaterialItem | null>(null);
-  const [pickedFirstFrameArtifact, setPickedFirstFrameArtifact] = useState("");
-  const [guideAudio, setGuideAudio] = useState<MaterialItem | null>(null);
-  const [pickedGuideAudioArtifact, setPickedGuideAudioArtifact] = useState("");
+  const [references, setReferences] = useState<PickedMedia[]>([]);
+  const [firstFrame, setFirstFrame] = useState<PickedMedia[]>([]);
+  const [guideAudio, setGuideAudio] = useState<PickedMedia[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,40 +163,8 @@ export function VideoPanel({
   // Shot が変わったら参照素材の指定をやり直す。別 Shot の指定を引き継がない。
   useEffect(() => {
     setReferences([]);
-    setFirstFrame(null);
-    setGuideAudio(null);
-  }, [projectId, shotId]);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const [images, audios] = await Promise.all([
-          api.listArtifacts({
-            projectId: projectId ?? undefined,
-            shotId: shotId ?? undefined,
-            unassigned: !projectId,
-            kind: "image",
-            limit: 50,
-          }),
-          api.listArtifacts({
-            projectId: projectId ?? undefined,
-            shotId: shotId ?? undefined,
-            unassigned: !projectId,
-            kind: "audio",
-            limit: 50,
-          }),
-        ]);
-        if (!active) return;
-        setImageArtifacts(images);
-        setAudioArtifacts(audios);
-      } catch (cause) {
-        if (active) setError(describe(cause));
-      }
-    })();
-    return () => {
-      active = false;
-    };
+    setFirstFrame([]);
+    setGuideAudio([]);
   }, [projectId, shotId]);
 
   useEffect(() => {
@@ -244,105 +188,6 @@ export function VideoPanel({
       active = false;
     };
   }, [succeededVideoJobIds]);
-
-  const addReferenceFile = async (file: File) => {
-    if (references.length >= MAX_REFERENCES) {
-      setError(`参照画像は${MAX_REFERENCES}枚までです。`);
-      return;
-    }
-    setError(null);
-    try {
-      const stored = await api.createImageReference(
-        file.name,
-        await toBase64(file),
-        file.type,
-      );
-      setReferences((current) => [
-        ...current,
-        {
-          key: crypto.randomUUID(),
-          label: file.name,
-          source: { relative_path: stored.relative_path, sha256: stored.sha256 },
-        },
-      ]);
-    } catch (cause) {
-      setError(describe(cause));
-    }
-  };
-
-  const addReferenceArtifact = (artifactId: string) => {
-    if (!artifactId) return;
-    if (references.length >= MAX_REFERENCES) {
-      setError(`参照画像は${MAX_REFERENCES}枚までです。`);
-      return;
-    }
-    setReferences((current) => [
-      ...current,
-      {
-        key: crypto.randomUUID(),
-        label: `Artifact ${artifactId.slice(0, 8)}`,
-        source: { artifact_id: artifactId },
-      },
-    ]);
-  };
-
-  const removeReference = (key: string) => {
-    setReferences((current) => current.filter((item) => item.key !== key));
-  };
-
-  const setFirstFrameFile = async (file: File) => {
-    setError(null);
-    try {
-      const stored = await api.createImageReference(
-        file.name,
-        await toBase64(file),
-        file.type,
-      );
-      setFirstFrame({
-        key: crypto.randomUUID(),
-        label: file.name,
-        source: { relative_path: stored.relative_path, sha256: stored.sha256 },
-      });
-    } catch (cause) {
-      setError(describe(cause));
-    }
-  };
-
-  const setFirstFrameArtifact = (artifactId: string) => {
-    if (!artifactId) return;
-    setFirstFrame({
-      key: crypto.randomUUID(),
-      label: `Artifact ${artifactId.slice(0, 8)}`,
-      source: { artifact_id: artifactId },
-    });
-  };
-
-  const setGuideAudioFile = async (file: File) => {
-    setError(null);
-    try {
-      const stored = await api.createImageReference(
-        file.name,
-        await toBase64(file),
-        file.type,
-      );
-      setGuideAudio({
-        key: crypto.randomUUID(),
-        label: file.name,
-        source: { relative_path: stored.relative_path, sha256: stored.sha256 },
-      });
-    } catch (cause) {
-      setError(describe(cause));
-    }
-  };
-
-  const setGuideAudioArtifact = (artifactId: string) => {
-    if (!artifactId) return;
-    setGuideAudio({
-      key: crypto.randomUUID(),
-      label: `Artifact ${artifactId.slice(0, 8)}`,
-      source: { artifact_id: artifactId },
-    });
-  };
 
   const buildInputs = (): Record<string, unknown> | null => {
     if (useInheritedDefaults) return {};
@@ -392,15 +237,17 @@ export function VideoPanel({
       }
       inputs.references = references.map((item) => item.source);
     } else {
-      if (!firstFrame) {
+      const firstFrameItem = firstFrame[0];
+      if (!firstFrameItem) {
         setError("開始フレームの画像を指定してください。");
         return null;
       }
-      inputs.first_frame = firstFrame.source;
+      inputs.first_frame = firstFrameItem.source;
     }
 
     if (audioMode === "external_voice") {
-      if (!guideAudio) {
+      const guideAudioItem = guideAudio[0];
+      if (!guideAudioItem) {
         setError("ガイド音声を指定してください。");
         return null;
       }
@@ -413,7 +260,7 @@ export function VideoPanel({
         setError(`guide_frame_idxは0以上${length}未満で指定してください。`);
         return null;
       }
-      inputs.guide_audio = guideAudio.source;
+      inputs.guide_audio = guideAudioItem.source;
       inputs.guide_frame_idx = guideFrameIdx;
     }
 
@@ -606,141 +453,46 @@ export function VideoPanel({
         </div>
 
         {mode === "ref2v" && (
-          <div className="stack">
-            <h3 className="muted">参照画像 (1〜{MAX_REFERENCES}枚)</h3>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void addReferenceFile(file);
-                event.target.value = "";
-              }}
-            />
-            <div className="row">
-              <select
-                value={pickedRefArtifact}
-                onChange={(event) => setPickedRefArtifact(event.target.value)}
-              >
-                <option value="">既存の画像Artifactから選ぶ</option>
-                {imageArtifacts.map((artifact) => (
-                  <option key={artifact.id} value={artifact.id}>
-                    {`${artifact.id.slice(0, 8)} / ${artifact.created_at}`}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => {
-                  addReferenceArtifact(pickedRefArtifact);
-                  setPickedRefArtifact("");
-                }}
-              >
-                追加
-              </button>
-            </div>
-            <ul className="list plain">
-              {references.map((item, index) => (
-                <li key={item.key}>
-                  <span className="row">
-                    <span>{`${index + 1}. ${item.label}`}</span>
-                    <IconButton
-                      icon={<Icon name="trash" />}
-                      label={`参照「${item.label}」を削除`}
-                      variant="danger"
-                      onClick={() => removeReference(item.key)}
-                    />
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="muted">
-              {`${references.length}/${MAX_REFERENCES}枚`}
-            </p>
-          </div>
+          <MediaPicker
+            kind="image"
+            label={`参照画像 (1〜${MAX_REFERENCES}枚)`}
+            value={references}
+            onChange={setReferences}
+            multiple
+            max={MAX_REFERENCES}
+            min={1}
+            projectId={projectId}
+            sceneId={sceneId}
+            shotId={shotId}
+          />
         )}
 
         {mode === "i2v" && (
-          <div className="stack">
-            <h3 className="muted">開始フレーム</h3>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void setFirstFrameFile(file);
-                event.target.value = "";
-              }}
-            />
-            <div className="row">
-              <select
-                value={pickedFirstFrameArtifact}
-                onChange={(event) =>
-                  setPickedFirstFrameArtifact(event.target.value)
-                }
-              >
-                <option value="">既存の画像Artifactから選ぶ</option>
-                {imageArtifacts.map((artifact) => (
-                  <option key={artifact.id} value={artifact.id}>
-                    {`${artifact.id.slice(0, 8)} / ${artifact.created_at}`}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => {
-                  setFirstFrameArtifact(pickedFirstFrameArtifact);
-                  setPickedFirstFrameArtifact("");
-                }}
-              >
-                この画像にする
-              </button>
-            </div>
-            <p className="muted mono">
-              {firstFrame ? firstFrame.label : "開始フレームは未指定。"}
-            </p>
-          </div>
+          <MediaPicker
+            kind="image"
+            label="開始フレーム"
+            value={firstFrame}
+            onChange={setFirstFrame}
+            multiple={false}
+            projectId={projectId}
+            sceneId={sceneId}
+            shotId={shotId}
+          />
         )}
 
         {audioMode === "external_voice" && (
           <div className="stack">
-            <h3 className="muted">ガイド音声</h3>
-            <input
-              type="file"
+            <MediaPicker
+              kind="audio"
+              label="ガイド音声"
+              value={guideAudio}
+              onChange={setGuideAudio}
+              multiple={false}
               accept="audio/*"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void setGuideAudioFile(file);
-                event.target.value = "";
-              }}
+              projectId={projectId}
+              sceneId={sceneId}
+              shotId={shotId}
             />
-            <div className="row">
-              <select
-                value={pickedGuideAudioArtifact}
-                onChange={(event) =>
-                  setPickedGuideAudioArtifact(event.target.value)
-                }
-              >
-                <option value="">既存の音声Artifactから選ぶ</option>
-                {audioArtifacts.map((artifact) => (
-                  <option key={artifact.id} value={artifact.id}>
-                    {`${artifact.id.slice(0, 8)} / ${artifact.created_at}`}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => {
-                  setGuideAudioArtifact(pickedGuideAudioArtifact);
-                  setPickedGuideAudioArtifact("");
-                }}
-              >
-                この音声にする
-              </button>
-            </div>
-            <p className="muted mono">
-              {guideAudio ? guideAudio.label : "ガイド音声は未指定。"}
-            </p>
             <label htmlFor="video-guide-frame-idx">
               guide_frame_idx (ガイド音声を当てはめるフレーム位置)
             </label>
