@@ -532,9 +532,16 @@ async def _validate_look_profile(
     kind: str,
     recipe_id: str | None,
     inputs: dict[str, Any],
+    choice_inputs: list[str],
 ) -> None:
     if not inputs:
         raise _validation_error("LookProfileのinputsを空にできません。")
+    overlap = sorted(set(inputs) & set(choice_inputs))
+    if overlap:
+        raise _validation_error(
+            "固定する入力とモードBで選ばせる入力が重なっています。",
+            {"overlap": overlap},
+        )
     if recipe_id is None:
         return
     recipe = await _get_or_404(session, Recipe, "Recipe", recipe_id)
@@ -544,7 +551,7 @@ async def _validate_look_profile(
             {"profile_kind": kind, "recipe_kind": recipe.kind},
         )
     schema = recipe.input_schema if isinstance(recipe.input_schema, dict) else {}
-    unknown = sorted(set(inputs) - set(schema))
+    unknown = sorted((set(inputs) | set(choice_inputs)) - set(schema))
     if unknown:
         raise _validation_error(
             "Recipeで指定できないLookProfile入力があります。",
@@ -586,6 +593,7 @@ async def create_look_profile(payload: schemas.LookProfileCreate, session: Sessi
         kind=payload.kind,
         recipe_id=payload.recipe_id,
         inputs=payload.inputs,
+        choice_inputs=payload.production_choice_inputs,
     )
     now = schemas.now_iso()
     profile = LookProfile(
@@ -629,9 +637,16 @@ async def update_look_profile(
     name = values.get("name", profile.name)
     recipe_id = values.get("recipe_id", profile.recipe_id)
     inputs = values.get("inputs", profile.inputs)
+    choice_inputs = values.get(
+        "production_choice_inputs", profile.production_choice_inputs
+    )
     await _ensure_look_profile_name(session, profile.kind, name, exclude_id=profile.id)
     await _validate_look_profile(
-        session, kind=profile.kind, recipe_id=recipe_id, inputs=inputs
+        session,
+        kind=profile.kind,
+        recipe_id=recipe_id,
+        inputs=inputs,
+        choice_inputs=choice_inputs,
     )
     for key, value in values.items():
         setattr(profile, key, value)

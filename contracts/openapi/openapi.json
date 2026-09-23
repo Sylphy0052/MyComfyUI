@@ -3270,6 +3270,14 @@
             "title": "Name",
             "type": "string"
           },
+          "production_choice_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Production Choice Inputs",
+            "type": "array"
+          },
           "recipe_id": {
             "anyOf": [
               {
@@ -3331,6 +3339,13 @@
             "title": "Name",
             "type": "string"
           },
+          "production_choice_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Production Choice Inputs",
+            "type": "array"
+          },
           "recipe_id": {
             "anyOf": [
               {
@@ -3355,6 +3370,7 @@
           "description",
           "recipe_id",
           "inputs",
+          "production_choice_inputs",
           "created_at",
           "updated_at"
         ],
@@ -3398,6 +3414,14 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "production_choice_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Production Choice Inputs",
+            "type": "array"
           },
           "recipe_id": {
             "anyOf": [
