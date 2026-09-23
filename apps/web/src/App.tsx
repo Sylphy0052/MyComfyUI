@@ -352,6 +352,8 @@ export function App() {
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [busyArtifactId, setBusyArtifactId] = useState<string | null>(null);
+  // 判定を送信中のArtifact。表示中の古い取り消しトーストはbusyArtifactIdで止まらないため、ここで二重送信を拒む。
+  const decisionsInFlightRef = useRef<Set<string>>(new Set());
   // Job を投入・派生させたときに値を変え、Artifact 履歴を取り直させる。
   const [structureToken, setStructureToken] = useState(0);
   const [eventsConnected, setEventsConnected] = useState(false);
@@ -1339,10 +1341,15 @@ export function App() {
   // 更新中は同じArtifactの判定操作を止める。取り消しも同じ扱いにし、
   // 2つのPATCHが競合して表示とDBがずれないようにする。
   const applyDecisionWhileBusy = async (artifactId: string, decision: ArtifactDecision) => {
+    if (decisionsInFlightRef.current.has(artifactId)) {
+      throw new Error("このArtifactの判定を更新中です。完了してからやり直してください。");
+    }
+    decisionsInFlightRef.current.add(artifactId);
     setBusyArtifactId(artifactId);
     try {
       await applyDecision(artifactId, decision);
     } finally {
+      decisionsInFlightRef.current.delete(artifactId);
       setBusyArtifactId((current) => (current === artifactId ? null : current));
     }
   };
