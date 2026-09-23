@@ -116,6 +116,8 @@ def split_prompt(prompt: str) -> list[str]:
     """
     segments: list[str] = []
     current: list[str] = []
+    # 直前の区切りが開き括弧か。真なら`current`は括弧の中身全体である。
+    after_open = False
     index = 0
     while index < len(prompt):
         char = prompt[index]
@@ -129,13 +131,15 @@ def split_prompt(prompt: str) -> list[str]:
             continue
         text = "".join(current)
         if char in ")]":
-            # `(:3)`のように重みを外すと空になるものは、重みでなくタグとして残す。
             stripped = WEIGHT_SUFFIX.sub("", text)
-            if stripped.strip():
+            # `(:3)`のように括弧の中身が重みの形だけなら、重みでなくタグとして残す。
+            # `(a, (b:0.5):1.2)`の外側の`:1.2`のように、別の括弧に続く重みは捨てる。
+            if stripped.strip() or not after_open:
                 text = stripped
         # 括弧も区切りとし、`(a:1.2)(b:1.1)`のような区切りの無い並びも分ける。
         segments.append(text)
         current = []
+        after_open = char in "(["
     segments.append("".join(current))
     return [segment.strip() for segment in segments if segment.strip()]
 
