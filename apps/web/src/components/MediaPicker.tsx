@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import type { DragEvent } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { Artifact, MediaRole, ProjectCharacterProfile } from "../api/client";
+import type {
+  Artifact,
+  MediaRole,
+  ProjectCharacterProfile,
+  ProjectReferenceImage,
+} from "../api/client";
 import { droppedFiles, hasArtifactDrag, hasFileDrag, readArtifactDrag } from "./artifactDrag";
 import type { ArtifactDragPayload } from "./artifactDrag";
 
@@ -89,6 +94,39 @@ export async function readPickedImage(
     throw new Error("画像形式を判別できません。対応する画像を選び直してください。");
   }
   return { base64, mediaType };
+}
+
+/**
+ * 選んだ画像を、キャラクターの参照画像・参照セットの枠として登録できる形へ変換する。
+ * 生成物タブの選択 (`item.artifact`) は`outputs/`配下を指しPUTの検証 (`inputs/`配下必須)
+ * で弾かれるため、常に中身を読み直して入力cacheへ登録し直す (Issue #155)。アップロード・
+ * 登録素材タブの選択は既に`inputs/`を指すが、同じ経路を通しても副作用は無いため区別しない。
+ */
+export async function toReferenceImage(item: PickedMedia): Promise<ProjectReferenceImage> {
+  if (item.artifact) {
+    const artifact = item.artifact;
+    const fileName = artifact.relative_path.split("/").pop() ?? item.label;
+    const { base64, mediaType } = await readPickedImage(item);
+    const stored = await api.createImageReference(fileName, base64, mediaType);
+    return {
+      file_name: fileName,
+      relative_path: stored.relative_path,
+      sha256: stored.sha256,
+      byte_size: stored.byte_size,
+      media_type: stored.media_type,
+    };
+  }
+  const source = item.source;
+  if ("relative_path" in source && source.relative_path) {
+    return {
+      file_name: item.label,
+      relative_path: source.relative_path,
+      sha256: source.sha256,
+      byte_size: item.file?.size ?? 0,
+      media_type: item.mediaType ?? "application/octet-stream",
+    };
+  }
+  throw new Error("選択した画像を取り込めませんでした。選び直してください。");
 }
 
 /** Fileのmedia_typeを決める。typeが空の画像は拡張子から推測する。 */

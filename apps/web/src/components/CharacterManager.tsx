@@ -9,8 +9,9 @@ import type {
   ProjectReferenceImage,
 } from "../api/client";
 import type { SceneEnvelope, SceneSummary } from "../api/aimedia";
-import { MediaPicker } from "./MediaPicker";
+import { MediaPicker, toReferenceImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
+import { ReferenceSetPanel } from "./ReferenceSetPanel";
 import { Button } from "./ui/Button";
 import { EmptyState } from "./ui/EmptyState";
 
@@ -243,42 +244,14 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
     setPickedReference([]);
     if (!item) return;
     setError(null);
-    if (item.artifact) {
-      const artifact = item.artifact;
-      const fileName = artifact.relative_path.split("/").pop() ?? item.label;
-      setDraft((current) => current && ({
-        ...current,
-        reference_images: [
-          ...current.reference_images,
-          {
-            file_name: fileName,
-            relative_path: artifact.relative_path,
-            sha256: artifact.sha256,
-            byte_size: artifact.byte_size,
-            media_type: artifact.media_type,
-          },
-        ],
-      }));
-      return;
-    }
-    const source = item.source;
-    if ("relative_path" in source && source.relative_path) {
-      setDraft((current) => current && ({
-        ...current,
-        reference_images: [
-          ...current.reference_images,
-          {
-            file_name: item.label,
-            relative_path: source.relative_path,
-            sha256: source.sha256,
-            byte_size: item.file?.size ?? 0,
-            media_type: item.mediaType ?? "application/octet-stream",
-          },
-        ],
-      }));
-      return;
-    }
-    setError("選択した画像を取り込めませんでした。選び直してください。");
+    toReferenceImage(item)
+      .then((image) => {
+        setDraft((current) => current && ({
+          ...current,
+          reference_images: [...current.reference_images, image],
+        }));
+      })
+      .catch((cause) => setError(describe(cause)));
   };
 
   const addOutfit = () => {
@@ -328,8 +301,9 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
         const current = latest.characters ?? [];
         // フォームを開いてから別の画面・タブで同じキャラクターが更新・削除されていたら、
         // 手元の値で丸ごと置き換えると相手の変更が消えるため保存しない。
+        let stored: ProjectCharacterProfile | undefined;
         if (draft.existing) {
-          const stored = current.find((item) => item.id === profile.id);
+          stored = current.find((item) => item.id === profile.id);
           if (!stored || (stored.updated_at ?? null) !== draft.base_updated_at) {
             // 一覧を最新へ差し替え、開き直したときに新しいupdated_atで編集できるようにする。
             setOverrides(latest);
@@ -338,13 +312,19 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
             );
           }
         }
-        const characters = current.some((item) => item.id === profile.id)
-          ? current.map((item) => (item.id === profile.id ? profile : item))
-          : [...current, profile];
+        // 参照セットは編集フォームで扱わないため、最新値から引き継ぐ。削除した衣装の
+        // セット (衣装指定なしのセットは除く) は落とす (Issue #155)。
+        const referenceSets = (stored?.reference_sets ?? []).filter(
+          (set) => set.outfit_id == null || outfitIds.has(set.outfit_id),
+        );
+        const finalProfile: ProjectCharacterProfile = { ...profile, reference_sets: referenceSets };
+        const characters = current.some((item) => item.id === finalProfile.id)
+          ? current.map((item) => (item.id === finalProfile.id ? finalProfile : item))
+          : [...current, finalProfile];
         return {
           ...latest,
           characters,
-          scene_outfits: pruneSceneOutfits(latest.scene_outfits, profile.id, outfitIds),
+          scene_outfits: pruneSceneOutfits(latest.scene_outfits, finalProfile.id, outfitIds),
         };
       });
       setDraft(null);
@@ -440,6 +420,15 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
               </li>
             </ul>
             <Button disabled={busy} onClick={() => openDraft(selectedCharacter)}>編集</Button>
+            <ReferenceSetPanel
+              key={selectedCharacter.id}
+              projectId={projectId}
+              character={selectedCharacter}
+              onSaved={(saved) => {
+                setOverrides(saved);
+                onChanged();
+              }}
+            />
           </div>
         )}
 
