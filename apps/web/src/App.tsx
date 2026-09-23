@@ -30,6 +30,8 @@ import { JobQueue } from "./components/JobQueue";
 import { MusicPanel } from "./components/MusicPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { SceneBrowser } from "./components/SceneBrowser";
+import { ToastRegion } from "./components/ui/ToastRegion";
+import type { ToastItem } from "./components/ui/ToastRegion";
 import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
@@ -70,6 +72,17 @@ const IMAGE_SUBTABS: { value: ImageSubTab; label: string }[] = [
   { value: "derive", label: "派生" },
   { value: "sweep", label: "スイープ" },
 ];
+
+const JOB_KIND_LABELS: Record<string, string> = {
+  image: "画像",
+  video: "動画",
+  music: "音楽",
+  voice: "音声",
+  compose: "合成",
+};
+
+// 成功トーストは自動で消す。失敗は見落としを避けるため手動で閉じるまで残す。
+const TOAST_SUCCESS_TTL_MS = 5000;
 
 function nextTabForKey<T extends string>(
   key: string,
@@ -151,6 +164,13 @@ export function App() {
   const [structureToken, setStructureToken] = useState(0);
   const [eventsConnected, setEventsConnected] = useState(false);
   const jobsRequestSequence = useRef(0);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  // ジョブ一覧を初めて取得した時点と、スコープ切替直後はnullに戻し、
+  // 既存ジョブや無関係スコープのジョブを完了通知として出さないようにする。
+  const previousJobStatesRef = useRef<Map<string, string> | null>(null);
+  const dismissToast = useCallback((id: string) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
   const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
     useState<string | null>(null);
   const [comparisonJobIds, setComparisonJobIds] = useState<string[] | null>(null);
@@ -390,8 +410,58 @@ export function App() {
   const refreshJobs = useCallback(async () => {
     const sequence = ++jobsRequestSequence.current;
     const list = await api.listJobs(jobScope);
-    if (sequence === jobsRequestSequence.current) setJobs(list);
+    if (sequence !== jobsRequestSequence.current) return;
+    setJobs(list);
+
+    const previous = previousJobStatesRef.current;
+    if (previous) {
+      const newToasts: ToastItem[] = [];
+      for (const job of list) {
+        const previousState = previous.get(job.id);
+        if (
+          previousState &&
+          previousState !== job.state &&
+          (job.state === "succeeded" || job.state === "failed")
+        ) {
+          const kindLabel = JOB_KIND_LABELS[job.kind] ?? job.kind;
+          const succeeded = job.state === "succeeded";
+          newToasts.push({
+            id: `${job.id}:${job.state}`,
+            tone: succeeded ? "success" : "danger",
+            message: succeeded
+              ? `${kindLabel}の生成が完了しました`
+              : `${kindLabel}の生成に失敗しました${job.failure_message ? `: ${job.failure_message}` : ""}`,
+            jobId: job.id,
+          });
+        }
+      }
+      if (newToasts.length > 0) {
+        setToasts((current) => [...current, ...newToasts]);
+        for (const toast of newToasts) {
+          if (toast.tone === "success") {
+            window.setTimeout(() => dismissToast(toast.id), TOAST_SUCCESS_TTL_MS);
+          }
+        }
+      }
+    }
+    previousJobStatesRef.current = new Map(
+      list.map((job) => [job.id, job.state]),
+    );
+  }, [jobScope, dismissToast]);
+
+  useEffect(() => {
+    previousJobStatesRef.current = null;
   }, [jobScope]);
+
+  const navigateToJob = useCallback(
+    (jobId: string) => {
+      const job = jobs.find((item) => item.id === jobId);
+      if (job) setGenerationTab(job.kind as GenerationTab);
+      setView("generate");
+      setSelectedJobId(jobId);
+    },
+    [jobs],
+  );
 
   const refreshJobsRef = useRef(refreshJobs);
   useEffect(() => { refreshJobsRef.current = refreshJobs; }, [refreshJobs]);
@@ -1069,6 +1139,12 @@ export function App() {
           />
         </div>
       )}
+
+      <ToastRegion
+        toasts={toasts}
+        onDismiss={dismissToast}
+        onNavigate={navigateToJob}
+      />
     </div>
   );
 }
