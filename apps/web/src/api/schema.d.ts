@@ -1693,6 +1693,155 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/user-scripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Scripts */
+        get: operations["list_scripts_api_v1_user_scripts_get"];
+        put?: never;
+        /** Register Script */
+        post: operations["register_script_api_v1_user_scripts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-scripts/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Audit Events */
+        get: operations["list_audit_events_api_v1_user_scripts_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-scripts/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_v1_user_scripts_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-scripts/runs/{run_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Run
+         * @description 承認CLIが鍵で署名したtokenを検証して記録する。
+         */
+        post: operations["approve_run_api_v1_user_scripts_runs__run_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-scripts/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Run
+         * @description 未実行のrunは取り消し、実行中のrunは止める。止めるだけなので無効時も受け付ける。
+         */
+        post: operations["cancel_run_api_v1_user_scripts_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-scripts/runs/{run_id}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute Run
+         * @description 承認済みのrunを、digestと承認を検証し直してからsandboxで起動する。
+         */
+        post: operations["execute_run_api_v1_user_scripts_runs__run_id__execute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-scripts/{script_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Script */
+        get: operations["get_script_api_v1_user_scripts__script_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user-scripts/{script_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Run
+         * @description 実行内容を確定してdigestを返す。承認されるまで実行しない。
+         */
+        post: operations["preview_run_api_v1_user_scripts__script_id__runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/voice-references": {
         parameters: {
             query?: never;
@@ -3896,6 +4045,191 @@ export interface components {
         StructureReorder: {
             /** Ids */
             ids: string[];
+        };
+        /** UserScriptAuditEventRead */
+        UserScriptAuditEventRead: {
+            /** Created At */
+            created_at: string;
+            /** Detail */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Digest */
+            digest: string | null;
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id: string;
+            /** Run Id */
+            run_id: string | null;
+            /** Script Id */
+            script_id: string | null;
+        };
+        /**
+         * UserScriptCapabilities
+         * @description scriptが実行時に使う能力の宣言。上限は設定の値以下に限る。
+         *
+         *     ネットワークは使わせない。`none`以外の値は受け付けない。
+         */
+        UserScriptCapabilities: {
+            /**
+             * Cpu Seconds
+             * @default 60
+             */
+            cpu_seconds: number;
+            /**
+             * Max Tasks
+             * @default 16
+             */
+            max_tasks: number;
+            /**
+             * Memory Bytes
+             * @default 536870912
+             */
+            memory_bytes: number;
+            /**
+             * Network
+             * @default none
+             * @constant
+             */
+            network: "none";
+            /**
+             * Output Bytes
+             * @default 67108864
+             */
+            output_bytes: number;
+            /**
+             * Output Files
+             * @default 16
+             */
+            output_files: number;
+            /**
+             * Wall Seconds
+             * @default 120
+             */
+            wall_seconds: number;
+        };
+        /** UserScriptCreate */
+        UserScriptCreate: {
+            capabilities?: components["schemas"]["UserScriptCapabilities"];
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+        };
+        /** UserScriptDetail */
+        UserScriptDetail: {
+            /** Capabilities */
+            capabilities: {
+                [key: string]: unknown;
+            };
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sha256 */
+            sha256: string;
+            /** Source */
+            source: string;
+        };
+        /** UserScriptRead */
+        UserScriptRead: {
+            /** Capabilities */
+            capabilities: {
+                [key: string]: unknown;
+            };
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sha256 */
+            sha256: string;
+        };
+        /**
+         * UserScriptRunApprove
+         * @description 承認CLIが鍵で署名したtoken。REST APIではtokenを作れない。
+         */
+        UserScriptRunApprove: {
+            /** Approval Token */
+            approval_token: string;
+        };
+        /**
+         * UserScriptRunCreate
+         * @description 実行内容のpreview要求。これだけでは実行しない。
+         */
+        UserScriptRunCreate: {
+            /** Arguments */
+            arguments?: string[];
+            /** Input Artifact Ids */
+            input_artifact_ids?: string[];
+        };
+        /** UserScriptRunInput */
+        UserScriptRunInput: {
+            /** Artifact Id */
+            artifact_id: string;
+            /** Mount Path */
+            mount_path: string;
+            /** Sha256 */
+            sha256: string;
+        };
+        /**
+         * UserScriptRunRead
+         * @description runの内容と結果。承認CLIはこの値からdigestを計算し直して照合する。
+         */
+        UserScriptRunRead: {
+            /** Approval Expires At */
+            approval_expires_at: string;
+            /** Approved At */
+            approved_at: string | null;
+            /** Arguments */
+            arguments: string[];
+            /** Capabilities */
+            capabilities: {
+                [key: string]: unknown;
+            };
+            /** Created At */
+            created_at: string;
+            /** Digest */
+            digest: string;
+            /** Exit Code */
+            exit_code: number | null;
+            /** Failure Reason */
+            failure_reason: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** Inputs */
+            inputs: components["schemas"]["UserScriptRunInput"][];
+            /** Interpreter */
+            interpreter: string;
+            /** Output Artifact Ids */
+            output_artifact_ids: string[];
+            /** Output Destination */
+            output_destination: string;
+            /** Script Id */
+            script_id: string;
+            /** Script Name */
+            script_name: string;
+            /** Script Sha256 */
+            script_sha256: string;
+            /** Script Source */
+            script_source: string;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending_approval" | "approved" | "running" | "succeeded" | "failed" | "cancelled";
+            /** Stderr */
+            stderr: string | null;
+            /** Stdout */
+            stdout: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -7683,6 +8017,286 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecipeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_scripts_api_v1_user_scripts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptRead"][];
+                };
+            };
+        };
+    };
+    register_script_api_v1_user_scripts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserScriptCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_events_api_v1_user_scripts_audit_get: {
+        parameters: {
+            query?: {
+                run_id?: string | null;
+                script_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptAuditEventRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_v1_user_scripts_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_run_api_v1_user_scripts_runs__run_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserScriptRunApprove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_v1_user_scripts_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execute_run_api_v1_user_scripts_runs__run_id__execute_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_script_api_v1_user_scripts__script_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                script_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_run_api_v1_user_scripts__script_id__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                script_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserScriptRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserScriptRunRead"];
                 };
             };
             /** @description Validation Error */

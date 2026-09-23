@@ -12,6 +12,7 @@ from starlette import status
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from mycomfyui_api import user_scripts
 from mycomfyui_api.adapters.agent import create_agent_providers
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
 from mycomfyui_api.bootstrap import (
@@ -74,6 +75,10 @@ async def lifespan(app: FastAPI):
         interrupted = await recover_interrupted_applications(session)
         if interrupted:
             logger.info("中断した提案の適用を%d件failedへ倒しました。", interrupted)
+        # 実行中のまま終了したユーザースクリプトも失敗へ倒す(ADR 0003)。
+        scripts = await user_scripts.recover_interrupted_runs(session)
+        if scripts:
+            logger.info("中断したユーザースクリプトを%d件failedへ倒しました。", scripts)
         # RecipeはWorkflowの版を指すため、レジストリの登録を先に済ませる。
         versions = await ensure_workflows(session)
         await ensure_default_recipes(session, versions)
@@ -96,8 +101,11 @@ async def lifespan(app: FastAPI):
         # 提案Providerは接続を張らない。CLIが無い環境でも起動を止めず、提案を
         # 要求したときに初めて失敗する。
         app.state.agent_providers = create_agent_providers(settings)
+        # 承認鍵を用意できなくても起動は止めない。承認と実行が拒否されるだけにする。
+        user_scripts.prepare_approval_key(settings)
         yield
     finally:
+        await user_scripts.shutdown()
         await worker.stop()
         if app.state.reference_source is not None:
             await app.state.reference_source.aclose()
@@ -164,6 +172,7 @@ def create_app() -> FastAPI:
     app.include_router(structure_router)
     app.include_router(reference_router)
     app.include_router(event_router)
+    app.include_router(user_scripts.router)
     # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
     # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りするため、
     # ASGIの受信側にも関所を置く。
