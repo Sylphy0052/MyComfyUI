@@ -105,7 +105,7 @@ def _project_settings(project: Project) -> dict[str, Any]:
             project.generation_defaults or {}
         ).model_dump(),
         "local_overrides": local_overrides.model_copy(
-            update={"scene_prompts": {}, "shot_prompts": {}}
+            update={"scene_prompts": {}, "shot_prompts": {}, "scene_outfits": {}}
         ).model_dump(),
     }
 
@@ -279,6 +279,9 @@ def _portable_local_overrides(
                 ),
                 "shot_prompts": (
                     dict(overrides.shot_prompts) if include_structure else {}
+                ),
+                "scene_outfits": (
+                    dict(overrides.scene_outfits) if include_structure else {}
                 ),
             }
         ),
@@ -726,19 +729,16 @@ def _restore_local_overrides(
                     media_type=reference.media_type,
                 )
             references.append(restored)
-        characters.append(
-            schemas.ProjectCharacterProfile(
-                id=character.id,
-                name=character.name,
-                tags=character.tags,
-                reference_images=references,
-            )
-        )
+        characters.append(character.model_copy(update={"reference_images": references}))
     return schemas.ProjectLocalOverrides(
         characters=characters,
         scene_prompts={
             scene_ids.get(resource_id, resource_id): prompt
             for resource_id, prompt in overrides.scene_prompts.items()
+        },
+        scene_outfits={
+            scene_ids.get(resource_id, resource_id): dict(selection)
+            for resource_id, selection in overrides.scene_outfits.items()
         },
         shot_prompts={
             shot_ids.get(resource_id, resource_id): prompt

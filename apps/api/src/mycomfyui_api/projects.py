@@ -690,10 +690,34 @@ async def update_local_overrides(
             details={"project_id": project_id, "lifecycle": project.lifecycle},
         )
     await asyncio.to_thread(_validate_local_reference_images, payload)
+    payload = _stamp_character_updates(
+        schemas.ProjectLocalOverrides.model_validate(project.local_overrides or {}),
+        payload,
+    )
     project.local_overrides = payload.model_dump(mode="json")
     project.updated_at = schemas.now_iso()
     await _commit(session)
     return payload
+
+
+def _stamp_character_updates(
+    current: schemas.ProjectLocalOverrides, payload: schemas.ProjectLocalOverrides
+) -> schemas.ProjectLocalOverrides:
+    """定義が変わったキャラクターだけ`updated_at`を今の時刻にし、他は保存済みの値を残す。"""
+    previous = {character.id: character for character in current.characters}
+    now = schemas.now_iso()
+    characters: list[schemas.ProjectCharacterProfile] = []
+    for character in payload.characters:
+        before = previous.get(character.id)
+        unchanged = before is not None and before.model_dump(
+            exclude={"updated_at"}
+        ) == character.model_dump(exclude={"updated_at"})
+        characters.append(
+            character.model_copy(
+                update={"updated_at": before.updated_at if unchanged else now}
+            )
+        )
+    return payload.model_copy(update={"characters": characters})
 
 
 def _validate_local_reference_images(payload: schemas.ProjectLocalOverrides) -> None:
