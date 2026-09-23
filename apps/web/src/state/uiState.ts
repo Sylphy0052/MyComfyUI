@@ -94,8 +94,6 @@ export function readUrlUiState(search: string): Partial<UiState> {
   const params = new URLSearchParams(search);
   const partial: Partial<UiState> = {};
 
-  const mode = pickEnum(MODE_VALUES, params.get(PARAM_NAMES.mode));
-  if (mode) partial.mode = mode;
   const view = pickEnum(VIEW_VALUES, params.get(PARAM_NAMES.view));
   if (view) partial.view = view;
   const generationTab = pickEnum(
@@ -115,6 +113,14 @@ export function readUrlUiState(search: string): Partial<UiState> {
   if (sceneId) partial.sceneId = sceneId;
   const shotId = pickId(params.get(PARAM_NAMES.shotId));
   if (shotId) partial.shotId = shotId;
+
+  // モード導入前のリンクはViewやタブだけを持つ。それらはラボの位置なので、
+  // modeが無ければラボで開く。modeが明示されていればそちらを優先する。
+  const mode = pickEnum(MODE_VALUES, params.get(PARAM_NAMES.mode));
+  if (mode) partial.mode = mode;
+  else if (params.has(PARAM_NAMES.view) || params.has(PARAM_NAMES.generationTab)) {
+    partial.mode = "lab";
+  }
 
   return partial;
 }
@@ -209,7 +215,11 @@ export function uiStateFromUrl(search: string): UiState {
 export function toSearchString(state: UiState): string {
   const params = new URLSearchParams();
   // 既定値は省いてURLを短く保つ。共有されたリンクで何が指定されたかを読み取りやすくする。
-  if (state.mode !== DEFAULT_UI_STATE.mode) {
+  // modeの無いview/tab付きURLはラボとして読むため、view/tabを書くときはmodeも明示する。
+  const hasLabPosition =
+    state.view !== DEFAULT_UI_STATE.view ||
+    state.generationTab !== DEFAULT_UI_STATE.generationTab;
+  if (state.mode !== DEFAULT_UI_STATE.mode || hasLabPosition) {
     params.set(PARAM_NAMES.mode, state.mode);
   }
   if (state.view !== DEFAULT_UI_STATE.view) {

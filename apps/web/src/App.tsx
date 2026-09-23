@@ -260,11 +260,14 @@ export function App() {
     setImageSubTab("generate");
   }, []);
 
-  const switchMode = (next: Mode) => {
-    if (next === mode) return;
-    if (next === "lab") enterLab();
-    else setMode("production");
-  };
+  const switchMode = useCallback(
+    (next: Mode) => {
+      if (next === mode) return;
+      if (next === "lab") enterLab();
+      else setMode("production");
+    },
+    [mode, enterLab],
+  );
 
   const useProject = useCallback((nextProjectId: string | null) => {
     setProjectId(nextProjectId);
@@ -507,7 +510,12 @@ export function App() {
   const navigateToJob = useCallback(
     (jobId: string) => {
       const job = jobs.find((item) => item.id === jobId);
-      if (job) setGenerationTab(job.kind as GenerationTab);
+      // 一覧に無いJobへ移ると、ラボへ切り替わるだけで何も選ばれない画面になる。
+      if (!job) {
+        setError(`Job ${jobId} が現在のJob一覧に見つかりません。`);
+        return;
+      }
+      setGenerationTab(job.kind as GenerationTab);
       // Job一覧はラボにだけあるため、作品制作から開いたときもラボへ移る。
       setMode("lab");
       setView("generate");

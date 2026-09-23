@@ -186,7 +186,17 @@ export function SceneBrowser(props: Props) {
           <h2>Scene</h2>
           {structureEditable && <button type="button" disabled={busy} onClick={() => { setEditingScene(null); setEditor("create-scene"); }}>追加</button>}
         </div>
-        <ul className="list structure-list">
+        {/* モードBでは件数に関わらず操作要素を1個に保つため、一覧をselectに畳む。 */}
+        {simple && scenes.length > 0 && (
+          <select aria-label="Scene" value={sceneId ?? ""}
+            onChange={(event) => { if (event.target.value) onSelectScene(event.target.value); }}>
+            {!sceneId && <option value="">選択してください</option>}
+            {scenes.map((item) => (
+              <option key={item.id} value={item.id}>#{item.sequence} {item.summary}</option>
+            ))}
+          </select>
+        )}
+        {!simple && <ul className="list structure-list">
           {scenes.map((item, index) => (
             <li key={item.id}>
               <button type="button" aria-pressed={item.id === sceneId} onClick={() => onSelectScene(item.id)}>
@@ -207,7 +217,7 @@ export function SceneBrowser(props: Props) {
               </div>}
             </li>
           ))}
-        </ul>
+        </ul>}
         {scenes.length === 0 && <p className="muted">Sceneがありません。</p>}
         {scene && <div className="stack structure-detail">
           {scene.data.todo && <p><strong>TODO:</strong> {scene.data.todo}</p>}
@@ -226,7 +236,17 @@ export function SceneBrowser(props: Props) {
           <h2>Shot</h2>
           {structureEditable && sceneId && <button type="button" disabled={busy} onClick={() => { setEditingShot(null); setEditor("create-shot"); }}>追加</button>}
         </div>
-        <ul className="list structure-list">
+        {/* モードBでは件数に関わらず操作要素を1個に保つため、一覧をselectに畳む。 */}
+        {simple && shots.length > 0 && (
+          <select aria-label="Shot" value={shotId ?? ""}
+            onChange={(event) => { if (event.target.value) onSelectShot(event.target.value); }}>
+            {!shotId && <option value="">選択してください</option>}
+            {shots.map((item) => (
+              <option key={item.id} value={item.id}>#{item.sequence} {item.summary}</option>
+            ))}
+          </select>
+        )}
+        {!simple && <ul className="list structure-list">
           {shots.map((item, index) => (
             <li key={item.id}>
               <button type="button" aria-pressed={item.id === shotId} onClick={() => onSelectShot(item.id)}>
@@ -247,7 +267,7 @@ export function SceneBrowser(props: Props) {
               </div>}
             </li>
           ))}
-        </ul>
+        </ul>}
         {shots.length === 0 && <p className="muted">Shotがありません。</p>}
         {shot && <div className="stack structure-detail">
           {shot.data.todo && <p><strong>TODO:</strong> {shot.data.todo}</p>}
