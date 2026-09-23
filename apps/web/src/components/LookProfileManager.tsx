@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { LookProfile, Recipe } from "../api/client";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 interface Props {
   kind: string;
@@ -181,7 +183,7 @@ export function LookProfileManager({
               <button type="button" disabled={!isCompatible(profile) || selectedIds.includes(profile.id)} onClick={() => onSelectionChange([...selectedIds, profile.id])}>適用</button>
               <button type="button" onClick={() => edit(profile)}>編集</button>
               <button type="button" onClick={() => edit(profile, true)}>複製</button>
-              <button type="button" disabled={busy} onClick={() => void remove(profile)}>削除</button>
+              <button type="button" className="danger-button" disabled={busy} onClick={() => void remove(profile)}>削除</button>
             </li>
           ))}
         </ul>
@@ -189,12 +191,12 @@ export function LookProfileManager({
           {selected.map((profile, index) => (
             <li key={profile.id}>
               <span>{profile.name}（{profile.category}）</span>{" "}
-              <button type="button" disabled={index === 0} onClick={() => move(index, -1)}>↑</button>
-              <button type="button" disabled={index === selected.length - 1} onClick={() => move(index, 1)}>↓</button>
+              <IconButton icon={<Icon name="arrow-up" />} label="上へ移動" variant="secondary" disabled={index === 0} onClick={() => move(index, -1)} />
+              <IconButton icon={<Icon name="arrow-down" />} label="下へ移動" variant="secondary" disabled={index === selected.length - 1} onClick={() => move(index, 1)} />
               <button type="button" onClick={() => onSelectionChange(selectedIds.filter((id) => id !== profile.id))}>適用解除</button>
               <button type="button" onClick={() => edit(profile)}>編集</button>
               <button type="button" onClick={() => edit(profile, true)}>複製</button>
-              <button type="button" disabled={busy} onClick={() => void remove(profile)}>削除</button>
+              <button type="button" className="danger-button" disabled={busy} onClick={() => void remove(profile)}>削除</button>
             </li>
           ))}
         </ol>

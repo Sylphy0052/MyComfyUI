@@ -286,13 +286,19 @@ ul.list li button[aria-pressed="true"] {
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
 }
 
+.card,
 .gallery figure {
   margin: 0;
   position: relative;
   background: var(--color-surface-raised);
   border: var(--border-default);
   border-radius: var(--radius-md);
-  overflow: hidden;
+}
+
+/* ツールチップをカードの外へはみ出させるため overflow で切らず、上端に接するプレビューだけ角を丸める */
+.candidate-card > .preview {
+  border-radius: calc(var(--radius-md) - var(--border-width))
+    calc(var(--radius-md) - var(--border-width)) 0 0;
 }
 
 /* 採否は枠線と不透明度だけでは判別しづらいため、サムネイル上にバッジで重ねる。 */
@@ -1240,6 +1246,167 @@ ol.list > li,
   height: auto;
   aspect-ratio: 1;
   border-radius: var(--radius-md);
+}
+
+/* 共通UI部品: 操作の重み。主操作は塗り、副操作は枠、破壊的操作は赤、補助操作は枠なし */
+button.primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: var(--color-danger-subtle);
+}
+
+.ghost-button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-muted);
+}
+
+.ghost-button:hover:not(:disabled) {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* ul.list li button の全幅・縦並びより強くするため、親を含めて詳細度を上げる */
+.tooltip-host > .icon-button {
+  width: auto;
+  flex-direction: row;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: var(--space-2);
+  line-height: 1;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.icon-glyph {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.icon-button.tone-ok:not(:disabled) {
+  color: var(--color-ok);
+}
+
+.icon-button.tone-ok[aria-pressed="true"] {
+  background: var(--color-ok-subtle);
+  border-color: var(--color-ok);
+}
+
+.icon-button.tone-danger:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.icon-button.tone-danger[aria-pressed="true"] {
+  background: var(--color-danger-subtle);
+  border-color: var(--color-danger);
+}
+
+.icon-button[aria-pressed="true"] {
+  background: var(--color-accent-subtle);
+  color: var(--color-text);
+}
+
+/* 候補1件の操作を「比較」「採否」「その他」の群に分け、群の間を区切る */
+.candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.action-group {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.action-group + .action-group {
+  padding-left: var(--space-3);
+  border-left: var(--border-default);
+}
+
+.tooltip-host {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-overlay-strong);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--duration-fast) var(--easing-standard),
+    visibility var(--duration-fast) var(--easing-standard);
+}
+
+.tooltip-host:hover > .tooltip,
+.tooltip-host:has(:focus-visible) > .tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-8);
+  border: var(--border-width) dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.empty-state-title {
+  font-weight: var(--font-weight-semibold);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-surface-raised);
+  border: var(--border-default);
+  border-left: var(--border-width-thick) solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  animation: rise-in var(--duration-normal) var(--easing-standard);
+}
+
+.toast-success {
+  border-left-color: var(--color-ok);
+}
+
+.toast-danger {
+  border-left-color: var(--color-danger);
+}
+
+.toast-message {
+  flex: 1;
 }
 
 /* 動きを減らす設定では遷移とアニメーションを止める。スケルトンは静止した面として残る */
