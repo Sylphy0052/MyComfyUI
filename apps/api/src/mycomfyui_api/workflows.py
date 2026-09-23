@@ -15,9 +15,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mycomfyui_api import schemas
+from mycomfyui_api import graph_validation, schemas
 from mycomfyui_api.adapters.comfyui import prepare as comfyui_prepare
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
@@ -312,6 +313,101 @@ async def load_version(
     )
     row = result.first()
     return None if row is None else (row[0], row[1])
+
+
+class GraphVersionConflict(Exception):
+    """同じ内容のグラフが既に別の版として登録されている。"""
+
+    def __init__(self, existing_version_id: str) -> None:
+        super().__init__("同じ内容のWorkflow版が既に存在します。")
+        self.existing_version_id = existing_version_id
+
+
+async def register_graph_version(
+    session: AsyncSession,
+    *,
+    workflow: Workflow,
+    graph: dict[str, Any],
+    variables: dict[str, Any],
+    model_slots: list[dict[str, Any]],
+    inputs: list[dict[str, Any]],
+    outputs: list[dict[str, Any]],
+    based_on_version_id: str | None,
+) -> WorkflowVersion:
+    """検証済みグラフから新しいWorkflow版を作る。
+
+    呼び出し側で`graph_validation.validate_graph`を通した`graph`だけを渡す。既存版は
+    書き換えず、常に新しい行を追加する。版のキーはグラフ内容のSHA-256とし、同じ内容を
+    二重登録しないよう先に既存版を探す。
+    """
+
+    # rollback後はORM属性が失効し、非同期セッションでは再読込できない。先に控える。
+    workflow_id = workflow.id
+    digest = graph_validation.graph_sha256(graph)
+    existing = await _get_version(session, workflow_id, digest)
+    if existing is not None:
+        raise GraphVersionConflict(existing.id)
+
+    version = WorkflowVersion(
+        id=schemas.new_id(),
+        workflow_id=workflow_id,
+        version=digest,
+        template_sha256=None,
+        variables=variables,
+        model_slots=model_slots,
+        inputs=inputs,
+        outputs=outputs,
+        graph=graph,
+        graph_sha256=digest,
+        based_on_version_id=based_on_version_id,
+        created_at=schemas.now_iso(),
+    )
+    session.add(version)
+    try:
+        await session.commit()
+    except IntegrityError as error:
+        # 既存版確認から書き込みまでの間に別リクエストが同じ内容を登録した場合、
+        # UniqueConstraint違反になる。競合として再取得し、無ければそのまま送出する。
+        await session.rollback()
+        existing_after_conflict = await _get_version(session, workflow_id, digest)
+        if existing_after_conflict is None:
+            raise
+        raise GraphVersionConflict(existing_after_conflict.id) from error
+    await session.refresh(version)
+    return version
+
+
+def diff_graph_versions(
+    old_version: WorkflowVersion, new_version: WorkflowVersion
+) -> dict[str, Any]:
+    """2つのWorkflow版のグラフ・入出力差分。承認前の確認画面に使う。
+
+    `capability_warnings`は新版のgraphから登録時と同じ検証を再実行して求める。
+    保存時点では警告を保持しないため、確認のたびに計算し直す。
+    """
+
+    old_graph = old_version.graph if isinstance(old_version.graph, dict) else {}
+    new_graph = new_version.graph if isinstance(new_version.graph, dict) else {}
+    graph_diff = graph_validation.diff_graphs(old_graph, new_graph)
+    capability_warnings: list[str] = []
+    if new_graph:
+        try:
+            capability_warnings = list(
+                graph_validation.validate_graph(new_graph).capability_warnings
+            )
+        except graph_validation.GraphValidationError:
+            # 登録済みの版は登録時に検証を通っているはずだが、テンプレート由来の
+            # 版などgraphを持たない場合の再検証失敗は警告無しとして扱う。
+            capability_warnings = []
+    return {
+        "old_version_id": old_version.id,
+        "new_version_id": new_version.id,
+        **graph_diff,
+        "inputs_changed": old_version.inputs != new_version.inputs,
+        "outputs_changed": old_version.outputs != new_version.outputs,
+        "model_slots_changed": old_version.model_slots != new_version.model_slots,
+        "capability_warnings": capability_warnings,
+    }
 
 
 async def _get_or_create_workflow(
