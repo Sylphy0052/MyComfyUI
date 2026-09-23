@@ -13,6 +13,8 @@ import { LookProfileManager } from "./LookProfileManager";
 import { PromptAssist } from "./PromptAssist";
 import { conflictNotice } from "./BackendNotice";
 import { mergePrompt } from "../prompt/merge";
+import { MediaPicker, blobToBase64, toBase64 } from "./MediaPicker";
+import type { PickedMedia } from "./MediaPicker";
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -69,27 +71,6 @@ function initialValues(recipe: Recipe, fields: FieldSpec[]): Record<string, stri
       value === undefined || value === null ? "" : String(value);
   }
   return values;
-}
-
-function toBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("画像を読み込めませんでした。"));
-    reader.onabort = () => reject(new Error("画像の読み込みが中断されました。"));
-    reader.onload = () => {
-      if (typeof reader.result !== "string") {
-        reject(new Error("画像をBase64へ変換できませんでした。"));
-        return;
-      }
-      const separator = reader.result.indexOf(",");
-      if (separator < 0) {
-        reject(new Error("画像をBase64へ変換できませんでした。"));
-        return;
-      }
-      resolve(reader.result.slice(separator + 1));
-    };
-    reader.readAsDataURL(file);
-  });
 }
 
 function describe(error: unknown): string {
@@ -170,7 +151,7 @@ export function GenerationForm({
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
   const [lookProfileIds, setLookProfileIds] = useState<string[]>([]);
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
-  const [tagImage, setTagImage] = useState<File | null>(null);
+  const [tagMedia, setTagMedia] = useState<PickedMedia[]>([]);
   const [extractingTags, setExtractingTags] = useState(false);
   const [tagError, setTagError] = useState<string | null>(null);
   const [extractedTags, setExtractedTags] = useState<string[]>([]);
@@ -340,18 +321,34 @@ export function GenerationForm({
   };
 
   const extractTags = async () => {
-    if (!tagImage) return;
-    if (!tagImage.type.startsWith("image/")) {
-      setTagError("画像形式を判別できません。対応する画像を選び直してください。");
-      return;
-    }
+    const item = tagMedia[0];
+    if (!item) return;
     setExtractingTags(true);
     setTagError(null);
     try {
-      const result = await api.extractImageTags(
-        await toBase64(tagImage),
-        tagImage.type,
-      );
+      let base64: string;
+      let mediaType: string;
+      if (item.file) {
+        base64 = await toBase64(item.file);
+        mediaType = item.mediaType ?? item.file.type;
+      } else if ("artifact_id" in item.source) {
+        const response = await fetch(api.artifactContentUrl(item.source.artifact_id));
+        if (!response.ok) {
+          setTagError("画像を取得できませんでした。選び直してください。");
+          return;
+        }
+        const blob = await response.blob();
+        base64 = await blobToBase64(blob);
+        mediaType = item.mediaType ?? blob.type;
+      } else {
+        setTagError("画像を取得できません。選び直してください。");
+        return;
+      }
+      if (!mediaType.startsWith("image/")) {
+        setTagError("画像形式を判別できません。対応する画像を選び直してください。");
+        return;
+      }
+      const result = await api.extractImageTags(base64, mediaType);
       setExtractedTags(result.tags);
     } catch (error) {
       setExtractedTags([]);
@@ -416,22 +413,23 @@ export function GenerationForm({
       )}
       {field.name === "positive_prompt" && !extrasHidden && (
         <div className="tag-extractor">
-          <label htmlFor="tag-image">画像からタグを抽出</label>
+          <MediaPicker
+            kind="image"
+            label="画像からタグを抽出"
+            value={tagMedia}
+            onChange={(next) => {
+              setTagMedia(next);
+              setExtractedTags([]);
+              setTagError(null);
+            }}
+            multiple={false}
+            disabled={useInheritedDefaults || extractingTags}
+            projectId={projectId}
+          />
           <div className="row">
-            <input
-              id="tag-image"
-              disabled={useInheritedDefaults || extractingTags}
-              type="file"
-              accept="image/*"
-              onChange={(event) => {
-                setTagImage(event.target.files?.[0] ?? null);
-                setExtractedTags([]);
-                setTagError(null);
-              }}
-            />
             <button
               type="button"
-              disabled={useInheritedDefaults || !tagImage || extractingTags}
+              disabled={useInheritedDefaults || tagMedia.length === 0 || extractingTags}
               onClick={extractTags}
             >
               {extractingTags ? "抽出中..." : "タグを抽出"}

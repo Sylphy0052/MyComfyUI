@@ -2,6 +2,8 @@ import { useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { AssignmentTarget, ExternalImagePreview } from "../api/client";
+import { MediaPicker, mediaTypeOf, toBase64 } from "./MediaPicker";
+import type { PickedMedia } from "./MediaPicker";
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
@@ -17,36 +19,17 @@ function describe(error: unknown): string {
   return String(error);
 }
 
-function mediaTypeOf(file: File): string {
-  if (file.type) return file.type;
-  const lower = file.name.toLowerCase();
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-  if (lower.endsWith(".webp")) return "image/webp";
-  return "application/octet-stream";
-}
-
-async function toBase64(file: File): Promise<string> {
-  const buffer = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < buffer.length; offset += chunkSize) {
-    binary += String.fromCharCode(...buffer.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
 /** previewとconfirmを分け、埋込メタデータを確認するまで保存しない。 */
 export function ExternalImageImportPanel({ assignment, onImported }: Props) {
-  const [file, setFile] = useState<File | null>(null);
+  const [picked, setPicked] = useState<PickedMedia[]>([]);
+  const file = picked[0]?.file ?? null;
   const [contentBase64, setContentBase64] = useState("");
   const [preview, setPreview] = useState<ExternalImagePreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inputKey, setInputKey] = useState(0);
 
-  const selectFile = (next: File | null) => {
-    setFile(next);
+  const selectFile = (next: PickedMedia[]) => {
+    setPicked(next);
     setContentBase64("");
     setPreview(null);
     setError(null);
@@ -90,10 +73,9 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
         expected_sha256: preview.sha256,
         assignment,
       });
-      setFile(null);
+      setPicked([]);
       setContentBase64("");
       setPreview(null);
-      setInputKey((current) => current + 1);
       await onImported();
     } catch (cause) {
       setError(describe(cause));
@@ -106,12 +88,17 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
     <details>
       <summary>外部画像を取り込む</summary>
       <div className="stack">
-        <input
-          key={inputKey}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
+        <MediaPicker
+          kind="image"
+          label="外部画像ファイル"
+          value={picked}
+          onChange={selectFile}
+          multiple={false}
+          sources={["upload"]}
+          autoRegister={false}
           disabled={busy}
-          onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+          maxBytes={MAX_IMAGE_BYTES}
+          accept="image/png,image/jpeg,image/webp"
         />
         <button type="button" disabled={!file || busy} onClick={runPreview}>
           {busy && !preview ? "確認中..." : "メタデータを確認"}

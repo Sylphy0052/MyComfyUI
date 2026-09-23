@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   AgentProvider,
-  Artifact,
   GenerationJob,
   GenerationPreview,
   Recipe,
@@ -14,6 +13,8 @@ import { LookProfileManager } from "./LookProfileManager";
 import { PromptAssist } from "./PromptAssist";
 import { EmptyState } from "./ui/EmptyState";
 import { mergePrompt } from "../prompt/merge";
+import { MediaPicker } from "./MediaPicker";
+import type { PickedMedia } from "./MediaPicker";
 
 type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet";
 
@@ -55,23 +56,6 @@ function describe(error: unknown): string {
   return String(error);
 }
 
-async function toBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
-}
-
-function mediaTypeOf(file: File): string {
-  if (file.type) return file.type;
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
-  if (name.endsWith(".webp")) return "image/webp";
-  return "image/png";
-}
-
 export function ImageDerivationPanel({
   projectId,
   sceneId,
@@ -86,14 +70,8 @@ export function ImageDerivationPanel({
   onManageWorkflows,
 }: Props) {
   const [recipeId, setRecipeId] = useState("");
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [maskId, setMaskId] = useState("");
-  const [sourceMode, setSourceMode] = useState<"artifact" | "cached">("artifact");
-  const [sourcePath, setSourcePath] = useState("");
-  const [sourceSha256, setSourceSha256] = useState("");
-  const [maskMode, setMaskMode] = useState<"artifact" | "cached">("artifact");
-  const [maskPath, setMaskPath] = useState("");
-  const [maskSha256, setMaskSha256] = useState("");
+  const [sourceMedia, setSourceMedia] = useState<PickedMedia[]>([]);
+  const [maskMedia, setMaskMedia] = useState<PickedMedia[]>([]);
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState("");
   const [denoise, setDenoise] = useState("0.65");
@@ -135,19 +113,26 @@ export function ImageDerivationPanel({
     void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
   }, []);
 
+  // 親から共有されるsourceArtifactIdが変わったら、pickerの選択をそれに合わせる。
   useEffect(() => {
-    if (sourceArtifactId) setSourceMode("artifact");
+    if (!sourceArtifactId) return;
+    setSourceMedia((current) => {
+      const first = current[0];
+      if (first && "artifact_id" in first.source && first.source.artifact_id === sourceArtifactId) {
+        return current;
+      }
+      return [{
+        key: sourceArtifactId,
+        label: sourceArtifactId.slice(0, 8),
+        source: { artifact_id: sourceArtifactId },
+      }];
+    });
   }, [sourceArtifactId]);
 
   useEffect(() => {
     let active = true;
-    setSourceMode("artifact");
-    setMaskMode("artifact");
-    setMaskId("");
-    setSourcePath("");
-    setSourceSha256("");
-    setMaskPath("");
-    setMaskSha256("");
+    setSourceMedia([]);
+    setMaskMedia([]);
     api
       .listArtifacts({
         projectId: projectId ?? undefined,
@@ -160,7 +145,6 @@ export function ImageDerivationPanel({
       })
       .then((items) => {
         if (!active) return;
-        setArtifacts(items);
         const currentSource = sourceArtifactIdRef.current;
         if (!currentSource || !items.some((item) => item.id === currentSource)) {
           onSourceArtifactChange(items[0]?.id ?? null);
@@ -171,6 +155,12 @@ export function ImageDerivationPanel({
       });
     return () => { active = false; };
   }, [projectId, sceneId, shotId]);
+
+  const handleSourceMediaChange = (next: PickedMedia[]) => {
+    setSourceMedia(next);
+    const item = next[0];
+    onSourceArtifactChange(item && "artifact_id" in item.source ? item.source.artifact_id : null);
+  };
 
   useEffect(() => {
     const defaults = (recipe?.defaults ?? {}) as Record<string, unknown>;
@@ -188,14 +178,8 @@ export function ImageDerivationPanel({
     setPreviewError(null);
   }, [
     recipeId,
-    sourceMode,
-    sourceArtifactId,
-    sourcePath,
-    sourceSha256,
-    maskMode,
-    maskId,
-    maskPath,
-    maskSha256,
+    sourceMedia,
+    maskMedia,
     prompt,
     negative,
     denoise,
@@ -211,20 +195,14 @@ export function ImageDerivationPanel({
   ]);
 
   const buildInputs = (): Record<string, unknown> | null => {
-    const sourceReady =
-      sourceMode === "artifact"
-        ? Boolean(sourceArtifactId)
-        : Boolean(sourcePath.trim() && sourceSha256.trim());
-    if (!recipe || !mode || !sourceReady) {
+    const sourceItem = sourceMedia[0];
+    if (!recipe || !mode || !sourceItem) {
       setError("Recipeと派生元画像を選択してください。");
       return null;
     }
     const inputs: Record<string, unknown> = {
       ...modelValues,
-      source_image:
-        sourceMode === "artifact"
-          ? { artifact_id: sourceArtifactId }
-          : { relative_path: sourcePath.trim(), sha256: sourceSha256.trim() },
+      source_image: sourceItem.source,
     };
     if (mode === "upscale") return inputs;
     const include = (name: string) => lookProfileIds.length === 0 || touchedFields.has(name);
@@ -248,18 +226,12 @@ export function ImageDerivationPanel({
     if (include("seed")) inputs.seed = seedValue;
     if (mode === "inpaint") {
       const grow = Number(growMaskBy);
-      const maskReady =
-        maskMode === "artifact"
-          ? Boolean(maskId)
-          : Boolean(maskPath.trim() && maskSha256.trim());
-      if (!maskReady || !Number.isInteger(grow) || grow < 0) {
+      const maskItem = maskMedia[0];
+      if (!maskItem || !Number.isInteger(grow) || grow < 0) {
         setError("mask画像と0以上のmask拡張値を指定してください。");
         return null;
       }
-      inputs.mask_image =
-        maskMode === "artifact"
-          ? { artifact_id: maskId }
-          : { relative_path: maskPath.trim(), sha256: maskSha256.trim() };
+      inputs.mask_image = maskItem.source;
       if (include("grow_mask_by")) inputs.grow_mask_by = grow;
     }
     if (mode === "controlnet") {
@@ -284,35 +256,6 @@ export function ImageDerivationPanel({
       if (include("control_end")) inputs.control_end = values[4];
     }
     return inputs;
-  };
-
-  const registerInput = async (file: File, target: "source" | "mask") => {
-    if (file.size > 25 * 1024 * 1024) {
-      setError("登録する画像は25MB以下にしてください。");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const stored = await api.createImageReference(
-        file.name,
-        await toBase64(file),
-        mediaTypeOf(file),
-      );
-      if (target === "source") {
-        setSourceMode("cached");
-        setSourcePath(stored.relative_path);
-        setSourceSha256(stored.sha256);
-      } else {
-        setMaskMode("cached");
-        setMaskPath(stored.relative_path);
-        setMaskSha256(stored.sha256);
-      }
-    } catch (cause) {
-      setError(describe(cause));
-    } finally {
-      setBusy(false);
-    }
   };
 
   const execute = async (previewOnly: boolean) => {
@@ -388,10 +331,7 @@ export function ImageDerivationPanel({
       </section>
     );
   }
-  const sourceReady =
-    sourceMode === "artifact"
-      ? Boolean(sourceArtifactId)
-      : Boolean(sourcePath.trim() && sourceSha256.trim());
+  const sourceReady = sourceMedia.length > 0;
   return (
     <section className="panel">
       <h2>画像派生生成</h2>
@@ -400,28 +340,18 @@ export function ImageDerivationPanel({
         <select id="derivation-recipe" value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>
           {recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
-        <label htmlFor="derivation-source-mode">入力方法</label>
-        <select id="derivation-source-mode" value={sourceMode} onChange={(event) => setSourceMode(event.target.value as "artifact" | "cached")}>
-          <option value="artifact">Artifact</option>
-          <option value="cached">登録済み入力cache</option>
-        </select>
-        <label htmlFor="derivation-source">派生元画像</label>
-        {sourceMode === "artifact" ? (
-          <select id="derivation-source" value={sourceArtifactId ?? ""} onChange={(event) => onSourceArtifactChange(event.target.value || null)}>
-            <option value="">選択してください</option>
-            {sourceArtifactId && !artifacts.some((item) => item.id === sourceArtifactId) && (
-              <option value={sourceArtifactId}>選択候補 {sourceArtifactId.slice(0, 8)}</option>
-            )}
-            {artifacts.map((item) => <option key={item.id} value={item.id}>{item.id.slice(0, 8)} / {item.sha256.slice(0, 12)}</option>)}
-          </select>
-        ) : (
-          <div className="stack">
-            <input type="file" accept="image/*" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void registerInput(file, "source"); }} />
-            <input id="derivation-source" value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} placeholder="inputs/<sha256>/<file>" />
-            <input value={sourceSha256} onChange={(event) => setSourceSha256(event.target.value)} placeholder="SHA-256" />
-            <p className="muted">入力cacheはManifestのinput_refsへ記録し、Artifact親子関係は持ちません。</p>
-          </div>
-        )}
+        <MediaPicker
+          kind="image"
+          label="派生元画像"
+          value={sourceMedia}
+          onChange={handleSourceMediaChange}
+          multiple={false}
+          disabled={busy}
+          maxBytes={25 * 1024 * 1024}
+          projectId={projectId}
+          sceneId={sceneId}
+          shotId={shotId}
+        />
         <ModelSelector recipe={recipe} values={modelValues} onChange={setModelValues} onValidityChange={setModelsValid} idPrefix="derivation-model" />
         <LookProfileManager
           kind="image"
@@ -453,20 +383,18 @@ export function ImageDerivationPanel({
           </div>
         </>}
         {mode === "inpaint" && <>
-          <label>mask入力方法<select value={maskMode} onChange={(event) => setMaskMode(event.target.value as "artifact" | "cached")}><option value="artifact">Artifact</option><option value="cached">登録済み入力cache</option></select></label>
-          <label htmlFor="derivation-mask">mask画像</label>
-          {maskMode === "artifact" ? (
-            <select id="derivation-mask" value={maskId} onChange={(event) => setMaskId(event.target.value)}>
-              <option value="">選択してください</option>
-              {artifacts.map((item) => <option key={item.id} value={item.id}>{item.id.slice(0, 8)}</option>)}
-            </select>
-          ) : (
-            <div className="stack">
-              <input type="file" accept="image/*" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void registerInput(file, "mask"); }} />
-              <input id="derivation-mask" value={maskPath} onChange={(event) => setMaskPath(event.target.value)} placeholder="inputs/<sha256>/<file>" />
-              <input value={maskSha256} onChange={(event) => setMaskSha256(event.target.value)} placeholder="SHA-256" />
-            </div>
-          )}
+          <MediaPicker
+            kind="image"
+            label="mask画像"
+            value={maskMedia}
+            onChange={setMaskMedia}
+            multiple={false}
+            disabled={busy}
+            maxBytes={25 * 1024 * 1024}
+            projectId={projectId}
+            sceneId={sceneId}
+            shotId={shotId}
+          />
           <label>mask拡張(px)<input type="number" min="0" value={growMaskBy} onChange={(event) => { setGrowMaskBy(event.target.value); setTouchedFields((current) => new Set(current).add("grow_mask_by")); }} /></label>
         </>}
         {mode === "controlnet" && <>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { FormEvent } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -7,6 +7,8 @@ import type {
   ProjectLocalOverrides,
   ProjectReferenceImage,
 } from "../api/client";
+import { MediaPicker } from "./MediaPicker";
+import type { PickedMedia } from "./MediaPicker";
 import { EmptyState } from "./ui/EmptyState";
 
 /** Sceneのstructure-panelへ移り、フォーカスして選ばせる。 */
@@ -19,22 +21,6 @@ function focusSceneSection(): void {
 function describe(error: unknown): string {
   if (error instanceof ApiError) return `${error.message}(${error.code})`;
   return String(error);
-}
-
-function fileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("画像を読込めません。"));
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string" || !result.includes(",")) {
-        reject(new Error("画像をBase64へ変換できません。"));
-        return;
-      }
-      resolve(result.slice(result.indexOf(",") + 1));
-    };
-    reader.readAsDataURL(file);
-  });
 }
 
 interface CharacterDraft {
@@ -129,6 +115,7 @@ export function ProjectLocalOverridesEditor({
 }) {
   const [settings, setSettings] = useState<LocalOverrides | null>(null);
   const [draft, setDraft] = useState<CharacterDraft | null>(null);
+  const [pickedReference, setPickedReference] = useState<PickedMedia[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,34 +146,48 @@ export function ProjectLocalOverridesEditor({
     }
   };
 
-  const uploadReference = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || !draft) return;
-    if (!file.type.startsWith("image/")) {
-      setError("画像ファイルを選択してください。");
-      return;
-    }
-    setBusy(true);
+  const handleReferencePicked = (next: PickedMedia[]) => {
+    const item = next[0];
+    setPickedReference([]);
+    if (!item) return;
     setError(null);
-    try {
-      const stored = await api.createImageReference(
-        file.name,
-        await fileAsBase64(file),
-        file.type,
-      );
+    if (item.artifact) {
+      const artifact = item.artifact;
+      const fileName = artifact.relative_path.split("/").pop() ?? item.label;
       setDraft((current) => current && ({
         ...current,
         reference_images: [
           ...current.reference_images,
-          { file_name: file.name, ...stored },
+          {
+            file_name: fileName,
+            relative_path: artifact.relative_path,
+            sha256: artifact.sha256,
+            byte_size: artifact.byte_size,
+            media_type: artifact.media_type,
+          },
         ],
       }));
-    } catch (cause) {
-      setError(describe(cause));
-    } finally {
-      setBusy(false);
+      return;
     }
+    const source = item.source;
+    if ("relative_path" in source && source.relative_path) {
+      setDraft((current) => current && ({
+        ...current,
+        reference_images: [
+          ...current.reference_images,
+          {
+            file_name: item.label,
+            relative_path: source.relative_path,
+            sha256: source.sha256,
+            byte_size: item.file?.size ?? 0,
+            media_type: item.mediaType ?? "application/octet-stream",
+          },
+        ],
+      }));
+      return;
+    }
+    // artifact情報もrelative_pathも無い場合は追加せず、握りつぶさずに知らせる。
+    setError("選択した画像を取り込めませんでした。選び直してください。");
   };
 
   const saveCharacter = async (event: FormEvent) => {
@@ -274,7 +275,16 @@ export function ProjectLocalOverridesEditor({
             <h3>{settings.characters.some((item) => item.id === draft.id) ? "人物・キャラクターを編集" : "人物・キャラクターを追加"}</h3>
             <label>名前<input required maxLength={120} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
             <label>タグ（カンマ区切り）<input value={draft.tags} onChange={(event) => setDraft({ ...draft, tags: event.target.value })} /></label>
-            <label>参照画像<input type="file" accept="image/*" disabled={busy || draft.reference_images.length >= 20} onChange={(event) => void uploadReference(event)} /></label>
+            <MediaPicker
+              kind="image"
+              label="参照画像"
+              value={pickedReference}
+              onChange={handleReferencePicked}
+              multiple={false}
+              disabled={busy || draft.reference_images.length >= 20}
+              maxBytes={25 * 1024 * 1024}
+              projectId={projectId}
+            />
             <ul className="list">
               {draft.reference_images.map((image) => (
                 <li key={image.relative_path} className="row spread">
