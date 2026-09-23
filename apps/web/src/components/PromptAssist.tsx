@@ -47,7 +47,7 @@ export function PromptAssist({ current, onApply, ...rest }: Props) {
   );
 }
 
-/** 補完欄が呼び出し元へ渡す要求。`image` は画像を添付したときだけ入る。 */
+/** 補完欄が呼び出し元へ渡す要求。`image` は画像を添付したときだけ入り、`allowImage` が偽なら常に `null`。 */
 export interface AssistRequest {
   instruction: string;
   provider_id: AgentProviderId | null;
