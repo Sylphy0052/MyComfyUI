@@ -14,6 +14,8 @@ import type {
 } from "../api/aimedia";
 import { ProjectLocalOverridesEditor } from "./ProjectLocalOverridesEditor";
 import { useNotify } from "./ui/notify";
+import { ToggleGroup } from "./ui/ToggleGroup";
+import { ROW_DENSITY_OPTIONS, useListDensity } from "../state/densityState";
 
 const STATUSES: { value: ProductionStatus; label: string }[] = [
   { value: "not_started", label: "未着手" },
@@ -82,6 +84,7 @@ export function SceneBrowser(props: Props) {
   const [editor, setEditor] = useState<Editor>(null);
   const [editingScene, setEditingScene] = useState<SceneSummary | null>(null);
   const [editingShot, setEditingShot] = useState<ShotSummary | null>(null);
+  const [density, setDensity] = useListDensity("structure");
   const notify = useNotify();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,6 +206,7 @@ export function SceneBrowser(props: Props) {
       >
         <div className="row spread">
           <h2>Scene</h2>
+          {!simple && <ToggleGroup label="SceneとShotの表示形式" options={ROW_DENSITY_OPTIONS} value={density} onChange={setDensity} />}
           {structureEditable && <button type="button" disabled={busy} onClick={() => { setEditingScene(null); setEditor("create-scene"); }}>追加</button>}
         </div>
         {/* モードBでは件数に関わらず操作要素を1個に保つため、一覧をselectに畳む。 */}
@@ -215,7 +219,7 @@ export function SceneBrowser(props: Props) {
             ))}
           </select>
         )}
-        {!simple && <ul className="list structure-list">
+        {!simple && <ul className={`list structure-list density-${density}`}>
           {scenes.map((item, index) => (
             <li key={item.id}>
               <button type="button" aria-pressed={item.id === sceneId} onClick={() => onSelectScene(item.id)}>
@@ -269,7 +273,7 @@ export function SceneBrowser(props: Props) {
             ))}
           </select>
         )}
-        {!simple && <ul className="list structure-list">
+        {!simple && <ul className={`list structure-list density-${density}`}>
           {shots.map((item, index) => (
             <li key={item.id}>
               <button type="button" aria-pressed={item.id === shotId} onClick={() => onSelectShot(item.id)}>

@@ -23,6 +23,8 @@ import { MediaViewer } from "./MediaViewer";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 import { useNotify } from "./ui/notify";
+import { ToggleGroup } from "./ui/ToggleGroup";
+import { GALLERY_DENSITY_OPTIONS, useListDensity } from "../state/densityState";
 
 const KIND_OPTIONS = [
   { value: "image", label: "画像" },
@@ -119,6 +121,7 @@ export function AssetBrowser({
   const [busyArtifactId, setBusyArtifactId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [density, setDensity] = useListDensity("assets");
   const [batchTag, setBatchTag] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
   const [rerunBusy, setRerunBusy] = useState(false);
@@ -571,6 +574,12 @@ export function AssetBrowser({
         <button type="button" onClick={() => setReloadToken((n) => n + 1)}>
           再取得
         </button>
+        <ToggleGroup
+          label="Artifact一覧の表示形式"
+          options={GALLERY_DENSITY_OPTIONS}
+          value={density}
+          onChange={setDensity}
+        />
         <span className="muted">
           {loading ? "取得中" : `${artifacts.length} 件`}
           {artifacts.length >= PAGE_SIZE ? ` (上限 ${PAGE_SIZE} 件まで)` : ""}
@@ -588,7 +597,7 @@ export function AssetBrowser({
                 : "条件に合うArtifactがありません。"}
             </p>
           ) : (
-            <div className="gallery">
+            <div className={`gallery gallery-${density}`}>
               {artifacts.map((artifact) => (
                 <figure
                   key={artifact.id}

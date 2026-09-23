@@ -8,6 +8,8 @@ import type {
   ProjectRecord,
 } from "../api/client";
 import { AssignmentPicker } from "./AssignmentPicker";
+import { ToggleGroup } from "./ui/ToggleGroup";
+import { ROW_DENSITY_OPTIONS, useListDensity } from "../state/densityState";
 
 const STATE_LABEL: Record<string, string> = {
   queued: "待機中",
@@ -57,6 +59,7 @@ export function JobQueue({
   onAssignmentChanged,
 }: Props) {
   const [includeArtifacts, setIncludeArtifacts] = useState(true);
+  const [density, setDensity] = useListDensity("jobs");
   const selected = jobs.find((job) => job.id === selectedJobId) ?? null;
 
   const moveJob = async (target: AssignmentTarget) => {
@@ -71,8 +74,11 @@ export function JobQueue({
   return (
     <div>
       <section className="panel">
-        <h2>{unassigned ? "InboxのJob" : "キュー"}</h2>
-        <ul className="list">
+        <div className="row spread">
+          <h2>{unassigned ? "InboxのJob" : "キュー"}</h2>
+          <ToggleGroup label="Jobの表示形式" options={ROW_DENSITY_OPTIONS} value={density} onChange={setDensity} />
+        </div>
+        <ul className={`list density-${density}`}>
           {jobs.map((job) => (
             <li key={job.id}>
               <button
