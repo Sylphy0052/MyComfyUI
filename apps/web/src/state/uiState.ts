@@ -6,6 +6,8 @@
  * 前回のセッションより貼られたリンクを優先させたいため、この順序にしている。
  */
 
+/** 作品制作 (モードB) とラボ (モードA)。View・タブはラボの中の位置を表す。 */
+export const MODE_VALUES = ["production", "lab"] as const;
 export const VIEW_VALUES = [
   "projects",
   "generate",
@@ -21,11 +23,13 @@ export const GENERATION_TAB_VALUES = [
 ] as const;
 export const IMAGE_SUBTAB_VALUES = ["generate", "derive", "sweep"] as const;
 
+export type Mode = (typeof MODE_VALUES)[number];
 export type View = (typeof VIEW_VALUES)[number];
 export type GenerationTab = (typeof GENERATION_TAB_VALUES)[number];
 export type ImageSubTab = (typeof IMAGE_SUBTAB_VALUES)[number];
 
 export type UiState = {
+  mode: Mode;
   view: View;
   generationTab: GenerationTab;
   imageSubTab: ImageSubTab;
@@ -35,6 +39,7 @@ export type UiState = {
 };
 
 export const DEFAULT_UI_STATE: UiState = {
+  mode: "production",
   view: "generate",
   generationTab: "image",
   imageSubTab: "generate",
@@ -49,6 +54,7 @@ const STORAGE_KEY = "mycomfyui.ui.v1";
 const MAX_ID_LENGTH = 200;
 
 const PARAM_NAMES = {
+  mode: "mode",
   view: "view",
   generationTab: "tab",
   imageSubTab: "sub",
@@ -108,6 +114,14 @@ export function readUrlUiState(search: string): Partial<UiState> {
   const shotId = pickId(params.get(PARAM_NAMES.shotId));
   if (shotId) partial.shotId = shotId;
 
+  // モード導入前のリンクはViewやタブだけを持つ。それらはラボの位置なので、
+  // modeが無ければラボで開く。modeが明示されていればそちらを優先する。
+  const mode = pickEnum(MODE_VALUES, params.get(PARAM_NAMES.mode));
+  if (mode) partial.mode = mode;
+  else if (params.has(PARAM_NAMES.view) || params.has(PARAM_NAMES.generationTab)) {
+    partial.mode = "lab";
+  }
+
   return partial;
 }
 
@@ -131,6 +145,11 @@ export function readStoredUiState(): Partial<UiState> {
 
   const source = parsed as Record<string, unknown>;
   const partial: Partial<UiState> = {};
+  const mode = pickEnum(
+    MODE_VALUES,
+    typeof source.mode === "string" ? source.mode : null,
+  );
+  if (mode) partial.mode = mode;
   const view = pickEnum(
     VIEW_VALUES,
     typeof source.view === "string" ? source.view : null,
@@ -196,6 +215,13 @@ export function uiStateFromUrl(search: string): UiState {
 export function toSearchString(state: UiState): string {
   const params = new URLSearchParams();
   // 既定値は省いてURLを短く保つ。共有されたリンクで何が指定されたかを読み取りやすくする。
+  // modeの無いview/tab付きURLはラボとして読むため、view/tabを書くときはmodeも明示する。
+  const hasLabPosition =
+    state.view !== DEFAULT_UI_STATE.view ||
+    state.generationTab !== DEFAULT_UI_STATE.generationTab;
+  if (state.mode !== DEFAULT_UI_STATE.mode || hasLabPosition) {
+    params.set(PARAM_NAMES.mode, state.mode);
+  }
   if (state.view !== DEFAULT_UI_STATE.view) {
     params.set(PARAM_NAMES.view, state.view);
   }

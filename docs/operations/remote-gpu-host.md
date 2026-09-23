@@ -503,6 +503,27 @@ ComfyUIのタイムアウトはネットワーク往復と生成物の転送分�
 
 画像タグ抽出はComfyUI(8188)へWorkflowとして投入する。選択した画像は`/upload/image`でRemote GPU HostのComfyUIへ転送され、`input/mycomfyui-tagger/`へ置かれる。ComfyUIはinputのファイルを消すAPIを持たないため、このディレクトリは溜まり続ける。生成に使う素材とは混ざらないので、不要になったらディレクトリごと消してよい。抽出したタグは既定で推論サーバーへ渡して整理するが、この段は任意であり、繋がらない場合はWD14 Taggerが出したタグをそのまま返す。整理を行わない場合は`MYCOMFYUI_IMAGE_TAGGER_REFINE=false`とする。
 
+`input/mycomfyui-tagger/`は自動では減らないため、Remote GPU Host側にsystemd timerを置いて定期的に古いファイルを消す運用とする。Application APIからComfyUIのinputを直接消す口は無く、単一利用者のローカル運用でも数十MB/枚が積み上がるため、後始末はホスト側のcronまたはtimerに任せる。
+
+```ini
+# /etc/systemd/system/mycomfyui-tagger-cleanup.timer
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```ini
+# /etc/systemd/system/mycomfyui-tagger-cleanup.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find /path/to/ComfyUI/input/mycomfyui-tagger -type f -mtime +1 -delete
+```
+
+`-mtime +1`は1日以上経過したファイルを消す。抽出は1枚ずつ即座に消費されるため、当日分を残す猶予として1日を既定にした。枚数や滞留期間の実態に応じて日数を調整する。
+
 設定の詳細は[Application APIのREADME](../../apps/api/README.md)を参照する。
 
 ## 失敗したときに見るところ

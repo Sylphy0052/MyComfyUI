@@ -44,6 +44,7 @@ import {
 import type {
   GenerationTab,
   ImageSubTab,
+  Mode,
   UiState,
   View,
 } from "./state/uiState";
@@ -52,6 +53,11 @@ import { useFrozenWhenInactive } from "./state/useFrozenWhenInactive";
 /** WebSocketは再取得トリガーだけに使い、RESTで得られる状態を正本とする。 */
 const POLL_INTERVAL_MS = 2000;
 const CONNECTED_POLL_INTERVAL_MS = 15000;
+
+const MODES: { value: Mode; label: string }[] = [
+  { value: "production", label: "作品制作 (モードB)" },
+  { value: "lab", label: "ラボ (モードA)" },
+];
 
 const VIEWS: { value: View; label: string }[] = [
   { value: "projects", label: "Project" },
@@ -121,9 +127,13 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   // URLとlocalStorageから復元した値で開く。以降の変更は永続化のeffectで書き戻す。
   const [initialUiState] = useState(readInitialUiState);
+  const [mode, setMode] = useState<Mode>(initialUiState.mode);
   const [view, setView] = useState<View>(initialUiState.view);
   const [visitedViews, setVisitedViews] = useState<ReadonlySet<View>>(
-    () => new Set([initialUiState.view]),
+    () =>
+      new Set([
+        initialUiState.mode === "production" ? "generate" : initialUiState.view,
+      ]),
   );
   const [generationTab, setGenerationTab] = useState<GenerationTab>(
     initialUiState.generationTab,
@@ -234,6 +244,36 @@ export function App() {
       .catch((cause) => setError(describe(cause)));
   }, []);
 
+  // 作品制作では画像生成の画面だけを出す。ラボのView・タブは書き換えず、
+  // ラボへ戻ったときに元の位置を残すため、表示用の値だけをここで差し替える。
+  const isProduction = mode === "production";
+  const shownView: View = isProduction ? "generate" : view;
+  const shownGenerationTab: GenerationTab = isProduction ? "image" : generationTab;
+  const shownImageSubTab: ImageSubTab = isProduction ? "generate" : imageSubTab;
+
+  // 作品制作の「次へ」。未選択なら先頭、最後のShotなら次は無い。
+  const nextShotId = useMemo(() => {
+    const index = shots.findIndex((item) => item.id === shotId);
+    return shots[index + 1]?.id ?? null;
+  }, [shots, shotId]);
+
+  /** モードBの条件 (Project・Scene・Shot・Presetと入力) を保ったまま、ラボの生成画面へ移る。 */
+  const enterLab = useCallback(() => {
+    setMode("lab");
+    setView("generate");
+    setGenerationTab("image");
+    setImageSubTab("generate");
+  }, []);
+
+  const switchMode = useCallback(
+    (next: Mode) => {
+      if (next === mode) return;
+      if (next === "lab") enterLab();
+      else setMode("production");
+    },
+    [mode, enterLab],
+  );
+
   const useProject = useCallback((nextProjectId: string | null) => {
     setProjectId(nextProjectId);
     if (nextProjectId) setView("generate");
@@ -244,17 +284,19 @@ export function App() {
   // 訪問済みのものだけをマウント対象にする。
   useEffect(() => {
     setVisitedViews((current) => {
-      if (current.has(view)) return current;
+      if (current.has(shownView)) return current;
       const next = new Set(current);
-      next.add(view);
+      next.add(shownView);
       return next;
     });
-  }, [view]);
+  }, [shownView]);
 
   const lastViewRef = useRef<View>(initialUiState.view);
+  const lastModeRef = useRef<Mode>(initialUiState.mode);
 
   useEffect(() => {
     const next: UiState = {
+      mode,
       view,
       generationTab,
       imageSubTab,
@@ -262,16 +304,21 @@ export function App() {
       sceneId,
       shotId,
     };
-    const viewChanged = lastViewRef.current !== view;
+    // モードの切替もViewの切替と同じく履歴へ積み、戻る操作で元のモードへ帰れるようにする。
+    const viewChanged =
+      lastViewRef.current !== view || lastModeRef.current !== mode;
     lastViewRef.current = view;
+    lastModeRef.current = mode;
     persistUiState(next, viewChanged ? "push" : "replace");
-  }, [view, generationTab, imageSubTab, projectId, sceneId, shotId]);
+  }, [mode, view, generationTab, imageSubTab, projectId, sceneId, shotId]);
 
   useEffect(() => {
     const restore = () => {
       const restored = uiStateFromUrl(window.location.search);
       // 復元先のViewを現在地として扱い、戻った先をもう一度履歴へ積まない。
       lastViewRef.current = restored.view;
+      lastModeRef.current = restored.mode;
+      setMode(restored.mode);
       setView(restored.view);
       setGenerationTab(restored.generationTab);
       setImageSubTab(restored.imageSubTab);
@@ -285,10 +332,10 @@ export function App() {
 
   // 隠れているViewには直前の選択を渡し続ける。Scene/Shotを切り替えるたびに
   // 見えていないViewまで一覧を取り直すのを避ける。
-  const projectsActive = view === "projects";
+  const projectsActive = shownView === "projects";
   const projectsSelectedId = useFrozenWhenInactive(projectId, projectsActive);
 
-  const assetsActive = view === "assets";
+  const assetsActive = shownView === "assets";
   const assetsProjects = useFrozenWhenInactive(projects, assetsActive);
   const assetsProjectId = useFrozenWhenInactive(projectId, assetsActive);
   const assetsScenes = useFrozenWhenInactive(scenes, assetsActive);
@@ -296,7 +343,7 @@ export function App() {
   const assetsShots = useFrozenWhenInactive(shots, assetsActive);
   const assetsShotId = useFrozenWhenInactive(shotId, assetsActive);
 
-  const workflowsActive = view === "workflows";
+  const workflowsActive = shownView === "workflows";
   const workflowsSceneId = useFrozenWhenInactive(sceneId, workflowsActive);
   const workflowsShotId = useFrozenWhenInactive(shotId, workflowsActive);
 
@@ -468,7 +515,15 @@ export function App() {
   const navigateToJob = useCallback(
     (jobId: string) => {
       const job = jobs.find((item) => item.id === jobId);
-      if (job) setGenerationTab(job.kind as GenerationTab);
+      // 一覧に無いJobへ移ると、ラボへ切り替わるだけで何も選ばれない画面になる。
+      if (!job) {
+        setError(`Job ${jobId} が現在のJob一覧に見つかりません。`);
+        return;
+      }
+      setError(null);
+      setGenerationTab(job.kind as GenerationTab);
+      // Job一覧はラボにだけあるため、作品制作から開いたときもラボへ移る。
+      setMode("lab");
       setView("generate");
       setSelectedJobId(jobId);
     },
@@ -831,19 +886,34 @@ export function App() {
         >
           進捗通知:{eventsConnected ? "WebSocket" : "REST同期"}
         </span>
-        <nav className="row">
-          {VIEWS.map((item) => (
+        <nav className="row mode-switch" aria-label="モード">
+          {MODES.map((item) => (
             <button
               key={item.value}
               type="button"
-              aria-pressed={view === item.value}
-              className={view === item.value ? "primary" : undefined}
-              onClick={() => setView(item.value)}
+              aria-pressed={mode === item.value}
+              className={mode === item.value ? "primary" : undefined}
+              onClick={() => switchMode(item.value)}
             >
               {item.label}
             </button>
           ))}
         </nav>
+        {!isProduction && (
+          <nav className="row" aria-label="ラボの画面">
+            {VIEWS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={view === item.value}
+                className={view === item.value ? "primary" : undefined}
+                onClick={() => setView(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        )}
       </header>
 
       {error && (
@@ -868,8 +938,9 @@ export function App() {
 
       {visitedViews.has("generate") && (
         <>
-          <div hidden={view !== "generate"}>
+          <div hidden={shownView !== "generate"}>
             <SceneBrowser
+              simple={isProduction}
               projects={projects}
               projectId={projectId}
               onSelectProject={selectProject}
@@ -884,11 +955,21 @@ export function App() {
               onSelectShot={setShotId}
               shot={shot}
             />
+            {isProduction && (
+              <button
+                type="button"
+                disabled={!nextShotId}
+                onClick={() => nextShotId && setShotId(nextShotId)}
+              >
+                次のShotへ
+              </button>
+            )}
           </div>
 
-          <div className="generation-workspace" hidden={view !== "generate"}>
+          <div className="generation-workspace" hidden={shownView !== "generate"}>
             <nav
               className="generation-tabs"
+              hidden={isProduction}
               role="tablist"
               aria-label="生成種別"
             >
@@ -898,11 +979,11 @@ export function App() {
                   id={`generation-tab-${item.value}`}
                   type="button"
                   role="tab"
-                  aria-selected={generationTab === item.value}
+                  aria-selected={shownGenerationTab === item.value}
                   aria-controls={`generation-panel-${item.value}`}
-                  tabIndex={generationTab === item.value ? 0 : -1}
+                  tabIndex={shownGenerationTab === item.value ? 0 : -1}
                   className={
-                    generationTab === item.value ? "primary" : undefined
+                    shownGenerationTab === item.value ? "primary" : undefined
                   }
                   onClick={() => setGenerationTab(item.value)}
                   onKeyDown={(event) =>
@@ -918,12 +999,13 @@ export function App() {
               id="generation-panel-image"
               role="tabpanel"
               aria-labelledby="generation-tab-image"
-              hidden={generationTab !== "image"}
+              hidden={shownGenerationTab !== "image"}
               className="image-workspace"
             >
               <div className="image-input-column">
                 <nav
                   className="image-subtabs"
+                  hidden={isProduction}
                   role="tablist"
                   aria-label="画像の入力種別"
                 >
@@ -933,10 +1015,10 @@ export function App() {
                       id={`image-subtab-${item.value}`}
                       type="button"
                       role="tab"
-                      aria-selected={imageSubTab === item.value}
+                      aria-selected={shownImageSubTab === item.value}
                       aria-controls={`image-subpanel-${item.value}`}
-                      tabIndex={imageSubTab === item.value ? 0 : -1}
-                      className={imageSubTab === item.value ? "primary" : undefined}
+                      tabIndex={shownImageSubTab === item.value ? 0 : -1}
+                      className={shownImageSubTab === item.value ? "primary" : undefined}
                       onClick={() => setImageSubTab(item.value)}
                       onKeyDown={(event) =>
                         handleImageSubTabKeyDown(event, item.value)
@@ -951,7 +1033,7 @@ export function App() {
                   id="image-subpanel-generate"
                   role="tabpanel"
                   aria-labelledby="image-subtab-generate"
-                  hidden={imageSubTab !== "generate"}
+                  hidden={shownImageSubTab !== "generate"}
                 >
                   <GenerationForm
                     projectId={projectId}
@@ -963,6 +1045,7 @@ export function App() {
                     previewing={previewing}
                     preview={previewResult}
                     previewError={previewError}
+                    simple={isProduction}
                   />
                 </div>
 
@@ -970,7 +1053,7 @@ export function App() {
                   id="image-subpanel-derive"
                   role="tabpanel"
                   aria-labelledby="image-subtab-derive"
-                  hidden={imageSubTab !== "derive"}
+                  hidden={shownImageSubTab !== "derive"}
                 >
                   <ImageDerivationPanel
                     projectId={projectId}
@@ -987,13 +1070,13 @@ export function App() {
                   id="image-subpanel-sweep"
                   role="tabpanel"
                   aria-labelledby="image-subtab-sweep"
-                  hidden={imageSubTab !== "sweep"}
+                  hidden={shownImageSubTab !== "sweep"}
                 >
                   <GenerationSweepPanel
                     active={
-                      view === "generate" &&
-                      generationTab === "image" &&
-                      imageSubTab === "sweep"
+                      shownView === "generate" &&
+                      shownGenerationTab === "image" &&
+                      shownImageSubTab === "sweep"
                     }
                     projectId={projectId}
                     sceneId={sceneId}
@@ -1015,7 +1098,8 @@ export function App() {
                     setDerivationSourceArtifactId(artifactId);
                     setImageSubTab("derive");
                   }}
-                  active={view === "generate" && generationTab === "image"}
+                  active={shownView === "generate" && shownGenerationTab === "image"}
+                  simple={isProduction}
                   comparisonActive={comparisonJobIds !== null}
                   onDialogOpenChange={setComparisonDialogEl}
                   onClearComparison={() => {
@@ -1032,7 +1116,7 @@ export function App() {
               id="generation-panel-video"
               role="tabpanel"
               aria-labelledby="generation-tab-video"
-              hidden={generationTab !== "video"}
+              hidden={shownGenerationTab !== "video"}
             >
               <VideoPanel
                 projectId={projectId}
@@ -1048,7 +1132,7 @@ export function App() {
               id="generation-panel-music"
               role="tabpanel"
               aria-labelledby="generation-tab-music"
-              hidden={generationTab !== "music"}
+              hidden={shownGenerationTab !== "music"}
             >
               <MusicPanel
                 projectId={projectId}
@@ -1064,7 +1148,7 @@ export function App() {
               id="generation-panel-voice"
               role="tabpanel"
               aria-labelledby="generation-tab-voice"
-              hidden={generationTab !== "voice"}
+              hidden={shownGenerationTab !== "voice"}
             >
               <VoicePanel
                 projectId={projectId}
@@ -1080,7 +1164,7 @@ export function App() {
               id="generation-panel-compose"
               role="tabpanel"
               aria-labelledby="generation-tab-compose"
-              hidden={generationTab !== "compose"}
+              hidden={shownGenerationTab !== "compose"}
             >
               <ComposePanel
                 projectId={projectId}
@@ -1092,7 +1176,7 @@ export function App() {
             </div>
           </div>
 
-          <div hidden={view !== "generate"}>
+          <div hidden={shownView !== "generate" || isProduction}>
             <JobQueue
               jobs={jobs}
               selectedJobId={selectedJobId}
@@ -1105,7 +1189,7 @@ export function App() {
             />
           </div>
 
-          <div className="full" hidden={view !== "generate"}>
+          <div className="full" hidden={shownView !== "generate" || isProduction}>
             <AgentPanel
               projectId={projectId}
               sceneId={sceneId}
@@ -1119,7 +1203,7 @@ export function App() {
 
       {visitedViews.has("assets") && (
         <>
-          <div className="full" hidden={view !== "assets"}>
+          <div className="full" hidden={shownView !== "assets"}>
             <AssetBrowser
               projectId={assetsProjectId}
               scenes={assetsScenes}
@@ -1138,14 +1222,14 @@ export function App() {
               onRerunJob={handleDerivedJob}
             />
           </div>
-          <div className="full" hidden={view !== "assets"}>
+          <div className="full" hidden={shownView !== "assets"}>
             <IntegrityList sceneId={assetsSceneId} shotId={assetsShotId} />
           </div>
         </>
       )}
 
       {visitedViews.has("workflows") && (
-        <div className="full" hidden={view !== "workflows"}>
+        <div className="full" hidden={shownView !== "workflows"}>
           <WorkflowRegistry
             sceneId={workflowsSceneId}
             shotId={workflowsShotId}
