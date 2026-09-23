@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { api, type LookProfile } from "../api/client";
-import type { CanonDescriptor, SceneEnvelope } from "../api/aimedia";
+import type { CanonDescriptor, SceneEnvelope, ShotEnvelope } from "../api/aimedia";
 import {
   PRESET_SLOTS,
   planFromBrief,
@@ -33,6 +33,8 @@ interface Props {
   projectId: string | null;
   sceneId: string | null;
   scene: SceneEnvelope | null;
+  /** 選択中のShot。台詞の話者と声 (voice_id) の割り当てを確認に出す。 */
+  shot: ShotEnvelope | null;
   plan: ProductionPlan | null;
   onPlanChange: (plan: ProductionPlan | null) => void;
   profiles: LookProfile[];
@@ -42,7 +44,7 @@ interface Props {
  * 作品制作の計画を組み、開始前に確認・修正する (F-07)。
  * 開始後は1行の要約に畳み、「組み直す」で未開始へ戻せる。
  */
-export function ProductionPlanPanel({ projectId, sceneId, scene, plan, onPlanChange, profiles }: Props) {
+export function ProductionPlanPanel({ projectId, sceneId, scene, shot, plan, onPlanChange, profiles }: Props) {
   const [brief, setBrief] = useState("");
   const [canon, setCanon] = useState<CanonDescriptor[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +89,15 @@ export function ProductionPlanPanel({ projectId, sceneId, scene, plan, onPlanCha
     return [...options.values()];
   }, [scene, canon, plan?.characters]);
 
+  // 話者ごとの声。声の中身 (Voice Canon) は音声の工程でvoice_idごとに選ぶ。
+  const voiceCast = useMemo(() => {
+    const cast = new Map<string, string>();
+    for (const line of shot?.data.dialogue ?? []) {
+      cast.set(`${line.speaker}\u0000${line.voice_id}`, `${line.speaker}: ${line.voice_id}`);
+    }
+    return [...cast.values()];
+  }, [shot]);
+
   if (!sceneId) return null;
 
   const update = (patch: Partial<ProductionPlan>) => {
@@ -112,13 +123,19 @@ export function ProductionPlanPanel({ projectId, sceneId, scene, plan, onPlanCha
   };
 
   if (plan?.started) {
-    const presetCount = Object.keys(plan.presets).length;
+    const presetIds = Object.values(plan.presets);
+    // 一覧の取得後に見つからないPresetは削除された等で適用されない。黙って既定値へ戻さず知らせる。
+    const missingCount =
+      profiles.length > 0 ? presetIds.filter((id) => !profiles.some((item) => item.id === id)).length : 0;
     return (
       <section className="production-plan production-plan-summary" aria-label="制作計画">
         <span>
           計画: {plan.background.location || "場所未定"} / {plan.characters.map((item) => item.name).join("・") || "キャラクター未定"} /
-          Preset {presetCount}件
+          Preset {presetIds.length}件
         </span>
+        {missingCount > 0 && (
+          <span className="pipeline-missing-note">見つからないPreset {missingCount}件 (組み直して選び直してください)</span>
+        )}
         <Button variant="ghost" onClick={() => update({ started: false })}>
           組み直す
         </Button>
@@ -217,7 +234,9 @@ export function ProductionPlanPanel({ projectId, sceneId, scene, plan, onPlanCha
             </li>
             <li>
               <strong>音声・BGM</strong>
-              <span className="muted">台詞の声は各キャラクターのボイス設定を使います。</span>
+              <span className="muted">
+                台詞の声 (選択中のShot): {voiceCast.length > 0 ? voiceCast.join(" / ") : "台詞なし"}。声の中身は音声の工程でvoice_idごとに選びます。
+              </span>
               <label>
                 BGMの雰囲気 (mood)
                 <input

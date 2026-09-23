@@ -1422,6 +1422,7 @@ export function App() {
                 projectId={projectId}
                 sceneId={sceneId}
                 scene={scene}
+                shot={shot}
                 plan={productionPlan}
                 onPlanChange={changeProductionPlan}
                 profiles={lookProfiles}
