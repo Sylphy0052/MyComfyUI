@@ -9,7 +9,10 @@ import type {
 } from "../api/client";
 import type { SceneEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { MediaViewer } from "./MediaViewer";
 import { ModelSelector } from "./ModelSelector";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
@@ -57,6 +60,7 @@ export function MusicPanel({
   const [audioArtifactsByJob, setAudioArtifactsByJob] = useState<
     Record<string, Artifact[]>
   >({});
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const recipe = useMemo(
     () => recipes.find((item) => item.id === recipeId) ?? null,
@@ -71,6 +75,18 @@ export function MusicPanel({
     .filter((job) => job.state === "succeeded")
     .map((job) => job.id)
     .join(",");
+
+  const succeededMusicArtifacts = useMemo(
+    () =>
+      musicJobs
+        .filter((job) => job.state === "succeeded")
+        .flatMap((job) =>
+          (audioArtifactsByJob[job.id] ?? []).filter(
+            (artifact) => artifact.kind === "audio",
+          ),
+        ),
+    [musicJobs, audioArtifactsByJob],
+  );
 
   const tags = useMemo(
     () =>
@@ -365,16 +381,31 @@ export function MusicPanel({
                 {(audioArtifactsByJob[job.id] ?? [])
                   .filter((artifact) => artifact.kind === "audio")
                   .map((artifact) => (
-                    <audio
-                      key={artifact.id}
-                      controls
-                      src={api.artifactContentUrl(artifact.id)}
-                    />
+                    <div key={artifact.id} className="stack">
+                      <audio controls src={api.artifactContentUrl(artifact.id)} />
+                      <IconButton
+                        icon={<Icon name="expand" />}
+                        label="拡大"
+                        onClick={() =>
+                          setViewerIndex(
+                            succeededMusicArtifacts.findIndex(
+                              (item) => item.id === artifact.id,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
                   ))}
               </li>
             ))}
         </ul>
       )}
+      <MediaViewer
+        items={succeededMusicArtifacts}
+        index={viewerIndex}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </section>
   );
 }
