@@ -45,8 +45,8 @@ from uuid import uuid4
 from mycomfyui_api.adapters.agent import proposals
 from mycomfyui_api.adapters.agent.base import (
     AgentInvalidResponse,
-    AgentProposalKind,
     AgentUnavailable,
+    ProposalKind,
     ProposalRequest,
     ProposalResult,
 )
@@ -69,7 +69,7 @@ PROVIDER_LABEL = "Codex CLI"
 USAGE_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens")
 
 
-def _strict_schema(kind: AgentProposalKind) -> dict[str, Any]:
+def _strict_schema(kind: ProposalKind) -> dict[str, Any]:
     """理由はモジュールdocstringを参照。QwenProviderと同じ変換を共有する。"""
     return proposals.strict_json_schema(kind)
 

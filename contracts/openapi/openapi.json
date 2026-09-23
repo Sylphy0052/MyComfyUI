@@ -3619,6 +3619,40 @@
         "title": "MediaItemRead",
         "type": "object"
       },
+      "MediaPromptAssistCreate": {
+        "additionalProperties": false,
+        "description": "動画と音楽の条件補完の要求。画像は受け付けず、日本語の説明だけから組み立てる。",
+        "properties": {
+          "instruction": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Instruction",
+            "type": "string"
+          },
+          "provider_id": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude_code",
+                  "codex",
+                  "qwen",
+                  "stub"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Id"
+          }
+        },
+        "required": [
+          "instruction"
+        ],
+        "title": "MediaPromptAssistCreate",
+        "type": "object"
+      },
       "MediaRoleTagRead": {
         "additionalProperties": false,
         "properties": {
@@ -3878,6 +3912,58 @@
           "role"
         ],
         "title": "MediaRoleTagUpsert",
+        "type": "object"
+      },
+      "MusicPromptAssistRead": {
+        "additionalProperties": false,
+        "description": "構造化検証済みのBGM条件補完結果。音楽画面のmood欄とgenre欄へそのまま入れる。",
+        "properties": {
+          "genre": {
+            "maxLength": 1000,
+            "title": "Genre",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "mood": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Mood",
+            "type": "string"
+          },
+          "provider_id": {
+            "enum": [
+              "claude_code",
+              "codex",
+              "qwen",
+              "stub"
+            ],
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "rationale": {
+            "maxLength": 2000,
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mood",
+          "genre",
+          "rationale",
+          "provider_id",
+          "model"
+        ],
+        "title": "MusicPromptAssistRead",
         "type": "object"
       },
       "PlannedOperation": {
@@ -7119,6 +7205,52 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VideoPromptAssistRead": {
+        "additionalProperties": false,
+        "description": "構造化検証済みの動画prompt補完結果。動画のWorkflowはnegativeを持たない。",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "prompt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "provider_id": {
+            "enum": [
+              "claude_code",
+              "codex",
+              "qwen",
+              "stub"
+            ],
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "rationale": {
+            "maxLength": 2000,
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt",
+          "rationale",
+          "provider_id",
+          "model"
+        ],
+        "title": "VideoPromptAssistRead",
         "type": "object"
       },
       "VoiceBackendHealthRead": {
@@ -10647,6 +10779,45 @@
           }
         },
         "summary": "Upsert Media Role Tag"
+      }
+    },
+    "/api/v1/music-prompt-assists": {
+      "post": {
+        "description": "日本語の説明を、BGMのmoodとgenreのタグへ補完する。\n\n画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。",
+        "operationId": "assist_music_prompt_api_v1_music_prompt_assists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaPromptAssistCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MusicPromptAssistRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assist Music Prompt"
       }
     },
     "/api/v1/project-portability/import": {
@@ -14301,6 +14472,45 @@
         "tags": [
           "user-scripts"
         ]
+      }
+    },
+    "/api/v1/video-prompt-assists": {
+      "post": {
+        "description": "日本語の説明を、動きとカメラワークを含む動画promptへ補完する。\n\n画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。",
+        "operationId": "assist_video_prompt_api_v1_video_prompt_assists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaPromptAssistCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoPromptAssistRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assist Video Prompt"
       }
     },
     "/api/v1/voice-references": {

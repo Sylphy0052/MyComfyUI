@@ -34,6 +34,14 @@ AGENT_PROPOSAL_KINDS: tuple[AgentProposalKind, ...] = (
     "asset_organization_plan",
 )
 
+#: 生成フォームの補完だけに使う種別。提案履歴を作らないため`AgentProposalKind`へ
+#: 含めない。含めるとDB制約と提案作成APIの選択肢まで広がる。画像の補完は
+#: `image_prompt`提案と出力の形を共有するため、ここには置かない。
+PromptAssistKind = Literal["video_prompt", "music_prompt"]
+
+#: Providerへ渡せる種別の全体。出力の形と指示はこの種別ごとに持つ。
+ProposalKind = AgentProposalKind | PromptAssistKind
+
 
 class AgentError(Exception):
     """提案Adapterが返す例外の基底。"""
@@ -72,7 +80,7 @@ class ProposalRequest:
     だけ渡す。
     """
 
-    kind: AgentProposalKind
+    kind: ProposalKind
     instruction: str
     context: dict[str, Any] = field(default_factory=dict)
     images: tuple[ProposalImage, ...] = ()

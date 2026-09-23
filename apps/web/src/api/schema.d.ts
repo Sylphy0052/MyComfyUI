@@ -942,6 +942,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/music-prompt-assists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assist Music Prompt
+         * @description 日本語の説明を、BGMのmoodとgenreのタグへ補完する。
+         *
+         *     画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。
+         */
+        post: operations["assist_music_prompt_api_v1_music_prompt_assists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/project-portability/import": {
         parameters: {
             query?: never;
@@ -1894,6 +1916,28 @@ export interface paths {
          * @description 実行内容を確定してdigestを返す。承認されるまで実行しない。
          */
         post: operations["preview_run_api_v1_user_scripts__script_id__runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/video-prompt-assists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assist Video Prompt
+         * @description 日本語の説明を、動きとカメラワークを含む動画promptへ補完する。
+         *
+         *     画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。
+         */
+        post: operations["assist_video_prompt_api_v1_video_prompt_assists_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3346,6 +3390,16 @@ export interface components {
              */
             source: "generated" | "external_import" | "registered" | "registered_input" | "character_reference";
         };
+        /**
+         * MediaPromptAssistCreate
+         * @description 動画と音楽の条件補完の要求。画像は受け付けず、日本語の説明だけから組み立てる。
+         */
+        MediaPromptAssistCreate: {
+            /** Instruction */
+            instruction: string;
+            /** Provider Id */
+            provider_id?: ("claude_code" | "codex" | "qwen" | "stub") | null;
+        };
         /** MediaRoleTagRead */
         MediaRoleTagRead: {
             /** Artifact Id */
@@ -3403,6 +3457,25 @@ export interface components {
             scene_id?: string | null;
             /** Sha256 */
             sha256?: string | null;
+        };
+        /**
+         * MusicPromptAssistRead
+         * @description 構造化検証済みのBGM条件補完結果。音楽画面のmood欄とgenre欄へそのまま入れる。
+         */
+        MusicPromptAssistRead: {
+            /** Genre */
+            genre: string;
+            /** Model */
+            model: string | null;
+            /** Mood */
+            mood: string;
+            /**
+             * Provider Id
+             * @enum {string}
+             */
+            provider_id: "claude_code" | "codex" | "qwen" | "stub";
+            /** Rationale */
+            rationale: string;
         };
         /**
          * PlannedOperation
@@ -4435,6 +4508,23 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * VideoPromptAssistRead
+         * @description 構造化検証済みの動画prompt補完結果。動画のWorkflowはnegativeを持たない。
+         */
+        VideoPromptAssistRead: {
+            /** Model */
+            model: string | null;
+            /** Prompt */
+            prompt: string;
+            /**
+             * Provider Id
+             * @enum {string}
+             */
+            provider_id: "claude_code" | "codex" | "qwen" | "stub";
+            /** Rationale */
+            rationale: string;
         };
         /**
          * VoiceBackendHealthRead
@@ -6296,6 +6386,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assist_music_prompt_api_v1_music_prompt_assists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaPromptAssistCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MusicPromptAssistRead"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -8592,6 +8715,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserScriptRunRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assist_video_prompt_api_v1_video_prompt_assists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MediaPromptAssistCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoPromptAssistRead"];
                 };
             };
             /** @description Validation Error */

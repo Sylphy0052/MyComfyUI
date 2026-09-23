@@ -130,5 +130,14 @@
       }
     ],
     "rationale": "実在するArtifact IDを持たない固定応答。タグの付け方と移動先の書き方を示す。"
+  },
+  "video_prompt": {
+    "prompt": "A woman in a red coat walks slowly through a dim darkroom lit by a single red safelight. The camera tracks her from the side at waist height, keeping her centered as she stops beside a drying line of photographs. She turns her head toward the prints while the red light glows softly on her face.",
+    "rationale": "暗室の赤い照明と、横から追うカメラで人物の動きを1つに絞った。"
+  },
+  "music_prompt": {
+    "mood": "calm, mysterious, slow tempo, 70 bpm, soft piano, warm synth pad",
+    "genre": "ambient, cinematic",
+    "rationale": "暗室の静けさに合わせ、遅いテンポと柔らかい音色を選んだ。"
   }
 }
