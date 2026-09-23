@@ -339,9 +339,13 @@ export function App() {
   const notify = useCallback(
     (notice: Notice) => {
       const id = `notice:${++toastSequenceRef.current}`;
+      // 閉じる前の連打で同じ取り消しが二重に走らないよう、1回だけ通す。
+      let isActionUsed = false;
       const action = notice.action && {
         label: notice.action.label,
         onAction: () => {
+          if (isActionUsed) return;
+          isActionUsed = true;
           notice.action!.onAction().catch((cause: unknown) => {
             notify({ tone: "danger", message: `取り消せませんでした: ${describe(cause)}` });
           });
