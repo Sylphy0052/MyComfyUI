@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
+import { ignoresShortcut } from "./ui/shortcuts";
 import type {
   AgentProvider,
   ApiError,
@@ -106,6 +107,8 @@ interface Props {
    * 隠した項目もマウントしたままにし、ラボへ移ったとき同じ入力で続けられるようにする。
    */
   simple?: boolean;
+  /** モードBで生成フォームが見えている間だけtrue。Gキーで投入する。 */
+  shortcutActive?: boolean;
 }
 
 export function GenerationForm({
@@ -119,6 +122,7 @@ export function GenerationForm({
   preview,
   previewError,
   simple = false,
+  shortcutActive = false,
 }: Props) {
   const [recipeId, setRecipeId] = useState<string>("");
   const recipe = useMemo(
@@ -465,6 +469,17 @@ export function GenerationForm({
     previewing ||
     !modelsValid ||
     (!recipe && !useInheritedDefaults);
+
+  useEffect(() => {
+    if (!shortcutActive || actionsDisabled) return;
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "g" || ignoresShortcut(event)) return;
+      event.preventDefault();
+      submit();
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [shortcutActive, actionsDisabled, submit]);
 
   return (
     <section className="panel">

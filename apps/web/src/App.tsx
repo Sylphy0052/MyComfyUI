@@ -34,11 +34,13 @@ import { MediaLibrary } from "./components/MediaLibrary";
 import { MusicPanel } from "./components/MusicPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { SceneBrowser } from "./components/SceneBrowser";
+import { ShortcutHelp } from "./components/ShortcutHelp";
 import { ResizablePane } from "./components/ui/ResizablePane";
 import { ToastRegion } from "./components/ui/ToastRegion";
 import type { ToastItem } from "./components/ui/ToastRegion";
 import { NotifyContext } from "./components/ui/notify";
 import type { Notice } from "./components/ui/notify";
+import { ignoresShortcut } from "./components/ui/shortcuts";
 import { VideoPanel } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistry } from "./components/WorkflowRegistry";
@@ -458,6 +460,18 @@ export function App() {
     const index = shots.findIndex((item) => item.id === shotId);
     return shots[index + 1]?.id ?? null;
   }, [shots, shotId]);
+
+  // 作品制作の「次のShotへ」をNキーでも行う。
+  useEffect(() => {
+    if (!isProduction || !nextShotId) return;
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "n" || ignoresShortcut(event)) return;
+      event.preventDefault();
+      setShotId(nextShotId);
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [isProduction, nextShotId]);
 
   /** モードBの条件 (Project・Scene・Shot・Presetと入力) を保ったまま、ラボの生成画面へ移る。 */
   const enterLab = useCallback(() => {
@@ -1184,6 +1198,7 @@ export function App() {
             </button>
           ))}
         </nav>
+        <ShortcutHelp />
         {!isProduction && (
           <nav className="row" aria-label="ラボの画面">
             {VIEWS.map((item) => (
@@ -1343,6 +1358,7 @@ export function App() {
                     preview={previewResult}
                     previewError={previewError}
                     simple={isProduction}
+                    shortcutActive={isProduction && shownImageSubTab === "generate"}
                   />
                 </div>
 

@@ -250,18 +250,20 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   };
 
   useEffect(() => {
-    // モードBでは比較のA/Bを出さないため、どの候補に効くか見えないショートカットは止める。
-    if (!active || simple || viewerIndex !== null) return;
+    // モードBでは比較のA/Bと全画面を出さないため、選択中の候補への採否と候補の移動だけを受け付ける。
+    if (!active || viewerIndex !== null) return;
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && fullscreen) {
         event.preventDefault();
         setFullscreen(false);
         return;
       }
+      // Ctrl+Aなどブラウザ既定の操作を採否として拾わない。
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       const key = event.key.toLowerCase();
       const editing = target?.matches("input, textarea, select, [contenteditable='true']");
-      if (key === "f" && !event.repeat && (!editing || fullscreen)) {
+      if (!simple && key === "f" && !event.repeat && (!editing || fullscreen)) {
         event.preventDefault(); setFullscreen((current) => !current); return;
       }
       if (editing) return;
@@ -275,8 +277,8 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
         event.preventDefault(); onDecide(activeId, "undecided"); return;
       }
       if (target?.matches("button, a")) return;
-      if (event.key === "[") setActiveSide("A");
-      else if (event.key === "]") setActiveSide("B");
+      if (!simple && event.key === "[") setActiveSide("A");
+      else if (!simple && event.key === "]") setActiveSide("B");
       else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && candidates.length) {
         event.preventDefault();
         const index = Math.max(0, candidates.findIndex(({ artifact }) => artifact.id === activeId));
@@ -459,13 +461,13 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
           <LoadingPlaceholder label="lineageを取得中です。" lines={2} />
         )}
         <div className={`gallery gallery-${thumbSize}`}>
-          {candidates.map(({ artifact }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}`}>
+          {candidates.map(({ artifact }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}${simple && artifact.id === activeId ? " selected" : ""}`}>
             <Badge tone={`decision decision-${artifact.decision}`}>
               {DECISION_LABEL[artifact.decision] ?? artifact.decision}
             </Badge>
             <ArtifactPreview artifact={artifact} />
             <figcaption>
-              <span className="row">{artifact.id === leftId && <span className="badge">A</span>}{artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
+              <span className="row">{simple && artifact.id === activeId && <span className="badge">選択中</span>}{!simple && artifact.id === leftId && <span className="badge">A</span>}{!simple && artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
               <span className="mono">{artifact.sha256.slice(0, 12)}</span>
               <div className="candidate-actions">
                 <div className="action-group" role="group" aria-label="表示">

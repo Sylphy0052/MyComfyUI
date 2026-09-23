@@ -417,6 +417,12 @@ ul.list li button[aria-pressed="true"] {
     calc(var(--radius-md) - var(--border-width)) 0 0;
 }
 
+/* モードBでキーボードの採否が効く候補。採否の枠線と重ならないよう outline で示す。 */
+.candidate-card.selected {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* 採否は枠線と不透明度だけでは判別しづらいため、サムネイル上にバッジで重ねる。 */
 .gallery figure .badge.decision {
   position: absolute;
@@ -1689,4 +1695,35 @@ button.primary:hover:not(:disabled) {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+.shortcut-help {
+  max-width: 32rem;
+}
+
+.shortcut-help::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+.shortcut-help h2,
+.shortcut-help h3 {
+  margin-top: 0;
+}
+
+.shortcut-help dl {
+  margin: 0 0 var(--space-5);
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: var(--space-3);
+}
+
+.shortcut-row dd {
+  margin: 0;
+}
+
+.shortcut-help-button {
+  white-space: nowrap;
 }
