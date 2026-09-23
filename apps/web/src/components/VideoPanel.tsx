@@ -12,7 +12,10 @@ import type { ShotEnvelope } from "../api/aimedia";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
+import { MediaViewer } from "./MediaViewer";
 import { ModelSelector } from "./ModelSelector";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 /** フレーム数のグリッド。17k+5に合わない値はComfyUI側で切り上げられ、指定した尺とずれる。 */
 const FRAME_GRID_STEP = 17;
@@ -109,6 +112,7 @@ export function VideoPanel({
   );
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const recipe = useMemo(
     () => recipes.find((item) => item.id === recipeId) ?? null,
@@ -123,6 +127,18 @@ export function VideoPanel({
     .filter((job) => job.state === "succeeded")
     .map((job) => job.id)
     .join(",");
+
+  const succeededVideoArtifacts = useMemo(
+    () =>
+      videoJobs
+        .filter((job) => job.state === "succeeded")
+        .flatMap((job) =>
+          (videoArtifactsByJob[job.id] ?? []).filter(
+            (artifact) => artifact.kind === "video",
+          ),
+        ),
+    [videoJobs, videoArtifactsByJob],
+  );
 
   const seconds = Number.parseFloat(secondsStr);
   const frames =
@@ -557,16 +573,31 @@ export function VideoPanel({
                 {(videoArtifactsByJob[job.id] ?? [])
                   .filter((artifact) => artifact.kind === "video")
                   .map((artifact) => (
-                    <video
-                      key={artifact.id}
-                      controls
-                      src={api.artifactContentUrl(artifact.id)}
-                    />
+                    <div key={artifact.id} className="stack">
+                      <video controls src={api.artifactContentUrl(artifact.id)} />
+                      <IconButton
+                        icon={<Icon name="expand" />}
+                        label="拡大"
+                        onClick={() =>
+                          setViewerIndex(
+                            succeededVideoArtifacts.findIndex(
+                              (item) => item.id === artifact.id,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
                   ))}
               </li>
             ))}
         </ul>
       )}
+      <MediaViewer
+        items={succeededVideoArtifacts}
+        index={viewerIndex}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </section>
   );
 }

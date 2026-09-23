@@ -6,6 +6,7 @@ import type { Artifact, ArtifactDecision, GenerationJob, GenerationManifest, Job
 import { ArtifactDetail } from "./ArtifactDetail";
 import { ArtifactPreview } from "./ArtifactPreview";
 import { LoadingPlaceholder } from "./LoadingPlaceholder";
+import { MediaViewer } from "./MediaViewer";
 import { Badge } from "./ui/Badge";
 import { Card } from "./ui/Card";
 import { EmptyState } from "./ui/EmptyState";
@@ -154,6 +155,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   const [detailArtifactId, setDetailArtifactId] = useState<string | null>(null);
   const [metadataErrors, setMetadataErrors] = useState<Record<string, string>>({});
   const [lineageErrors, setLineageErrors] = useState<Record<string, string>>({});
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
 
   useEffect(() => {
@@ -245,7 +247,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
 
   useEffect(() => {
     // モードBでは比較のA/Bを出さないため、どの候補に効くか見えないショートカットは止める。
-    if (!active || simple) return;
+    if (!active || simple || viewerIndex !== null) return;
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && fullscreen) {
         event.preventDefault();
@@ -280,7 +282,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [active, simple, activeId, activeSide, busyArtifactId, candidates, fullscreen, onDecide]);
+  }, [active, simple, viewerIndex, activeId, activeSide, busyArtifactId, candidates, fullscreen, onDecide]);
 
   useEffect(() => {
     if (!active) setFullscreen(false);
@@ -462,6 +464,9 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
               <span className="row">{artifact.id === leftId && <span className="badge">A</span>}{artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
               <span className="mono">{artifact.sha256.slice(0, 12)}</span>
               <div className="candidate-actions">
+                <div className="action-group" role="group" aria-label="表示">
+                  <IconButton icon={<Icon name="expand" />} label="拡大" onClick={() => setViewerIndex(candidates.findIndex((candidate) => candidate.artifact.id === artifact.id))} />
+                </div>
                 {!simple && <div className="action-group" role="group" aria-label="比較">
                   <IconButton icon={<span className="icon-glyph">A</span>} label="比較のAに置く" aria-pressed={artifact.id === leftId} onClick={() => setLeftId(artifact.id)} />
                   <IconButton icon={<span className="icon-glyph">B</span>} label="比較のBに置く" aria-pressed={artifact.id === rightId} onClick={() => setRightId(artifact.id)} />
@@ -492,6 +497,12 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
           </>}
         </dialog>
       </>}
+      <MediaViewer
+        items={candidates.map((candidate) => candidate.artifact)}
+        index={viewerIndex}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </section>
   );
 }
