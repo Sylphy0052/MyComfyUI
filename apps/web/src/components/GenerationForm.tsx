@@ -122,12 +122,14 @@ interface Props {
    * `scope` (Shotと工程) とPresetの組ごとに1回だけ入れ、その後の使用者の変更は上書きしない。
    * `negativePrompt`はキャラクターのnegative_promptの合成分 (#287)。Preset・入力欄の
    * ネガティブプロンプトの後ろへ`mergePrompt`でタグ順を揃えて追記する。
+   * `restore`と同時に有効なときは`restore`が優先する (#299)。復元した時点の`scope`とPresetの組は
+   * 適用済み扱いにし、その後に別の`scope`かPresetへ変わったときだけ、新しい組を入れる。
    */
   plan?: { scope: string; preset: PlanPreset | null; prompt: string; negativePrompt?: string } | null;
   /**
    * 生成済み画像の設定をフォームへ戻す。`key`が変わるたびに1回だけ入れる。
    * `recipeLineage`は元のRecipeから後継を辿ったID列 (古い順)。どれも選択肢に無ければ
-   * 現在のRecipeへ合う項目だけ入れる。
+   * 現在のRecipeへ合う項目だけ入れる。使用者の明示操作なので、`plan`より優先する (#299)。
    */
   restore?: {
     key: string;
@@ -135,6 +137,11 @@ interface Props {
     recipeLineage: string[];
     manifest: GenerationManifest;
   } | null;
+}
+
+/** 計画を適用済みにするかの判定に使う組。`scope` (Shotと工程) とPresetで決まる。 */
+function planKey(plan: { scope: string; preset: PlanPreset | null }): string {
+  return `${plan.scope}:${plan.preset?.profile.id ?? ""}`;
 }
 
 /** manifestの値をフォームの文字列へ直す。オブジェクトや配列は入力項目に対応しないので捨てる。 */
@@ -254,6 +261,11 @@ export function GenerationForm({
     }
   }, [recipe, allFields, defaultValues]);
 
+  const appliedPlanRef = useRef<string | null>(null);
+  // 計画が最後に入れたプロンプト。使用者が書き換えていなければ、工程を移ったときに入れ替える。
+  const planPromptRef = useRef<string | null>(null);
+  // 直前にキャラのnegative_promptを合成した結果と、合成したキャラ側の値 (#287)。
+  const planNegativeRef = useRef<{ merged: string; source: string } | null>(null);
   // 生成済み画像の設定を入れる。値は触った印を付け、Recipeを切り替える場合は上の効果で持ち越させる。
   const appliedRestoreRef = useRef<string | null>(null);
   useEffect(() => {
@@ -264,6 +276,11 @@ export function GenerationForm({
     // 初回表示でRecipeがまだ選ばれていなければ、選ばれてから入れる。
     if (!target) return;
     appliedRestoreRef.current = restore.key;
+    // 復元は計画より優先する (#299)。現在の計画は適用済みにして復元値を上書きさせず、
+    // 計画が入れたプロンプトの追跡も外して、後の工程移動で復元したプロンプトを入れ替えさせない。
+    if (plan) appliedPlanRef.current = planKey(plan);
+    planPromptRef.current = null;
+    planNegativeRef.current = null;
     const { manifest } = restore;
     const raw: Record<string, unknown> = {
       ...(manifest.parameters ?? {}),
@@ -300,18 +317,13 @@ export function GenerationForm({
           ? `元のRecipeは更新されているため、後継の「${original.name}」へ合う項目だけ入れました。`
           : null,
     );
-  }, [restore, recipes, recipe, recipeId]);
+  }, [restore, recipes, recipe, recipeId, plan]);
 
   // 計画のPresetとプロンプトを入れる。値は触った印を付け、上のRecipe変更の効果で持ち越させる。
-  const appliedPlanRef = useRef<string | null>(null);
-  // 計画が最後に入れたプロンプト。使用者が書き換えていなければ、工程を移ったときに入れ替える。
-  const planPromptRef = useRef<string | null>(null);
-  // 直前にキャラのnegative_promptを合成した結果と、合成したキャラ側の値 (#287)。
-  const planNegativeRef = useRef<{ merged: string; source: string } | null>(null);
   useEffect(() => {
     if (!plan || recipes.length === 0) return;
     const preset = plan.preset;
-    const key = `${plan.scope}:${preset?.profile.id ?? ""}`;
+    const key = planKey(plan);
     if (appliedPlanRef.current === key) return;
     appliedPlanRef.current = key;
     const filled: Record<string, string> = {};
