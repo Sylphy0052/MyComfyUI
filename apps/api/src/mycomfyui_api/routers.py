@@ -4419,7 +4419,9 @@ async def create_generation_prompt_revision(
         (image,),
     )
 
-    # manifestはモデル変数をmodelへ、残りをparametersへ分けて記録している。
+    # manifestはモデル変数をmodelへ、残りをparametersへ分けて記録している。parameters
+    # にはlook_profilesやprompt_revisionなどテンプレート変数でない記録も混ざるため、
+    # そのままinputsにせず、Recipeが受け付ける変数名だけに絞る。
     recorded = {**(manifest.parameters or {}), **(manifest.model or {})}
     inputs: dict[str, Any] = {
         key: value for key, value in recorded.items() if key in accepted
@@ -4441,20 +4443,26 @@ async def create_generation_prompt_revision(
         inputs=inputs,
         input_refs=[],
     )
-    new_job = await _submit_generation_job(
-        session,
-        source,
-        job_payload,
-        extra_parameters={
-            "prompt_revision": {
-                "source_job_id": job.id,
-                "source_artifact_id": artifact.id,
-                "instruction": payload.instruction,
-                "provider_id": provider.id,
-                "model": prompt.model,
-            }
-        },
-    )
+    try:
+        new_job = await _submit_generation_job(
+            session,
+            source,
+            job_payload,
+            extra_parameters={
+                "prompt_revision": {
+                    "source_job_id": job.id,
+                    "source_artifact_id": artifact.id,
+                    "instruction": payload.instruction,
+                    "provider_id": provider.id,
+                    "model": prompt.model,
+                }
+            },
+        )
+    except ApiError as error:
+        # 補完は済んでいるため、投入に失敗しても直したpromptを捨てずに返す。
+        details = error.details if isinstance(error.details, dict) else {}
+        error.details = {**details, "revised_prompt": prompt.model_dump()}
+        raise
     return schemas.GenerationPromptRevisionRead(
         job=schemas.GenerationJobRead.model_validate(new_job), prompt=prompt
     )

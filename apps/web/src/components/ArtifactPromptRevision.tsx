@@ -24,6 +24,8 @@ export function ArtifactPromptRevision({ artifactId, jobId, onRevisedJob }: Prop
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerationPromptRevision | null>(null);
+  // 投入に失敗しても、直したpromptはエラーの詳細から拾って見せる。
+  const [prompt, setPrompt] = useState<GenerationPromptRevision["prompt"] | null>(null);
 
   useEffect(() => {
     void api
@@ -33,12 +35,15 @@ export function ArtifactPromptRevision({ artifactId, jobId, onRevisedJob }: Prop
   }, []);
 
   const execute = async () => {
+    if (busy) return;
     if (!instruction.trim()) {
       setError("直したい点を入力してください。");
       return;
     }
     setBusy(true);
     setError(null);
+    setResult(null);
+    setPrompt(null);
     try {
       const revision = await api.revisePrompt(jobId, {
         artifact_id: artifactId,
@@ -46,10 +51,15 @@ export function ArtifactPromptRevision({ artifactId, jobId, onRevisedJob }: Prop
         provider_id: providerId || null,
       });
       setResult(revision);
+      setPrompt(revision.prompt);
       onRevisedJob(revision.job);
       notify({ tone: "success", message: "直したプロンプトで新しいJobを投入しました。" });
     } catch (cause) {
       setError(cause instanceof ApiError ? describeApiError(cause) : String(cause));
+      const details = cause instanceof ApiError ? cause.details : null;
+      if (details && typeof details === "object" && "revised_prompt" in details) {
+        setPrompt(details.revised_prompt as GenerationPromptRevision["prompt"]);
+      }
     } finally {
       setBusy(false);
     }
@@ -86,16 +96,20 @@ export function ArtifactPromptRevision({ artifactId, jobId, onRevisedJob }: Prop
         </button>
       </div>
       {error && <p className="error">{error}</p>}
-      {result && (
+      {prompt && (
         <dl className="kv">
           <dt>直した理由</dt>
-          <dd>{result.prompt.rationale}</dd>
+          <dd>{prompt.rationale}</dd>
           <dt>プロンプト</dt>
-          <dd>{result.prompt.positive_prompt}</dd>
+          <dd>{prompt.positive_prompt}</dd>
           <dt>ネガティブプロンプト</dt>
-          <dd>{result.prompt.negative_prompt}</dd>
-          <dt>新しいJob</dt>
-          <dd className="mono">{result.job.id}</dd>
+          <dd>{prompt.negative_prompt}</dd>
+          {result && (
+            <>
+              <dt>新しいJob</dt>
+              <dd className="mono">{result.job.id}</dd>
+            </>
+          )}
         </dl>
       )}
     </div>
