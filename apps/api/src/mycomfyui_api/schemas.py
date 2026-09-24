@@ -374,6 +374,17 @@ class ProjectCharacterOutfit(ApiModel):
     id: ResourceId
     name: ProjectName
     prompt: str = Field(default="", max_length=2_000)
+    # 「制服」「夏」のような整理用の分類タグ。生成プロンプトには合成しない (#309)。
+    tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=20)
+    # 画像から登録した衣装の元画像。`prompt`はこの画像のTagger抽出結果から作る (#309)。
+    image: ProjectReferenceImage | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("衣装の分類タグを重複させられません。")
+        return value
 
 
 class ProjectCharacterProfileExtraField(ApiModel):
@@ -420,11 +431,11 @@ class ProjectCharacterProfile(ApiModel):
     negative_prompt: str | None = Field(default=None, max_length=2_000)
     # 性格などのプロフィール。画像生成のプロンプトには合成しない (#287)。
     profile: ProjectCharacterPersonalProfile | None = None
-    outfits: list[ProjectCharacterOutfit] = Field(default_factory=list, max_length=20)
+    outfits: list[ProjectCharacterOutfit] = Field(default_factory=list, max_length=100)
     default_outfit_id: ResourceId | None = None
     # 衣装ごとの参照画像セット。衣装が変わったときだけ新しいセットになる。
     reference_sets: list[ProjectReferenceSet] = Field(
-        default_factory=list, max_length=21
+        default_factory=list, max_length=101
     )
     # 定義を最後に変えた時刻。保存時にサーバーが付け、クライアントの値は使わない。
     updated_at: str | None = None

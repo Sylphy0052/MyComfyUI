@@ -724,6 +724,9 @@ def _validate_local_reference_images(payload: schemas.ProjectLocalOverrides) -> 
     verified: dict[str, tuple[int, str, str | None]] = {}
     for character in payload.characters:
         references = list(character.reference_images)
+        references.extend(
+            outfit.image for outfit in character.outfits if outfit.image is not None
+        )
         for reference_set in character.reference_sets:
             references.extend(
                 slot.image

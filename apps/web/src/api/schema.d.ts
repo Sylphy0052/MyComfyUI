@@ -3868,6 +3868,7 @@ export interface components {
         ProjectCharacterOutfit: {
             /** Id */
             id: string;
+            image?: components["schemas"]["ProjectReferenceImage"] | null;
             /** Name */
             name: string;
             /**
@@ -3875,6 +3876,8 @@ export interface components {
              * @default
              */
             prompt: string;
+            /** Tags */
+            tags?: string[];
         };
         /**
          * ProjectCharacterPersonalProfile
