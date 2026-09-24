@@ -10786,7 +10786,7 @@
     },
     "/api/v1/generation-jobs/{job_id}/prompt-revisions": {
       "post": {
-        "description": "生成済み画像への指示でpromptを直し、新しいJobとして再投入する(#303)。\n\n元Jobの入力をRecipeが受け付ける範囲で引き継ぎ、positive_prompt、negative_promptを\n補完結果へ、seedを元の実値へ差し替える。Look Profileの値はresolved_promptと\nparametersへ合成済みのため、look_profile_idsは渡さない (渡すと二重に掛かる)。\n画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJobは\nProviderを呼ぶ前に``PROMPT_REVISION_UNSUPPORTED``で断る。",
+        "description": "生成済み画像への指示でpromptを直し、新しいJobとして再投入する(#303)。\n\n元Jobの入力をRecipeが受け付ける範囲で引き継ぎ、positive_prompt、negative_promptを\n補完結果へ、seedを元の実値へ差し替える。Look Profileの値はresolved_promptと\nparametersへ合成済みのため、look_profile_idsは渡さない (渡すと二重に掛かる)。\n画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJob、\nseedを受け付けないRecipeのJobは\nProviderを呼ぶ前に``PROMPT_REVISION_UNSUPPORTED``で断る。",
         "operationId": "create_generation_prompt_revision_api_v1_generation_jobs__job_id__prompt_revisions_post",
         "parameters": [
           {
