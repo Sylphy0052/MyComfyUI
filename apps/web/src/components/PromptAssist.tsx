@@ -161,7 +161,7 @@ export function PromptAssistField({
           onChange={(event) => setProviderId(event.target.value as AgentProviderId | "")}
         >
           <option value="">
-            既定のAI
+            既定のAI{defaultProvider ? ` (${defaultProvider.label})` : ""}
             {withImage && defaultProvider?.supports_images === false ? " (画像非対応)" : ""}
           </option>
           {providers.map((provider) => (
