@@ -1816,6 +1816,7 @@ export function App() {
                 )}
                 {runningJob && (
                   <JobProgressPanel
+                    key={runningJob.id}
                     job={runningJob}
                     progress={
                       jobProgress?.jobId === runningJob.id ? jobProgress : null
