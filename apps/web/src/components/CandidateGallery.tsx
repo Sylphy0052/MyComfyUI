@@ -248,7 +248,9 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   };
 
   useEffect(() => {
-    // モードBでは比較のA/Bと全画面を出さないため、選択中の候補への採否と候補の移動だけを受け付ける。
+    // ラボ: F (全画面) / A・X・U (採否) / [・] (比較のA・B) / ←・→ (候補の移動)。
+    // モードB (simple) は比較のA/Bと全画面を出さないため、F・[・]を受け付けず、
+    // 採否と候補の移動だけを受け付ける。`!simple` で判定するのはFと[・]の2か所だけにしておく。
     if (!active || viewerIndex !== null) return;
     const keydown = (event: KeyboardEvent) => {
       // ショートカット一覧など、全画面比較以外のdialogを開いている間は背後の候補を操作しない。
@@ -277,10 +279,13 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
       if (activeId && !event.repeat && activeId !== busyArtifactId && key === "u") {
         event.preventDefault(); onDecide(activeId, "undecided"); return;
       }
+      // フォーカス中のボタン・リンクでは[・]と矢印を候補の操作に使わない。keydownのtargetは
+      // フォーカス中の要素自身で、ボタン・リンクの中にフォーカスできる要素は置かないため、
+      // 入力欄の判定と違いclosestでなくmatchesで足りる。
       if (target?.matches("button, a")) return;
-      if (!simple && event.key === "[") setActiveSide("A");
-      else if (!simple && event.key === "]") setActiveSide("B");
-      else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && candidates.length) {
+      if (!simple && (event.key === "[" || event.key === "]")) {
+        setActiveSide(event.key === "[" ? "A" : "B");
+      } else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && candidates.length) {
         event.preventDefault();
         const index = Math.max(0, candidates.findIndex(({ artifact }) => artifact.id === activeId));
         const delta = event.key === "ArrowRight" ? 1 : -1;

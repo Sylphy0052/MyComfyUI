@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ignoresShortcut } from "./ui/shortcuts";
 
-const GROUPS: { title: string; items: [string, string][] }[] = [
+const GROUPS: { title: string; items: [key: string, description: string][] }[] = [
   {
     title: "作品制作 (モードB)",
     items: [
@@ -40,6 +40,8 @@ export function ShortcutHelp() {
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       // ?はShiftと併用して打つため、ignoresShortcutの修飾キー判定 (Shiftを含まない) で弾かれない。
+      // 全画面比較などのdialogを開いている間は、ignoresShortcutにより一覧を開かない。
+      // モーダルの上に一覧を重ねず、「dialogの表示中は背後のショートカットを受けない」規則を1つに保つため。
       if (event.key !== "?" || ignoresShortcut(event)) return;
       event.preventDefault();
       setOpen(true);
