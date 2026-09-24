@@ -23,6 +23,7 @@ import type {
 import { AgentPanel } from "./components/AgentPanel";
 import { AssetBrowser } from "./components/AssetBrowser";
 import { CandidateGallery } from "./components/CandidateGallery";
+import { LatestImageViewer } from "./components/LatestImageViewer";
 import { CharacterManager } from "./components/CharacterManager";
 import type { Candidate } from "./components/CandidateGallery";
 import { ComposePanel } from "./components/ComposePanel";
@@ -964,7 +965,8 @@ export function App() {
 
   const refreshJobs = useCallback(async () => {
     const sequence = ++jobsRequestSequence.current;
-    const list = await api.listJobs(jobScope);
+    // 新しい Job を上に出す。limit があるため並べ替えは API 側で行う。
+    const list = await api.listJobs({ ...jobScope, order: "desc" });
     if (sequence !== jobsRequestSequence.current) return;
     setJobs(list);
 
@@ -1202,6 +1204,28 @@ export function App() {
       left.artifact.created_at.localeCompare(right.artifact.created_at),
     );
   }, [artifactsByJob]);
+  // 最新画像ビューアには、成功した Job のうち queue_sequence が最大のものを出す。
+  const latestSucceededJob = useMemo(
+    () =>
+      jobs.reduce<GenerationJob | null>(
+        (latest, job) =>
+          job.state === "succeeded" &&
+          (!latest || job.queue_sequence > latest.queue_sequence)
+            ? job
+            : latest,
+        null,
+      ),
+    [jobs],
+  );
+  const latestImages = useMemo(
+    () =>
+      latestSucceededJob
+        ? (artifactsByJob[latestSucceededJob.id] ?? []).filter(
+            (artifact) => artifact.kind === "image",
+          )
+        : [],
+    [artifactsByJob, latestSucceededJob],
+  );
   const visibleCandidates = useMemo(
     () => {
       if (!comparisonJobIds) return candidates;
@@ -1777,6 +1801,10 @@ export function App() {
                     onClose={() => setPromotionArtifactId(null)}
                   />
                 )}
+                <LatestImageViewer
+                  job={latestSucceededJob}
+                  images={latestImages}
+                />
                 <CandidateGallery
                   candidates={visibleCandidates}
                   busyArtifactId={busyArtifactId}

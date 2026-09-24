@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any, Literal, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
@@ -1598,8 +1598,11 @@ async def list_generation_jobs(
     unassigned: bool = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    order: Literal["asc", "desc"] = "asc",
 ):
     """キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。
+
+    `order=desc`で新しいJobから返す。limitは並べ替えの後に掛かる。
 
     `project_id`、`scene_id`、`shot_id`は現在の整理先と突き合わせる。`unassigned`は
     現在Projectに所属しないJobだけへ絞る。生成時参照とManifestは所属変更で変えない。
@@ -1610,9 +1613,11 @@ async def list_generation_jobs(
         raise _validation_error(
             "unassignedとProjectコンテキストの絞り込みは同時に指定できません。"
         )
-    query = select(GenerationJob).order_by(
-        GenerationJob.queue_sequence.asc(), GenerationJob.id.asc()
-    )
+    if order == "desc":
+        ordering = (GenerationJob.queue_sequence.desc(), GenerationJob.id.desc())
+    else:
+        ordering = (GenerationJob.queue_sequence.asc(), GenerationJob.id.asc())
+    query = select(GenerationJob).order_by(*ordering)
     if state is not None:
         query = query.where(GenerationJob.state == state)
     if project_id is not None:
