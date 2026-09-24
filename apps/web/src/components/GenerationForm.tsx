@@ -126,9 +126,15 @@ interface Props {
   plan?: { scope: string; preset: PlanPreset | null; prompt: string; negativePrompt?: string } | null;
   /**
    * 生成済み画像の設定をフォームへ戻す。`key`が変わるたびに1回だけ入れる。
-   * `recipeId`が選択肢に無ければ現在のRecipeへ合う項目だけ入れる。
+   * `recipeLineage`は元のRecipeから後継を辿ったID列 (古い順)。どれも選択肢に無ければ
+   * 現在のRecipeへ合う項目だけ入れる。
    */
-  restore?: { key: string; recipeId: string | null; manifest: GenerationManifest } | null;
+  restore?: {
+    key: string;
+    recipeId: string | null;
+    recipeLineage: string[];
+    manifest: GenerationManifest;
+  } | null;
 }
 
 /** manifestの値をフォームの文字列へ直す。オブジェクトや配列は入力項目に対応しないので捨てる。 */
@@ -139,16 +145,12 @@ function manifestText(value: unknown): string | null {
 }
 
 /**
- * 復元先のRecipe。元のRecipeが更新されて一覧から外れていれば、一覧にある後継を使う。
+ * 復元先のRecipe。元のRecipeが更新されて一覧から外れていれば、系譜のうち一覧にある後継を使う。
  */
-function findRecipeOrSuccessor(recipes: Recipe[], recipeId: string | null): Recipe | null {
-  let current = recipeId;
-  const seen = new Set<string>();
-  while (current && !seen.has(current)) {
-    seen.add(current);
-    const found = recipes.find((item) => item.id === current);
+function findRecipeOrSuccessor(recipes: Recipe[], lineage: string[]): Recipe | null {
+  for (const id of lineage) {
+    const found = recipes.find((item) => item.id === id);
     if (found) return found;
-    current = recipes.find((item) => item.supersedes_recipe_id === current)?.id ?? null;
   }
   return null;
 }
@@ -257,7 +259,7 @@ export function GenerationForm({
   useEffect(() => {
     if (!restore || recipes.length === 0) return;
     if (appliedRestoreRef.current === restore.key) return;
-    const original = findRecipeOrSuccessor(recipes, restore.recipeId);
+    const original = findRecipeOrSuccessor(recipes, restore.recipeLineage);
     const target = original ?? recipe;
     // 初回表示でRecipeがまだ選ばれていなければ、選ばれてから入れる。
     if (!target) return;

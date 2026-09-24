@@ -186,6 +186,19 @@ function describe(error: unknown): string {
   return String(error);
 }
 
+/**
+ * `recipeId`から後継を辿った版のID列 (古い順)。`recipes`は後継に置き換えられた版も含む全版を渡す。
+ */
+function recipeLineage(recipes: Recipe[], recipeId: string): string[] {
+  const lineage: string[] = [];
+  let current: string | null = recipeId;
+  while (current && !lineage.includes(current)) {
+    lineage.push(current);
+    current = recipes.find((item) => item.supersedes_recipe_id === current)?.id ?? null;
+  }
+  return lineage;
+}
+
 function recipeTemplateName(recipe: Recipe): string {
   const reference = recipe.workflow_template_ref as Record<string, unknown>;
   return typeof reference?.name === "string" ? reference.name : "";
@@ -491,6 +504,7 @@ export function App() {
   const [generationRestore, setGenerationRestore] = useState<{
     key: string;
     recipeId: string | null;
+    recipeLineage: string[];
     manifest: GenerationManifest;
   } | null>(null);
   const restoreSequenceRef = useRef(0);
@@ -1479,15 +1493,28 @@ export function App() {
   /** 生成済み画像の生成条件を生成フォームへ入れ、フォームを開く。 */
   const applyGenerationSettings = (job: GenerationJob, manifest: GenerationManifest) => {
     restoreSequenceRef.current += 1;
-    setGenerationRestore({
-      key: `${manifest.id}:${restoreSequenceRef.current}`,
-      recipeId: job.recipe_id,
-      manifest,
-    });
-    setGenerationTab("image");
-    setImageSubTab("generate");
-    setView("generate");
-    notify({ tone: "success", message: "画像の生成条件を生成フォームへ入れました。" });
+    const sequence = restoreSequenceRef.current;
+    const recipeId = job.recipe_id;
+    // 一覧APIは最新版しか返さないため、更新が重なっても後継へ辿れるよう全版から系譜を作る。
+    const lineage = recipeId
+      ? api.listRecipes("image", { latest: false }).then((all) => recipeLineage(all, recipeId))
+      : Promise.resolve<string[]>([]);
+    lineage
+      .then((ids) => {
+        // 取得を待つ間に別の画像で押し直されたら、古い方は入れない。
+        if (sequence !== restoreSequenceRef.current) return;
+        setGenerationRestore({
+          key: `${manifest.id}:${sequence}`,
+          recipeId,
+          recipeLineage: ids,
+          manifest,
+        });
+        setGenerationTab("image");
+        setImageSubTab("generate");
+        setView("generate");
+        notify({ tone: "success", message: "画像の生成条件を生成フォームへ入れました。" });
+      })
+      .catch((cause) => setError(describe(cause)));
   };
 
   const handleGenerationTabKeyDown = (

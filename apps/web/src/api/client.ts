@@ -208,9 +208,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listRecipes: (kind?: string) => {
-    const query = kind ? `?kind=${encodeURIComponent(kind)}` : "";
-    return request<Recipe[]>(`/recipes${query}`);
+  listRecipes: (kind?: string, options?: { latest?: boolean }) => {
+    const params = new URLSearchParams();
+    if (kind) params.set("kind", kind);
+    if (options?.latest === false) params.set("latest", "false");
+    const query = params.toString();
+    return request<Recipe[]>(`/recipes${query ? `?${query}` : ""}`);
   },
 
   listLookProfiles: (params?: { kind?: string; category?: string; query?: string; limit?: number; offset?: number }) => {
