@@ -174,21 +174,21 @@ export function MediaViewer({ items, index, onIndexChange, onClose }: Props) {
   }, [itemsChanged, items, index, onClose, onIndexChange]);
 
   useEffect(() => {
-    if (!open || index === null) return;
+    if (!open || viewIndex === null) return;
     const keydown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
       if (items.length > 1 && event.key === "ArrowRight") {
         event.preventDefault();
-        onIndexChange((index + 1) % items.length);
+        onIndexChange((viewIndex + 1) % items.length);
       } else if (items.length > 1 && event.key === "ArrowLeft") {
         event.preventDefault();
-        onIndexChange((index - 1 + items.length) % items.length);
+        onIndexChange((viewIndex - 1 + items.length) % items.length);
       }
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [open, index, items.length, onIndexChange]);
+  }, [open, viewIndex, items.length, onIndexChange]);
 
   return (
     <dialog
