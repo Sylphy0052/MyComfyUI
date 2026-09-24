@@ -65,7 +65,7 @@ import {
   readProductionPlan,
 } from "./state/productionPlan";
 import type { ProductionPlan } from "./state/productionPlan";
-import { characterPrompt } from "./state/characterPrompt";
+import { characterNegativePrompt, characterPrompt } from "./state/characterPrompt";
 import type { SceneOutfits } from "./state/characterPrompt";
 import { sceneReferenceImages } from "./state/referenceSlots";
 import { subscribeLookProfilesChanged } from "./preset/productionChoices";
@@ -681,10 +681,16 @@ export function App() {
       imagePlanSlot === "character"
         ? characterPrompt(activePlan.characters, localCharacters, sceneOutfits, sceneId)
         : backgroundPrompt(activePlan);
+    // ネガティブプロンプトはキャラクター工程でだけ、選択中キャラのnegative_promptを合成する。
+    const negativePrompt =
+      imagePlanSlot === "character"
+        ? characterNegativePrompt(activePlan.characters, localCharacters)
+        : "";
     return {
       scope: `${activePlan.sceneId}:${shotId ?? ""}:${imagePlanSlot}`,
       preset: planPresets[imagePlanSlot],
       prompt,
+      negativePrompt,
     };
   }, [activePlan, imagePlanSlot, planPresets, shotId, localCharacters, sceneOutfits, sceneId]);
   const planMusic = useMemo(

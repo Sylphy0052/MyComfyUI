@@ -3,7 +3,8 @@
  *
  * 計画で選んだキャラクター (`NamedItem`) を、Projectのローカルキャラクター定義
  * (`ProjectCharacterProfile`) と場面ごとの衣装指定 (`scene_outfits`) へ突き合わせ、
- * 「名前, 外見, 衣装プロンプト」を空要素を除いて連結する。API・DBは変えない純関数。
+ * 「名前, 外見, prompt, 衣装プロンプト」を空要素を除いて連結する。API・DBは変えない純関数。
+ * ネガティブプロンプトの合成は`characterNegativePrompt` (#287) を参照。
  */
 import type { ProjectCharacterProfile } from "../api/client";
 import type { NamedItem } from "./productionPlan";
@@ -48,10 +49,25 @@ export function characterPrompt(
       const parts = [
         character.name,
         character.appearance ?? "",
+        character.prompt ?? "",
         selectedOutfitPrompt(character, outfitSelections[character.id]),
       ].filter((part) => part.trim().length > 0);
       return parts.join(", ");
     })
     .filter((part) => part.length > 0)
+    .join(", ");
+}
+
+/**
+ * キャラクター工程のネガティブプロンプトを組む。選択中キャラの`negative_prompt`を
+ * 空要素を除いて連結する。ローカル定義が無いキャラクターは寄与しない。
+ */
+export function characterNegativePrompt(
+  items: readonly NamedItem[],
+  characters: readonly ProjectCharacterProfile[],
+): string {
+  return items
+    .map((item) => findLocalCharacter(item, characters)?.negative_prompt ?? "")
+    .filter((part) => part.trim().length > 0)
     .join(", ");
 }

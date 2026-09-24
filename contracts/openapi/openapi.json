@@ -4731,6 +4731,82 @@
         "title": "ProjectCharacterOutfit",
         "type": "object"
       },
+      "ProjectCharacterPersonalProfile": {
+        "additionalProperties": false,
+        "description": "キャラクターの性格などのプロフィール (#287)。生成プロンプトへは合成しない。",
+        "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "background": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background"
+          },
+          "extra": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectCharacterProfileExtraField"
+            },
+            "maxItems": 30,
+            "title": "Extra",
+            "type": "array"
+          },
+          "first_person": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Person"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
+          },
+          "speech_style": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speech Style"
+          }
+        },
+        "title": "ProjectCharacterPersonalProfile",
+        "type": "object"
+      },
       "ProjectCharacterProfile": {
         "additionalProperties": false,
         "properties": {
@@ -4771,6 +4847,18 @@
             "title": "Name",
             "type": "string"
           },
+          "negative_prompt": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negative Prompt"
+          },
           "outfits": {
             "items": {
               "$ref": "#/components/schemas/ProjectCharacterOutfit"
@@ -4778,6 +4866,28 @@
             "maxItems": 20,
             "title": "Outfits",
             "type": "array"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectCharacterPersonalProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
           },
           "reference_images": {
             "items": {
@@ -4834,6 +4944,28 @@
           "name"
         ],
         "title": "ProjectCharacterProfile",
+        "type": "object"
+      },
+      "ProjectCharacterProfileExtraField": {
+        "additionalProperties": false,
+        "description": "プロフィールの自由項目1件。固定5項目に無い情報を任意のkey/valueで持たせる。",
+        "properties": {
+          "key": {
+            "maxLength": 120,
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 2000,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "ProjectCharacterProfileExtraField",
         "type": "object"
       },
       "ProjectCloneRequest": {

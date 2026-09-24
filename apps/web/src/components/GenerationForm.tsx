@@ -119,8 +119,10 @@ interface Props {
   /**
    * 作品制作の計画で開始済みのとき、この工程へ入れるPresetとプロンプト。
    * `scope` (Shotと工程) とPresetの組ごとに1回だけ入れ、その後の使用者の変更は上書きしない。
+   * `negativePrompt`はキャラクターのnegative_promptの合成分 (#287)。Preset・入力欄の
+   * ネガティブプロンプトの後ろへ`mergePrompt`でタグ順を揃えて追記する。
    */
-  plan?: { scope: string; preset: PlanPreset | null; prompt: string } | null;
+  plan?: { scope: string; preset: PlanPreset | null; prompt: string; negativePrompt?: string } | null;
 }
 
 export function GenerationForm({
@@ -216,6 +218,8 @@ export function GenerationForm({
   const appliedPlanRef = useRef<string | null>(null);
   // 計画が最後に入れたプロンプト。使用者が書き換えていなければ、工程を移ったときに入れ替える。
   const planPromptRef = useRef<string | null>(null);
+  // 直前にキャラのnegative_promptを合成した結果と、合成したキャラ側の値 (#287)。
+  const planNegativeRef = useRef<{ merged: string; source: string } | null>(null);
   useEffect(() => {
     if (!plan || recipes.length === 0) return;
     const preset = plan.preset;
@@ -238,6 +242,23 @@ export function GenerationForm({
     if (plan.prompt && (!currentPrompt.trim() || currentPrompt === planPromptRef.current)) {
       filled.positive_prompt = plan.prompt;
       planPromptRef.current = plan.prompt;
+    }
+    // キャラクターのnegative_promptは、Presetまたは入力欄の既存値の後ろへ追記する (#287)。
+    // 同じキャラの値を合成済みで、その後に使用者が欄を変えていれば上書きしない。
+    const currentNegative = valuesRef.current.negative_prompt ?? "";
+    const lastNegative = planNegativeRef.current;
+    const negativeEdited =
+      lastNegative !== null &&
+      lastNegative.source === plan.negativePrompt &&
+      lastNegative.merged !== currentNegative;
+    if (
+      plan.negativePrompt &&
+      plan.negativePrompt.trim() &&
+      (filled.negative_prompt !== undefined || !negativeEdited)
+    ) {
+      const baseNegative = filled.negative_prompt ?? currentNegative;
+      filled.negative_prompt = mergePrompt(baseNegative, plan.negativePrompt).prompt;
+      planNegativeRef.current = { merged: filled.negative_prompt, source: plan.negativePrompt };
     }
     if (Object.keys(filled).length === 0) return;
     setValues((current) => ({ ...current, ...filled }));

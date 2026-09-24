@@ -3876,6 +3876,24 @@ export interface components {
              */
             prompt: string;
         };
+        /**
+         * ProjectCharacterPersonalProfile
+         * @description キャラクターの性格などのプロフィール (#287)。生成プロンプトへは合成しない。
+         */
+        ProjectCharacterPersonalProfile: {
+            /** Age */
+            age?: string | null;
+            /** Background */
+            background?: string | null;
+            /** Extra */
+            extra?: components["schemas"]["ProjectCharacterProfileExtraField"][];
+            /** First Person */
+            first_person?: string | null;
+            /** Personality */
+            personality?: string | null;
+            /** Speech Style */
+            speech_style?: string | null;
+        };
         /** ProjectCharacterProfile */
         ProjectCharacterProfile: {
             /** Appearance */
@@ -3886,8 +3904,13 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Negative Prompt */
+            negative_prompt?: string | null;
             /** Outfits */
             outfits?: components["schemas"]["ProjectCharacterOutfit"][];
+            profile?: components["schemas"]["ProjectCharacterPersonalProfile"] | null;
+            /** Prompt */
+            prompt?: string | null;
             /** Reference Images */
             reference_images?: components["schemas"]["ProjectReferenceImage"][];
             /** Reference Sets */
@@ -3898,6 +3921,16 @@ export interface components {
             updated_at?: string | null;
             /** Voice */
             voice?: string | null;
+        };
+        /**
+         * ProjectCharacterProfileExtraField
+         * @description プロフィールの自由項目1件。固定5項目に無い情報を任意のkey/valueで持たせる。
+         */
+        ProjectCharacterProfileExtraField: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
         };
         /** ProjectCloneRequest */
         ProjectCloneRequest: {
