@@ -188,6 +188,7 @@ function describe(error: unknown): string {
 
 /**
  * `recipeId`から後継を辿った版のID列 (古い順)。`recipes`は後継に置き換えられた版も含む全版を渡す。
+ * 後継は直近の版へ結ぶ運用 (bootstrap) のため、同じ版を指す後継は高々1件とみなし最初の1件を使う。
  */
 function recipeLineage(recipes: Recipe[], recipeId: string): string[] {
   const lineage: string[] = [];

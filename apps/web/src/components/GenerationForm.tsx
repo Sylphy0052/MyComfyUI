@@ -292,7 +292,9 @@ export function GenerationForm({
       setModelValues(models);
     }
     setRestoreNotice(
-      !original
+      !restore.recipeId
+        ? "元のRecipeが記録されていないため、現在のRecipeへ合う項目だけ入れました。"
+        : !original
         ? "元のRecipeが選択肢に無いため、現在のRecipeへ合う項目だけ入れました。"
         : original.id !== restore.recipeId
           ? `元のRecipeは更新されているため、後継の「${original.name}」へ合う項目だけ入れました。`
