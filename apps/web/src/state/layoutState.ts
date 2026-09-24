@@ -31,8 +31,8 @@ export const DEFAULT_PANE_LAYOUT_STATE: PaneLayoutState = {
 
 const STORAGE_KEY = "mycomfyui.layout.v1";
 
-export function clampPaneWidth(value: number): number {
-  if (Number.isNaN(value)) return DEFAULT_PANE_WIDTHS.sceneBrowser;
+export function clampPaneWidth(value: number, paneId: PaneId): number {
+  if (Number.isNaN(value)) return DEFAULT_PANE_WIDTHS[paneId];
   return Math.min(MAX_PANE_WIDTH, Math.max(MIN_PANE_WIDTH, Math.round(value)));
 }
 
@@ -67,7 +67,7 @@ export function readPaneLayoutState(): PaneLayoutState {
     for (const paneId of PANE_IDS) {
       const value = (rawWidths as Record<string, unknown>)[paneId];
       if (typeof value === "number" && Number.isFinite(value)) {
-        widths[paneId] = clampPaneWidth(value);
+        widths[paneId] = clampPaneWidth(value, paneId);
       }
     }
   }

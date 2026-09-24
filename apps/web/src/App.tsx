@@ -203,35 +203,55 @@ export function App() {
     side: "left" | "right";
     startX: number;
     startWidth: number;
+    pointerId: number;
   } | null>(null);
   const paneLayoutRef = useRef(paneLayout);
   paneLayoutRef.current = paneLayout;
 
   useEffect(() => {
+    function clearPaneDrag() {
+      paneDragRef.current = null;
+      delete appRef.current?.dataset.paneDragging;
+    }
+    function finishPaneDrag() {
+      clearPaneDrag();
+      persistPaneLayoutState(paneLayoutRef.current);
+    }
     function handlePointerMove(event: PointerEvent) {
       const drag = paneDragRef.current;
-      if (!drag) return;
+      // 掴んでいるポインタ以外(ペンのhoverや別の指)の動きは無視する。
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (event.buttons === 0) {
+        // pointerupもpointercancelも届かずにボタンが離されていた場合の防御。
+        finishPaneDrag();
+        return;
+      }
       const deltaX = event.clientX - drag.startX;
       const signedDelta = drag.side === "left" ? deltaX : -deltaX;
-      const nextWidth = clampPaneWidth(drag.startWidth + signedDelta);
+      const nextWidth = clampPaneWidth(
+        drag.startWidth + signedDelta,
+        drag.paneId,
+      );
       setPaneLayout((previous) => ({
         ...previous,
         widths: { ...previous.widths, [drag.paneId]: nextWidth },
       }));
     }
-    function handlePointerUp() {
-      if (!paneDragRef.current) return;
-      paneDragRef.current = null;
-      persistPaneLayoutState(paneLayoutRef.current);
+    function handlePointerUp(event: PointerEvent) {
+      const drag = paneDragRef.current;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      finishPaneDrag();
     }
-    function handlePointerCancel() {
+    function handlePointerCancel(event: PointerEvent) {
       // ドラッグ中にポインタが失われた場合も掴んだ状態を残さない。
-      paneDragRef.current = null;
+      if (event.pointerId !== paneDragRef.current?.pointerId) return;
+      clearPaneDrag();
     }
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
     return () => {
+      clearPaneDrag();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
@@ -242,12 +262,20 @@ export function App() {
     (paneId: PaneId, side: "left" | "right") =>
       (event: ReactPointerEvent<HTMLDivElement>) => {
         event.preventDefault();
+        try {
+          // ハンドル外へ出ても、window外でボタンを離してもpointerupを受け取れるようにする。
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // キャプチャできなくても、windowのリスナーだけでドラッグは続けられる。
+        }
         paneDragRef.current = {
           paneId,
           side,
+          pointerId: event.pointerId,
           startX: event.clientX,
           startWidth: paneLayoutRef.current.widths[paneId],
         };
+        if (appRef.current) appRef.current.dataset.paneDragging = "true";
       },
     [],
   );
@@ -265,7 +293,10 @@ export function App() {
       if (step === undefined) return;
       event.preventDefault();
       setPaneLayout((previous) => {
-        const nextWidth = clampPaneWidth(previous.widths[paneId] + step);
+        const nextWidth = clampPaneWidth(
+          previous.widths[paneId] + step,
+          paneId,
+        );
         const next: PaneLayoutState = {
           ...previous,
           widths: { ...previous.widths, [paneId]: nextWidth },

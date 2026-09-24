@@ -210,6 +210,11 @@ body {
   opacity: 0.4;
 }
 
+/* ペインのドラッグ中にテキストが選択されるのを防ぐ。 */
+.app[data-pane-dragging] {
+  user-select: none;
+}
+
 .pane-resize-handle[data-side="left"] {
   right: calc(var(--space-6) / -2 - 4px);
 }
