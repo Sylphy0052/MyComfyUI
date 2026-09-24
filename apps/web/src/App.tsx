@@ -1491,6 +1491,14 @@ export function App() {
     void refreshJobs().catch((cause) => setError(describe(cause)));
   };
 
+  /**
+   * 指示でプロンプトを直した新しいJobは一覧へ反映するだけにし、選択は元のJobに残す (#303)。
+   * 選択を移すと元画像の詳細が閉じ、直したプロンプトの表示も消える。
+   */
+  const handleRevisedJob = () => {
+    void refreshJobs().catch((cause) => setError(describe(cause)));
+  };
+
   /** 生成済み画像の生成条件を生成フォームへ入れ、フォームを開く。 */
   const applyGenerationSettings = (job: GenerationJob, manifest: GenerationManifest) => {
     restoreSequenceRef.current += 1;
@@ -1897,7 +1905,7 @@ export function App() {
                   }}
                   onPromoteToPreset={setPromotionArtifactId}
                   onApplySettings={applyGenerationSettings}
-                  onRevisedJob={handleDerivedJob}
+                  onRevisedJob={handleRevisedJob}
                   active={shownView === "generate" && shownGenerationTab === "image"}
                   simple={isProduction}
                   comparisonActive={comparisonJobIds !== null}

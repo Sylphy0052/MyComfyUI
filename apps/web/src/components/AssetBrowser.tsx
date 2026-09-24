@@ -339,11 +339,13 @@ export function AssetBrowser({
 
   const lineageActive = lineageArtifactId !== null || lineageJobId !== null;
 
-  /** プロンプトを直して投入した新しいJobも、再実行と同じようにキューへ反映する (#303)。 */
+  /**
+   * プロンプトを直して投入した新しいJobも、再実行と同じようにキューへ反映する (#303)。
+   * 詳細は取り直さない。取り直すと詳細が一度消え、直したプロンプトの表示も消える。
+   */
   const handleRevisedJob = (job: GenerationJob) => {
     onRerunJob(job);
     setReloadToken((current) => current + 1);
-    setDetailToken((current) => current + 1);
   };
 
   /** 選択中のArtifactを作ったJobを、当時の条件または現在のCanonで実行し直す。 */

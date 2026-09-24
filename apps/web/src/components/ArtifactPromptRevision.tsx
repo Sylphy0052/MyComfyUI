@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { AgentProvider, AgentProviderId, GenerationJob, GenerationPromptRevision } from "../api/client";
@@ -18,6 +18,9 @@ interface Props {
  */
 export function ArtifactPromptRevision({ artifactId, jobId, onRevisedJob }: Props) {
   const notify = useNotify();
+  // 候補一覧と資産ブラウザで同時に描画されるため、labelの対応先をインスタンスごとに分ける。
+  const instructionId = useId();
+  const providerSelectId = useId();
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [instruction, setInstruction] = useState("");
   const [providerId, setProviderId] = useState<AgentProviderId | "">("");
@@ -68,18 +71,18 @@ export function ArtifactPromptRevision({ artifactId, jobId, onRevisedJob }: Prop
   return (
     <div className="stack">
       <h3>この画像を見てプロンプトを直す</h3>
-      <label htmlFor="prompt-revision-instruction">直したい点</label>
+      <label htmlFor={instructionId}>直したい点</label>
       <textarea
-        id="prompt-revision-instruction"
+        id={instructionId}
         value={instruction}
         onChange={(event) => setInstruction(event.target.value)}
         placeholder="例: 髪がはねすぎ。もっと引いた構図に。"
         disabled={busy}
       />
       <div className="row">
-        <label htmlFor="prompt-revision-provider">AI</label>
+        <label htmlFor={providerSelectId}>AI</label>
         <select
-          id="prompt-revision-provider"
+          id={providerSelectId}
           value={providerId}
           onChange={(event) => setProviderId(event.target.value as AgentProviderId | "")}
           disabled={busy}
