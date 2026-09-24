@@ -19,6 +19,9 @@ export const ROW_DENSITY_OPTIONS = [
   { value: "compact", label: "詰め" },
 ] as const;
 
+/** 一覧の種類を問わず形式の候補を同じ形で扱うための型。 */
+type DensityOption = { readonly value: string; readonly label: string };
+
 const LIST_DENSITY_OPTIONS = {
   candidates: GALLERY_DENSITY_OPTIONS,
   assets: GALLERY_DENSITY_OPTIONS,
@@ -40,6 +43,10 @@ const DEFAULT_LIST_DENSITY: { [K in DensityListId]: ListDensity<K> } = {
 
 const STORAGE_KEY = "mycomfyui.density.v1";
 
+/**
+ * localStorageが使えない・JSONとして読めない・オブジェクトでない場合は空として扱う。
+ * 空なら各一覧はreadListDensityで既定値へ戻り、壊れた保存値は次の切替時に上書きされる。
+ */
 function readStoredDensityMap(): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}");
@@ -54,7 +61,7 @@ function readStoredDensityMap(): Record<string, unknown> {
 /** 保存値が壊れているか、形式の候補から外れていれば、一覧ごとの既定値へ戻す。 */
 export function readListDensity<K extends DensityListId>(listId: K): ListDensity<K> {
   const stored = readStoredDensityMap()[listId];
-  const options: readonly { value: string }[] = LIST_DENSITY_OPTIONS[listId];
+  const options: readonly DensityOption[] = LIST_DENSITY_OPTIONS[listId];
   const matched = options.find((option) => option.value === stored);
   return matched ? (matched.value as ListDensity<K>) : DEFAULT_LIST_DENSITY[listId];
 }
