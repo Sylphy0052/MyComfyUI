@@ -27,6 +27,25 @@ type StructureKind = "scene" | "shot";
  */
 const STRUCTURE_ROW_DRAG_TYPE = "application/x-mycomfyui-structure-row";
 
+/** 並べ替えを保存中、または保存後に一覧を取り直すまで先に見せる並び (Issue #264)。 */
+interface PendingOrder {
+  /** 並べ替えたときに受け取っていた一覧。取り直した一覧 (別の配列) が届いたら使わない。 */
+  base: readonly { id: string }[];
+  ids: string[];
+}
+
+function applyPendingOrder<T extends { id: string }>(
+  items: T[],
+  pending: PendingOrder | undefined,
+): T[] {
+  if (!pending || pending.base !== items) return items;
+  const byId = new Map(items.map((item) => [item.id, item]));
+  return pending.ids.flatMap((id) => {
+    const item = byId.get(id);
+    return item ? [item] : [];
+  });
+}
+
 const STATUSES: { value: ProductionStatus; label: string }[] = [
   { value: "not_started", label: "未着手" },
   { value: "in_progress", label: "制作中" },
@@ -89,7 +108,7 @@ export function SceneBrowser(props: Props) {
   const {
     projects, projectId, onSelectProject, onManageProjects, onManageCharacters,
     onStructureChanged,
-    scenes, sceneId, onSelectScene, scene, shots, shotId, onSelectShot, shot,
+    scenes: sceneItems, sceneId, onSelectScene, scene, shots: shotItems, shotId, onSelectShot, shot,
     simple = false,
   } = props;
   const [projectQuery, setProjectQuery] = useState("");
@@ -116,6 +135,13 @@ export function SceneBrowser(props: Props) {
   // ドラッグ中の行と、挿入位置 (その番号の行の前。末尾は件数と同じ値) を持つ。
   const [dragging, setDragging] = useState<{ kind: StructureKind; index: number; id: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ kind: StructureKind; index: number } | null>(null);
+  // 保存が終わるのを待たずに並べ替えた後の並びを見せる。表示と↑/↓・ドロップの位置計算は
+  // この並びを使う。保存に失敗したら捨てて、受け取っている一覧の並びへ戻す。
+  const [pendingOrders, setPendingOrders] = useState<Partial<Record<StructureKind, PendingOrder>>>({});
+  const scenes = useMemo(() => applyPendingOrder(sceneItems, pendingOrders.scene), [sceneItems, pendingOrders.scene]);
+  const shots = useMemo(() => applyPendingOrder(shotItems, pendingOrders.shot), [shotItems, pendingOrders.shot]);
+  const setPendingOrder = (kind: StructureKind, pending: PendingOrder | undefined) =>
+    setPendingOrders((current) => ({ ...current, [kind]: pending }));
 
   const move = async (kind: StructureKind, index: number, offset: number) => {
     const items = kind === "scene" ? scenes : shots;
@@ -130,11 +156,13 @@ export function SceneBrowser(props: Props) {
     if (!projectId) return;
     setBusy(true);
     setError(null);
+    setPendingOrder(kind, { base: kind === "scene" ? sceneItems : shotItems, ids });
     try {
       if (kind === "scene") await api.reorderScenes(projectId, ids);
       else if (sceneId) await api.reorderShots(projectId, sceneId, ids);
       onStructureChanged();
     } catch (cause) {
+      setPendingOrder(kind, undefined);
       setError(describe(cause));
     } finally {
       setBusy(false);
