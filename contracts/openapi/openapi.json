@@ -503,6 +503,11 @@
             "title": "Id",
             "type": "string"
           },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
           "label": {
             "title": "Label",
             "type": "string"

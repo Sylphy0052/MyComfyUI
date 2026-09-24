@@ -2323,6 +2323,11 @@ export interface components {
             backend?: components["schemas"]["AgentBackendStatusRead"] | null;
             /** Id */
             id: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
             /** Label */
             label: string;
             /**

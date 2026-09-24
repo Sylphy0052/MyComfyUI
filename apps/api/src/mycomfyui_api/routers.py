@@ -3904,12 +3904,14 @@ async def _describe_agent_provider(
     返す。持たないProviderは従来どおり`available()`だけを見る。
     """
     describe = getattr(provider, "describe", None)
+    is_default = provider.id == get_settings().agent_provider
     if describe is None:
         return schemas.AgentProviderRead(
             id=provider.id,
             label=provider.label,
             available=await provider.available(),
             supports_images=provider.supports_images,
+            is_default=is_default,
         )
     available, status = await describe()
     backend = (
@@ -3927,6 +3929,7 @@ async def _describe_agent_provider(
         label=provider.label,
         available=available,
         supports_images=provider.supports_images,
+        is_default=is_default,
         backend=backend,
     )
 
@@ -4627,6 +4630,12 @@ def _decode_assist_image(
         raise _validation_error(
             "添付画像が上限を超えています。",
             {"byte_size": len(data), "limit": limit},
+        )
+    detected = storage.detect_image_media_type(data[:32])
+    if detected != image.media_type:
+        raise _validation_error(
+            "添付画像の実形式とmedia_typeが一致しません。別の画像を選び直してください。",
+            {"declared": image.media_type, "detected": detected},
         )
     return agent_base.ProposalImage(data=data, media_type=image.media_type)
 

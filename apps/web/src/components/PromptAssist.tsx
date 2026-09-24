@@ -93,8 +93,10 @@ export function PromptAssistField({
 
   const withImage = allowImage && images.length > 0;
   const selectedProvider = providers.find((provider) => provider.id === providerId);
-  // 既定のAIが画像に対応するかは画面から分からない。非対応ならAPIが理由を返す。
-  const imageUnsupported = withImage && selectedProvider?.supports_images === false;
+  const defaultProvider = providers.find((provider) => provider.is_default);
+  // 「既定のAI」のままなら、要求を受けるのは設定の既定Provider。
+  const effectiveProvider = providerId ? selectedProvider : defaultProvider;
+  const imageUnsupported = withImage && effectiveProvider?.supports_images === false;
 
   const assist = async () => {
     if (!description.trim()) {
@@ -158,7 +160,10 @@ export function PromptAssistField({
           value={providerId}
           onChange={(event) => setProviderId(event.target.value as AgentProviderId | "")}
         >
-          <option value="">既定のAI</option>
+          <option value="">
+            既定のAI
+            {withImage && defaultProvider?.supports_images === false ? " (画像非対応)" : ""}
+          </option>
           {providers.map((provider) => (
             <option
               key={provider.id}
@@ -181,7 +186,7 @@ export function PromptAssistField({
       </div>
       {imageUnsupported && (
         <p className="error">
-          {selectedProvider?.label}は画像の入力に対応していません。画像に対応するAIを選んでください。
+          {effectiveProvider?.label}は画像の入力に対応していません。画像に対応するAIを選んでください。
         </p>
       )}
       {error && <p className="error">{error}</p>}
