@@ -376,6 +376,36 @@ class ProjectCharacterOutfit(ApiModel):
     prompt: str = Field(default="", max_length=2_000)
 
 
+class ProjectCharacterProfileExtraField(ApiModel):
+    """プロフィールの自由項目1件。固定5項目に無い情報を任意のkey/valueで持たせる。"""
+
+    key: str = Field(max_length=120)
+    value: str = Field(max_length=2_000)
+
+
+class ProjectCharacterPersonalProfile(ApiModel):
+    """キャラクターの性格などのプロフィール (#287)。生成プロンプトへは合成しない。"""
+
+    personality: str | None = Field(default=None, max_length=2_000)
+    age: str | None = Field(default=None, max_length=2_000)
+    first_person: str | None = Field(default=None, max_length=2_000)
+    speech_style: str | None = Field(default=None, max_length=2_000)
+    background: str | None = Field(default=None, max_length=2_000)
+    extra: list[ProjectCharacterProfileExtraField] = Field(
+        default_factory=list, max_length=30
+    )
+
+    @field_validator("extra")
+    @classmethod
+    def _unique_extra_keys(
+        cls, value: list[ProjectCharacterProfileExtraField]
+    ) -> list[ProjectCharacterProfileExtraField]:
+        keys = [item.key for item in value]
+        if len(set(keys)) != len(keys):
+            raise ValueError("自由項目のkeyを重複させられません。")
+        return value
+
+
 class ProjectCharacterProfile(ApiModel):
     id: ResourceId
     name: ProjectName
@@ -385,6 +415,11 @@ class ProjectCharacterProfile(ApiModel):
     )
     appearance: str | None = Field(default=None, max_length=2_000)
     voice: str | None = Field(default=None, max_length=2_000)
+    # キャラ固有の生成プロンプト断片。連結順は apps/web/src/state/characterPrompt.ts 側で決める (#287)。
+    prompt: str | None = Field(default=None, max_length=2_000)
+    negative_prompt: str | None = Field(default=None, max_length=2_000)
+    # 性格などのプロフィール。画像生成のプロンプトには合成しない (#287)。
+    profile: ProjectCharacterPersonalProfile | None = None
     outfits: list[ProjectCharacterOutfit] = Field(default_factory=list, max_length=20)
     default_outfit_id: ResourceId | None = None
     # 衣装ごとの参照画像セット。衣装が変わったときだけ新しいセットになる。
