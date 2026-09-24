@@ -390,14 +390,14 @@ class ComfyUIClient:
                     if listener is not None:
                         preview = _parse_preview(raw, prompt_id)
                         if preview is not None:
-                            listener.on_preview(preview)
+                            _notify(listener.on_preview, preview)
                     continue
                 if _is_completion_message(raw, prompt_id):
                     return True
                 if listener is not None:
                     progress = _parse_progress(raw, prompt_id)
                     if progress is not None:
-                        listener.on_progress(progress)
+                        _notify(listener.on_progress, progress)
         return False
 
     async def _monitor_via_polling(self, prompt_id: str) -> None:
@@ -562,6 +562,18 @@ def _to_websocket_url(base_url: str, client_id: str) -> str:
     scheme, _, rest = base_url.partition("://")
     ws_scheme = "wss" if scheme == "https" else "ws"
     return f"{ws_scheme}://{rest}/ws?{urlencode({'clientId': client_id})}"
+
+
+def _notify[T](callback: Callable[[T], None], value: T) -> None:
+    """listenerの失敗を監視へ持ち込まない。
+
+    進捗とプレビューは表示用の補助情報で、生成の成否には関わらない。受け取り側の
+    例外を素通しすると、進んでいる生成が監視ごと失敗扱いになる。
+    """
+    try:
+        callback(value)
+    except Exception:
+        logger.warning("進捗の受け取りに失敗した", exc_info=True)
 
 
 def _parse_progress(raw: str, prompt_id: str) -> ProgressUpdate | None:

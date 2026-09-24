@@ -1747,12 +1747,18 @@ async def list_job_artifacts(job_id: str, session: SessionDep):
         200: {"content": {"image/jpeg": {}, "image/png": {}}},
     },
 )
-async def get_job_preview(job_id: str):
+async def get_job_preview(
+    job_id: str,
+    session: SessionDep,
+    seq: Annotated[int | None, Query(ge=0)] = None,
+):
     """実行中Jobの最新プレビュー画像を返す。
 
-    プレビューはメモリ上にだけあり、Jobが終わると消える。画面は進捗イベントの
-    `preview_seq`をクエリへ付けて取り直すため、ブラウザにはキャッシュさせない。
+    プレビューはメモリ上にだけあり、Jobが終わると消える。`seq`は進捗イベントの
+    `preview_seq`で、画面が取り直しのURLを変えるためだけに付ける。値は見ずに常に
+    最新の1枚を返し、ブラウザにはキャッシュさせない。
     """
+    await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
     entry = job_progress.get(job_id)
     if entry is None or entry.preview is None or entry.preview_media_type is None:
         raise ApiError(

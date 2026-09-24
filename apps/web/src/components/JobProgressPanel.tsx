@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { api, type GenerationJob } from "../api/client";
 
 // events の generation_job.progress から得た、実行中 Job の最新の進み具合。
@@ -41,9 +43,13 @@ type Props = {
 // 実行中 Job の進捗バーと生成途中のプレビュー画像を出す。
 export function JobProgressPanel({ job, progress }: Props) {
   const hasValue = progress !== null && progress.max > 0;
-  const percent = hasValue
-    ? Math.round((progress.value / progress.max) * 100)
-    : null;
+  // Backend の値をそのまま信じず、バーと割合が 0〜max の外へ出ないようにする。
+  const value = hasValue ? Math.min(Math.max(progress.value, 0), progress.max) : 0;
+  const percent = hasValue ? Math.round((value / progress.max) * 100) : null;
+  // 取得に失敗した連番。Job 終了と取得がすれ違うと 404 になり、壊れた画像が残る。
+  const [failedSeq, setFailedSeq] = useState<number | null>(null);
+  const previewSeq = progress?.previewSeq ?? 0;
+  const showPreview = previewSeq > 0 && failedSeq !== previewSeq;
 
   return (
     <section className="panel job-progress">
@@ -52,21 +58,22 @@ export function JobProgressPanel({ job, progress }: Props) {
         <span className="muted">
           順番 {job.queue_sequence}
           {percent !== null &&
-            `・${progress?.value}/${progress?.max} (${percent}%)`}
+            `・${value}/${progress?.max} (${percent}%)`}
         </span>
       </div>
       {/* value を渡さないと不定の進捗バーになる。進捗が届くまではこちらを出す。 */}
       <progress
         aria-label="生成の進捗"
         max={hasValue ? progress.max : undefined}
-        value={hasValue ? progress.value : undefined}
+        value={hasValue ? value : undefined}
       />
       {progress?.node && <p className="muted">実行中のノード: {progress.node}</p>}
-      {progress && progress.previewSeq > 0 ? (
+      {showPreview ? (
         <img
           className="preview"
-          src={api.jobPreviewUrl(job.id, progress.previewSeq)}
+          src={api.jobPreviewUrl(job.id, previewSeq)}
           alt="生成途中のプレビュー"
+          onError={() => setFailedSeq(previewSeq)}
         />
       ) : (
         <p className="muted">プレビューはまだありません。</p>

@@ -688,8 +688,9 @@ export interface paths {
          * Get Job Preview
          * @description 実行中Jobの最新プレビュー画像を返す。
          *
-         *     プレビューはメモリ上にだけあり、Jobが終わると消える。画面は進捗イベントの
-         *     `preview_seq`をクエリへ付けて取り直すため、ブラウザにはキャッシュさせない。
+         *     プレビューはメモリ上にだけあり、Jobが終わると消える。`seq`は進捗イベントの
+         *     `preview_seq`で、画面が取り直しのURLを変えるためだけに付ける。値は見ずに常に
+         *     最新の1枚を返し、ブラウザにはキャッシュさせない。
          */
         get: operations["get_job_preview_api_v1_generation_jobs__job_id__preview_get"];
         put?: never;
@@ -6082,7 +6083,9 @@ export interface operations {
     };
     get_job_preview_api_v1_generation_jobs__job_id__preview_get: {
         parameters: {
-            query?: never;
+            query?: {
+                seq?: number | null;
+            };
             header?: never;
             path: {
                 job_id: string;
