@@ -667,7 +667,9 @@
               "move",
               "copy",
               "unassign",
-              "tag"
+              "tag",
+              "trash",
+              "restore"
             ],
             "title": "Operation",
             "type": "string"
@@ -996,6 +998,17 @@
             ],
             "title": "Decision At"
           },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1061,7 +1074,8 @@
           "assigned_shot_id",
           "created_at",
           "decision",
-          "decision_at"
+          "decision_at",
+          "deleted_at"
         ],
         "title": "ArtifactRead",
         "type": "object"
@@ -8863,7 +8877,7 @@
     },
     "/api/v1/artifacts": {
       "get": {
-        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nProjectコンテキストは現在の所属先と突き合わせる。`unassigned`は\n現在のProject所属を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
+        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nゴミ箱にあるArtifactは既定で除き、`trashed=true`のときはゴミ箱にあるものだけを返す。\n\nProjectコンテキストは現在の所属先と突き合わせる。`unassigned`は\n現在のProject所属を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
         "operationId": "list_artifacts_api_v1_artifacts_get",
         "parameters": [
           {
@@ -9060,6 +9074,16 @@
           },
           {
             "in": "query",
+            "name": "trashed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Trashed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -9161,7 +9185,7 @@
     },
     "/api/v1/artifacts/batch-operation": {
       "post": {
-        "description": "Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。",
+        "description": "Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。\n\ntrashはゴミ箱へ移し (論理削除)、restoreはゴミ箱から戻す。Workflowのスナップショットは\n生成記録が必ず参照するためゴミ箱へ移せず、1件でも含まれていれば何も変更しない。",
         "operationId": "operate_artifacts_api_v1_artifacts_batch_operation_post",
         "requestBody": {
           "content": {

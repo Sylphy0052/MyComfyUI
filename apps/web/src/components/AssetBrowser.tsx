@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "../api/client";
 import type {
   Artifact,
+  ArtifactBatchOperation,
   ArtifactImport,
   CanonStatus,
   GenerationJob,
@@ -103,6 +104,8 @@ export function AssetBrowser({
     null,
   );
   const [lineageJobId, setLineageJobId] = useState<string | null>(null);
+  // ゴミ箱表示では、ゴミ箱に入れたArtifactだけを出し、一括操作を復元に絞る。
+  const [trashed, setTrashed] = useState(false);
 
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(
@@ -145,6 +148,7 @@ export function AssetBrowser({
           tags: tags.length > 0 ? tags : undefined,
           lineageArtifactId: lineageArtifactId ?? undefined,
           lineageJobId: lineageJobId ?? undefined,
+          trashed,
           limit: PAGE_SIZE,
         });
         if (!active) return;
@@ -182,6 +186,7 @@ export function AssetBrowser({
     tags,
     lineageArtifactId,
     lineageJobId,
+    trashed,
     reloadToken,
   ]);
 
@@ -353,7 +358,7 @@ export function AssetBrowser({
   };
 
   const operateSelected = async (
-    operation: "move" | "copy" | "unassign" | "tag",
+    operation: ArtifactBatchOperation["operation"],
     target?: AssignmentTarget,
     tag?: string,
   ) => {
@@ -401,54 +406,100 @@ export function AssetBrowser({
 
       <div className="panel stack assignment-batch">
         <div className="row spread">
-          <strong>一括操作</strong>
+          <strong>{trashed ? "一括操作 (ゴミ箱)" : "一括操作"}</strong>
           <span className="muted">{selectedIds.length}件選択中</span>
-        </div>
-        <AssignmentPicker
-          projects={projects}
-          disabled={batchBusy || selectedIds.length === 0}
-          onMove={(target) => operateSelected("move", target)}
-          onCopy={(target) => operateSelected("copy", target)}
-        />
-        <div className="row">
-          <input
-            value={batchTag}
-            disabled={batchBusy || selectedIds.length === 0}
-            onChange={(event) => setBatchTag(event.target.value)}
-            placeholder="一括付与するタグ"
-          />
           <button
             type="button"
-            disabled={
-              batchBusy || selectedIds.length === 0 || !batchTag.trim()
-            }
-            onClick={() =>
-              void operateSelected("tag", undefined, batchTag.trim())
-            }
+            disabled={batchBusy}
+            onClick={() => {
+              setSelectedIds([]);
+              setTrashed((current) => !current);
+            }}
           >
-            タグ付与
-          </button>
-          <button
-            type="button"
-            disabled={batchBusy || selectedIds.length === 0}
-            onClick={() => void operateSelected("unassign")}
-          >
-            Inboxへ移動
-          </button>
-          <button
-            type="button"
-            disabled={batchBusy || artifacts.length === 0}
-            onClick={() =>
-              setSelectedIds(
-                selectedIds.length === artifacts.length
-                  ? []
-                  : artifacts.map((artifact) => artifact.id),
-              )
-            }
-          >
-            {selectedIds.length === artifacts.length ? "選択解除" : "すべて選択"}
+            {trashed ? "一覧へ戻る" : "ゴミ箱を表示"}
           </button>
         </div>
+        {trashed ? (
+          <div className="row">
+            <button
+              type="button"
+              disabled={batchBusy || selectedIds.length === 0}
+              onClick={() => void operateSelected("restore")}
+            >
+              復元
+            </button>
+            <button
+              type="button"
+              disabled={batchBusy || artifacts.length === 0}
+              onClick={() =>
+                setSelectedIds(
+                  selectedIds.length === artifacts.length
+                    ? []
+                    : artifacts.map((artifact) => artifact.id),
+                )
+              }
+            >
+              {selectedIds.length === artifacts.length
+                ? "選択解除"
+                : "すべて選択"}
+            </button>
+          </div>
+        ) : (
+          <>
+            <AssignmentPicker
+              projects={projects}
+              disabled={batchBusy || selectedIds.length === 0}
+              onMove={(target) => operateSelected("move", target)}
+              onCopy={(target) => operateSelected("copy", target)}
+            />
+            <div className="row">
+              <input
+                value={batchTag}
+                disabled={batchBusy || selectedIds.length === 0}
+                onChange={(event) => setBatchTag(event.target.value)}
+                placeholder="一括付与するタグ"
+              />
+              <button
+                type="button"
+                disabled={
+                  batchBusy || selectedIds.length === 0 || !batchTag.trim()
+                }
+                onClick={() =>
+                  void operateSelected("tag", undefined, batchTag.trim())
+                }
+              >
+                タグ付与
+              </button>
+              <button
+                type="button"
+                disabled={batchBusy || selectedIds.length === 0}
+                onClick={() => void operateSelected("unassign")}
+              >
+                Inboxへ移動
+              </button>
+              <button
+                type="button"
+                disabled={batchBusy || selectedIds.length === 0}
+                onClick={() => void operateSelected("trash")}
+              >
+                ゴミ箱へ移動
+              </button>
+              <button
+                type="button"
+                disabled={batchBusy || artifacts.length === 0}
+                onClick={() =>
+                  setSelectedIds(
+                    selectedIds.length === artifacts.length
+                      ? []
+                      : artifacts.map((artifact) => artifact.id),
+                  )
+                }
+              >
+                {selectedIds.length === artifacts.length ? "選択解除" : "すべて選択"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="filters">

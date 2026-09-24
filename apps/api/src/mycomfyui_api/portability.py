@@ -325,7 +325,10 @@ async def _package(
         rows = list(
             await session.scalars(
                 select(Artifact)
-                .where(Artifact.assigned_project_id == project.id)
+                .where(
+                    Artifact.assigned_project_id == project.id,
+                    Artifact.deleted_at.is_(None),
+                )
                 .order_by(Artifact.created_at)
             )
         )
