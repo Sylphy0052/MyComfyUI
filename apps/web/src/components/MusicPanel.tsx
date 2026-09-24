@@ -460,13 +460,13 @@ export function MusicPanel({
                       <IconButton
                         icon={<Icon name="expand" />}
                         label="拡大"
-                        onClick={() =>
-                          setViewerIndex(
-                            succeededMusicArtifacts.findIndex(
-                              (item) => item.id === artifact.id,
-                            ),
-                          )
-                        }
+                        onClick={() => {
+                          const index = succeededMusicArtifacts.findIndex(
+                            (item) => item.id === artifact.id,
+                          );
+                          if (index === -1) return;
+                          setViewerIndex(index);
+                        }}
                       />
                     </div>
                   ))}

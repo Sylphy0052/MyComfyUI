@@ -242,13 +242,13 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
                 <IconButton
                   icon={<Icon name="expand" />}
                   label="拡大"
-                  onClick={() =>
-                    setViewerIndex(
-                      viewerItems.findIndex(
-                        (entry) => entry.id === item.artifact_id,
-                      ),
-                    )
-                  }
+                  onClick={() => {
+                    const index = viewerItems.findIndex(
+                      (entry) => entry.id === item.artifact_id,
+                    );
+                    if (index === -1) return;
+                    setViewerIndex(index);
+                  }}
                 />
               )}
               {(item.character_ids ?? []).length > 0 && (

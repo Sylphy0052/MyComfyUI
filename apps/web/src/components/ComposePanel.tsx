@@ -524,13 +524,13 @@ export function ComposePanel({
                       <IconButton
                         icon={<Icon name="expand" />}
                         label="拡大"
-                        onClick={() =>
-                          setViewerIndex(
-                            succeededComposeArtifacts.findIndex(
-                              (item) => item.id === artifact.id,
-                            ),
-                          )
-                        }
+                        onClick={() => {
+                          const index = succeededComposeArtifacts.findIndex(
+                            (item) => item.id === artifact.id,
+                          );
+                          if (index === -1) return;
+                          setViewerIndex(index);
+                        }}
                       />
                     </div>
                   ))}
