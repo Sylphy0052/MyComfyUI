@@ -865,13 +865,15 @@ export function GenerationForm({
         <fieldset className="form-section">
           <legend>プロンプト</legend>
           <div hidden={simple}>
-            {promptDiff ? (
+            {promptDiff && (
               <PromptDiffReview
                 fields={promptDiff}
                 onCancel={() => setPromptDiff(null)}
                 onAccept={applyPromptDiffResult}
               />
-            ) : (
+            )}
+            {/* 候補の確認中も外さずに隠す。外すと入力中の説明文が捨てられる。 */}
+            <div hidden={promptDiff !== null}>
               <PromptAssist
                 providers={providers}
                 idPrefix="image"
@@ -884,7 +886,7 @@ export function GenerationForm({
                 placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
                 onApply={applyAssist}
               />
-            )}
+            </div>
           </div>
           {promptFields.map(renderField)}
         </fieldset>
