@@ -726,6 +726,16 @@ async def _submit_generation_job(
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
     prepared = await _prepare_execution(recipe, effective, source, resolved, session)
     await _validate_resolved_models(recipe, prepared)
+    # extra_parametersはmanifest.parametersの末尾へ展開する記録で、同名のテンプレート
+    # 変数があると実際に生成へ使った値を上書きしてしまう。記録を書く前に断る。
+    conflicted = sorted(set(extra_parameters or {}) & set(prepared.parameters))
+    if conflicted:
+        raise ApiError(
+            "GENERATION_PARAMETER_CONFLICT",
+            "Recipeの変数名が生成記録用の項目名と重なっているため、投入できません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"recipe_id": recipe.id, "keys": conflicted},
+        )
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
