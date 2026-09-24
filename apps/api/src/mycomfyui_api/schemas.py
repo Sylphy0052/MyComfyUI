@@ -2043,6 +2043,22 @@ class ImagePromptAssistRead(ApiModel):
     model: str | None
 
 
+class GenerationPromptRevisionCreate(ApiModel):
+    """生成済み画像の指示によるprompt修正と再投入の要求。"""
+
+    artifact_id: ResourceId
+    instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
+    #: 未指定なら設定の既定Providerを使う。
+    provider_id: AgentProviderId | None = None
+
+
+class GenerationPromptRevisionRead(ApiModel):
+    """修正後promptで投入した新Jobと、補完結果を合わせて返す。"""
+
+    job: GenerationJobRead
+    prompt: ImagePromptAssistRead
+
+
 class MediaPromptAssistCreate(ApiModel):
     """動画と音楽の条件補完の要求。画像は受け付けず、日本語の説明だけから組み立てる。"""
 

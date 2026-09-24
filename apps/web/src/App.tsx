@@ -1897,6 +1897,7 @@ export function App() {
                   }}
                   onPromoteToPreset={setPromotionArtifactId}
                   onApplySettings={applyGenerationSettings}
+                  onRevisedJob={handleDerivedJob}
                   active={shownView === "generate" && shownGenerationTab === "image"}
                   simple={isProduction}
                   comparisonActive={comparisonJobIds !== null}
