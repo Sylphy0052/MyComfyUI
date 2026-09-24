@@ -1789,6 +1789,7 @@ export function App() {
                     shortcutActive={isProduction && shownImageSubTab === "generate"}
                     plan={generationPlan}
                     restore={generationRestore}
+                    characters={localCharacters}
                   />
                 </div>
 

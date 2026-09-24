@@ -9,6 +9,7 @@ import type {
   ApiError,
   GenerationManifest,
   GenerationPreview,
+  ProjectCharacterProfile,
   Recipe,
 } from "../api/client";
 import { ExecutionPreview } from "./ExecutionPreview";
@@ -139,6 +140,8 @@ interface Props {
     recipeLineage: string[];
     manifest: GenerationManifest;
   } | null;
+  /** Projectのローカルキャラクター定義。衣装のpromptをプロンプトへ足すのに使う (#309)。 */
+  characters?: ProjectCharacterProfile[];
 }
 
 /** 計画を適用済みにするかの判定に使う組。`scope` (Shotと工程) とPresetで決まる。 */
@@ -177,6 +180,7 @@ export function GenerationForm({
   shortcutActive = false,
   plan = null,
   restore = null,
+  characters = [],
 }: Props) {
   const [recipeId, setRecipeId] = useState<string>("");
   const recipe = useMemo(
@@ -214,6 +218,9 @@ export function GenerationForm({
   const [extractingTags, setExtractingTags] = useState(false);
   const [tagError, setTagError] = useState<string | null>(null);
   const [extractedTags, setExtractedTags] = useState<string[]>([]);
+  const [outfitCharacterId, setOutfitCharacterId] = useState("");
+  const [outfitTag, setOutfitTag] = useState("");
+  const [outfitId, setOutfitId] = useState("");
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [batchCount, setBatchCount] = useState("1");
   const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
@@ -557,6 +564,29 @@ export function GenerationForm({
     ]);
   };
 
+  // キャラクター、分類タグ、衣装の順に選ぶ (#309)。上位を変えたら下位の選択は候補から外れる。
+  const outfitCharacter = characters.find((item) => item.id === outfitCharacterId);
+  const characterOutfits = (outfitCharacter?.outfits ?? []).filter((outfit) => outfit.prompt.trim());
+  const outfitTagOptions = [...new Set(characterOutfits.flatMap((outfit) => outfit.tags ?? []))].sort();
+  const taggedOutfits = characterOutfits.filter(
+    (outfit) => !outfitTag || (outfit.tags ?? []).includes(outfitTag),
+  );
+  const selectedOutfit = taggedOutfits.find((outfit) => outfit.id === outfitId);
+
+  const appendOutfit = () => {
+    if (!selectedOutfit) return;
+    const merged = mergePrompt(values.positive_prompt ?? "", selectedOutfit.prompt);
+    if (merged.added === 0) return;
+    setPromptDiff([
+      {
+        key: "positive_prompt",
+        label: "プロンプト",
+        current: values.positive_prompt ?? "",
+        proposed: selectedOutfit.prompt,
+      },
+    ]);
+  };
+
   const renderField = (field: FieldSpec) => {
     const changed = isFieldChanged(field.name);
     // モードBではネガティブや出力設定はPresetの固定部分として扱い、画面に出さない。
@@ -640,6 +670,53 @@ export function GenerationForm({
               <button type="button" disabled={useInheritedDefaults} onClick={appendTags}>
                 プロンプトへ追加
               </button>
+            </div>
+          )}
+          {characters.length > 0 && (
+            <div className="stack">
+              <span className="muted">キャラクターの衣装から追加</span>
+              <div className="row">
+                <select
+                  aria-label="キャラクター"
+                  value={outfitCharacterId}
+                  disabled={useInheritedDefaults}
+                  onChange={(event) => {
+                    setOutfitCharacterId(event.target.value);
+                    setOutfitTag("");
+                    setOutfitId("");
+                  }}
+                >
+                  <option value="">キャラクターを選択</option>
+                  {characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+                <select
+                  aria-label="分類タグ"
+                  value={outfitTag}
+                  disabled={useInheritedDefaults || outfitTagOptions.length === 0}
+                  onChange={(event) => {
+                    setOutfitTag(event.target.value);
+                    setOutfitId("");
+                  }}
+                >
+                  <option value="">すべての分類タグ</option>
+                  {outfitTagOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+                </select>
+                <select
+                  aria-label="衣装"
+                  value={selectedOutfit?.id ?? ""}
+                  disabled={useInheritedDefaults || taggedOutfits.length === 0}
+                  onChange={(event) => setOutfitId(event.target.value)}
+                >
+                  <option value="">衣装を選択</option>
+                  {taggedOutfits.map((outfit) => <option key={outfit.id} value={outfit.id}>{outfit.name}</option>)}
+                </select>
+              </div>
+              {selectedOutfit && <p className="tag-list">{selectedOutfit.prompt}</p>}
+              <div className="row">
+                <button type="button" disabled={useInheritedDefaults || !selectedOutfit} onClick={appendOutfit}>
+                  衣装をプロンプトへ追加
+                </button>
+              </div>
             </div>
           )}
         </div>
