@@ -543,6 +543,8 @@ async def _validate_look_profile(
             "固定する入力とモードBで選ばせる入力が重なっています。",
             {"overlap": overlap},
         )
+    # ここまではRecipeを問わない検査。以下の生成種別・未知入力の検査はRecipe専用の
+    # Presetだけに行う。汎用Presetは適用する画面で現在のRecipeと照合する。
     if recipe_id is None:
         return
     recipe = await _get_or_404(session, Recipe, "Recipe", recipe_id)

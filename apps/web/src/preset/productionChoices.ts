@@ -7,6 +7,7 @@
  * - モードBで選ばせる部分: `production_choice_inputs` に入力名だけを保存する。
  * - 自動で埋まる部分: どちらにも入れない。キャラクター・場面・Recipe既定値から埋まる。
  */
+import { ApiError } from "../api/client";
 import type { GenerationManifest, Recipe } from "../api/client";
 
 /** モードBで選ばせる項目の目安の上限。超えても保存はできるが警告を出す。 */
@@ -33,9 +34,17 @@ export interface PresetInputRow {
   role: PresetInputRole;
 }
 
-/** 生成ごとに変わるため、既定では固定しない入力。 */
+/**
+ * 生成ごとに変わるため、既定では固定しない入力の名前。
+ * 組み込みRecipeの入力名 (`apps/api/src/mycomfyui_api/bootstrap.py` の
+ * `DEFAULT_INPUT_SCHEMA` など) に合わせている。入力名を変えたらここも直す。
+ */
 const AUTO_BY_DEFAULT = new Set(["positive_prompt", "seed"]);
-/** 画像・音声などの参照を受ける入力。生成ごとに変わるため既定では固定しない。 */
+/**
+ * 画像・音声などの参照を受ける入力の `control`。生成ごとに変わるため既定では固定しない。
+ * 組み込みRecipeのinput_schema (`bootstrap.py` の `_IMAGE_DERIVATION_SCHEMA`・
+ * `VOICE_INPUT_SCHEMA`・`COMPOSE_INPUT_SCHEMA` など) が使う値に合わせている。
+ */
 const MEDIA_CONTROLS = new Set(["artifact", "artifacts", "audio_track", "audio_tracks", "voices", "dialogue"]);
 
 function schemaEntry(recipe: Recipe, name: string): Record<string, unknown> {
@@ -72,6 +81,23 @@ export function buildPresetInputRows(recipe: Recipe, manifest: GenerationManifes
       role: isAuto ? "auto" : "fixed",
     };
   });
+}
+
+/**
+ * Presetの読込・保存で出たエラーを画面向けの文にする。
+ * 入力の重なりやRecipeに無い入力で422になったときは、対象の入力名を添える。
+ */
+export function describePresetError(error: unknown): string {
+  if (!(error instanceof ApiError)) return String(error);
+  const details = error.details && typeof error.details === "object"
+    ? (error.details as Record<string, unknown>)
+    : {};
+  const names = [details.overlap, details.unknown]
+    .filter((value): value is unknown[] => Array.isArray(value))
+    .flat()
+    .map(String);
+  const suffix = names.length > 0 ? `: ${names.join(", ")}` : "";
+  return `${error.message}${suffix} (${error.code})`;
 }
 
 /** Preset一覧を持つ画面へ、作成・更新があったことを知らせるイベント名。 */

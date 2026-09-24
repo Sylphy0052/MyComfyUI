@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { ApiError, api } from "../api/client";
+import { api } from "../api/client";
 import type { GenerationJob, LookProfileCreate, Recipe } from "../api/client";
 import {
   PRESET_INPUT_ROLE_LABEL,
   buildPresetInputRows,
+  describePresetError,
   notifyLookProfilesChanged,
   productionChoiceWarning,
 } from "../preset/productionChoices";
@@ -21,11 +22,6 @@ type Category = LookProfileCreate["category"];
 
 const ROLES: PresetInputRole[] = ["fixed", "auto", "choice"];
 const VALUE_PREVIEW_LENGTH = 80;
-
-function describe(error: unknown): string {
-  if (error instanceof ApiError) return `${error.message} (${error.code})`;
-  return String(error);
-}
 
 function preview(value: unknown): string {
   if (value === undefined) return "(値なし)";
@@ -69,7 +65,7 @@ export function PresetPromotionPanel({ candidate, onClose }: Props) {
       setDescription(`候補 ${candidate.artifact.sha256.slice(0, 12)} (${loadedRecipe.name}) から作成`);
     };
     load()
-      .catch((cause) => { if (active) setError(describe(cause)); })
+      .catch((cause) => { if (active) setError(describePresetError(cause)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [candidate.jobId, candidate.artifact.sha256]);
@@ -113,7 +109,7 @@ export function PresetPromotionPanel({ candidate, onClose }: Props) {
       setCreatedName(created.name);
       notifyLookProfilesChanged();
     } catch (cause) {
-      setError(describe(cause));
+      setError(describePresetError(cause));
     } finally {
       setBusy(false);
     }
@@ -136,7 +132,15 @@ export function PresetPromotionPanel({ candidate, onClose }: Props) {
         <fieldset className="stack" disabled={busy || createdName !== null}>
           <legend>Preset作成</legend>
           <label>名前<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-          <label>分類<select value={category} onChange={(event) => setCategory(event.target.value as Category)}><option value="general">general</option><option value="style">画風</option><option value="character">人物</option><option value="background">背景</option></select></label>
+          <label>
+            分類
+            <select value={category} onChange={(event) => setCategory(event.target.value as Category)}>
+              <option value="general">general</option>
+              <option value="style">画風</option>
+              <option value="character">人物</option>
+              <option value="background">背景</option>
+            </select>
+          </label>
           <label>説明<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
           <label><input type="checkbox" checked={recipeScoped} onChange={(event) => setRecipeScoped(event.target.checked)} />Recipe専用（{recipe.name}）</label>
           <table>
