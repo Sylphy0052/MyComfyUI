@@ -114,7 +114,7 @@ export function SceneBrowser(props: Props) {
   }, [projectQuery, projects]);
 
   // ドラッグ中の行と、挿入位置 (その番号の行の前。末尾は件数と同じ値) を持つ。
-  const [dragging, setDragging] = useState<{ kind: StructureKind; index: number } | null>(null);
+  const [dragging, setDragging] = useState<{ kind: StructureKind; index: number; id: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ kind: StructureKind; index: number } | null>(null);
 
   const move = async (kind: StructureKind, index: number, offset: number) => {
@@ -154,7 +154,7 @@ export function SceneBrowser(props: Props) {
     return at === dragging.index || at === dragging.index + 1 ? null : at;
   };
 
-  const rowDragProps = (kind: StructureKind, index: number, count: number) => {
+  const rowDragProps = (kind: StructureKind, index: number, id: string, count: number) => {
     if (!structureEditable) return {};
     const target = dropTarget?.kind === kind ? dropTarget.index : null;
     const className = [
@@ -168,7 +168,7 @@ export function SceneBrowser(props: Props) {
       onDragStart: (event: DragEvent<HTMLLIElement>) => {
         event.dataTransfer.setData(STRUCTURE_ROW_DRAG_TYPE, kind);
         event.dataTransfer.effectAllowed = "move";
-        setDragging({ kind, index });
+        setDragging({ kind, index, id });
       },
       onDragOver: (event: DragEvent<HTMLLIElement>) => {
         if (dragging?.kind !== kind) return;
@@ -191,11 +191,13 @@ export function SceneBrowser(props: Props) {
       onDrop: (event: DragEvent<HTMLUListElement>) => {
         if (dragging?.kind !== kind) return;
         event.preventDefault();
-        const from = dragging.index;
         const at = dropTarget?.kind === kind ? dropTarget.index : null;
-        clearDrag();
-        if (at === null) return;
         const ids = (kind === "scene" ? scenes : shots).map((item) => item.id);
+        // ドラッグ中に一覧が取り直されていたら、位置がずれるので並べ替えない。
+        const from = ids.indexOf(dragging.id);
+        const stale = from !== dragging.index;
+        clearDrag();
+        if (at === null || stale || at > ids.length) return;
         const [moved] = ids.splice(from, 1);
         ids.splice(at > from ? at - 1 : at, 0, moved);
         void reorder(kind, ids);
@@ -304,7 +306,7 @@ export function SceneBrowser(props: Props) {
         )}
         {!simple && <ul className={`list structure-list density-${density}`} {...listDragProps("scene")}>
           {scenes.map((item, index) => (
-            <li key={item.id} {...rowDragProps("scene", index, scenes.length)}>
+            <li key={item.id} {...rowDragProps("scene", index, item.id, scenes.length)}>
               <button type="button" aria-pressed={item.id === sceneId} onClick={() => onSelectScene(item.id)}>
                 <span>#{item.sequence} {item.summary}</span>
                 <span className="muted">Shot {item.shot_count}件 {statusLabel(item.production_status)}</span>
@@ -358,7 +360,7 @@ export function SceneBrowser(props: Props) {
         )}
         {!simple && <ul className={`list structure-list density-${density}`} {...listDragProps("shot")}>
           {shots.map((item, index) => (
-            <li key={item.id} {...rowDragProps("shot", index, shots.length)}>
+            <li key={item.id} {...rowDragProps("shot", index, item.id, shots.length)}>
               <button type="button" aria-pressed={item.id === shotId} onClick={() => onSelectShot(item.id)}>
                 <span>#{item.sequence} {item.summary}</span>
                 <span className="muted">{item.duration_sec}秒 {statusLabel(item.production_status)}</span>
