@@ -48,7 +48,7 @@ import type { Notice } from "./components/ui/notify";
 import { ignoresShortcut } from "./components/ui/shortcuts";
 import { VideoPanel, MAX_REFERENCES } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
-import { WorkflowRegistry } from "./components/WorkflowRegistry";
+import { WorkflowRegistryDialog } from "./components/WorkflowRegistryDialog";
 import { tagCheckWarnings } from "./prompt/tagCheck";
 import { PIPELINE_STEPS, persistPipelineStep, readPipelineStep } from "./state/pipelineState";
 import type { PipelineStepId } from "./state/pipelineState";
@@ -113,7 +113,6 @@ const VIEWS: { value: View; label: string }[] = [
   { value: "generate", label: "生成" },
   { value: "assets", label: "資産ブラウザ" },
   { value: "characters", label: "キャラクター" },
-  { value: "workflows", label: "Workflow" },
 ];
 
 const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
@@ -331,6 +330,7 @@ export function App() {
   const [initialUiState] = useState(readInitialUiState);
   const [mode, setMode] = useState<Mode>(initialUiState.mode);
   const [view, setView] = useState<View>(initialUiState.view);
+  const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
   const [visitedViews, setVisitedViews] = useState<ReadonlySet<View>>(
     () =>
       new Set([
@@ -391,10 +391,13 @@ export function App() {
   const [eventsConnected, setEventsConnected] = useState(false);
   const jobsRequestSequence = useRef(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  // 全画面A/B比較の<dialog>がtop layerで開いている間、通常DOMのToastRegionは
+  // 全画面A/B比較やWorkflowの<dialog>がtop layerで開いている間、通常DOMのToastRegionは
   // z-indexに関わらず隠れる (#186)。開いているdialog要素をここへ受け取り、
   // その中へToastRegionをportalして表示先を切り替える。
   const [comparisonDialogEl, setComparisonDialogEl] = useState<HTMLDialogElement | null>(null);
+  const [workflowDialogEl, setWorkflowDialogEl] = useState<HTMLDialogElement | null>(null);
+  // 2つのdialogはどちらもモーダルで、同時には開かない。
+  const toastDialogEl = comparisonDialogEl ?? workflowDialogEl;
   // ジョブ一覧を初めて取得した時点と、スコープ切替直後はnullに戻し、
   // 既存ジョブや無関係スコープのジョブを完了通知として出さないようにする。
   const previousJobStatesRef = useRef<Map<string, string> | null>(null);
@@ -824,10 +827,6 @@ export function App() {
   const assetsSceneId = useFrozenWhenInactive(sceneId, assetsActive);
   const assetsShots = useFrozenWhenInactive(shots, assetsActive);
   const assetsShotId = useFrozenWhenInactive(shotId, assetsActive);
-
-  const workflowsActive = shownView === "workflows";
-  const workflowsSceneId = useFrozenWhenInactive(sceneId, workflowsActive);
-  const workflowsShotId = useFrozenWhenInactive(shotId, workflowsActive);
 
   const charactersActive = shownView === "characters";
   const charactersProjectId = useFrozenWhenInactive(projectId, charactersActive);
@@ -1496,6 +1495,13 @@ export function App() {
                 {item.label}
               </button>
             ))}
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() => setWorkflowDialogOpen(true)}
+            >
+              Workflow
+            </button>
           </nav>
         )}
       </header>
@@ -1692,7 +1698,7 @@ export function App() {
                     onManageWorkflows={() => {
                       // Workflow管理はラボにだけあるため、作品制作から開いたときもラボへ移る。
                       setMode("lab");
-                      setView("workflows");
+                      setWorkflowDialogOpen(true);
                     }}
                   />
                 </div>
@@ -1714,7 +1720,7 @@ export function App() {
                     sourceArtifactId={derivationSourceArtifactId}
                     onSourceArtifactChange={setDerivationSourceArtifactId}
                     onSubmittedJob={handleDerivedJob}
-                    onManageWorkflows={() => setView("workflows")}
+                    onManageWorkflows={() => setWorkflowDialogOpen(true)}
                   />
                 </div>
 
@@ -1927,23 +1933,22 @@ export function App() {
         </div>
       )}
 
-      {visitedViews.has("workflows") && (
-        <div className="full" hidden={shownView !== "workflows"}>
-          <WorkflowRegistry
-            sceneId={workflowsSceneId}
-            shotId={workflowsShotId}
-          />
-        </div>
-      )}
+      <WorkflowRegistryDialog
+        open={workflowDialogOpen}
+        onClose={() => setWorkflowDialogOpen(false)}
+        sceneId={sceneId}
+        shotId={shotId}
+        onDialogOpenChange={setWorkflowDialogEl}
+      />
 
-      {comparisonDialogEl
+      {toastDialogEl
         ? createPortal(
             <ToastRegion
               toasts={toasts}
               onDismiss={dismissToast}
               onNavigate={navigateToJob}
             />,
-            comparisonDialogEl,
+            toastDialogEl,
           )
         : (
           <ToastRegion
