@@ -118,6 +118,9 @@ export type ProjectProgress = components["schemas"]["ProjectProgress"];
 export type AssignmentTarget = components["schemas"]["AssignmentTarget"];
 export type ArtifactBatchOperation =
   components["schemas"]["ArtifactBatchOperation"];
+export type ArtifactPurgePreview =
+  components["schemas"]["ArtifactPurgePreview"];
+export type ArtifactPurgeResult = components["schemas"]["ArtifactPurgeResult"];
 export type ProjectTemplate = components["schemas"]["ProjectTemplateRead"];
 export type ProjectPackage = components["schemas"]["ProjectPackage"];
 export type ProjectPackagePreflight =
@@ -763,6 +766,20 @@ export const api = {
     request<Artifact[]>("/artifacts/batch-operation", {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+
+  // 完全削除はゴミ箱にあるArtifactだけが対象。取り消せないため、プレビューで影響を
+  // 見せてから confirm を付けて呼ぶ。
+  previewArtifactPurge: (artifactIds: string[]) =>
+    request<ArtifactPurgePreview>("/artifacts/purge-preview", {
+      method: "POST",
+      body: JSON.stringify({ artifact_ids: artifactIds }),
+    }),
+
+  purgeArtifacts: (artifactIds: string[]) =>
+    request<ArtifactPurgeResult>("/artifacts/purge", {
+      method: "POST",
+      body: JSON.stringify({ artifact_ids: artifactIds, confirm: true }),
     }),
 
   // tag は複数指定でき、すべてのタグが付いた Artifact だけが返る (AND)。

@@ -934,6 +934,156 @@
         "title": "ArtifactIntegrityRead",
         "type": "object"
       },
+      "ArtifactPurgePreview": {
+        "additionalProperties": false,
+        "description": "完全削除の影響。DBもファイルも変更せずに数える。\n\n`removed_file_count`と`removed_byte_size`は実際に消えるファイル、\n`shared_file_count`は同じパスを他のArtifactが使っているため残るファイルを表す。\n`not_trashed_ids`が空でなければ、完全削除は409になる。",
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactRead"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "detached_child_count": {
+            "title": "Detached Child Count",
+            "type": "integer"
+          },
+          "not_trashed_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Trashed Ids",
+            "type": "array"
+          },
+          "reference_slot_count": {
+            "title": "Reference Slot Count",
+            "type": "integer"
+          },
+          "removed_byte_size": {
+            "title": "Removed Byte Size",
+            "type": "integer"
+          },
+          "removed_file_count": {
+            "title": "Removed File Count",
+            "type": "integer"
+          },
+          "role_tag_count": {
+            "title": "Role Tag Count",
+            "type": "integer"
+          },
+          "shared_file_count": {
+            "title": "Shared File Count",
+            "type": "integer"
+          },
+          "tag_count": {
+            "title": "Tag Count",
+            "type": "integer"
+          },
+          "thumbnail_project_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thumbnail Project Ids",
+            "type": "array"
+          },
+          "unreplayable_manifest_count": {
+            "title": "Unreplayable Manifest Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifacts",
+          "removed_file_count",
+          "removed_byte_size",
+          "shared_file_count",
+          "unreplayable_manifest_count",
+          "detached_child_count",
+          "thumbnail_project_ids",
+          "reference_slot_count",
+          "tag_count",
+          "role_tag_count",
+          "not_trashed_ids"
+        ],
+        "title": "ArtifactPurgePreview",
+        "type": "object"
+      },
+      "ArtifactPurgeRequest": {
+        "additionalProperties": false,
+        "description": "完全削除の実行。取り消せないため、`confirm=true`が無ければ削除しない。",
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Artifact Ids",
+            "type": "array"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "artifact_ids"
+        ],
+        "title": "ArtifactPurgeRequest",
+        "type": "object"
+      },
+      "ArtifactPurgeResult": {
+        "additionalProperties": false,
+        "properties": {
+          "purged_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Purged Ids",
+            "type": "array"
+          },
+          "removed_byte_size": {
+            "title": "Removed Byte Size",
+            "type": "integer"
+          },
+          "removed_file_count": {
+            "title": "Removed File Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "purged_ids",
+          "removed_file_count",
+          "removed_byte_size"
+        ],
+        "title": "ArtifactPurgeResult",
+        "type": "object"
+      },
+      "ArtifactPurgeTarget": {
+        "additionalProperties": false,
+        "description": "完全削除の対象。ゴミ箱にあるArtifactだけを指定できる。",
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Artifact Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifact_ids"
+        ],
+        "title": "ArtifactPurgeTarget",
+        "type": "object"
+      },
       "ArtifactRead": {
         "additionalProperties": false,
         "description": "Artifact 1件。`tags`は付けた順ではなくタグの昇順で返す。\n\n`tags`はArtifactを返すすべての経路で埋める。経路によって入ったり入らなかったり\nすると、空配列が「タグ無し」なのか「この経路では返していない」のか区別できない。",
@@ -9564,6 +9714,84 @@
           }
         },
         "summary": "List Artifact Integrity"
+      }
+    },
+    "/api/v1/artifacts/purge": {
+      "post": {
+        "description": "ゴミ箱にあるArtifactを、DBの記録と実ファイルごと完全に削除する。\n\n取り消せないため`confirm=true`を必須にし、ゴミ箱に無いものが1件でも含まれていれば\n何も削除しない。生成記録のJSONに残る参照は履歴として書き換えない。ファイルは\n同じパスを使う記録が他に無いときだけ、commit後に消す。",
+        "operationId": "purge_artifacts_api_v1_artifacts_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactPurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactPurgeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Artifacts"
+      }
+    },
+    "/api/v1/artifacts/purge-preview": {
+      "post": {
+        "description": "完全削除で消えるものと外れる参照を返す。DBもファイルも変更しない。",
+        "operationId": "preview_artifact_purge_api_v1_artifacts_purge_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactPurgeTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactPurgePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Artifact Purge"
       }
     },
     "/api/v1/artifacts/{artifact_id}": {

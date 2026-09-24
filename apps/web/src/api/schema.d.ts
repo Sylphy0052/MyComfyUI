@@ -283,6 +283,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/artifacts/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge Artifacts
+         * @description ゴミ箱にあるArtifactを、DBの記録と実ファイルごと完全に削除する。
+         *
+         *     取り消せないため`confirm=true`を必須にし、ゴミ箱に無いものが1件でも含まれていれば
+         *     何も削除しない。生成記録のJSONに残る参照は履歴として書き換えない。ファイルは
+         *     同じパスを使う記録が他に無いときだけ、commit後に消す。
+         */
+        post: operations["purge_artifacts_api_v1_artifacts_purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/artifacts/purge-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Artifact Purge
+         * @description 完全削除で消えるものと外れる参照を返す。DBもファイルも変更しない。
+         */
+        post: operations["preview_artifact_purge_api_v1_artifacts_purge_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/artifacts/{artifact_id}": {
         parameters: {
             query?: never;
@@ -2530,6 +2574,68 @@ export interface components {
             items: components["schemas"]["ArtifactIntegrityEntry"][];
             /** Truncated */
             truncated: boolean;
+        };
+        /**
+         * ArtifactPurgePreview
+         * @description 完全削除の影響。DBもファイルも変更せずに数える。
+         *
+         *     `removed_file_count`と`removed_byte_size`は実際に消えるファイル、
+         *     `shared_file_count`は同じパスを他のArtifactが使っているため残るファイルを表す。
+         *     `not_trashed_ids`が空でなければ、完全削除は409になる。
+         */
+        ArtifactPurgePreview: {
+            /** Artifacts */
+            artifacts: components["schemas"]["ArtifactRead"][];
+            /** Detached Child Count */
+            detached_child_count: number;
+            /** Not Trashed Ids */
+            not_trashed_ids: string[];
+            /** Reference Slot Count */
+            reference_slot_count: number;
+            /** Removed Byte Size */
+            removed_byte_size: number;
+            /** Removed File Count */
+            removed_file_count: number;
+            /** Role Tag Count */
+            role_tag_count: number;
+            /** Shared File Count */
+            shared_file_count: number;
+            /** Tag Count */
+            tag_count: number;
+            /** Thumbnail Project Ids */
+            thumbnail_project_ids: string[];
+            /** Unreplayable Manifest Count */
+            unreplayable_manifest_count: number;
+        };
+        /**
+         * ArtifactPurgeRequest
+         * @description 完全削除の実行。取り消せないため、`confirm=true`が無ければ削除しない。
+         */
+        ArtifactPurgeRequest: {
+            /** Artifact Ids */
+            artifact_ids: string[];
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** ArtifactPurgeResult */
+        ArtifactPurgeResult: {
+            /** Purged Ids */
+            purged_ids: string[];
+            /** Removed Byte Size */
+            removed_byte_size: number;
+            /** Removed File Count */
+            removed_file_count: number;
+        };
+        /**
+         * ArtifactPurgeTarget
+         * @description 完全削除の対象。ゴミ箱にあるArtifactだけを指定できる。
+         */
+        ArtifactPurgeTarget: {
+            /** Artifact Ids */
+            artifact_ids: string[];
         };
         /**
          * ArtifactRead
@@ -5516,6 +5622,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArtifactIntegrityRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_artifacts_api_v1_artifacts_purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactPurgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactPurgeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_artifact_purge_api_v1_artifacts_purge_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactPurgeTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactPurgePreview"];
                 };
             };
             /** @description Validation Error */
