@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
 
 import { ApiError, api } from "../api/client";
@@ -146,6 +146,14 @@ export function SceneBrowser(props: Props) {
     setDropTarget(null);
   };
 
+  // ドラッグ中に編集不可へ変わる、またはbusyでdraggableが外れると、dragendが届かないことがある。状態を残さない。
+  useEffect(() => {
+    if (!structureEditable || busy) {
+      setDragging(null);
+      setDropTarget(null);
+    }
+  }, [structureEditable, busy]);
+
   // 行の上半分なら行の前、下半分なら行の後へ挿入する。並びが変わらない位置はnull。
   const insertionIndex = (event: DragEvent<HTMLLIElement>, kind: StructureKind, index: number) => {
     if (dragging?.kind !== kind) return null;
@@ -154,7 +162,7 @@ export function SceneBrowser(props: Props) {
     return at === dragging.index || at === dragging.index + 1 ? null : at;
   };
 
-  const rowDragProps = (kind: StructureKind, index: number, id: string, count: number) => {
+  const rowDragProps = (kind: StructureKind, index: number, count: number) => {
     if (!structureEditable) return {};
     const target = dropTarget?.kind === kind ? dropTarget.index : null;
     const className = [
@@ -164,20 +172,27 @@ export function SceneBrowser(props: Props) {
     ].filter(Boolean).join(" ");
     return {
       className: className || undefined,
-      draggable: !busy,
-      onDragStart: (event: DragEvent<HTMLLIElement>) => {
-        event.dataTransfer.setData(STRUCTURE_ROW_DRAG_TYPE, kind);
-        event.dataTransfer.effectAllowed = "move";
-        setDragging({ kind, index, id });
-      },
       onDragOver: (event: DragEvent<HTMLLIElement>) => {
         if (dragging?.kind !== kind) return;
         const at = insertionIndex(event, kind, index);
         if (target !== at) setDropTarget(at === null ? null : { kind, index: at });
       },
-      onDragEnd: clearDrag,
     };
   };
+
+  // ドラッグは専用のハンドルからだけ始める。行全体をdraggableにすると、行内のボタンを
+  // 押すときの小さな動きがドラッグとして扱われうる。ドラッグ像は行全体にする。
+  const handleDragProps = (kind: StructureKind, index: number, id: string) => ({
+    draggable: !busy,
+    onDragStart: (event: DragEvent<HTMLSpanElement>) => {
+      event.dataTransfer.setData(STRUCTURE_ROW_DRAG_TYPE, kind);
+      event.dataTransfer.effectAllowed = "move";
+      const row = event.currentTarget.closest("li");
+      if (row) event.dataTransfer.setDragImage(row, 0, 0);
+      setDragging({ kind, index, id });
+    },
+    onDragEnd: clearDrag,
+  });
 
   // 行の間の隙間へ落としても最後に示した位置へ入るよう、ドロップは一覧側で受ける。
   const listDragProps = (kind: StructureKind) => {
@@ -197,7 +212,12 @@ export function SceneBrowser(props: Props) {
         const from = ids.indexOf(dragging.id);
         const stale = from !== dragging.index;
         clearDrag();
-        if (at === null || stale || at > ids.length) return;
+        if (stale) {
+          notify({ tone: "info", message: "一覧が更新されたため、並べ替えをやめました。もう一度操作してください。" });
+          return;
+        }
+        // at > ids.length は挿入位置が件数を超える場合で、通常は到達しない防御。
+        if (at === null || at > ids.length) return;
         const [moved] = ids.splice(from, 1);
         ids.splice(at > from ? at - 1 : at, 0, moved);
         void reorder(kind, ids);
@@ -306,7 +326,7 @@ export function SceneBrowser(props: Props) {
         )}
         {!simple && <ul className={`list structure-list density-${density}`} {...listDragProps("scene")}>
           {scenes.map((item, index) => (
-            <li key={item.id} {...rowDragProps("scene", index, item.id, scenes.length)}>
+            <li key={item.id} {...rowDragProps("scene", index, scenes.length)}>
               <button type="button" aria-pressed={item.id === sceneId} onClick={() => onSelectScene(item.id)}>
                 <span>#{item.sequence} {item.summary}</span>
                 <span className="muted">Shot {item.shot_count}件 {statusLabel(item.production_status)}</span>
@@ -318,6 +338,7 @@ export function SceneBrowser(props: Props) {
                 )}
               </button>
               {structureEditable && <div className="row structure-actions">
+                <span className="drag-handle" title="ドラッグで並べ替え" aria-hidden="true" {...handleDragProps("scene", index, item.id)}>⠿</span>
                 <button type="button" disabled={busy || index === 0} onClick={() => move("scene", index, -1)}>↑</button>
                 <button type="button" disabled={busy || index === scenes.length - 1} onClick={() => move("scene", index, 1)}>↓</button>
                 <button type="button" disabled={busy} onClick={() => { setEditingScene(item); setEditor("edit-scene"); }}>編集</button>
@@ -360,7 +381,7 @@ export function SceneBrowser(props: Props) {
         )}
         {!simple && <ul className={`list structure-list density-${density}`} {...listDragProps("shot")}>
           {shots.map((item, index) => (
-            <li key={item.id} {...rowDragProps("shot", index, item.id, shots.length)}>
+            <li key={item.id} {...rowDragProps("shot", index, shots.length)}>
               <button type="button" aria-pressed={item.id === shotId} onClick={() => onSelectShot(item.id)}>
                 <span>#{item.sequence} {item.summary}</span>
                 <span className="muted">{item.duration_sec}秒 {statusLabel(item.production_status)}</span>
@@ -372,6 +393,7 @@ export function SceneBrowser(props: Props) {
                 )}
               </button>
               {structureEditable && <div className="row structure-actions">
+                <span className="drag-handle" title="ドラッグで並べ替え" aria-hidden="true" {...handleDragProps("shot", index, item.id)}>⠿</span>
                 <button type="button" disabled={busy || index === 0} onClick={() => move("shot", index, -1)}>↑</button>
                 <button type="button" disabled={busy || index === shots.length - 1} onClick={() => move("shot", index, 1)}>↓</button>
                 <button type="button" disabled={busy} onClick={() => { setEditingShot(item); setEditor("edit-shot"); }}>編集</button>

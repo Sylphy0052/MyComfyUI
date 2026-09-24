@@ -1169,8 +1169,14 @@ button[aria-pressed="true"] {
   padding: var(--space-2);
 }
 
-.structure-list li[draggable="true"] {
+.structure-list .drag-handle[draggable="true"] {
   cursor: grab;
+}
+
+.structure-list .drag-handle {
+  padding: 0 var(--space-2);
+  color: var(--color-text-muted);
+  user-select: none;
 }
 
 .structure-list li.dragging {
