@@ -512,7 +512,7 @@ def _require_repository_path(path: Any) -> None:
         or not path
         or path.startswith("/")
         or posixpath.normpath(path) != path
-        or path == ".."
+        or path in (".", "..")
         or path.startswith("../")
     ):
         raise AiMediaUnavailable(f"参照データのpathが不正です: {path!r}")
