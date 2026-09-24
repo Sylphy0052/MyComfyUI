@@ -218,6 +218,8 @@ export function GenerationForm({
   const appliedPlanRef = useRef<string | null>(null);
   // 計画が最後に入れたプロンプト。使用者が書き換えていなければ、工程を移ったときに入れ替える。
   const planPromptRef = useRef<string | null>(null);
+  // 直前にキャラのnegative_promptを合成した結果と、合成したキャラ側の値 (#287)。
+  const planNegativeRef = useRef<{ merged: string; source: string } | null>(null);
   useEffect(() => {
     if (!plan || recipes.length === 0) return;
     const preset = plan.preset;
@@ -242,9 +244,21 @@ export function GenerationForm({
       planPromptRef.current = plan.prompt;
     }
     // キャラクターのnegative_promptは、Presetまたは入力欄の既存値の後ろへ追記する (#287)。
-    if (plan.negativePrompt && plan.negativePrompt.trim()) {
-      const baseNegative = filled.negative_prompt ?? valuesRef.current.negative_prompt ?? "";
+    // 同じキャラの値を合成済みで、その後に使用者が欄を変えていれば上書きしない。
+    const currentNegative = valuesRef.current.negative_prompt ?? "";
+    const lastNegative = planNegativeRef.current;
+    const negativeEdited =
+      lastNegative !== null &&
+      lastNegative.source === plan.negativePrompt &&
+      lastNegative.merged !== currentNegative;
+    if (
+      plan.negativePrompt &&
+      plan.negativePrompt.trim() &&
+      (filled.negative_prompt !== undefined || !negativeEdited)
+    ) {
+      const baseNegative = filled.negative_prompt ?? currentNegative;
       filled.negative_prompt = mergePrompt(baseNegative, plan.negativePrompt).prompt;
+      planNegativeRef.current = { merged: filled.negative_prompt, source: plan.negativePrompt };
     }
     if (Object.keys(filled).length === 0) return;
     setValues((current) => ({ ...current, ...filled }));
