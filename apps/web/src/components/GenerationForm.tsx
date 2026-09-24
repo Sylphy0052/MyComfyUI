@@ -288,9 +288,11 @@ export function GenerationForm({
       setModelValues(models);
     }
     setRestoreNotice(
-      original
-        ? null
-        : "元のRecipeが選択肢に無いため、現在のRecipeへ合う項目だけ入れました。",
+      !original
+        ? "元のRecipeが選択肢に無いため、現在のRecipeへ合う項目だけ入れました。"
+        : original.id !== restore.recipeId
+          ? `元のRecipeは更新されているため、後継の「${original.name}」へ合う項目だけ入れました。`
+          : null,
     );
   }, [restore, recipes, recipe, recipeId]);
 
@@ -678,7 +680,11 @@ export function GenerationForm({
               id="recipe"
               value={recipeId}
               disabled={useInheritedDefaults}
-              onChange={(event) => setRecipeId(event.target.value)}
+              onChange={(event) => {
+                setRecipeId(event.target.value);
+                // 復元時の通知は選び直したRecipeには当てはまらないので消す。
+                setRestoreNotice(null);
+              }}
             >
               {recipes.map((item) => (
                 <option key={item.id} value={item.id}>
