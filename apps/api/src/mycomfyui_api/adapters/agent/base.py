@@ -71,7 +71,7 @@ class ProposalImage:
     media_type: str
 
     def __post_init__(self) -> None:
-        # Providerは形式ごとの扱い (Codexの拡張子など) を許可リストの形式にしか持たない。
+        # Provider側の形式表 (Codexの拡張子など) には、許可リストの形式しか含まれていない。
         # 呼び出し経路が増えても、許可リスト外の形式は生成の時点で止める。
         if self.media_type not in PROPOSAL_IMAGE_MEDIA_TYPES:
             raise ValueError(f"添付できない画像形式です: {self.media_type}")
