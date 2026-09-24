@@ -31,8 +31,8 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
     <PromptAssistField
       {...rest}
       subject="画像の説明"
-      outputLabel="PromptとNegative"
-      submitLabel="Promptを補完"
+      outputLabel="プロンプトとネガティブプロンプト"
+      submitLabel="プロンプトを補完"
       allowImage
       onAssist={async ({ image, ...request }) => {
         const result = await api.assistImagePrompt({
@@ -134,7 +134,7 @@ export function PromptAssistField({
         />
         <p className="muted">
           {withImage
-            ? `画像と現在のPromptを見比べて、AIが直した${outputLabel}を差分で示します。`
+            ? `画像と現在のプロンプトを見比べて、AIが直した${outputLabel}を差分で示します。`
             : `日本語で説明するとAIが${outputLabel}を補完します。`}
         </p>
       </div>

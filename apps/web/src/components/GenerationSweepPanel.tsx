@@ -254,7 +254,7 @@ export function GenerationSweepPanel({
       <div className="stack">
         {error && <p className="error">{error}</p>}
         <label>実験名<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label>Recipe<select value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>ベース (Recipe)<select value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label>展開方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="cartesian">直積</option><option value="zip">zip</option></select></label>
         {promptDiff ? (
           <PromptDiffReview
@@ -277,21 +277,21 @@ export function GenerationSweepPanel({
             onApply={(result) => {
               // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
               setPromptDiff([
-                { key: "positive_prompt", label: "基本Prompt", current: prompt, proposed: result.positive },
-                { key: "negative_prompt", label: "Negative", current: negative, proposed: result.negative },
+                { key: "positive_prompt", label: "基本プロンプト", current: prompt, proposed: result.positive },
+                { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },
               ]);
             }}
           />
         )}
         {/* 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。 */}
-        <label>基本Prompt<textarea value={prompt} readOnly={promptDiff !== null} onChange={(event) => setPrompt(event.target.value)} /></label>
-        <label>Negative<textarea value={negative} readOnly={promptDiff !== null} onChange={(event) => setNegative(event.target.value)} /></label>
+        <label>基本プロンプト<textarea value={prompt} readOnly={promptDiff !== null} onChange={(event) => setPrompt(event.target.value)} /></label>
+        <label>ネガティブプロンプト<textarea value={negative} readOnly={promptDiff !== null} onChange={(event) => setNegative(event.target.value)} /></label>
         <div className="row">
           <label>seed<input value={seedAxis} onChange={(event) => setSeedAxis(event.target.value)} placeholder="-1,1,2" /></label>
           <label>CFG<input value={cfgAxis} onChange={(event) => setCfgAxis(event.target.value)} placeholder="4,5,6" /></label>
           <label>steps<input value={stepsAxis} onChange={(event) => setStepsAxis(event.target.value)} placeholder="20,30" /></label>
         </div>
-        <label>Prompt断片（1行1候補）<textarea value={fragmentAxis} onChange={(event) => setFragmentAxis(event.target.value)} /></label>
+        <label>プロンプト断片（1行1候補）<textarea value={fragmentAxis} onChange={(event) => setFragmentAxis(event.target.value)} /></label>
         <LookProfileManager kind="image" recipe={recipe} selectedIds={lookProfileIds} onSelectionChange={setLookProfileIds} />
         <div className="row">
           <button type="button" disabled={busy || !sceneId || !shotId || !recipeId} onClick={() => void runPreview()}>展開を確認</button>

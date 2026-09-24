@@ -472,8 +472,8 @@ export function VideoPanel({
             providers={providers}
             idPrefix="video-assist"
             subject="動画の説明"
-            outputLabel="Prompt"
-            submitLabel="Promptを補完"
+            outputLabel="プロンプト"
+            submitLabel="プロンプトを補完"
             placeholder="例: 赤いコートの女性が暗室をゆっくり歩き、カメラは横から追う。"
             onAssist={async ({ instruction, provider_id }) => {
               const result = await api.assistVideoPrompt({ instruction, provider_id });

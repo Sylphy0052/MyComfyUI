@@ -229,6 +229,10 @@ export function mergePrompt(current: string, incoming: string): MergeResult {
  *
  * `id`は同じ`current`と`proposed`の組み合わせなら常に同じ値になる。採否の状態を
  * `id`をキーに保持し、`applyPromptDiff`へそのまま渡せるようにするためである。
+ *
+ * `id`自体は配列内の位置 (`change:${match}` 等) から作るが、`parsePrompt`と重複除去の
+ * 出力順序は入力が同じなら常に同じになるため、同じ`current`と`proposed`からは常に同じ
+ * 位置に同じ内容が並び、結果として`id`も安定する。
  */
 export interface DiffHunk {
   readonly id: string;

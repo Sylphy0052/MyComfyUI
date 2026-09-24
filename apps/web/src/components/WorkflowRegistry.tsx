@@ -149,7 +149,7 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
         <h2>Workflow</h2>
         <p className="muted">
           {
-            "Workflowは生成の実行本体。Recipeは版の宣言変数へ値を与えるプリセットで、Workflow自体とは別の情報として扱う。"
+            "Workflowは生成の実行本体。Recipeは版の宣言変数へ値を与える定義で、Workflow自体とは別の情報として扱う。"
           }
         </p>
         {failed && (
