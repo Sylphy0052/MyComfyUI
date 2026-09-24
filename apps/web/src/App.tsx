@@ -665,6 +665,30 @@ export function App() {
     [projectId, sceneId, notify],
   );
 
+  // 生成フォームからの衣装その場登録 (#316)。changeSceneOutfitと同じ読み直し→保存の手順だが、
+  // 失敗は呼び出し側 (GenerationForm) がその場で表示するので、ここでは例外をそのまま投げる。
+  const registerCharacterOutfit = useCallback(
+    async (characterId: string, outfit: { id: string; name: string; tags: string[]; prompt: string }) => {
+      if (!projectId) throw new Error("Projectが選択されていません。");
+      const current = await api.getProjectLocalOverrides(projectId);
+      const existing = current.characters ?? [];
+      if (!existing.some((item) => item.id === characterId)) {
+        throw new Error("キャラクターが見つかりません。");
+      }
+      const nextCharacters = existing.map((item) => (
+        item.id === characterId ? { ...item, outfits: [...(item.outfits ?? []), outfit] } : item
+      ));
+      const saved = await api.updateProjectLocalOverrides(projectId, {
+        ...current,
+        characters: nextCharacters,
+      });
+      // 保存中に別Projectへ切り替えていたら、古いProjectの値を画面へ入れない。
+      if (projectIdRef.current !== projectId) return;
+      setLocalCharacters(saved.characters ?? []);
+    },
+    [projectId],
+  );
+
   // Presetの一覧は作品制作のときだけ取る。ラボや候補ギャラリーで作られたら取り直す。
   useEffect(() => subscribeLookProfilesChanged(() => setLookProfilesVersion((current) => current + 1)), []);
   useEffect(() => {
@@ -1798,6 +1822,7 @@ export function App() {
                     plan={generationPlan}
                     restore={generationRestore}
                     characters={localCharacters}
+                    onRegisterOutfit={registerCharacterOutfit}
                   />
                 </div>
 
