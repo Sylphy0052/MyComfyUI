@@ -34,7 +34,12 @@ export function WorkflowRegistryDialog({
       ref={dialogRef}
       className="panel workflow-registry-dialog"
       aria-label="Workflow"
-      onClose={onClose}
+      onClose={() => {
+        // Escで閉じたときはブラウザが先にdialogを閉じる。effectを待つとトーストが閉じたdialogに
+        // 一瞬残って見えなくなるため、closeイベントの時点で表示先を戻す。
+        onDialogOpenChange(null);
+        onClose();
+      }}
       // 開いている間は、背後の画面のショートカット (採否など) へキーを渡さない。
       onKeyDown={(event) => event.stopPropagation()}
     >
