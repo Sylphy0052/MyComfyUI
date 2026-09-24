@@ -124,6 +124,8 @@ interface Props {
    * ネガティブプロンプトの後ろへ`mergePrompt`でタグ順を揃えて追記する。
    * `restore`と同時に有効なときは`restore`が優先する (#299)。復元した時点の`scope`とPresetの組は
    * 適用済み扱いにし、その後に別の`scope`かPresetへ変わったときだけ、新しい組を入れる。
+   * 計画が無い状態で復元した後に計画が始まったときも、新しい組として入れる。復元値の無い項目
+   * (Presetの選択値など) は、復元前に入った計画の値が残る。
    */
   plan?: { scope: string; preset: PlanPreset | null; prompt: string; negativePrompt?: string } | null;
   /**
