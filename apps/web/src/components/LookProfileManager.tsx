@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { ApiError, api } from "../api/client";
+import { api } from "../api/client";
 import type { LookProfile, Recipe } from "../api/client";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 import { PromptFieldsEditor } from "./PromptFieldsEditor";
 import { mergePromptFields, splitPromptFields } from "../prompt/fields";
 import type { PromptFieldName } from "../prompt/fields";
-import { productionChoiceWarning, subscribeLookProfilesChanged } from "../preset/productionChoices";
+import {
+  describePresetError,
+  productionChoiceWarning,
+  subscribeLookProfilesChanged,
+} from "../preset/productionChoices";
 
 // 画面表示名は「Preset」。内部名 (`LookProfile`型・`lookProfileIds`等) は変えない。
 // ベースとなるRecipeの上に重ねて適用する設定の集合。
@@ -16,11 +20,6 @@ interface Props {
   recipe: Recipe | null;
   selectedIds: string[];
   onSelectionChange: (ids: string[]) => void;
-}
-
-function describe(error: unknown): string {
-  if (error instanceof ApiError) return `${error.message} (${error.code})`;
-  return String(error);
 }
 
 export function LookProfileManager({
@@ -50,7 +49,7 @@ export function LookProfileManager({
     let active = true;
     api.listLookProfiles({ kind, limit: 200 })
       .then((items) => { if (active) { setProfiles(items); setLoaded(true); } })
-      .catch((cause) => { if (active) setError(describe(cause)); });
+      .catch((cause) => { if (active) setError(describePresetError(cause)); });
     return () => { active = false; };
   }, [kind, reload]);
 
@@ -79,7 +78,8 @@ export function LookProfileManager({
   const isCompatible = (profile: LookProfile): boolean => {
     if (profile.recipe_id !== null && profile.recipe_id !== recipe?.id) return false;
     if (!recipe) return profile.recipe_id === null;
-    return Object.keys(profile.inputs).every((name) => name in recipe.input_schema);
+    return [...Object.keys(profile.inputs), ...profile.production_choice_inputs]
+      .every((name) => name in recipe.input_schema);
   };
 
   useEffect(() => {
@@ -191,7 +191,7 @@ export function LookProfileManager({
       resetEditor();
       setReload((current) => current + 1);
     } catch (cause) {
-      setError(describe(cause));
+      setError(describePresetError(cause));
     } finally {
       setBusy(false);
     }
@@ -207,7 +207,7 @@ export function LookProfileManager({
       setReload((current) => current + 1);
       if (editingId === profile.id) resetEditor();
     } catch (cause) {
-      setError(describe(cause));
+      setError(describePresetError(cause));
     } finally {
       setBusy(false);
     }
