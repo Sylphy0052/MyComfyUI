@@ -264,21 +264,25 @@ export function VoicePanel({
         fileName: file.name,
       });
       if (!role) return;
-      // 取込は済んでいるため、役割タグ付けに失敗しても参照音声の指定は残す。
-      await api.upsertMediaRoleTag({
-        relative_path: stored.relative_path,
-        sha256: stored.sha256,
-        file_name: file.name,
-        byte_size: stored.byte_size,
-        media_type: stored.media_type,
-        role,
-        // Projectを切り替える前に選んだキャラクターはAPIが422で弾くため除く。
-        character_ids: characterIds.filter((id) =>
-          characters.some((character) => character.id === id),
-        ),
-        project_id: projectId ?? undefined,
-        scene_id: sceneId ?? undefined,
-      });
+      try {
+        await api.upsertMediaRoleTag({
+          relative_path: stored.relative_path,
+          sha256: stored.sha256,
+          file_name: file.name,
+          byte_size: stored.byte_size,
+          media_type: stored.media_type,
+          role,
+          // Projectを切り替える前に選んだキャラクターはAPIが422で弾くため除く。
+          character_ids: characterIds.filter((id) =>
+            characters.some((character) => character.id === id),
+          ),
+          project_id: projectId ?? undefined,
+          scene_id: sceneId ?? undefined,
+        });
+      } catch (cause) {
+        // 取込は済んでいるため参照音声の指定は残し、役割が付かなかった声を示す。
+        setError(`${voiceId}の参照音声に役割を付けられませんでした: ${describe(cause)}`);
+      }
     } catch (cause) {
       setError(describe(cause));
     }

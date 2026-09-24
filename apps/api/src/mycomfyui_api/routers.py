@@ -2413,10 +2413,11 @@ async def _validate_role_tag_characters(
 
 
 def _validate_role_for_media(role: str, media_type: str) -> None:
-    """音声の役割は音声だけに、画像の役割は音声以外だけに付けさせる。`other`は共用。"""
+    """音声の役割は音声だけに、画像の役割は画像だけに付けさせる。`other`は種別を問わない。"""
     if role == "other":
         return
-    if (role in schemas.AUDIO_MEDIA_ROLES) != (_media_item_kind(media_type) == "audio"):
+    expected = "audio" if role in schemas.AUDIO_MEDIA_ROLES else "image"
+    if not media_type.startswith(f"{expected}/"):
         raise _validation_error(
             "役割がメディアの種別(画像・音声)と合いません。",
             details={"role": role, "media_type": media_type},
