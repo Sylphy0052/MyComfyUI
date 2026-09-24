@@ -1021,6 +1021,8 @@ export function App() {
         return;
       }
       setError(null);
+      // ダイアログを開いたままだと、移った先のJob一覧がダイアログの下に隠れる。
+      setWorkflowDialogOpen(false);
       setGenerationTab(job.kind as GenerationTab);
       // Job一覧はラボにだけあるため、作品制作から開いたときもラボへ移る。
       setMode("lab");
@@ -1507,6 +1509,7 @@ export function App() {
             ))}
             <button
               type="button"
+              className="workflow-dialog-button"
               aria-haspopup="dialog"
               onClick={() => setWorkflowDialogOpen(true)}
             >
