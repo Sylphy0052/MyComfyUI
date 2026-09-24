@@ -305,9 +305,11 @@ interface Props {
   scenes: SceneSummary[];
   /** キャラクター定義・scene_outfitsを保存したら呼ぶ。他画面 (制作計画等) の再取得を促す。 */
   onChanged: () => void;
+  /** 他画面 (生成フォーム等) でキャラクター定義を保存したら増やす。一覧を取り直す (#316)。 */
+  reloadToken?: number;
 }
 
-export function CharacterManager({ projectId, active, scenes, onChanged }: Props) {
+export function CharacterManager({ projectId, active, scenes, onChanged, reloadToken = 0 }: Props) {
   const [overrides, setOverrides] = useState<ProjectLocalOverrides | null>(null);
   const [draft, setDraft] = useState<CharacterDraft | null>(null);
   const [pickedReference, setPickedReference] = useState<PickedMedia[]>([]);
@@ -332,6 +334,11 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
     setSelectedId(null);
     setError(null);
   }, [projectId]);
+
+  // 一覧だけを取り直す。編集中の下書きは残し、保存時の競合はupdated_atで判定する。
+  useEffect(() => {
+    if (reloadToken > 0) setOverrides(null);
+  }, [reloadToken]);
 
   useEffect(() => {
     if (!active || !projectId || overrides) return;
@@ -893,7 +900,11 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
                   kind="image"
                   label="衣装の画像 (複数可)"
                   value={pickedOutfitImage}
-                  onChange={setPickedOutfitImage}
+                  onChange={(items) => {
+                    setPickedOutfitImage(items);
+                    setOutfitBulkFailures([]);
+                    setOutfitSkipped(0);
+                  }}
                   multiple
                   disabled={busy || addingOutfit || draft.outfits.length >= 100}
                   maxBytes={25 * 1024 * 1024}

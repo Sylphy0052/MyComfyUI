@@ -609,6 +609,7 @@ export function App() {
   const [localCharacters, setLocalCharacters] = useState<ProjectCharacterProfile[]>([]);
   const [sceneOutfits, setSceneOutfits] = useState<SceneOutfits>({});
   const [characterOverridesToken, setCharacterOverridesToken] = useState(0);
+  const [characterManagerReloadToken, setCharacterManagerReloadToken] = useState(0);
   useEffect(() => {
     setLocalCharacters([]);
     setSceneOutfits({});
@@ -665,26 +666,33 @@ export function App() {
     [projectId, sceneId, notify],
   );
 
-  // 生成フォームからの衣装その場登録 (#316)。changeSceneOutfitと同じ読み直し→保存の手順だが、
-  // 失敗は呼び出し側 (GenerationForm) がその場で表示するので、ここでは例外をそのまま投げる。
+  // 生成フォームからの衣装その場登録 (#316)。changeSceneOutfitと同じキューで1件ずつ保存し、
+  // 互いの読み直し→保存が交差して片方の変更が消えないようにする。失敗は呼び出し側
+  // (GenerationForm) がその場で表示するので例外を返すが、キューは止めない。
   const registerCharacterOutfit = useCallback(
-    async (characterId: string, outfit: { id: string; name: string; tags: string[]; prompt: string }) => {
-      if (!projectId) throw new Error("Projectが選択されていません。");
-      const current = await api.getProjectLocalOverrides(projectId);
-      const existing = current.characters ?? [];
-      if (!existing.some((item) => item.id === characterId)) {
-        throw new Error("キャラクターが見つかりません。");
-      }
-      const nextCharacters = existing.map((item) => (
-        item.id === characterId ? { ...item, outfits: [...(item.outfits ?? []), outfit] } : item
-      ));
-      const saved = await api.updateProjectLocalOverrides(projectId, {
-        ...current,
-        characters: nextCharacters,
-      });
-      // 保存中に別Projectへ切り替えていたら、古いProjectの値を画面へ入れない。
-      if (projectIdRef.current !== projectId) return;
-      setLocalCharacters(saved.characters ?? []);
+    (characterId: string, outfit: { id: string; name: string; tags: string[]; prompt: string }) => {
+      if (!projectId) return Promise.reject(new Error("Projectが選択されていません。"));
+      const run = async () => {
+        const current = await api.getProjectLocalOverrides(projectId);
+        const existing = current.characters ?? [];
+        const target = existing.find((item) => item.id === characterId);
+        if (!target) throw new Error("キャラクターが見つかりません。");
+        if ((target.outfits ?? []).length >= 100) throw new Error("衣装が上限 (100件) に達しています。");
+        const nextCharacters = existing.map((item) => (
+          item.id === characterId ? { ...item, outfits: [...(item.outfits ?? []), outfit] } : item
+        ));
+        const saved = await api.updateProjectLocalOverrides(projectId, {
+          ...current,
+          characters: nextCharacters,
+        });
+        // 保存中に別Projectへ切り替えていたら、古いProjectの値を画面へ入れない。
+        if (projectIdRef.current !== projectId) return;
+        setLocalCharacters(saved.characters ?? []);
+        setCharacterManagerReloadToken((value) => value + 1);
+      };
+      const queued = sceneOutfitQueueRef.current.then(run);
+      sceneOutfitQueueRef.current = queued.catch(() => undefined);
+      return queued;
     },
     [projectId],
   );
@@ -2094,6 +2102,7 @@ export function App() {
             active={charactersActive}
             scenes={charactersScenes}
             onChanged={() => setCharacterOverridesToken((value) => value + 1)}
+            reloadToken={characterManagerReloadToken}
           />
         </div>
       )}
