@@ -215,7 +215,8 @@ export function AssetBrowser({
     }
     let active = true;
     // 取得が終わるまで前の詳細を残さない。選択と違うArtifactの出自を見せない。
-    setDetail(null);
+    // 同じJobの取り直しでは残し、詳細の入力途中の状態や表示を消さない。
+    setDetail((current) => (current?.job.id === selectedJobId ? current : null));
     (async () => {
       try {
         const job = await api.getJob(selectedJobId);
@@ -339,13 +340,11 @@ export function AssetBrowser({
 
   const lineageActive = lineageArtifactId !== null || lineageJobId !== null;
 
-  /**
-   * プロンプトを直して投入した新しいJobも、再実行と同じようにキューへ反映する (#303)。
-   * 詳細は取り直さない。取り直すと詳細が一度消え、直したプロンプトの表示も消える。
-   */
+  /** プロンプトを直して投入した新しいJobも、再実行と同じようにキューへ反映する (#303)。 */
   const handleRevisedJob = (job: GenerationJob) => {
     onRerunJob(job);
     setReloadToken((current) => current + 1);
+    setDetailToken((current) => current + 1);
   };
 
   /** 選択中のArtifactを作ったJobを、当時の条件または現在のCanonで実行し直す。 */

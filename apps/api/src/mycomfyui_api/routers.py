@@ -4358,7 +4358,8 @@ async def create_generation_prompt_revision(
     元Jobの入力をRecipeが受け付ける範囲で引き継ぎ、positive_prompt、negative_promptを
     補完結果へ、seedを元の実値へ差し替える。Look Profileの値はresolved_promptと
     parametersへ合成済みのため、look_profile_idsは渡さない (渡すと二重に掛かる)。
-    画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJobは
+    画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJob、
+    seedを受け付けないRecipeのJobは
     Providerを呼ぶ前に``PROMPT_REVISION_UNSUPPORTED``で断る。
     """
     job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
@@ -4385,6 +4386,8 @@ async def create_generation_prompt_revision(
     if (
         template_name in comfyui_prepare.DERIVATION_TEMPLATES
         or "positive_prompt" not in accepted
+        # seedを渡せないRecipeでは新Jobのseedが元と変わり、指示の効果だけを比べられない。
+        or "seed" not in accepted
         or not (manifest.resolved_prompt or "").strip()
     ):
         raise _prompt_revision_unsupported(job.id)
@@ -4431,8 +4434,7 @@ async def create_generation_prompt_revision(
     inputs["positive_prompt"] = prompt.positive_prompt
     if "negative_prompt" in accepted:
         inputs["negative_prompt"] = prompt.negative_prompt
-    if "seed" in accepted:
-        inputs["seed"] = manifest.seed
+    inputs["seed"] = manifest.seed
 
     job_payload = schemas.GenerationJobCreate(
         kind=job.kind,
