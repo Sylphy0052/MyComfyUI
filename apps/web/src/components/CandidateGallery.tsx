@@ -248,7 +248,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   };
 
   useEffect(() => {
-    // ラボ: F (全画面) / A・X・U (採否) / [・] (比較のA・B) / ←・→ (候補の移動)。
+    // ラボ: F・Escape (全画面の開閉) / A・X・U (採否) / [・] (比較のA・B) / ←・→ (候補の移動)。
     // モードB (simple) は比較のA/Bと全画面を出さないため、F・[・]を受け付けず、
     // 採否と候補の移動だけを受け付ける。`!simple` で判定するのはFと[・]の2か所だけにしておく。
     if (!active || viewerIndex !== null) return;
