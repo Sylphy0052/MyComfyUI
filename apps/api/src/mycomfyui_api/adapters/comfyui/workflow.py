@@ -943,6 +943,7 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
         # 同じ「強さ」でもノードごとに意味が違うため、値の種別を分けて上限も変える。
         # reference_strengthはAnimaのIPAdapter/In-Context参照注入で、検証済みの採用値
         # (0.5〜1.5)を大きく外れない範囲(0〜2)だけを許す。
+        # 上限2.0はapps/web/src/derivation/changeOperations.tsのREFERENCE_STRENGTH_MAXと揃える。
         number = _finite_number(name, value)
         maximum = {
             "guidance_scale": 100.0,

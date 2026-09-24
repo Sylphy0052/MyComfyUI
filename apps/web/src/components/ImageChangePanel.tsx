@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, api } from "../api/client";
+import { api } from "../api/client";
 import type { GenerationJob, Recipe } from "../api/client";
 import {
   CHANGE_OPERATIONS,
@@ -8,6 +8,7 @@ import {
   planForOperations,
 } from "../derivation/changeOperations";
 import type { ChangeOperation } from "../derivation/changeOperations";
+import { describeApiError, templateName } from "../derivation/recipeTemplate";
 import { EmptyState } from "./ui/EmptyState";
 import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
@@ -31,16 +32,6 @@ interface Props {
   onManageWorkflows: () => void;
 }
 
-function templateName(recipe: Recipe): string {
-  const reference = recipe.workflow_template_ref as Record<string, unknown>;
-  return typeof reference?.name === "string" ? reference.name : "";
-}
-
-function describe(error: unknown): string {
-  if (error instanceof ApiError) return `${error.message} (${error.code})`;
-  return String(error);
-}
-
 export function ImageChangePanel({
   projectId,
   sceneId,
@@ -59,6 +50,8 @@ export function ImageChangePanel({
   const [prompt, setPrompt] = useState("");
   // 除外したい要素は画面に出さず、元画像の生成条件から取り込んだ値をそのまま送信にだけ使う。
   const [negative, setNegative] = useState("");
+  // 元画像からのプロンプト取り込みに失敗したことを画面に伝えるためのフラグ。
+  const [promptRestoreFailed, setPromptRestoreFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sourceArtifactIdRef = useRef(sourceArtifactId);
@@ -102,6 +95,7 @@ export function ImageChangePanel({
     if (!artifactId) {
       setPrompt("");
       setNegative("");
+      setPromptRestoreFailed(false);
       return;
     }
     (async () => {
@@ -111,6 +105,7 @@ export function ImageChangePanel({
         if (!artifact.job_id) {
           setPrompt("");
           setNegative("");
+          setPromptRestoreFailed(false);
           return;
         }
         const job = await api.getJob(artifact.job_id);
@@ -120,11 +115,13 @@ export function ImageChangePanel({
         setPrompt(manifest.resolved_prompt ?? "");
         const parameters = manifest.parameters as Record<string, unknown>;
         setNegative(typeof parameters.negative_prompt === "string" ? parameters.negative_prompt : "");
+        setPromptRestoreFailed(false);
       } catch {
-        // 取得できなくても元画像の選択自体は成立させ、説明を空欄で始める。
+        // 取得できなくても元画像の選択自体は成立させ、説明を空欄で始める。取得に失敗したことだけ画面に伝える。
         if (active) {
           setPrompt("");
           setNegative("");
+          setPromptRestoreFailed(true);
         }
       }
     })();
@@ -154,7 +151,7 @@ export function ImageChangePanel({
     }
     if (!recipe) {
       setError(
-        `プリセット「${CHANGE_TEMPLATE_RECIPE_LABELS[plan.templateName]}」が見つかりません。ラボ (モードA) で登録してください。`,
+        `Recipe「${CHANGE_TEMPLATE_RECIPE_LABELS[plan.templateName]}」が見つかりません。ラボ (モードA) で登録してください。`,
       );
       return;
     }
@@ -174,14 +171,14 @@ export function ImageChangePanel({
         inputs: {
           source_image: sourceItem.source,
           positive_prompt: prompt,
-          // 取り込めなかったときは送らず、プリセットの既定値を使わせる。
+          // 取り込めなかったときは送らず、Recipeの既定値を使わせる。
           ...(negative ? { negative_prompt: negative } : {}),
           reference_strength: plan.referenceStrength,
         },
       });
       onSubmittedJob(job);
     } catch (cause) {
-      setError(describe(cause));
+      setError(describeApiError(cause));
     } finally {
       setBusy(false);
     }
@@ -191,7 +188,7 @@ export function ImageChangePanel({
     return (
       <section className="panel">
         <h2>画像を変更</h2>
-        <EmptyState title="プリセットを読み込んでいます…" />
+        <EmptyState title="Recipeを読み込んでいます…" />
       </section>
     );
   }
@@ -200,7 +197,7 @@ export function ImageChangePanel({
       <section className="panel">
         <h2>画像を変更</h2>
         <EmptyState
-          title="プリセットの取得に失敗しました。"
+          title="Recipeの取得に失敗しました。"
           description={recipesError}
           action={
             <button type="button" onClick={onRetryRecipes}>
@@ -216,8 +213,8 @@ export function ImageChangePanel({
       <section className="panel">
         <h2>画像を変更</h2>
         <EmptyState
-          title="使えるプリセットがまだありません。"
-          description="ラボ (モードA) でプリセットを登録すると、画像の変更ができます。"
+          title="使えるRecipeがまだありません。"
+          description="ラボ (モードA) でRecipeを登録すると、画像の変更ができます。"
           action={
             <button type="button" onClick={onManageWorkflows}>
               ラボで登録する
@@ -245,6 +242,9 @@ export function ImageChangePanel({
           shotId={shotId}
           enableRoleTagging
         />
+        {promptRestoreFailed && (
+          <p className="muted">元画像の生成条件からプロンプトを取り込めませんでした。説明欄は空で始まります。</p>
+        )}
         <span>変えたい要素</span>
         <div className="row" role="group" aria-label="変えたい要素">
           {CHANGE_OPERATIONS.map((item) => (

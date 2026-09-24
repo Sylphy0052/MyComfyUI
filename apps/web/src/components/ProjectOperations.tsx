@@ -326,7 +326,7 @@ export function ProjectOperations({ project }: { project: ProjectRecord }) {
               onAdd={(name) => { addPromptField(name); setPreview(null); }}
               onRemove={(name) => { removePromptField(name); setPreview(null); }}
             />
-            <label>生成設定（JSON、Prompt、Negative Prompt以外）<textarea className="mono" value={inputs} onChange={(event) => { setInputs(event.target.value); setPreview(null); }} /></label>
+            <label>生成設定（JSON、プロンプト、ネガティブプロンプト以外）<textarea className="mono" value={inputs} onChange={(event) => { setInputs(event.target.value); setPreview(null); }} /></label>
             <div className="row">
               <button type="button" disabled={busy || !canGenerate} onClick={() => run("preview")}>事前確認</button>
               <button type="button" className="primary" disabled={busy || !canGenerate || !preview} onClick={() => run("create")}>この計画を実行</button>

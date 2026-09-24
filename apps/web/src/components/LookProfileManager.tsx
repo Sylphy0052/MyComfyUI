@@ -9,6 +9,8 @@ import { mergePromptFields, splitPromptFields } from "../prompt/fields";
 import type { PromptFieldName } from "../prompt/fields";
 import { productionChoiceWarning, subscribeLookProfilesChanged } from "../preset/productionChoices";
 
+// 画面表示名は「Preset」。内部名 (`LookProfile`型・`lookProfileIds`等) は変えない。
+// ベースとなるRecipeの上に重ねて適用する設定の集合。
 interface Props {
   kind: string;
   recipe: Recipe | null;
@@ -276,7 +278,7 @@ export function LookProfileManager({
             onAdd={addPromptField}
             onRemove={removePromptField}
           />
-          <label>入力overlay（Prompt、Negative Prompt以外）<textarea className="mono" rows={10} value={restJson} onChange={(event) => setRestJson(event.target.value)} /></label>
+          <label>入力overlay（プロンプト、ネガティブプロンプト以外）<textarea className="mono" rows={10} value={restJson} onChange={(event) => setRestJson(event.target.value)} /></label>
           <fieldset className="stack">
             <legend>モードBで選ばせる項目</legend>
             {choiceLabels.size === 0 ? <p className="muted">Recipeを選ぶと、入力から選べます。</p> : (

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
+import { REFERENCE_STRENGTH_MAX } from "../derivation/changeOperations";
+import { describeApiError, templateName } from "../derivation/recipeTemplate";
 import type {
   AgentProvider,
   GenerationJob,
@@ -37,11 +39,6 @@ interface Props {
   onManageWorkflows: () => void;
 }
 
-function templateName(recipe: Recipe): string {
-  const reference = recipe.workflow_template_ref as Record<string, unknown>;
-  return typeof reference?.name === "string" ? reference.name : "";
-}
-
 function modeOf(recipe: Recipe | null): DerivationMode | null {
   switch (recipe ? templateName(recipe) : "") {
     case "anima_img2img": return "img2img";
@@ -52,11 +49,6 @@ function modeOf(recipe: Recipe | null): DerivationMode | null {
     case "anima_ref_incontext": return "reference";
     default: return null;
   }
-}
-
-function describe(error: unknown): string {
-  if (error instanceof ApiError) return `${error.message} (${error.code})`;
-  return String(error);
 }
 
 export function ImageDerivationPanel({
@@ -156,7 +148,7 @@ export function ImageDerivationPanel({
         }
       })
       .catch((cause) => {
-        if (active) setError(describe(cause));
+        if (active) setError(describeApiError(cause));
       });
     return () => { active = false; };
   }, [projectId, sceneId, shotId]);
@@ -302,7 +294,7 @@ export function ImageDerivationPanel({
         setPreview(null);
         setPreviewError(cause);
       } else {
-        setError(describe(cause));
+        setError(describeApiError(cause));
       }
     } finally {
       setBusy(false);
@@ -354,7 +346,7 @@ export function ImageDerivationPanel({
     <section className="panel">
       <h2>画像派生生成</h2>
       <div className="stack">
-        <label htmlFor="derivation-recipe">処理</label>
+        <label htmlFor="derivation-recipe">ベース (Recipe)</label>
         <select id="derivation-recipe" value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>
           {recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
@@ -414,7 +406,7 @@ export function ImageDerivationPanel({
                   },
                   {
                     key: "negative_prompt",
-                    label: "除外したい要素",
+                    label: "ネガティブプロンプト",
                     current: negative,
                     proposed: result.negative,
                   },
@@ -425,11 +417,11 @@ export function ImageDerivationPanel({
           {/* 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。 */}
           <label htmlFor="derivation-prompt">プロンプト</label>
           <textarea id="derivation-prompt" value={prompt} readOnly={promptDiff !== null} onChange={(event) => { setPrompt(event.target.value); setTouchedFields((current) => new Set(current).add("positive_prompt")); }} />
-          <label htmlFor="derivation-negative">除外したい要素</label>
+          <label htmlFor="derivation-negative">ネガティブプロンプト</label>
           <textarea id="derivation-negative" value={negative} readOnly={promptDiff !== null} onChange={(event) => { setNegative(event.target.value); setTouchedFields((current) => new Set(current).add("negative_prompt")); }} />
           <div className="row">
             {mode === "reference" ? (
-              <label>参照強度<input type="number" min="0" max="2" step="0.05" value={referenceStrength} onChange={(event) => { setReferenceStrength(event.target.value); setTouchedFields((current) => new Set(current).add("reference_strength")); }} /></label>
+              <label>参照強度<input type="number" min="0" max={REFERENCE_STRENGTH_MAX} step="0.05" value={referenceStrength} onChange={(event) => { setReferenceStrength(event.target.value); setTouchedFields((current) => new Set(current).add("reference_strength")); }} /></label>
             ) : (
               <label>denoise<input type="number" min="0" max="1" step="0.05" value={denoise} onChange={(event) => { setDenoise(event.target.value); setTouchedFields((current) => new Set(current).add("denoise")); }} /></label>
             )}

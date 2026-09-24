@@ -29,6 +29,13 @@ export const CHANGE_TEMPLATE_RECIPE_LABELS: Record<ChangeTemplateName, string> =
   anima_ref_incontext: "Anima 参照 衣装",
 };
 
+/**
+ * 参照強度の入力上限。`apps/api/src/mycomfyui_api/adapters/comfyui/workflow.py`の
+ * `_coerce`が持つreference_strengthの上限 (2.0) と揃える。コード共有はしていないため、
+ * どちらかを変えたらもう一方も直す。
+ */
+export const REFERENCE_STRENGTH_MAX = 2;
+
 export interface ChangePlan {
   templateName: ChangeTemplateName;
   referenceStrength: number;

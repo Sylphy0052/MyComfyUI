@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
+import { mergePrompt } from "../prompt/merge";
 import { planPresetBlocker, type PlanPreset } from "../state/productionPlan";
 import { ignoresShortcut } from "./ui/shortcuts";
 import type {
@@ -345,13 +346,13 @@ export function GenerationForm({
     setPromptDiff([
       {
         key: "positive_prompt",
-        label: "Prompt",
+        label: "プロンプト",
         current: values.positive_prompt ?? "",
         proposed: result.positive,
       },
       {
         key: "negative_prompt",
-        label: "Negative",
+        label: "ネガティブプロンプト",
         current: values.negative_prompt ?? "",
         proposed: result.negative,
       },
@@ -403,11 +404,14 @@ export function GenerationForm({
 
   const appendTags = () => {
     if (extractedTags.length === 0) return;
+    // 抽出したタグに本当に新規のものが無ければ、差分レビューを開かず終える。
+    const merged = mergePrompt(values.positive_prompt ?? "", extractedTags.join(", "));
+    if (merged.added === 0) return;
     // 既存のタグは残したまま、抽出したタグとの差分レビューを開いて採否を選ばせる。
     setPromptDiff([
       {
         key: "positive_prompt",
-        label: "Prompt",
+        label: "プロンプト",
         current: values.positive_prompt ?? "",
         proposed: extractedTags.join(", "),
       },
@@ -566,7 +570,7 @@ export function GenerationForm({
             <p className="muted">Project、Scene、Shotの設定だけで生成します。</p>
           )}
           <div>
-            <label htmlFor="recipe">{simple ? "プリセット" : "ベース (Recipe)"}</label>
+            <label htmlFor="recipe">ベース (Recipe)</label>
             <select
               id="recipe"
               value={recipeId}
@@ -610,7 +614,7 @@ export function GenerationForm({
 
         <fieldset className="form-section" hidden={simple}>
           <legend>出力設定</legend>
-          {!useInheritedDefaults && changedFields.length > 0 && (
+          {!simple && !useInheritedDefaults && changedFields.length > 0 && (
             <div className="recipe-diff">
               <p className="muted">
                 Recipe既定値と異なる項目: {changedFields.map((field) => field.label).join(", ")}

@@ -2,8 +2,8 @@ import { PROMPT_FIELD_NAMES } from "../prompt/fields";
 import type { PromptFieldName } from "../prompt/fields";
 
 const PROMPT_FIELD_LABEL: Record<PromptFieldName, string> = {
-  positive_prompt: "Prompt",
-  negative_prompt: "Negative Prompt",
+  positive_prompt: "プロンプト",
+  negative_prompt: "ネガティブプロンプト",
 };
 
 interface Props {

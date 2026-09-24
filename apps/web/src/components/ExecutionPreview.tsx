@@ -11,7 +11,7 @@ const ORIGIN_LABEL: Record<string, string> = {
   shot: "Shot設定",
   scene: "Scene設定",
   project: "Project既定値",
-  recipe_default: "プリセット既定",
+  recipe_default: "Recipe既定",
   workflow_default: "Workflow既定",
   adapter: "自動",
 };
