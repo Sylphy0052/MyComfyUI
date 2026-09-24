@@ -391,10 +391,13 @@ export function App() {
   const [eventsConnected, setEventsConnected] = useState(false);
   const jobsRequestSequence = useRef(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  // 全画面A/B比較の<dialog>がtop layerで開いている間、通常DOMのToastRegionは
+  // 全画面A/B比較やWorkflowの<dialog>がtop layerで開いている間、通常DOMのToastRegionは
   // z-indexに関わらず隠れる (#186)。開いているdialog要素をここへ受け取り、
   // その中へToastRegionをportalして表示先を切り替える。
   const [comparisonDialogEl, setComparisonDialogEl] = useState<HTMLDialogElement | null>(null);
+  const [workflowDialogEl, setWorkflowDialogEl] = useState<HTMLDialogElement | null>(null);
+  // 2つのdialogはどちらもモーダルで、同時には開かない。
+  const toastDialogEl = comparisonDialogEl ?? workflowDialogEl;
   // ジョブ一覧を初めて取得した時点と、スコープ切替直後はnullに戻し、
   // 既存ジョブや無関係スコープのジョブを完了通知として出さないようにする。
   const previousJobStatesRef = useRef<Map<string, string> | null>(null);
@@ -1935,16 +1938,17 @@ export function App() {
         onClose={() => setWorkflowDialogOpen(false)}
         sceneId={sceneId}
         shotId={shotId}
+        onDialogOpenChange={setWorkflowDialogEl}
       />
 
-      {comparisonDialogEl
+      {toastDialogEl
         ? createPortal(
             <ToastRegion
               toasts={toasts}
               onDismiss={dismissToast}
               onNavigate={navigateToJob}
             />,
-            comparisonDialogEl,
+            toastDialogEl,
           )
         : (
           <ToastRegion

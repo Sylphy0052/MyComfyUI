@@ -7,10 +7,18 @@ interface Props {
   onClose: () => void;
   sceneId: string | null;
   shotId: string | null;
+  /** 開いている間はdialog要素を、閉じたらnullを渡す。トーストの表示先に使う。 */
+  onDialogOpenChange: (dialog: HTMLDialogElement | null) => void;
 }
 
 /** Workflowの登録・版・スナップショットをラボの画面の上に開くダイアログ。 */
-export function WorkflowRegistryDialog({ open, onClose, sceneId, shotId }: Props) {
+export function WorkflowRegistryDialog({
+  open,
+  onClose,
+  sceneId,
+  shotId,
+  onDialogOpenChange,
+}: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -18,7 +26,8 @@ export function WorkflowRegistryDialog({ open, onClose, sceneId, shotId }: Props
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
-  }, [open]);
+    onDialogOpenChange(open ? dialog : null);
+  }, [open, onDialogOpenChange]);
 
   return (
     <dialog
