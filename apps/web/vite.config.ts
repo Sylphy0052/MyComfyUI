@@ -8,7 +8,7 @@ import { buildThemeBootScript } from "./src/state/themeBootScript";
 const API_TARGET = "http://127.0.0.1:8000";
 
 // テーマの起動スクリプトをindex.htmlへ直書きせず、themeState.tsの定数から組み立てて差し込む。
-function themeBootScript(): Plugin {
+function createThemeBootScriptPlugin(): Plugin {
   return {
     name: "mycomfyui-theme-boot-script",
     transformIndexHtml: () => [{ tag: "script", children: buildThemeBootScript(), injectTo: "head" }],
@@ -16,7 +16,7 @@ function themeBootScript(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), themeBootScript()],
+  plugins: [react(), createThemeBootScriptPlugin()],
   server: {
     host: "127.0.0.1",
     port: 5173,

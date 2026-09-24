@@ -8,8 +8,9 @@ import {
 
 /**
  * React描画前に`data-theme`属性を確定させ、既定 (ダーク) からの一瞬の切替 (FOUC) を防ぐスクリプト。
- * vite.config.tsのプラグインがビルド時に`index.html`の`<head>`へ差し込む。
- * storage keyと解決規則はthemeState.tsの定数から組み立て、二重管理を避ける。
+ * vite.config.tsのプラグインが、dev serverの配信時とビルド時に`index.html`の`<head>`へ差し込む。
+ * storage key・選択肢・既定値・クエリ・フォールバックの値はthemeState.tsの定数から埋め込む。
+ * systemを解決する分岐はthemeState.tsの`resolveTheme`と揃えて手で書いている。
  * 設定ファイルから読まれるため、モジュールの評価時にブラウザのAPIへ触れない。
  */
 export function buildThemeBootScript(): string {

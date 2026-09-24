@@ -3,8 +3,11 @@
  * 起動直後の一瞬だけ別テーマで表示されるFOUCを避けるために、
  * 適用先属性 (`document.documentElement`の`data-theme`) の計算をUI状態から切り出す。
  *
- * 描画前に同じ属性を確定させる`index.html`のスクリプトは、ここの定数から`themeBootScript.ts`が
- * ビルド時に組み立てる。storage keyや解決規則を変えるときは両ファイルを合わせて見る。
+ * 描画前に同じ属性を確定させる`index.html`のスクリプトは、ここの定数から`themeBootScript.ts`が組み立て、
+ * dev serverの配信時とビルド時にViteが差し込む。定数値は共有しているが、systemをOS設定へ解決する分岐は
+ * `resolveTheme`とスクリプトに別々に書いてあるため、解決規則を変えるときは両ファイルを合わせて直す。
+ *
+ * vite.config.tsからNode上でも読まれるため、モジュールの評価時 (トップレベル) にブラウザのAPIへ触れない。
  */
 
 export const THEME_PREFERENCE_VALUES = ["light", "dark", "system"] as const;
