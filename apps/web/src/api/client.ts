@@ -98,6 +98,10 @@ export type ProjectReferenceImage =
   components["schemas"]["ProjectReferenceImage"];
 export type ProjectCharacterOutfit =
   components["schemas"]["ProjectCharacterOutfit"];
+export type ProjectCharacterPersonalProfile =
+  components["schemas"]["ProjectCharacterPersonalProfile"];
+export type ProjectCharacterProfileExtraField =
+  components["schemas"]["ProjectCharacterProfileExtraField"];
 export type ProjectReferenceSet =
   components["schemas"]["ProjectReferenceSet"];
 export type ProjectReferenceSlot =
