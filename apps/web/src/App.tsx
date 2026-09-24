@@ -203,6 +203,7 @@ export function App() {
     side: "left" | "right";
     startX: number;
     startWidth: number;
+    pointerId: number;
   } | null>(null);
   const paneLayoutRef = useRef(paneLayout);
   paneLayoutRef.current = paneLayout;
@@ -212,12 +213,17 @@ export function App() {
       paneDragRef.current = null;
       delete appRef.current?.dataset.paneDragging;
     }
+    function finishPaneDrag() {
+      clearPaneDrag();
+      persistPaneLayoutState(paneLayoutRef.current);
+    }
     function handlePointerMove(event: PointerEvent) {
       const drag = paneDragRef.current;
-      if (!drag) return;
+      // 掴んでいるポインタ以外(ペンのhoverや別の指)の動きは無視する。
+      if (!drag || event.pointerId !== drag.pointerId) return;
       if (event.buttons === 0) {
         // pointerupもpointercancelも届かずにボタンが離されていた場合の防御。
-        handlePointerUp();
+        finishPaneDrag();
         return;
       }
       const deltaX = event.clientX - drag.startX;
@@ -231,19 +237,21 @@ export function App() {
         widths: { ...previous.widths, [drag.paneId]: nextWidth },
       }));
     }
-    function handlePointerUp() {
-      if (!paneDragRef.current) return;
-      clearPaneDrag();
-      persistPaneLayoutState(paneLayoutRef.current);
+    function handlePointerUp(event: PointerEvent) {
+      const drag = paneDragRef.current;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      finishPaneDrag();
     }
-    function handlePointerCancel() {
+    function handlePointerCancel(event: PointerEvent) {
       // ドラッグ中にポインタが失われた場合も掴んだ状態を残さない。
+      if (event.pointerId !== paneDragRef.current?.pointerId) return;
       clearPaneDrag();
     }
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
     return () => {
+      clearPaneDrag();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
@@ -254,11 +262,16 @@ export function App() {
     (paneId: PaneId, side: "left" | "right") =>
       (event: ReactPointerEvent<HTMLDivElement>) => {
         event.preventDefault();
-        // ハンドル外へ出ても、window外でボタンを離してもpointerupを受け取れるようにする。
-        event.currentTarget.setPointerCapture(event.pointerId);
+        try {
+          // ハンドル外へ出ても、window外でボタンを離してもpointerupを受け取れるようにする。
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // キャプチャできなくても、windowのリスナーだけでドラッグは続けられる。
+        }
         paneDragRef.current = {
           paneId,
           side,
+          pointerId: event.pointerId,
           startX: event.clientX,
           startWidth: paneLayoutRef.current.widths[paneId],
         };
