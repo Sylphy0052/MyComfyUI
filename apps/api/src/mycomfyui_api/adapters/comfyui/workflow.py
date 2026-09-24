@@ -160,8 +160,8 @@ ANIMA_TXT2IMG = WorkflowBinding(
     variables={
         "positive_prompt": VariableRef("positive_prompt", "text", "str", required=True),
         "negative_prompt": VariableRef("negative_prompt", "text", "str"),
-        "width": VariableRef("latent", "width", "positive_int"),
-        "height": VariableRef("latent", "height", "positive_int"),
+        "width": VariableRef("latent", "width", "image_dimension"),
+        "height": VariableRef("latent", "height", "image_dimension"),
         "batch_size": VariableRef("latent", "batch_size", "positive_int"),
         "seed": VariableRef("ksampler", "seed", "seed"),
         "steps": VariableRef("ksampler", "steps", "sampling_steps"),
@@ -649,8 +649,8 @@ def _anima_ref_common_variables() -> dict[str, VariableRef]:
         "cfg": VariableRef("ksampler", "cfg", "guidance_scale"),
         "sampler_name": VariableRef("ksampler", "sampler_name", "str"),
         "scheduler": VariableRef("ksampler", "scheduler", "str"),
-        "width": VariableRef("latent", "width", "positive_int"),
-        "height": VariableRef("latent", "height", "positive_int"),
+        "width": VariableRef("latent", "width", "image_dimension"),
+        "height": VariableRef("latent", "height", "image_dimension"),
         "unet_name": VariableRef("unet_loader", "unet_name", "str", required=True),
         "clip_name": VariableRef("clip_loader", "clip_name", "str", required=True),
         "vae_name": VariableRef("vae_loader", "vae_name", "str", required=True),
@@ -938,6 +938,9 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
         minimum, maximum = bounds[value_type]
         if not minimum <= value <= maximum:
             raise WorkflowError(f"{name}は{minimum}以上{maximum}以下で指定します。")
+        # EmptyLatentImageは8刻みの値しか受け付けない。
+        if value_type == "image_dimension" and value % 8 != 0:
+            raise WorkflowError(f"{name}は8の倍数で指定します。")
         return value
     if value_type in ("guidance_scale", "control_strength", "reference_strength"):
         # 同じ「強さ」でもノードごとに意味が違うため、値の種別を分けて上限も変える。
