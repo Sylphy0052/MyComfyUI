@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { DragEvent, FormEvent } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { ProjectRecord, SceneCreate, ShotCreate } from "../api/client";
@@ -16,6 +16,16 @@ import { ProjectLocalOverridesEditor } from "./ProjectLocalOverridesEditor";
 import { useNotify } from "./ui/notify";
 import { ToggleGroup } from "./ui/ToggleGroup";
 import { ROW_DENSITY_OPTIONS, useListDensity } from "../state/densityState";
+
+type StructureKind = "scene" | "shot";
+
+/**
+ * 一覧の行をドラッグして並べ替えるときのdataTransfer形式 (Issue #259)。
+ * ドラッグ元は状態で持つので中身は読まないが、Firefoxはデータが無いとドラッグを
+ * 始めないため入れておく。text/plainを使わないのは、テキスト欄へ落としたときに
+ * 文字列が入らないようにするため。
+ */
+const STRUCTURE_ROW_DRAG_TYPE = "application/x-mycomfyui-structure-row";
 
 const STATUSES: { value: ProductionStatus; label: string }[] = [
   { value: "not_started", label: "未着手" },
@@ -103,13 +113,21 @@ export function SceneBrowser(props: Props) {
     );
   }, [projectQuery, projects]);
 
-  const move = async (kind: "scene" | "shot", index: number, offset: number) => {
-    if (!projectId) return;
+  // ドラッグ中の行と、挿入位置 (その番号の行の前。末尾は件数と同じ値) を持つ。
+  const [dragging, setDragging] = useState<{ kind: StructureKind; index: number; id: string } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ kind: StructureKind; index: number } | null>(null);
+
+  const move = async (kind: StructureKind, index: number, offset: number) => {
     const items = kind === "scene" ? scenes : shots;
     const target = index + offset;
     if (target < 0 || target >= items.length) return;
     const ids = items.map((item) => item.id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
+    await reorder(kind, ids);
+  };
+
+  const reorder = async (kind: StructureKind, ids: string[]) => {
+    if (!projectId) return;
     setBusy(true);
     setError(null);
     try {
@@ -123,7 +141,71 @@ export function SceneBrowser(props: Props) {
     }
   };
 
-  const remove = async (kind: "scene" | "shot", id: string) => {
+  const clearDrag = () => {
+    setDragging(null);
+    setDropTarget(null);
+  };
+
+  // 行の上半分なら行の前、下半分なら行の後へ挿入する。並びが変わらない位置はnull。
+  const insertionIndex = (event: DragEvent<HTMLLIElement>, kind: StructureKind, index: number) => {
+    if (dragging?.kind !== kind) return null;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const at = event.clientY < rect.top + rect.height / 2 ? index : index + 1;
+    return at === dragging.index || at === dragging.index + 1 ? null : at;
+  };
+
+  const rowDragProps = (kind: StructureKind, index: number, id: string, count: number) => {
+    if (!structureEditable) return {};
+    const target = dropTarget?.kind === kind ? dropTarget.index : null;
+    const className = [
+      dragging?.kind === kind && dragging.index === index ? "dragging" : "",
+      target === index ? "drop-before" : "",
+      target === count && index === count - 1 ? "drop-after" : "",
+    ].filter(Boolean).join(" ");
+    return {
+      className: className || undefined,
+      draggable: !busy,
+      onDragStart: (event: DragEvent<HTMLLIElement>) => {
+        event.dataTransfer.setData(STRUCTURE_ROW_DRAG_TYPE, kind);
+        event.dataTransfer.effectAllowed = "move";
+        setDragging({ kind, index, id });
+      },
+      onDragOver: (event: DragEvent<HTMLLIElement>) => {
+        if (dragging?.kind !== kind) return;
+        const at = insertionIndex(event, kind, index);
+        if (target !== at) setDropTarget(at === null ? null : { kind, index: at });
+      },
+      onDragEnd: clearDrag,
+    };
+  };
+
+  // 行の間の隙間へ落としても最後に示した位置へ入るよう、ドロップは一覧側で受ける。
+  const listDragProps = (kind: StructureKind) => {
+    if (!structureEditable) return {};
+    return {
+      onDragOver: (event: DragEvent<HTMLUListElement>) => {
+        if (dragging?.kind !== kind) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      },
+      onDrop: (event: DragEvent<HTMLUListElement>) => {
+        if (dragging?.kind !== kind) return;
+        event.preventDefault();
+        const at = dropTarget?.kind === kind ? dropTarget.index : null;
+        const ids = (kind === "scene" ? scenes : shots).map((item) => item.id);
+        // ドラッグ中に一覧が取り直されていたら、位置がずれるので並べ替えない。
+        const from = ids.indexOf(dragging.id);
+        const stale = from !== dragging.index;
+        clearDrag();
+        if (at === null || stale || at > ids.length) return;
+        const [moved] = ids.splice(from, 1);
+        ids.splice(at > from ? at - 1 : at, 0, moved);
+        void reorder(kind, ids);
+      },
+    };
+  };
+
+  const remove = async (kind: StructureKind, id: string) => {
     if (!projectId || (kind === "shot" && !sceneId)) return;
     setBusy(true);
     setError(null);
@@ -222,9 +304,9 @@ export function SceneBrowser(props: Props) {
             ))}
           </select>
         )}
-        {!simple && <ul className={`list structure-list density-${density}`}>
+        {!simple && <ul className={`list structure-list density-${density}`} {...listDragProps("scene")}>
           {scenes.map((item, index) => (
-            <li key={item.id}>
+            <li key={item.id} {...rowDragProps("scene", index, item.id, scenes.length)}>
               <button type="button" aria-pressed={item.id === sceneId} onClick={() => onSelectScene(item.id)}>
                 <span>#{item.sequence} {item.summary}</span>
                 <span className="muted">Shot {item.shot_count}件 {statusLabel(item.production_status)}</span>
@@ -276,9 +358,9 @@ export function SceneBrowser(props: Props) {
             ))}
           </select>
         )}
-        {!simple && <ul className={`list structure-list density-${density}`}>
+        {!simple && <ul className={`list structure-list density-${density}`} {...listDragProps("shot")}>
           {shots.map((item, index) => (
-            <li key={item.id}>
+            <li key={item.id} {...rowDragProps("shot", index, item.id, shots.length)}>
               <button type="button" aria-pressed={item.id === shotId} onClick={() => onSelectShot(item.id)}>
                 <span>#{item.sequence} {item.summary}</span>
                 <span className="muted">{item.duration_sec}秒 {statusLabel(item.production_status)}</span>

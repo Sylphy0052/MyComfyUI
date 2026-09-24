@@ -1169,6 +1169,23 @@ button[aria-pressed="true"] {
   padding: var(--space-2);
 }
 
+.structure-list li[draggable="true"] {
+  cursor: grab;
+}
+
+.structure-list li.dragging {
+  opacity: 0.5;
+}
+
+/* 挿入位置を行の境界の線で示す (Issue #259)。 */
+.structure-list li.drop-before {
+  box-shadow: 0 -3px 0 var(--color-accent);
+}
+
+.structure-list li.drop-after {
+  box-shadow: 0 3px 0 var(--color-accent);
+}
+
 .structure-actions {
   justify-content: flex-end;
   margin-top: var(--space-2);
