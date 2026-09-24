@@ -30,6 +30,8 @@ from typing import Any
 #: 数倍を見込む。再帰DFSに依らない構造にしても、上限が無いと巨大グラフによる
 #: DoSの余地が残るため、`validate_graph`側で先に拒否する。
 MAX_GRAPH_NODES = 500
+#: `model_slots`/`inputs`/`outputs`それぞれの宣言件数の上限。node数と同じ考え方で置く。
+MAX_SLOT_ENTRIES = MAX_GRAPH_NODES
 
 
 class NodeCapability(Flag):
@@ -285,8 +287,18 @@ def validate_slot_references(
     宣言したnode id・node classがgraphに実在しないと、Recipe接続後の値の差し替えや
     モデル在庫確認が解決できず失敗する。フィールド構造全体は検証せず、参照先の実在
     だけを確かめる最小限の照合に留める。`node_classes`は`validate_graph`が返した
-    グラフ内の既知class_type集合を再利用する。
+    グラフ内の既知class_type集合を再利用する。件数は各リストに`MAX_SLOT_ENTRIES`の
+    上限を設け、巨大な宣言による過剰な走査を先に拒否する。
     """
+    for label, entries in (
+        ("model_slots", model_slots),
+        ("inputs", inputs),
+        ("outputs", outputs),
+    ):
+        if len(entries) > MAX_SLOT_ENTRIES:
+            raise GraphValidationError(
+                [f"{label}の件数が上限({MAX_SLOT_ENTRIES})を超えています。"]
+            )
     issues: list[str] = []
     for slot in model_slots:
         if not isinstance(slot, dict):
