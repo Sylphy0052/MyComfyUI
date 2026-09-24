@@ -10831,7 +10831,7 @@
     },
     "/api/v1/media-items": {
       "get": {
-        "description": "生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。\n\nArtifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力\ncacheファイル(`registered_input`)、Projectのキャラクター参照画像\n(`character_reference`)を横断して返す。人物参照はProject単位の設定のため\n`project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。\n`character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、\n常に一覧の末尾寄りになる。",
+        "description": "生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。\n\nArtifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力\ncacheファイル(`registered_input`)、Projectのキャラクター参照画像\n(`character_reference`)を横断して返す。人物参照はProject単位の設定のため\n`project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。\n`character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、\n常に一覧の末尾寄りになる。\n`shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを\n持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った\n結果を返す。`character_reference`もProject単位のまま返す。",
         "operationId": "list_media_items_api_v1_media_items_get",
         "parameters": [
           {
@@ -13025,6 +13025,7 @@
     },
     "/api/v1/projects/{project_id}/progress": {
       "get": {
+        "description": "Scene・Shotごとに手動ラベルと生成実績の進んでいる方を実効状態とし、件数を返す。",
         "operationId": "get_project_progress_api_v1_projects__project_id__progress_get",
         "parameters": [
           {

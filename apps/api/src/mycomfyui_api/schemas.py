@@ -109,6 +109,14 @@ def _reject_unsafe_path(value: str) -> str:
     return candidate
 
 
+def input_cache_relative_path(value: str) -> str:
+    """入力cache(`inputs/`配下)を指すdata_root基準の相対パスだけを受け付ける。"""
+    candidate = _reject_unsafe_path(value)
+    if not candidate.replace("\\", "/").startswith(f"{INPUTS_DIR_NAME}/"):
+        raise ValueError(f"relative_pathは{INPUTS_DIR_NAME}/配下を指す必要があります。")
+    return candidate
+
+
 def normalize_tag(value: str) -> str:
     """タグとして受け付ける値だけを通す。
 
@@ -1536,12 +1544,7 @@ class MediaRoleTagTarget(ApiModel):
     def _safe_relative_path(cls, value: str | None) -> str | None:
         if value is None:
             return value
-        candidate = _reject_unsafe_path(value)
-        if not candidate.replace("\\", "/").startswith(f"{INPUTS_DIR_NAME}/"):
-            raise ValueError(
-                f"relative_pathは{INPUTS_DIR_NAME}/配下を指す必要があります。"
-            )
-        return candidate
+        return input_cache_relative_path(value)
 
     @field_validator("media_type")
     @classmethod
@@ -1586,6 +1589,9 @@ class MediaRoleTagUpsert(MediaRoleTagTarget):
     def _validate_hierarchy(self) -> "MediaRoleTagUpsert":
         if self.scene_id is not None and self.project_id is None:
             raise ValueError("scene_idの指定にはproject_idが必要です。")
+        if self.character_ids and self.project_id is None:
+            # キャラクターはProject単位の設定のため、Projectなしでは実在を確かめられない。
+            raise ValueError("character_idsの指定にはproject_idが必要です。")
         if len(set(self.character_ids)) != len(self.character_ids):
             raise ValueError("character_idsを重複させられません。")
         return self
