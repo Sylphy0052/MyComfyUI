@@ -1066,8 +1066,9 @@ export function App() {
         return;
       }
       socket.onopen = () => {
+        // 切断中に取りこぼした変化の再取得は、eventsConnectedの変化で走る
+        // ポーリング側の即時取得に任せる。ここでも取ると同じ一覧を2回読む。
         setEventsConnected(true);
-        scheduleRefresh();
         // 5秒つながり続けたら再接続間隔を初期値へ戻す。すぐ切れる接続では
         // 戻さず、バックオフを伸ばしたまま次の再接続へ入る。
         stableTimer = window.setTimeout(() => { retryDelay = 500; }, 5000);
