@@ -363,7 +363,11 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
   }
 
   if (!overrides) {
-    return <section className="panel"><p className={error ? "error" : "muted"}>{error ?? "キャラクター定義を読込み中..."}</p></section>;
+    return (
+      <section className="panel">
+        {error ? <p className="error">{error}</p> : <p className="muted">キャラクター定義を読込み中...</p>}
+      </section>
+    );
   }
 
   return (
