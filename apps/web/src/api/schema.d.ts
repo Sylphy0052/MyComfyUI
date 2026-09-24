@@ -766,7 +766,8 @@ export interface paths {
          *     元Jobの入力をRecipeが受け付ける範囲で引き継ぎ、positive_prompt、negative_promptを
          *     補完結果へ、seedを元の実値へ差し替える。Look Profileの値はresolved_promptと
          *     parametersへ合成済みのため、look_profile_idsは渡さない (渡すと二重に掛かる)。
-         *     画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJobは
+         *     画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJob、
+         *     seedを受け付けないRecipeのJobは
          *     Providerを呼ぶ前に``PROMPT_REVISION_UNSUPPORTED``で断る。
          */
         post: operations["create_generation_prompt_revision_api_v1_generation_jobs__job_id__prompt_revisions_post"];
