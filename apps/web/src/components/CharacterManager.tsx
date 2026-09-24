@@ -3,8 +3,10 @@ import type { FormEvent } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
+  MediaItem,
   ProjectCharacterOutfit,
   ProjectCharacterProfile,
+  ProjectCharacterProfileExtraField,
   ProjectLocalOverrides,
   ProjectReferenceImage,
 } from "../api/client";
@@ -14,6 +16,25 @@ import type { PickedMedia } from "./MediaPicker";
 import { ReferenceSetPanel } from "./ReferenceSetPanel";
 import { Button } from "./ui/Button";
 import { EmptyState } from "./ui/EmptyState";
+
+/** プロフィールの固定5項目。ドラフトではフラットな文字列で持つ。 */
+interface ProfileDraft {
+  personality: string;
+  age: string;
+  first_person: string;
+  speech_style: string;
+  background: string;
+  extra: ProjectCharacterProfileExtraField[];
+}
+
+const EMPTY_PROFILE: ProfileDraft = {
+  personality: "",
+  age: "",
+  first_person: "",
+  speech_style: "",
+  background: "",
+  extra: [],
+};
 
 type SceneOutfitMap = NonNullable<ProjectLocalOverrides["scene_outfits"]>;
 
@@ -29,6 +50,9 @@ interface CharacterDraft {
   tags: string;
   appearance: string;
   voice: string;
+  prompt: string;
+  negative_prompt: string;
+  profile: ProfileDraft;
   reference_images: ProjectReferenceImage[];
   outfits: ProjectCharacterOutfit[];
   default_outfit_id: string;
@@ -46,6 +70,16 @@ function toDraft(profile?: ProjectCharacterProfile): CharacterDraft {
         tags: (profile.tags ?? []).join(", "),
         appearance: profile.appearance ?? "",
         voice: profile.voice ?? "",
+        prompt: profile.prompt ?? "",
+        negative_prompt: profile.negative_prompt ?? "",
+        profile: {
+          personality: profile.profile?.personality ?? "",
+          age: profile.profile?.age ?? "",
+          first_person: profile.profile?.first_person ?? "",
+          speech_style: profile.profile?.speech_style ?? "",
+          background: profile.profile?.background ?? "",
+          extra: profile.profile?.extra ?? [],
+        },
         reference_images: profile.reference_images ?? [],
         outfits: profile.outfits ?? [],
         default_outfit_id: profile.default_outfit_id ?? "",
@@ -58,12 +92,36 @@ function toDraft(profile?: ProjectCharacterProfile): CharacterDraft {
         tags: "",
         appearance: "",
         voice: "",
+        prompt: "",
+        negative_prompt: "",
+        profile: EMPTY_PROFILE,
         reference_images: [],
         outfits: [],
         default_outfit_id: "",
         base_updated_at: null,
         existing: false,
       };
+}
+
+/**
+ * プロフィールのドラフトを保存用の`ProjectCharacterPersonalProfile`へ変換する。
+ * 固定項目・自由項目とも空ならnull (プロフィール自体を持たせない)。
+ */
+function draftToProfile(
+  draft: ProfileDraft,
+): ProjectCharacterProfile["profile"] {
+  const extra = draft.extra
+    .map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
+    .filter((item) => item.key.length > 0);
+  const fixed = {
+    personality: draft.personality.trim() || null,
+    age: draft.age.trim() || null,
+    first_person: draft.first_person.trim() || null,
+    speech_style: draft.speech_style.trim() || null,
+    background: draft.background.trim() || null,
+  };
+  const hasContent = Object.values(fixed).some((value) => value !== null) || extra.length > 0;
+  return hasContent ? { ...fixed, extra } : null;
 }
 
 /**
@@ -92,6 +150,108 @@ interface MediaImpact {
   /** null = updated_atが無く判定できない。 */
   before: number | null;
   unknownTime: number;
+}
+
+/**
+ * 選んだキャラクターに`voice_reference`で紐付いた参照音声の確認・追加・解除 (#287)。
+ * 専用endpointは作らず、既存の`listMediaItems`と`upsertMediaRoleTag`で足りる範囲へ絞る。
+ */
+function VoiceReferenceSection({
+  projectId,
+  character,
+}: {
+  projectId: string;
+  character: ProjectCharacterProfile;
+}) {
+  const [items, setItems] = useState<MediaItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api
+      .listMediaItems({ projectId, role: "voice_reference", limit: 200 })
+      .then((found) => alive && setItems(found))
+      .catch((cause) => alive && setError(describe(cause)))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [projectId, reloadToken]);
+
+  const itemKey = (item: MediaItem) => item.artifact_id ?? item.relative_path;
+
+  const toggle = async (item: MediaItem, attach: boolean) => {
+    setBusyKey(itemKey(item));
+    setError(null);
+    try {
+      const characterIds = attach
+        ? [...new Set([...(item.character_ids ?? []), character.id])]
+        : (item.character_ids ?? []).filter((id) => id !== character.id);
+      await api.upsertMediaRoleTag({
+        artifact_id: item.artifact_id ?? undefined,
+        relative_path: item.artifact_id ? undefined : item.relative_path,
+        sha256: item.sha256,
+        file_name: item.label ?? undefined,
+        byte_size: item.byte_size,
+        media_type: item.media_type,
+        role: "voice_reference",
+        character_ids: characterIds,
+        project_id: projectId,
+        // 上書き更新のため、既存の場面の紐付けを送り直して消さない。
+        scene_id:
+          item.assigned_project_id === projectId ? (item.assigned_scene_id ?? undefined) : undefined,
+      });
+      setReloadToken((value) => value + 1);
+    } catch (cause) {
+      setError(describe(cause));
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const linked = items.filter((item) => (item.character_ids ?? []).includes(character.id));
+  const unlinked = items.filter((item) => !(item.character_ids ?? []).includes(character.id));
+
+  return (
+    <fieldset className="stack">
+      <legend>参照音声</legend>
+      {loading && <p className="muted">読込み中...</p>}
+      {error && <p className="error">{error}</p>}
+      {linked.length === 0 && !loading && <p className="muted">紐付いた参照音声はありません。</p>}
+      <ul className="list">
+        {linked.map((item) => (
+          <li key={itemKey(item)} className="row spread">
+            <span>{item.label ?? item.relative_path}</span>
+            {item.artifact_id && (
+              <audio src={api.artifactContentUrl(item.artifact_id)} controls />
+            )}
+            <Button variant="danger" disabled={busyKey !== null} onClick={() => void toggle(item, false)}>
+              解除
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {unlinked.length > 0 && (
+        <details>
+          <summary>他の参照音声から追加</summary>
+          <ul className="list">
+            {unlinked.map((item) => (
+              <li key={itemKey(item)} className="row spread">
+                <span>{item.label ?? item.relative_path}</span>
+                <Button disabled={busyKey !== null} onClick={() => void toggle(item, true)}>
+                  追加
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </fieldset>
+  );
 }
 
 interface Props {
@@ -268,6 +428,34 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
     }));
   };
 
+  const updateProfile = (patch: Partial<ProfileDraft>) => {
+    setDraft((current) => current && ({ ...current, profile: { ...current.profile, ...patch } }));
+  };
+
+  const addProfileExtra = () => {
+    setDraft((current) => current && ({
+      ...current,
+      profile: { ...current.profile, extra: [...current.profile.extra, { key: "", value: "" }] },
+    }));
+  };
+
+  const updateProfileExtra = (index: number, patch: Partial<ProjectCharacterProfileExtraField>) => {
+    setDraft((current) => current && ({
+      ...current,
+      profile: {
+        ...current.profile,
+        extra: current.profile.extra.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+      },
+    }));
+  };
+
+  const removeProfileExtra = (index: number) => {
+    setDraft((current) => current && ({
+      ...current,
+      profile: { ...current.profile, extra: current.profile.extra.filter((_, itemIndex) => itemIndex !== index) },
+    }));
+  };
+
   const removeOutfit = (id: string) => {
     setDraft((current) => current && ({
       ...current,
@@ -292,6 +480,9 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
       tags,
       appearance: draft.appearance.trim() || null,
       voice: draft.voice.trim() || null,
+      prompt: draft.prompt.trim() || null,
+      negative_prompt: draft.negative_prompt.trim() || null,
+      profile: draftToProfile(draft.profile),
       reference_images: draft.reference_images,
       outfits,
       default_outfit_id: outfitIds.has(draft.default_outfit_id) ? draft.default_outfit_id : null,
@@ -409,6 +600,20 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
             <p className="muted">{(selectedCharacter.tags ?? []).join(", ") || "タグなし"}</p>
             <p>{selectedCharacter.appearance || "外見未設定"}</p>
             <p className="muted">声: {selectedCharacter.voice || "未設定"}</p>
+            <p className="muted">プロンプト: {selectedCharacter.prompt || "未設定"}</p>
+            <p className="muted">ネガティブプロンプト: {selectedCharacter.negative_prompt || "未設定"}</p>
+            {selectedCharacter.profile && (
+              <ul className="list">
+                <li>性格: {selectedCharacter.profile.personality || "未設定"}</li>
+                <li>年齢: {selectedCharacter.profile.age || "未設定"}</li>
+                <li>一人称: {selectedCharacter.profile.first_person || "未設定"}</li>
+                <li>口調: {selectedCharacter.profile.speech_style || "未設定"}</li>
+                <li>経歴: {selectedCharacter.profile.background || "未設定"}</li>
+                {(selectedCharacter.profile.extra ?? []).map((item) => (
+                  <li key={item.key}>{item.key}: {item.value}</li>
+                ))}
+              </ul>
+            )}
             <h4>影響範囲</h4>
             <ul className="list">
               <li>登場する場面: {scenesFeaturing.length}件 ({scenesFeaturing.map((item) => item.summary).join("、") || "なし"})</li>
@@ -433,6 +638,11 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
                 onChanged();
               }}
             />
+            <VoiceReferenceSection
+              key={selectedCharacter.id}
+              projectId={projectId}
+              character={selectedCharacter}
+            />
           </div>
         )}
 
@@ -443,6 +653,38 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
             <label>タグ（カンマ区切り）<input value={draft.tags} onChange={(event) => setDraft({ ...draft, tags: event.target.value })} /></label>
             <label>外見<textarea rows={4} maxLength={2000} value={draft.appearance} onChange={(event) => setDraft({ ...draft, appearance: event.target.value })} /></label>
             <label>声<textarea rows={3} maxLength={2000} value={draft.voice} onChange={(event) => setDraft({ ...draft, voice: event.target.value })} /></label>
+            <label>プロンプト<textarea rows={3} maxLength={2000} value={draft.prompt} onChange={(event) => setDraft({ ...draft, prompt: event.target.value })} /></label>
+            <label>ネガティブプロンプト<textarea rows={3} maxLength={2000} value={draft.negative_prompt} onChange={(event) => setDraft({ ...draft, negative_prompt: event.target.value })} /></label>
+
+            <fieldset className="stack">
+              <legend>プロフィール</legend>
+              <label>性格<input maxLength={2000} value={draft.profile.personality} onChange={(event) => updateProfile({ personality: event.target.value })} /></label>
+              <label>年齢<input maxLength={2000} value={draft.profile.age} onChange={(event) => updateProfile({ age: event.target.value })} /></label>
+              <label>一人称<input maxLength={2000} value={draft.profile.first_person} onChange={(event) => updateProfile({ first_person: event.target.value })} /></label>
+              <label>口調<input maxLength={2000} value={draft.profile.speech_style} onChange={(event) => updateProfile({ speech_style: event.target.value })} /></label>
+              <label>経歴<textarea rows={3} maxLength={2000} value={draft.profile.background} onChange={(event) => updateProfile({ background: event.target.value })} /></label>
+              <div className="stack">
+                <span className="muted">自由項目</span>
+                {draft.profile.extra.map((item, index) => (
+                  <div key={index} className="row">
+                    <input
+                      placeholder="項目名"
+                      maxLength={120}
+                      value={item.key}
+                      onChange={(event) => updateProfileExtra(index, { key: event.target.value })}
+                    />
+                    <input
+                      placeholder="内容"
+                      maxLength={2000}
+                      value={item.value}
+                      onChange={(event) => updateProfileExtra(index, { value: event.target.value })}
+                    />
+                    <Button variant="danger" onClick={() => removeProfileExtra(index)}>削除</Button>
+                  </div>
+                ))}
+                <Button disabled={draft.profile.extra.length >= 30} onClick={addProfileExtra}>自由項目を追加</Button>
+              </div>
+            </fieldset>
 
             <fieldset className="stack">
               <legend>衣装</legend>
