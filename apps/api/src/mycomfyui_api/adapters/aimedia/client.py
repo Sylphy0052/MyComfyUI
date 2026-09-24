@@ -354,12 +354,36 @@ def _validated(document: Any, source: Path = FIXTURE_PATH) -> dict[str, Any]:
 
 
 def create_reference_source(
-    base_url: str | None, fixture_path: Path | None = None
+    base_url: str | None,
+    fixture_path: Path | None = None,
+    *,
+    repository_root: Path | None = None,
+    repository_ref: str = "origin/main",
+    repository_locator: str | None = None,
+    projects_dir: str = "tools/ai-media/projects",
 ) -> ReferenceSource:
-    """接続先の設定有無で、HTTP実装とfixture実装を切り替える。"""
+    """設定の有無で、HTTP実装、gitリポジトリ実装、fixture実装を切り替える。
+
+    優先順は参照API、gitリポジトリ、差し替えfixture、同梱fixtureとする。
+    """
     if base_url:
         logger.info("ai-media参照APIへ接続します。base_url=%s", base_url)
         return AiMediaClient(base_url)
+    if repository_root is not None:
+        # git_sourceはこのモジュールのfixture実装を使うため、循環を避けてここで読む。
+        from .git_source import GitRepositoryReferenceSource
+
+        logger.info(
+            "gitリポジトリの参照データを読みます。root=%s ref=%s",
+            repository_root,
+            repository_ref,
+        )
+        return GitRepositoryReferenceSource(
+            repository_root,
+            ref=repository_ref,
+            source_locator=repository_locator,
+            projects_dir=projects_dir,
+        )
     if fixture_path is not None:
         logger.info("差し替えた参照fixtureを読みます。path=%s", fixture_path)
         return FixtureReferenceSource(path=fixture_path)
