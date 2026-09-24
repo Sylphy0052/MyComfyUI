@@ -14,9 +14,8 @@ import type {
   ProjectReferenceSet,
   ProjectReferenceSlot,
   Recipe,
-  ReferenceSlotKey,
 } from "../api/client";
-import { REFERENCE_SLOTS, slotPrompt } from "../state/referenceSlots";
+import { REFERENCE_SLOTS, slotPrompt, type ReferenceSlotKey } from "../state/referenceSlots";
 import { MediaPicker, toReferenceImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 import { Button } from "./ui/Button";
@@ -293,11 +292,10 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
             }));
           }
           // persistは成功時にエラー表示を消すため、結果の通知は保存のあとに出す。
-          if (failed > 0) {
-            setError(`${failed}枠の生成が完了しませんでした。空の枠を生成し直してください。`);
-          } else if (unreachable > 0) {
-            setError("生成中のJobの状態を取得できませんでした。しばらくして再確認します。");
-          }
+          const notices: string[] = [];
+          if (failed > 0) notices.push(`${failed}枠の生成が完了しませんでした。空の枠を生成し直してください。`);
+          if (unreachable > 0) notices.push("生成中のJobの状態を取得できませんでした。しばらくして再確認します。");
+          if (notices.length > 0) setError(notices.join(""));
         } catch (cause) {
           // 画像の取り込みや保存の失敗。枠は生成中のまま残し、次回のポーリングで再試行する。
           if (active) setError(`生成した画像を枠へ反映できませんでした: ${describe(cause)}`);

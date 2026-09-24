@@ -5,25 +5,26 @@
  * 7枚構成の枠を定義し、キャラクターの参照セット検索・枠の生成プロンプト組立・場面で
  * 使う参照画像の抽出を行う。API・DBは変えない純関数。
  */
-import type {
-  ProjectCharacterProfile,
-  ProjectReferenceSet,
-  ReferenceSlotKey,
-} from "../api/client";
+import type { ProjectCharacterProfile, ProjectReferenceSet } from "../api/client";
 import type { PickedMedia } from "../components/MediaPicker";
 import type { NamedItem } from "./productionPlan";
 import { findLocalCharacter } from "./characterPrompt";
 import type { SceneOutfits } from "./characterPrompt";
 
 export interface ReferenceSlotDef {
-  key: ReferenceSlotKey;
+  key: string;
   /** 画面表示用の日本語名。 */
   label: string;
   /** 生成プロンプトへ足す英語の補足。 */
   hint: string;
 }
 
-export const REFERENCE_SLOTS: readonly ReferenceSlotDef[] = [
+/**
+ * 枠の一覧。web側の枠のキーはここだけで定義し、`ReferenceSlotKey`はここから導出する。
+ * APIの`schemas.py`の`ReferenceSlotKey`はLiteralだが、`dict[Literal[...], ...]`は
+ * openapi-typescriptで文字列dictへ落ちて生成型に残らない。枠を増やすときはAPI側も手で合わせる。
+ */
+export const REFERENCE_SLOTS = [
   { key: "face_closed", label: "閉口", hint: "face closeup, front view, closed mouth, smile" },
   { key: "face_open", label: "開口", hint: "face closeup, front view, open mouth, showing teeth" },
   { key: "face_angle", label: "斜め", hint: "face closeup, three-quarter view, closed mouth" },
@@ -31,7 +32,9 @@ export const REFERENCE_SLOTS: readonly ReferenceSlotDef[] = [
   { key: "full_body", label: "全身", hint: "full body, standing, front view" },
   { key: "pose", label: "ポーズ", hint: "full body, dynamic pose" },
   { key: "background", label: "背景", hint: "background only, no humans" },
-];
+] as const satisfies readonly ReferenceSlotDef[];
+
+export type ReferenceSlotKey = (typeof REFERENCE_SLOTS)[number]["key"];
 
 /**
  * キャラクターの参照セットから、指定した衣装に対応するものを探す。

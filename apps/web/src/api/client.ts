@@ -102,15 +102,6 @@ export type ProjectReferenceSet =
   components["schemas"]["ProjectReferenceSet"];
 export type ProjectReferenceSlot =
   components["schemas"]["ProjectReferenceSlot"];
-// dict[Literal[...], ...] はopenapi-typescriptで文字列dictへ落ちるため、枠キーはAPI (schemas.py) のLiteralと手で合わせる (F-16 #155)。
-export type ReferenceSlotKey =
-  | "face_closed"
-  | "face_open"
-  | "face_angle"
-  | "bust"
-  | "full_body"
-  | "pose"
-  | "background";
 export type ProjectDeletionImpact =
   components["schemas"]["ProjectDeletionImpact"];
 export type SceneCreate = components["schemas"]["SceneCreate"];
