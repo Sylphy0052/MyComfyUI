@@ -340,6 +340,7 @@ class ProjectReferenceImage(ApiModel):
 
 
 # 参照画像セットの枠。novel-writerの検証結果 (必要な画像リスト.md) の7枚構成に合わせる。
+# web側は apps/web/src/state/referenceSlots.ts の REFERENCE_SLOTS が正本で、生成型には残らないため手で合わせる。
 ReferenceSlotKey = Literal[
     "face_closed",
     "face_open",
