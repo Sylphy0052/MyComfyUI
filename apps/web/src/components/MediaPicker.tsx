@@ -323,14 +323,13 @@ export function MediaPicker({
     tagRoleFor({ artifact_id: artifact.id });
   };
 
-  /** 一覧からドロップされた生成物を割り当てる。一覧に無ければAPIから取り直す。 */
+  /**
+   * 一覧からドロップされた生成物を割り当てる。一覧に無ければAPIから取り直す。
+   * 種別はドラッグ元が渡したmedia_typeではなく、手元または取り直した生成物で判定する。
+   */
   const assignDroppedArtifact = async (payload: ArtifactDragPayload) => {
     if (atMax) {
       setError(`選べるのは${max}件までです。`);
-      return;
-    }
-    if (!payload.media_type.startsWith(`${kind}/`)) {
-      setError(kind === "image" ? "画像の素材をドロップしてください。" : "音声の素材をドロップしてください。");
       return;
     }
     let artifact = artifacts.find((item) => item.id === payload.id);
@@ -345,6 +344,10 @@ export function MediaPicker({
         setBusy(false);
       }
     }
+    if (!artifact.media_type.startsWith(`${kind}/`)) {
+      setError(kind === "image" ? "画像の素材をドロップしてください。" : "音声の素材をドロップしてください。");
+      return;
+    }
     if (artifact.availability !== "complete") {
       setError("実ファイルが無い素材は選べません。");
       return;
@@ -352,18 +355,16 @@ export function MediaPicker({
     addArtifact(artifact);
   };
 
-  /** 1件を検証し、必要なら入力cacheへ登録する。失敗時はエラーを出してnullを返す。 */
-  const prepareUpload = async (file: File): Promise<PickedMedia | null> => {
+  /** 1件を検証し、必要なら入力cacheへ登録する。失敗時は理由の文字列を返す。 */
+  const prepareUpload = async (file: File): Promise<PickedMedia | string> => {
     if (file.size > maxBytes) {
-      setError(`ファイルは${Math.floor(maxBytes / (1024 * 1024))}MB以下にしてください。`);
-      return null;
+      return `ファイルは${Math.floor(maxBytes / (1024 * 1024))}MB以下にしてください。`;
     }
     // typeが取得できないブラウザ環境もあるため、typeが空なら拡張子から判別する。
     // どちらでも判別できないファイルは通さない。
     const resolvedMediaType = mediaTypeOf(file, kind);
     if (!resolvedMediaType.startsWith(`${kind}/`)) {
-      setError(kind === "audio" ? "音声ファイルを選択してください。" : "画像ファイルを選択してください。");
-      return null;
+      return kind === "audio" ? "音声ファイルを選択してください。" : "画像ファイルを選択してください。";
     }
     if (!autoRegister) {
       return {
@@ -392,8 +393,7 @@ export function MediaPicker({
         file,
       };
     } catch (cause) {
-      setError(describe(cause));
-      return null;
+      return describe(cause);
     }
   };
 
@@ -408,22 +408,26 @@ export function MediaPicker({
     setError(null);
     setBusy(true);
     const picked: PickedMedia[] = [];
+    // 複数件のときは、どのファイルが失敗したか分かるようにファイル名を付けて全件を残す。
+    const messages: string[] = [];
     try {
       for (const file of targets) {
-        const item = await prepareUpload(file);
-        if (item) picked.push(item);
+        const result = await prepareUpload(file);
+        if (typeof result !== "string") picked.push(result);
+        else messages.push(files.length > 1 ? `${file.name}: ${result}` : result);
       }
     } finally {
       setBusy(false);
     }
     if (picked.length > 0) onChange(multiple ? [...value, ...picked] : picked);
     if (files.length > targets.length) {
-      setError(
+      messages.push(
         multiple
           ? `選べるのは${max}件までのため、${files.length - targets.length}件は取り込んでいません。`
-          : "1件だけ選べます。最初の1件を取り込みました。",
+          : "1件だけ選べます。2件目以降は取り込んでいません。",
       );
     }
+    if (messages.length > 0) setError(messages.join(" / "));
   };
 
   const acceptsFiles = sources.includes("upload");
