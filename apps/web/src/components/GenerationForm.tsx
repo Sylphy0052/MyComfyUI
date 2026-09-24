@@ -9,6 +9,7 @@ import type {
   ApiError,
   GenerationManifest,
   GenerationPreview,
+  ProjectCharacterOutfit,
   ProjectCharacterProfile,
   Recipe,
 } from "../api/client";
@@ -90,6 +91,14 @@ function describe(error: unknown): string {
   return String(error);
 }
 
+/** カンマ区切りの入力をタグの配列にする。空要素と重複は落とす。 */
+function splitOutfitTags(text: string): string[] {
+  return [...new Set(text.split(",").map((value) => value.trim()).filter(Boolean))];
+}
+
+/** 衣装候補一覧の表示上限 (#316)。超えた分は検索で絞り込ませる。 */
+const OUTFIT_CANDIDATE_LIMIT = 20;
+
 interface Props {
   projectId: string | null;
   recipes: Recipe[];
@@ -142,6 +151,15 @@ interface Props {
   } | null;
   /** Projectのローカルキャラクター定義。衣装のpromptをプロンプトへ足すのに使う (#309)。 */
   characters?: ProjectCharacterProfile[];
+  /**
+   * 選択中キャラクターへ衣装をその場で登録する (#316)。`App.tsx`の`changeSceneOutfit`と同じ
+   * 読み直し→追加→保存の手順を想定する。失敗はこのコンポーネント側で表示するので、
+   * 呼び出し元は例外を投げ返す。
+   */
+  onRegisterOutfit?: (
+    characterId: string,
+    outfit: { id: string; name: string; tags: string[]; prompt: string },
+  ) => Promise<void>;
 }
 
 /** 計画を適用済みにするかの判定に使う組。`scope` (Shotと工程) とPresetで決まる。 */
@@ -181,6 +199,7 @@ export function GenerationForm({
   plan = null,
   restore = null,
   characters = [],
+  onRegisterOutfit,
 }: Props) {
   const [recipeId, setRecipeId] = useState<string>("");
   const recipe = useMemo(
@@ -219,8 +238,14 @@ export function GenerationForm({
   const [tagError, setTagError] = useState<string | null>(null);
   const [extractedTags, setExtractedTags] = useState<string[]>([]);
   const [outfitCharacterId, setOutfitCharacterId] = useState("");
-  const [outfitTag, setOutfitTag] = useState("");
-  const [outfitId, setOutfitId] = useState("");
+  const [outfitSearch, setOutfitSearch] = useState("");
+  const [outfitRegisterName, setOutfitRegisterName] = useState("");
+  const [outfitRegisterTags, setOutfitRegisterTags] = useState("");
+  const [outfitRegisterPrompt, setOutfitRegisterPrompt] = useState("");
+  const [outfitRegisterBusy, setOutfitRegisterBusy] = useState(false);
+  const [outfitRegisterError, setOutfitRegisterError] = useState<string | null>(null);
+  // ユーザーがプロンプト欄を触ったら、抽出タグでの自動反映をやめる (#316)。
+  const outfitPromptTouchedRef = useRef(false);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [batchCount, setBatchCount] = useState("1");
   const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
@@ -377,6 +402,12 @@ export function GenerationForm({
   useEffect(() => {
     void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
   }, []);
+
+  // 抽出タグをプロンプト初期値にする (#316)。ユーザーがまだ登録欄を触っていない間だけ。
+  useEffect(() => {
+    if (extractedTags.length === 0 || outfitPromptTouchedRef.current) return;
+    setOutfitRegisterPrompt(extractedTags.join(", "));
+  }, [extractedTags]);
 
   /** 入力がRecipe既定値と異なるか。バッジと差分一覧で同じ判定を使う。 */
   const isFieldChanged = (name: string) =>
@@ -564,27 +595,57 @@ export function GenerationForm({
     ]);
   };
 
-  // キャラクター、分類タグ、衣装の順に選ぶ (#309)。上位を変えたら下位の選択は候補から外れる。
+  // キャラクターを選び、検索で候補を絞る (#316)。候補をクリックすると差分プレビューを開く。
   const outfitCharacter = characters.find((item) => item.id === outfitCharacterId);
   const characterOutfits = (outfitCharacter?.outfits ?? []).filter((outfit) => outfit.prompt.trim());
-  const outfitTagOptions = [...new Set(characterOutfits.flatMap((outfit) => outfit.tags ?? []))].sort();
-  const taggedOutfits = characterOutfits.filter(
-    (outfit) => !outfitTag || (outfit.tags ?? []).includes(outfitTag),
-  );
-  const selectedOutfit = taggedOutfits.find((outfit) => outfit.id === outfitId);
+  const outfitSearchTerm = outfitSearch.trim().toLowerCase();
+  const filteredOutfitCandidates = outfitSearchTerm
+    ? characterOutfits.filter((outfit) => {
+      const haystack = [outfit.name, outfit.prompt, ...(outfit.tags ?? [])].join(" ").toLowerCase();
+      return haystack.includes(outfitSearchTerm);
+    })
+    : characterOutfits;
+  const visibleOutfitCandidates = filteredOutfitCandidates.slice(0, OUTFIT_CANDIDATE_LIMIT);
+  const hiddenOutfitCandidateCount = filteredOutfitCandidates.length - visibleOutfitCandidates.length;
+  const outfitAtLimit = (outfitCharacter?.outfits?.length ?? 0) >= 100;
 
-  const appendOutfit = () => {
-    if (!selectedOutfit) return;
-    const merged = mergePrompt(values.positive_prompt ?? "", selectedOutfit.prompt);
+  const selectOutfitCandidate = (outfit: ProjectCharacterOutfit) => {
+    const merged = mergePrompt(values.positive_prompt ?? "", outfit.prompt);
     if (merged.added === 0) return;
     setPromptDiff([
       {
         key: "positive_prompt",
         label: "プロンプト",
         current: values.positive_prompt ?? "",
-        proposed: selectedOutfit.prompt,
+        proposed: outfit.prompt,
       },
     ]);
+  };
+
+  /** 衣装をその場で登録する (#316)。保存は`onRegisterOutfit`に委ね、失敗はここで表示する。 */
+  const registerOutfit = async () => {
+    if (!outfitCharacter || !onRegisterOutfit) return;
+    const name = outfitRegisterName.trim().slice(0, 120);
+    const prompt = outfitRegisterPrompt.trim();
+    if (!name || !prompt) return;
+    setOutfitRegisterBusy(true);
+    setOutfitRegisterError(null);
+    try {
+      await onRegisterOutfit(outfitCharacter.id, {
+        id: crypto.randomUUID(),
+        name,
+        tags: splitOutfitTags(outfitRegisterTags),
+        prompt,
+      });
+      setOutfitRegisterName("");
+      setOutfitRegisterTags("");
+      setOutfitRegisterPrompt("");
+      outfitPromptTouchedRef.current = false;
+    } catch (cause) {
+      setOutfitRegisterError(describe(cause));
+    } finally {
+      setOutfitRegisterBusy(false);
+    }
   };
 
   const renderField = (field: FieldSpec) => {
@@ -682,41 +743,95 @@ export function GenerationForm({
                   disabled={useInheritedDefaults}
                   onChange={(event) => {
                     setOutfitCharacterId(event.target.value);
-                    setOutfitTag("");
-                    setOutfitId("");
+                    setOutfitSearch("");
                   }}
                 >
                   <option value="">キャラクターを選択</option>
                   {characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-                <select
-                  aria-label="分類タグ"
-                  value={outfitTag}
-                  disabled={useInheritedDefaults || outfitTagOptions.length === 0}
-                  onChange={(event) => {
-                    setOutfitTag(event.target.value);
-                    setOutfitId("");
-                  }}
-                >
-                  <option value="">すべての分類タグ</option>
-                  {outfitTagOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
-                </select>
-                <select
-                  aria-label="衣装"
-                  value={selectedOutfit?.id ?? ""}
-                  disabled={useInheritedDefaults || taggedOutfits.length === 0}
-                  onChange={(event) => setOutfitId(event.target.value)}
-                >
-                  <option value="">衣装を選択</option>
-                  {taggedOutfits.map((outfit) => <option key={outfit.id} value={outfit.id}>{outfit.name}</option>)}
-                </select>
+                <input
+                  aria-label="衣装を検索"
+                  placeholder="名前・分類タグ・プロンプトで検索"
+                  disabled={useInheritedDefaults || !outfitCharacter}
+                  value={outfitSearch}
+                  onChange={(event) => setOutfitSearch(event.target.value)}
+                />
               </div>
-              {selectedOutfit && <p className="tag-list">{selectedOutfit.prompt}</p>}
-              <div className="row">
-                <button type="button" disabled={useInheritedDefaults || !selectedOutfit} onClick={appendOutfit}>
-                  衣装をプロンプトへ追加
-                </button>
-              </div>
+              {outfitCharacter && (
+                <ul className="list">
+                  {visibleOutfitCandidates.length === 0 && <li className="muted">該当する衣装がありません。</li>}
+                  {visibleOutfitCandidates.map((outfit) => (
+                    <li key={outfit.id}>
+                      <button
+                        type="button"
+                        disabled={useInheritedDefaults}
+                        onClick={() => selectOutfitCandidate(outfit)}
+                      >
+                        <span>{outfit.name}</span>
+                        {(outfit.tags ?? []).length > 0 && (
+                          <span className="muted">{(outfit.tags ?? []).join(", ")}</span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {hiddenOutfitCandidateCount > 0 && (
+                <p className="muted">ほか{hiddenOutfitCandidateCount}件。検索で絞り込んでください。</p>
+              )}
+              {outfitCharacter && (
+                <fieldset className="stack">
+                  <legend>衣装として登録</legend>
+                  <label>
+                    名前
+                    <input
+                      required
+                      maxLength={120}
+                      disabled={useInheritedDefaults || outfitRegisterBusy}
+                      value={outfitRegisterName}
+                      onChange={(event) => setOutfitRegisterName(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    分類タグ（カンマ区切り）
+                    <input
+                      disabled={useInheritedDefaults || outfitRegisterBusy}
+                      value={outfitRegisterTags}
+                      onChange={(event) => setOutfitRegisterTags(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    プロンプト
+                    <textarea
+                      required
+                      rows={2}
+                      disabled={useInheritedDefaults || outfitRegisterBusy}
+                      value={outfitRegisterPrompt}
+                      onChange={(event) => {
+                        outfitPromptTouchedRef.current = true;
+                        setOutfitRegisterPrompt(event.target.value);
+                      }}
+                    />
+                  </label>
+                  {outfitRegisterError && <p className="error">{outfitRegisterError}</p>}
+                  {outfitAtLimit && <p className="muted">衣装が上限 (100件) に達しています。</p>}
+                  <div className="row">
+                    <button
+                      type="button"
+                      disabled={
+                        useInheritedDefaults ||
+                        outfitRegisterBusy ||
+                        outfitAtLimit ||
+                        !outfitRegisterName.trim() ||
+                        !outfitRegisterPrompt.trim()
+                      }
+                      onClick={registerOutfit}
+                    >
+                      {outfitRegisterBusy ? "登録中..." : "衣装として登録"}
+                    </button>
+                  </div>
+                </fieldset>
+              )}
             </div>
           )}
         </div>
