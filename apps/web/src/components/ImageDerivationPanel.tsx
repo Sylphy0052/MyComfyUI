@@ -250,12 +250,15 @@ export function ImageDerivationPanel({
         setError("参照画像制御の数値を確認してください。");
         return null;
       }
+      // 幅・高さはComfyUIのEmptyLatentImageが受け付ける64〜8192の8刻みに限る。
+      const validDimension = (value: number) =>
+        Number.isInteger(value) && value >= 64 && value <= 8192 && value % 8 === 0;
       if (
-        !Number.isInteger(values[0]) || values[0] <= 0 ||
-        !Number.isInteger(values[1]) || values[1] <= 0 ||
+        !validDimension(values[0]) ||
+        !validDimension(values[1]) ||
         values[2] <= 0 || values[3] < 0 || values[4] > 1 || values[3] > values[4]
       ) {
-        setError("幅・高さ・制御強度・制御範囲が不正です。");
+        setError("幅・高さ (64〜8192の8の倍数)・制御強度・制御範囲が不正です。");
         return null;
       }
       if (include("width")) inputs.width = values[0];
@@ -445,8 +448,8 @@ export function ImageDerivationPanel({
         </>}
         {mode === "controlnet" && <>
           <div className="row">
-            <label>幅<input type="number" value={width} onChange={(event) => { setWidth(event.target.value); setTouchedFields((current) => new Set(current).add("width")); }} /></label>
-            <label>高さ<input type="number" value={height} onChange={(event) => { setHeight(event.target.value); setTouchedFields((current) => new Set(current).add("height")); }} /></label>
+            <label>幅<input type="number" min={64} max={8192} step={8} value={width} onChange={(event) => { setWidth(event.target.value); setTouchedFields((current) => new Set(current).add("width")); }} /></label>
+            <label>高さ<input type="number" min={64} max={8192} step={8} value={height} onChange={(event) => { setHeight(event.target.value); setTouchedFields((current) => new Set(current).add("height")); }} /></label>
             <label>制御強度<input type="number" step="0.05" value={controlStrength} onChange={(event) => { setControlStrength(event.target.value); setTouchedFields((current) => new Set(current).add("control_strength")); }} /></label>
           </div>
           <div className="row">

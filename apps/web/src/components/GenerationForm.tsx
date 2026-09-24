@@ -32,6 +32,11 @@ interface FieldSpec {
 }
 
 const PROMPT_FIELD_NAMES = new Set(["positive_prompt", "negative_prompt"]);
+/** 画像の幅・高さ。ComfyUIのEmptyLatentImageが受け付ける8刻みに合わせる。 */
+const IMAGE_DIMENSION_FIELD_NAMES = new Set(["width", "height"]);
+const IMAGE_DIMENSION_MIN = 64;
+const IMAGE_DIMENSION_MAX = 8192;
+const IMAGE_DIMENSION_STEP = 8;
 
 function toFieldSpecs(recipe: Recipe): FieldSpec[] {
   return Object.entries(recipe.input_schema).map(([name, raw]) => {
@@ -305,6 +310,17 @@ export function GenerationForm({
           setInvalid(`${field.label}は整数で入力してください。`);
           return null;
         }
+        if (
+          IMAGE_DIMENSION_FIELD_NAMES.has(field.name) &&
+          (parsed < IMAGE_DIMENSION_MIN ||
+            parsed > IMAGE_DIMENSION_MAX ||
+            parsed % IMAGE_DIMENSION_STEP !== 0)
+        ) {
+          setInvalid(
+            `${field.label}は${IMAGE_DIMENSION_MIN}以上${IMAGE_DIMENSION_MAX}以下の${IMAGE_DIMENSION_STEP}の倍数で入力してください。`,
+          );
+          return null;
+        }
         inputs[field.name] = parsed;
       } else if (field.type === "number") {
         const parsed = Number.parseFloat(raw);
@@ -445,6 +461,11 @@ export function GenerationForm({
           id={`field-${field.name}`}
           disabled={useInheritedDefaults}
           type={field.control === "number" ? "number" : "text"}
+          {...(IMAGE_DIMENSION_FIELD_NAMES.has(field.name) && {
+            min: IMAGE_DIMENSION_MIN,
+            max: IMAGE_DIMENSION_MAX,
+            step: IMAGE_DIMENSION_STEP,
+          })}
           readOnly={readOnly}
           value={values[field.name] ?? ""}
           onChange={(event) => changeField(field.name, event.target.value)}
