@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
@@ -31,5 +33,12 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
+    // 使用マニュアルは本体と別ページにし、本体の画面状態を中断せず別タブで開けるようにする。
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        manual: fileURLToPath(new URL("./manual.html", import.meta.url)),
+      },
+    },
   },
 });
