@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 #: git 1回の上限。数十ファイルを読むだけなので、これを超えるならリポジトリ側の異常とみなす。
 GIT_TIMEOUT_SECONDS = 30.0
 
+#: 1ファイルの上限。実データは大きくても数KBで、これを超えるblobは読まずに参照を読めないものとする。
+MAX_BLOB_BYTES = 1024 * 1024
+
 #: Scene/Shotの応答に付けるschemaの名前。`tools/ai-media/schema/<name>.schema.json`を指す。
 SCHEMA_NAMES = ("scene", "shot")
 
@@ -37,6 +40,15 @@ _GITHUB_REMOTE = re.compile(
     r"^(?:git@github\.com:|ssh://git@github\.com/|https://github\.com/)"
     r"(?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?/?$"
 )
+
+
+class _NoAliasLoader(yaml.SafeLoader):
+    """aliasを拒むloader。aliasはJSONへ直すときに展開され、小さなyamlでも膨大な応答になりうる。"""
+
+    def compose_node(self, parent: Any, index: Any) -> Any:
+        if self.check_event(yaml.AliasEvent):
+            raise yaml.YAMLError("yamlのaliasは使えません")
+        return super().compose_node(parent, index)
 
 
 class GitRepositoryReferenceSource:
@@ -129,7 +141,14 @@ class GitRepositoryReferenceSource:
     def _build(self, revision: str) -> dict[str, Any]:
         try:
             return _DocumentBuilder(self, revision).build()
-        except (KeyError, TypeError, AttributeError, yaml.YAMLError) as error:
+        # ValueErrorはUTF-8でないblobと、cat-fileの出力が想定の形でないときに出る。
+        except (
+            KeyError,
+            TypeError,
+            AttributeError,
+            ValueError,
+            yaml.YAMLError,
+        ) as error:
             raise AiMediaUnavailable(
                 f"参照データの形式が想定外です: {self._root} ({revision[:8]}): {error!r}"
             ) from error
@@ -161,6 +180,14 @@ class GitRepositoryReferenceSource:
         if not wanted:
             return {}
         request = "".join(f"{revision}:{path}\n" for path in wanted).encode()
+        # 内容を取る前に大きさだけを見て、上限を超えるblobがあれば読まない。
+        checks = self._git("cat-file", "--batch-check", stdin=request).splitlines()
+        for path, line in zip(wanted, checks, strict=True):
+            header = line.decode().split()
+            if len(header) == 3 and int(header[2]) > MAX_BLOB_BYTES:
+                raise AiMediaUnavailable(
+                    f"参照データが大きすぎます: {path} ({header[2]} bytes)"
+                )
         output = self._git("cat-file", "--batch", stdin=request)
         blobs: dict[str, bytes | None] = {}
         offset = 0
@@ -351,7 +378,7 @@ class _DocumentBuilder:
         blob = self._blobs.get(path)
         if blob is None:
             raise AiMediaUnavailable(f"参照データがリポジトリにありません: {path}")
-        data = yaml.safe_load(blob.decode("utf-8"))
+        data = yaml.load(blob.decode("utf-8"), Loader=_NoAliasLoader)
         if not isinstance(data, dict):
             raise AiMediaUnavailable(f"参照データの形式が想定外です: {path}")
         # 応答はJSONで返す。yamlの日付などはJSONで表せないため、文字列へ寄せる。
