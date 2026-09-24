@@ -65,8 +65,8 @@ class Settings(BaseSettings):
     #: 投入前にタグの実在を確かめる辞書。a1111-sd-webui-tagcompleteの`danbooru.csv`
     #: と同じ形式を読む。未設定なら実在は確かめず、干渉する組み合わせだけを検出する。
     tag_dictionary_path: Path | None = None
-    #: リクエストでProviderを指定しなかったときに使う既定値。APIキーを設定へ持たず、
-    #: CLIの既存認証を使う。
+    #: リクエストでProviderを指定しなかったときに使う既定値。既定はQwen互換HTTP。
+    #: APIキーを設定へ持たず、CLI系Provider (`claude_code`/`codex`) はCLIの既存認証を使う。
     agent_provider: AgentProviderId = "qwen"
     #: Claude Code CLIの実行ファイル。PATH上の名前でも絶対パスでもよい。
     agent_cli_path: str = "claude"
