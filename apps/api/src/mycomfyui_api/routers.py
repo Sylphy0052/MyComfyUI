@@ -138,6 +138,9 @@ MAX_TAG_FILTERS = 10
 #: 1回の一覧で除外できる種別の数。ArtifactKindの値の数を超えて受け取る理由は無い。
 MAX_EXCLUDE_KINDS = len(get_args(schemas.ArtifactKind))
 
+#: 整合性一覧で絞り込める理由の数。ArtifactIntegrityReasonの値の数を上限にする。
+MAX_INTEGRITY_REASONS = len(get_args(schemas.ArtifactIntegrityReason))
+
 #: 整合性一覧でhashを取り直すときの読み込み単位。
 DIGEST_CHUNK_SIZE = 1024 * 1024
 
@@ -3262,7 +3265,10 @@ async def list_artifact_integrity(
     tag: Annotated[
         list[schemas.ArtifactTagValue] | None, Query(max_length=MAX_TAG_FILTERS)
     ] = None,
-    reason: Annotated[list[schemas.ArtifactIntegrityReason] | None, Query()] = None,
+    reason: Annotated[
+        list[schemas.ArtifactIntegrityReason] | None,
+        Query(max_length=MAX_INTEGRITY_REASONS),
+    ] = None,
     exclude_kind: Annotated[
         list[schemas.ArtifactKind] | None, Query(max_length=MAX_EXCLUDE_KINDS)
     ] = None,
