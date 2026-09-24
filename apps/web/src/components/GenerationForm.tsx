@@ -119,8 +119,10 @@ interface Props {
   /**
    * 作品制作の計画で開始済みのとき、この工程へ入れるPresetとプロンプト。
    * `scope` (Shotと工程) とPresetの組ごとに1回だけ入れ、その後の使用者の変更は上書きしない。
+   * `negativePrompt`はキャラクターのnegative_promptの合成分 (#287)。Preset・入力欄の
+   * ネガティブプロンプトの後ろへ`mergePrompt`でタグ順を揃えて追記する。
    */
-  plan?: { scope: string; preset: PlanPreset | null; prompt: string } | null;
+  plan?: { scope: string; preset: PlanPreset | null; prompt: string; negativePrompt?: string } | null;
 }
 
 export function GenerationForm({
@@ -238,6 +240,11 @@ export function GenerationForm({
     if (plan.prompt && (!currentPrompt.trim() || currentPrompt === planPromptRef.current)) {
       filled.positive_prompt = plan.prompt;
       planPromptRef.current = plan.prompt;
+    }
+    // キャラクターのnegative_promptは、Presetまたは入力欄の既存値の後ろへ追記する (#287)。
+    if (plan.negativePrompt && plan.negativePrompt.trim()) {
+      const baseNegative = filled.negative_prompt ?? valuesRef.current.negative_prompt ?? "";
+      filled.negative_prompt = mergePrompt(baseNegative, plan.negativePrompt).prompt;
     }
     if (Object.keys(filled).length === 0) return;
     setValues((current) => ({ ...current, ...filled }));
