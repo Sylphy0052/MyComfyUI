@@ -13,6 +13,7 @@ import { MediaViewer } from "./MediaViewer";
 import type { MediaViewerItem } from "./MediaViewer";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
+import { MEDIA_ROLE_LABEL, MEDIA_ROLE_OPTIONS } from "./mediaRole";
 
 /** 一度に取る件数。一覧は新しい順の窓で見る (他のブラウザ系コンポーネントと同じ考え方)。 */
 const PAGE_SIZE = 100;
@@ -25,15 +26,6 @@ const SOURCE_LABEL: Record<MediaItemSource, string> = {
   character_reference: "人物参照",
 };
 const SOURCE_OPTIONS = Object.keys(SOURCE_LABEL) as MediaItemSource[];
-
-const ROLE_LABEL: Record<MediaRole, string> = {
-  appearance_reference: "外見参照",
-  pose: "ポーズ",
-  background: "背景",
-  costume: "衣装",
-  other: "その他",
-};
-const ROLE_OPTIONS = Object.keys(ROLE_LABEL) as MediaRole[];
 
 const KIND_OPTIONS = ["image", "audio", "video", "workflow", "log"];
 
@@ -80,6 +72,7 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
         if (active) setCharacters(overrides.characters ?? []);
       })
       .catch(() => {
+        // キャラクター名は絞り込みの選択肢にだけ使う。取れなくても素材の一覧は出せる。
         if (active) setCharacters([]);
       });
     return () => {
@@ -153,9 +146,7 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
     <section className="panel">
       <h2>素材ライブラリ</h2>
       <p className="muted">
-        {
-          "生成物・登録素材・外部取込・人物参照を横断して探す。役割・キャラクターで絞り込める。"
-        }
+        生成物・登録素材・外部取込・人物参照を横断して探す。役割・キャラクターで絞り込める。
       </p>
       {error && (
         <div className="error">
@@ -177,9 +168,9 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
         </select>
         <select value={role} onChange={(event) => setRole(event.target.value as MediaRole | "")}>
           <option value="">役割: すべて</option>
-          {ROLE_OPTIONS.map((item) => (
+          {MEDIA_ROLE_OPTIONS.map((item) => (
             <option key={item} value={item}>
-              {ROLE_LABEL[item]}
+              {MEDIA_ROLE_LABEL[item]}
             </option>
           ))}
         </select>
@@ -225,7 +216,7 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
                   <span className="badge">{item.kind}</span>
                   {item.role && (
                     <span className="badge">
-                      {ROLE_LABEL[item.role as MediaRole] ?? item.role}
+                      {MEDIA_ROLE_LABEL[item.role as MediaRole] ?? item.role}
                     </span>
                   )}
                 </span>
