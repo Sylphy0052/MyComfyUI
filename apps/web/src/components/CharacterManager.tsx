@@ -125,6 +125,24 @@ function draftToProfile(
 }
 
 /**
+ * 自由項目を保存前に確かめる。内容だけあって項目名が空の行や、項目名の重複があれば
+ * 理由を返す。両方空の行は入力途中とみなし、保存時に落とす。
+ */
+function profileExtraError(draft: ProfileDraft): string | null {
+  const keys: string[] = [];
+  for (const item of draft.extra) {
+    const key = item.key.trim();
+    if (!key) {
+      if (item.value.trim()) return "自由項目に項目名が空の行があります。項目名を入力するか、行を削除してください。";
+      continue;
+    }
+    if (keys.includes(key)) return `自由項目の項目名「${key}」が重複しています。`;
+    keys.push(key);
+  }
+  return null;
+}
+
+/**
  * scene_outfitsから、指定キャラクターの衣装指定のうち`validOutfitIds`に無いものを落とす。
  * 衣装の削除後やキャラクターの削除時 (空集合を渡す) に、参照切れ (422) を保存前に防ぐ。
  */
@@ -467,6 +485,11 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
   const saveCharacter = async (event: FormEvent) => {
     event.preventDefault();
     if (!overrides || !draft) return;
+    const extraError = profileExtraError(draft.profile);
+    if (extraError) {
+      setError(extraError);
+      return;
+    }
     const tags = [...new Set(
       draft.tags.split(",").map((value) => value.trim()).filter(Boolean),
     )];
