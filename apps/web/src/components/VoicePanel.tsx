@@ -230,6 +230,14 @@ export function VoicePanel({
     setVerificationsLoading(false);
   }, []);
 
+  // アンマウント後に応答が届いても表示を更新しない。
+  useEffect(
+    () => () => {
+      verificationsSequence.current += 1;
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!selectedJobId) {
       clearVerifications();

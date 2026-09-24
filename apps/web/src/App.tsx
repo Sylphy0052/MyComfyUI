@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 
 import { ApiError, api } from "./api/client";
 import type {
@@ -317,6 +317,14 @@ export function App() {
       return next;
     });
   }, []);
+
+  // シーン一覧を畳んでいるとProjectセレクトはマウントされていないため、先に開いてからフォーカスする。
+  const focusProjectSelect = useCallback(() => {
+    if (paneLayout.collapsed.sceneBrowser) {
+      flushSync(() => togglePaneCollapsed("sceneBrowser"));
+    }
+    document.getElementById("generation-project")?.focus();
+  }, [paneLayout.collapsed.sceneBrowser, togglePaneCollapsed]);
 
   const appStyle = {
     "--pane-scene-browser-width": paneLayout.collapsed.sceneBrowser
@@ -1665,7 +1673,6 @@ export function App() {
                   <GenerationForm
                     projectId={projectId}
                     recipes={txt2imgRecipes}
-                    disabled={false}
                     submitting={submitting}
                     onSubmit={submit}
                     onPreview={preview}
@@ -1743,6 +1750,7 @@ export function App() {
                     onJobsChanged={() => { void refreshJobs().catch((cause) => setError(describe(cause))); }}
                     activeComparisonId={comparisonExperimentId}
                     onCompare={compareExperiment}
+                    onSelectProject={focusProjectSelect}
                   />
                 </div>
               </div>

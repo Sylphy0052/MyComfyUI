@@ -85,7 +85,6 @@ function describe(error: unknown): string {
 interface Props {
   projectId: string | null;
   recipes: Recipe[];
-  disabled: boolean;
   submitting: boolean;
   onSubmit: (
     recipe: Recipe | null,
@@ -121,7 +120,6 @@ interface Props {
 export function GenerationForm({
   projectId,
   recipes,
-  disabled,
   submitting,
   onSubmit,
   onPreview,
@@ -504,7 +502,6 @@ export function GenerationForm({
 
   // 投入操作はfieldsetの外にあるため、無効化はfieldsetのdisabled継承ではなくここで判断する。
   const actionsDisabled =
-    disabled ||
     submitting ||
     previewing ||
     !modelsValid ||
@@ -662,7 +659,6 @@ export function GenerationForm({
         <fieldset className="form-section" hidden={simple}>
           <legend>確認と投入</legend>
           {invalid && <p className="error">{invalid}</p>}
-          {disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
 
           <ExecutionPreview
             preview={preview}
@@ -675,7 +671,6 @@ export function GenerationForm({
       {/* 投入操作はフォームの長さに関わらず押せるよう、下端へ固定する。 */}
       <div className="form-actions">
         {simple && invalid && <p className="error">{invalid}</p>}
-        {simple && disabled && <p className="muted">Shotを選ぶと投入できます。</p>}
         <button
           type="button"
           hidden={simple}
