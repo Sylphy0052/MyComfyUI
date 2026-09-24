@@ -503,7 +503,7 @@ async def get_project_progress(project_id: schemas.AiMediaId, session: SessionDe
         shot_statuses = {shot_id: "not_started" for shot_id in shot_envelopes}
         shot_scenes = {shot_id: _envelope_scene_id(envelope) for shot_id, envelope in shot_envelopes.items()}
 
-    artifact_rows = await session.execute(select(Artifact.assigned_scene_id, Artifact.assigned_shot_id, Artifact.decision).where(Artifact.assigned_project_id == project_id, Artifact.kind.in_(PROGRESS_ARTIFACT_KINDS)))
+    artifact_rows = await session.execute(select(Artifact.assigned_scene_id, Artifact.assigned_shot_id, Artifact.decision).where(Artifact.assigned_project_id == project_id, Artifact.kind.in_(PROGRESS_ARTIFACT_KINDS), Artifact.deleted_at.is_(None)))
     for scene_id, shot_id, decision in artifact_rows:
         derived = {"accepted": "accepted", "undecided": "has_candidates"}.get(decision, "in_progress")
         _advance(scene_statuses, scene_id or shot_scenes.get(shot_id or ""), derived)

@@ -518,6 +518,7 @@ class Artifact(Base):
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     decision: Mapped[str] = mapped_column(Text, nullable=False, default="undecided")
     decision_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ArtifactImport(Base):

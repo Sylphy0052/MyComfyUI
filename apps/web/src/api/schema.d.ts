@@ -206,6 +206,8 @@ export interface paths {
          * List Artifacts
          * @description Artifact履歴の一覧。既定は作成の新しい順に返す。
          *
+         *     ゴミ箱にあるArtifactは既定で除き、`trashed=true`のときはゴミ箱にあるものだけを返す。
+         *
          *     Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
          *     現在のProject所属を持たないArtifactだけへ絞る。
          *     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
@@ -239,6 +241,9 @@ export interface paths {
         /**
          * Operate Artifacts
          * @description Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。
+         *
+         *     trashはゴミ箱へ移し (論理削除)、restoreはゴミ箱から戻す。Workflowのスナップショットは
+         *     生成記録が必ず参照するためゴミ箱へ移せず、1件でも含まれていれば何も変更しない。
          */
         post: operations["operate_artifacts_api_v1_artifacts_batch_operation_post"];
         delete?: never;
@@ -2396,7 +2401,7 @@ export interface components {
              * Operation
              * @enum {string}
              */
-            operation: "move" | "copy" | "unassign" | "tag";
+            operation: "move" | "copy" | "unassign" | "tag" | "trash" | "restore";
             /** Tag */
             tag?: string | null;
             target?: components["schemas"]["AssignmentTarget"] | null;
@@ -2526,6 +2531,8 @@ export interface components {
             decision: string;
             /** Decision At */
             decision_at: string | null;
+            /** Deleted At */
+            deleted_at: string | null;
             /** Id */
             id: string;
             /** Job Id */
@@ -5326,6 +5333,7 @@ export interface operations {
                 tag?: string[] | null;
                 lineage_artifact_id?: string | null;
                 lineage_job_id?: string | null;
+                trashed?: boolean;
                 limit?: number;
                 offset?: number;
             };
