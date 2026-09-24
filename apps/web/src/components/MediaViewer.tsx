@@ -98,6 +98,7 @@ function ViewerMedia({ artifact }: { artifact: MediaViewerItem }) {
     return <div className="media-viewer-empty muted">ファイルを取得できません。移動または削除された可能性があります。</div>;
   }
   const url = api.artifactContentUrl(artifact.id);
+  // video/audio に autoFocus を付けない。フォーカスを dialog に残し、←/→ を一覧の前後移動に使うため。
   if (mediaType.startsWith("video/")) {
     return <video className="media-viewer-media" onError={() => setFailed(true)} src={url} controls />;
   }
@@ -117,14 +118,14 @@ interface Props {
   items: MediaViewerItem[];
   /** 開いている項目の index。null なら閉じている (制御コンポーネント)。 */
   index: number | null;
+  /** 前へ/次へ・←/→、または一覧の入れ替えへの追従で index を変えるときに呼ぶ。 */
   onIndexChange: (index: number) => void;
+  /** 閉じるボタン・Esc、または表示中の項目が一覧から消えたときに呼ぶ。 */
   onClose: () => void;
 }
 
 export function MediaViewer({ items, index, onIndexChange, onClose }: Props) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
-  const open = index !== null && index >= 0 && index < items.length;
-  const item = open && index !== null ? items[index] : null;
 
   // 表示中の項目を id で覚えておく (一覧が入れ替わっても同じ項目を指し続けるため)。
   // items の参照が変わったレンダーでは更新しない (直後の追従effectがこの値を頼りに index を探し直す)。
@@ -132,8 +133,18 @@ export function MediaViewer({ items, index, onIndexChange, onClose }: Props) {
   const prevItemsRef = useRef(items);
   const itemsChanged = prevItemsRef.current !== items;
   prevItemsRef.current = items;
+
+  // items の参照が変わったレンダーでは、親の index ではなく覚えていた id から引き直した位置で描く。
+  // 親の index は追従effectが直すが、それを待つと古い index のまま別の項目を1フレーム描いてしまう。
+  const shownId = shownIdRef.current;
+  const viewIndex =
+    itemsChanged && index !== null && shownId !== null
+      ? items.findIndex((candidate) => candidate.id === shownId)
+      : index;
+  const open = viewIndex !== null && viewIndex >= 0 && viewIndex < items.length;
+  const item = open ? items[viewIndex] : null;
   if (!itemsChanged) {
-    shownIdRef.current = open && item ? item.id : null;
+    shownIdRef.current = item ? item.id : null;
   }
 
   useEffect(() => {
@@ -187,14 +198,14 @@ export function MediaViewer({ items, index, onIndexChange, onClose }: Props) {
       tabIndex={-1}
       onClose={onClose}
     >
-      {item && index !== null && (
+      {open && item && (
         <div className="media-viewer-inner">
           <div className="media-viewer-toolbar row">
-            <span className="muted">{index + 1} / {items.length}</span>
+            <span className="muted">{viewIndex + 1} / {items.length}</span>
             {items.length > 1 && (
               <>
-                <button type="button" onClick={() => onIndexChange((index - 1 + items.length) % items.length)}>前へ</button>
-                <button type="button" onClick={() => onIndexChange((index + 1) % items.length)}>次へ</button>
+                <button type="button" onClick={() => onIndexChange((viewIndex - 1 + items.length) % items.length)}>前へ</button>
+                <button type="button" onClick={() => onIndexChange((viewIndex + 1) % items.length)}>次へ</button>
               </>
             )}
             <button type="button" onClick={onClose}>閉じる</button>
