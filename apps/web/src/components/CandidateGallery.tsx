@@ -143,7 +143,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
   const [storedDensity, setDensity] = useListDensity("candidates");
   // モードBは切替を出さないため、ラボで選んだ形式を持ち込まず従来の中サイズに固定する。
-  const density = simple ? "m" : storedDensity;
+  const effectiveDensity = simple ? "m" : storedDensity;
   const [leftId, setLeftId] = useState<string | null>(null);
   const [rightId, setRightId] = useState<string | null>(null);
   const [activeSide, setActiveSide] = useState<"A" | "B">("A");
@@ -459,7 +459,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
         {!simple && detailArtifactId && selectedDetail && !selectedDetail.lineage && !selectedDetailError && (
           <LoadingPlaceholder label="lineageを取得中です。" lines={2} />
         )}
-        <div className={`gallery gallery-${density}`}>
+        <div className={`gallery gallery-${effectiveDensity}`}>
           {candidates.map(({ artifact }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}${simple && artifact.id === activeId ? " selected" : ""}`}>
             <Badge tone={`decision decision-${artifact.decision}`}>
               {DECISION_LABEL[artifact.decision] ?? artifact.decision}
