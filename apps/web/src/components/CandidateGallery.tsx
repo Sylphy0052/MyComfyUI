@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { api } from "../api/client";
@@ -295,7 +295,11 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
     if (!active) setFullscreen(false);
   }, [active]);
 
-  useEffect(() => {
+  // 通知は受動effectではなくlayout effectで行う (#194)。受動effectのcleanupは
+  // 描画後に遅れて走ることがあり、<dialog>がアンマウントされてから呼び出し側が
+  // 再レンダーされるまでの間、トーストのportal先がDOMから切り離されたノードを
+  // 指したまま描画されうる。layout effect内のsetStateは描画前に同期で反映される。
+  useLayoutEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) {
       // 全画面を開いたまま候補が0件になるなどで<dialog>自体がアンマウントされた
