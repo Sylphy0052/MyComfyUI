@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+
 import { Button } from "./Button";
 import { Toast } from "./Toast";
 import type { ToastTone } from "./Toast";
@@ -66,4 +68,18 @@ export function ToastRegion({
       ))}
     </div>
   );
+}
+
+/**
+ * top layerで開いている<dialog>があればその中へ、無ければ通常のDOMへToastRegionを描画する。
+ * <dialog>のshowModal()中は通常DOMの要素がz-indexに関わらず隠れるため (#186)。
+ */
+export function ToastHost({
+  dialogEl,
+  ...region
+}: {
+  dialogEl: HTMLDialogElement | null;
+} & Parameters<typeof ToastRegion>[0]) {
+  const content = <ToastRegion {...region} />;
+  return dialogEl ? createPortal(content, dialogEl) : content;
 }

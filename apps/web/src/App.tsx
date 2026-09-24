@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { createPortal, flushSync } from "react-dom";
+import { flushSync } from "react-dom";
 
 import { ApiError, api } from "./api/client";
 import type {
@@ -41,7 +41,7 @@ import { PipelineStepper, usePipelineReadiness } from "./components/PipelineStep
 import { SceneBrowser } from "./components/SceneBrowser";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { ResizablePane } from "./components/ui/ResizablePane";
-import { ToastRegion } from "./components/ui/ToastRegion";
+import { ToastHost } from "./components/ui/ToastRegion";
 import type { ToastItem } from "./components/ui/ToastRegion";
 import { NotifyContext } from "./components/ui/notify";
 import type { Notice } from "./components/ui/notify";
@@ -1954,22 +1954,12 @@ export function App() {
         onDialogOpenChange={setWorkflowDialogEl}
       />
 
-      {toastDialogEl
-        ? createPortal(
-            <ToastRegion
-              toasts={toasts}
-              onDismiss={dismissToast}
-              onNavigate={navigateToJob}
-            />,
-            toastDialogEl,
-          )
-        : (
-          <ToastRegion
-            toasts={toasts}
-            onDismiss={dismissToast}
-            onNavigate={navigateToJob}
-          />
-        )}
+      <ToastHost
+        dialogEl={toastDialogEl}
+        toasts={toasts}
+        onDismiss={dismissToast}
+        onNavigate={navigateToJob}
+      />
     </div>
     </NotifyContext.Provider>
   );
