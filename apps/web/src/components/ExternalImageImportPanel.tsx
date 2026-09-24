@@ -9,17 +9,9 @@ import type {
 } from "../api/client";
 import { MediaPicker, mediaTypeOf, toBase64 } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
+import { MEDIA_ROLE_LABEL, MEDIA_ROLE_OPTIONS } from "./mediaRole";
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
-
-const ROLE_LABEL: Record<MediaRole, string> = {
-  appearance_reference: "外見参照",
-  pose: "ポーズ",
-  background: "背景",
-  costume: "衣装",
-  other: "その他",
-};
-const ROLE_OPTIONS = Object.keys(ROLE_LABEL) as MediaRole[];
 
 interface Props {
   assignment: AssignmentTarget;
@@ -46,6 +38,8 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
   const [characterIds, setCharacterIds] = useState<string[]>([]);
 
   useEffect(() => {
+    // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾く。
+    setCharacterIds([]);
     if (!assignment.project_id) {
       setCharacters([]);
       return;
@@ -127,8 +121,10 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
             scene_id: assignment.scene_id ?? undefined,
           });
         } catch (cause) {
-          // 取込自体は成功済み。役割タグ付けの失敗は別枠のエラーとして出す。
-          setError(describe(cause));
+          // 取込自体は成功済み。この後フォームを空にするため、対象と付け直す手段を文言に残す。
+          setError(
+            `「${file.name}」は取り込んだが、役割タグを付けられなかった。画像の変更・派生パネルの素材選択で役割を指定して選び直すと付け直せる: ${describe(cause)}`,
+          );
         }
       }
       setPicked([]);
@@ -167,9 +163,9 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
             onChange={(event) => setRole(event.target.value as MediaRole | "")}
           >
             <option value="">役割を指定しない</option>
-            {ROLE_OPTIONS.map((item) => (
+            {MEDIA_ROLE_OPTIONS.map((item) => (
               <option key={item} value={item}>
-                {ROLE_LABEL[item]}
+                {MEDIA_ROLE_LABEL[item]}
               </option>
             ))}
           </select>

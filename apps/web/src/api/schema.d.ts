@@ -907,6 +907,9 @@ export interface paths {
          *     `project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。
          *     `character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、
          *     常に一覧の末尾寄りになる。
+         *     `shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを
+         *     持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った
+         *     結果を返す。`character_reference`もProject単位のまま返す。
          */
         get: operations["list_media_items_api_v1_media_items_get"];
         put?: never;
@@ -1481,7 +1484,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Project Progress */
+        /**
+         * Get Project Progress
+         * @description Scene・Shotごとに手動ラベルと生成実績の進んでいる方を実効状態とし、件数を返す。
+         */
         get: operations["get_project_progress_api_v1_projects__project_id__progress_get"];
         put?: never;
         post?: never;

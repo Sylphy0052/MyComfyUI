@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 
 import { ApiError, api } from "../api/client";
@@ -10,6 +10,7 @@ import type {
 } from "../api/client";
 import { droppedFiles, hasArtifactDrag, hasFileDrag, readArtifactDrag } from "./artifactDrag";
 import type { ArtifactDragPayload } from "./artifactDrag";
+import { MEDIA_ROLE_LABEL, MEDIA_ROLE_OPTIONS } from "./mediaRole";
 
 /**
  * Job入力として渡す画像・音声の指定。既存Artifactを指すか、アップロード直後に
@@ -158,14 +159,16 @@ const TAB_LABEL: Record<SourceTab, string> = {
   upload: "アップロード",
 };
 
-const ROLE_LABEL: Record<MediaRole, string> = {
-  appearance_reference: "外見参照",
-  pose: "ポーズ",
-  background: "背景",
-  costume: "衣装",
-  other: "その他",
-};
-const ROLE_OPTIONS = Object.keys(ROLE_LABEL) as MediaRole[];
+/** 役割タグの付与先。ArtifactかArtifactを持たない入力cacheのファイル実体のどちらか。 */
+type RoleTagTarget =
+  | { artifact_id: string }
+  | {
+      relative_path: string;
+      sha256: string;
+      file_name: string;
+      byte_size: number;
+      media_type: string;
+    };
 
 export interface MediaPickerProps {
   kind: "image" | "audio";
@@ -228,6 +231,8 @@ export function MediaPicker({
   const needsArtifacts = sources.includes("generated") || sources.includes("registered");
 
   useEffect(() => {
+    // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾く。
+    setCharacterIds([]);
     if (!enableRoleTagging || !projectId) {
       setCharacters([]);
       return;
@@ -247,13 +252,18 @@ export function MediaPicker({
     };
   }, [enableRoleTagging, projectId]);
 
-  const tagRoleFor = (target: { artifact_id: string } | {
-    relative_path: string;
-    sha256: string;
-    file_name: string;
-    byte_size: number;
-    media_type: string;
-  }) => {
+  // 役割タグ付けは選択操作を待たせないため投げっぱなしにする。
+  // 応答前に閉じられたときはエラー表示を捨てる。StrictModeの再マウントでも
+  // cleanupの後に本体が再実行されるため、本体でtrueへ戻す。
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const tagRoleFor = (target: RoleTagTarget) => {
     if (!enableRoleTagging || !role) return;
     api
       .upsertMediaRoleTag({
@@ -264,7 +274,7 @@ export function MediaPicker({
         scene_id: sceneId ?? undefined,
       })
       .catch((cause) => {
-        setError(describe(cause));
+        if (mountedRef.current) setError(describe(cause));
       });
   };
 
@@ -572,9 +582,9 @@ export function MediaPicker({
             onChange={(event) => setRole(event.target.value as MediaRole | "")}
           >
             <option value="">役割を指定しない</option>
-            {ROLE_OPTIONS.map((item) => (
+            {MEDIA_ROLE_OPTIONS.map((item) => (
               <option key={item} value={item}>
-                {ROLE_LABEL[item]}
+                {MEDIA_ROLE_LABEL[item]}
               </option>
             ))}
           </select>

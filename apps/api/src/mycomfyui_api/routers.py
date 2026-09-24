@@ -2395,9 +2395,28 @@ def _media_role_tag_read(tag: MediaRoleTag) -> schemas.MediaRoleTagRead:
     return schemas.MediaRoleTagRead.model_validate(tag)
 
 
+async def _validate_role_tag_characters(
+    session: AsyncSession, project_id: str, character_ids: Sequence[str]
+) -> None:
+    """指定したProjectに登録されたキャラクターIDだけを受け付ける。"""
+    project = await session.get(Project, project_id)
+    overrides = schemas.ProjectLocalOverrides.model_validate(
+        (project.local_overrides if project else None) or {}
+    )
+    known = {character.id for character in overrides.characters}
+    unknown = [character_id for character_id in character_ids if character_id not in known]
+    if unknown:
+        raise _validation_error(
+            "Projectに登録されていないキャラクターを指定しています。",
+            details={"character_ids": unknown},
+        )
+
+
 @router.put("/media-role-tags", response_model=schemas.MediaRoleTagRead)
 async def upsert_media_role_tag(
-    payload: schemas.MediaRoleTagUpsert, session: SessionDep
+    payload: schemas.MediaRoleTagUpsert,
+    session: SessionDep,
+    source: ReferenceSourceDep,
 ):
     """役割・キャラクターの紐付けを登録・更新する。
 
@@ -2405,6 +2424,17 @@ async def upsert_media_role_tag(
     後付けできるようにする。対象(`artifact_id`または`relative_path`)へ同じ内容を
     再送すると上書きになる。
     """
+    await _validate_assignment_target(
+        session,
+        source,
+        schemas.AssignmentTarget(
+            project_id=payload.project_id, scene_id=payload.scene_id
+        ),
+    )
+    if payload.project_id is not None and payload.character_ids:
+        await _validate_role_tag_characters(
+            session, payload.project_id, payload.character_ids
+        )
     if payload.artifact_id is not None:
         await _get_or_404(session, Artifact, "Artifact", payload.artifact_id)
         existing = await session.scalar(
@@ -2461,6 +2491,13 @@ async def delete_media_role_tag(
         raise _validation_error(
             "artifact_idとrelative_pathはどちらか一方だけ指定してください。"
         )
+    if relative_path:
+        # PUTと同じ検証を通し、登録できない形のパスは照合せずに弾く。
+        # PUTは正規化した値(前後の空白を除いた値)で記録するため、照合も同じ値で行う。
+        try:
+            relative_path = schemas.input_cache_relative_path(relative_path)
+        except ValueError as error:
+            raise _validation_error(str(error)) from error
     query = select(MediaRoleTag)
     query = (
         query.where(MediaRoleTag.artifact_id == artifact_id)
@@ -2537,6 +2574,9 @@ async def list_media_items(
     `project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。
     `character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、
     常に一覧の末尾寄りになる。
+    `shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを
+    持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った
+    結果を返す。`character_reference`もProject単位のまま返す。
     """
     if unassigned and any(
         value is not None for value in (project_id, scene_id, shot_id)
