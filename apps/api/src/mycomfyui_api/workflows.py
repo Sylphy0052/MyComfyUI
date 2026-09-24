@@ -373,6 +373,11 @@ async def register_graph_version(
         await session.rollback()
         existing_after_conflict = await _get_version(session, workflow_id, digest)
         if existing_after_conflict is None:
+            logger.exception(
+                "Workflow版の登録が競合したが既存版を再取得できない: workflow_id=%s graph_sha256=%s",
+                workflow_id,
+                digest,
+            )
             raise
         raise GraphVersionConflict(existing_after_conflict.id) from error
     await session.refresh(version)
@@ -398,8 +403,13 @@ def diff_graph_versions(
                 graph_validation.validate_graph(new_graph).capability_warnings
             )
         except graph_validation.GraphValidationError:
-            # 登録済みの版は登録時に検証を通っているはずだが、テンプレート由来の
-            # 版などgraphを持たない場合の再検証失敗は警告無しとして扱う。
+            # 登録済みのgraphは登録時に検証を通っているはずなので、再検証の失敗は
+            # 異常として記録する。差分確認自体は止めず、警告無しとして返す。
+            logger.warning(
+                "登録済みWorkflow版のgraph再検証に失敗: version_id=%s",
+                new_version.id,
+                exc_info=True,
+            )
             capability_warnings = []
     return {
         "old_version_id": old_version.id,
