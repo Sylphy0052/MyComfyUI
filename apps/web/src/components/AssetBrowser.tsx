@@ -68,6 +68,8 @@ interface Props {
   onDeriveArtifact: (artifactId: string) => void;
   /** 再実行で作ったJobを、投入直後と同じようにキューへ反映する。 */
   onRerunJob: (job: GenerationJob) => void;
+  /** 選んだ画像の生成条件を生成フォームへ戻す。 */
+  onApplySettings: (job: GenerationJob, manifest: GenerationManifest) => void;
 }
 
 function describe(error: unknown): string {
@@ -90,6 +92,7 @@ export function AssetBrowser({
   projects,
   onDeriveArtifact,
   onRerunJob,
+  onApplySettings,
 }: Props) {
   const notify = useNotify();
   const [kind, setKind] = useState("");
@@ -879,6 +882,9 @@ export function AssetBrowser({
                     job={selectedDetail.job}
                     manifest={selectedDetail.manifest}
                     lineage={selectedDetail.lineage}
+                    onApplySettings={() =>
+                      onApplySettings(selectedDetail.job, selectedDetail.manifest)
+                    }
                   />
                 </>
               ) : selectedImportDetail ? (

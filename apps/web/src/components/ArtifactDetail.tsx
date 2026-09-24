@@ -32,14 +32,24 @@ export function ArtifactDetail({
   job,
   manifest,
   lineage,
+  onApplySettings,
 }: {
   artifact: Artifact;
   job: GenerationJob;
   manifest: GenerationManifest;
   lineage: JobLineage;
+  /** 渡されたときだけ、生成条件を生成フォームへ戻すボタンを出す。 */
+  onApplySettings?: () => void;
 }) {
   return (
     <div className="stack">
+      {onApplySettings && artifact.kind === "image" && (
+        <div className="row">
+          <button type="button" onClick={onApplySettings}>
+            この設定で生成
+          </button>
+        </div>
+      )}
       <ManifestDetail artifact={artifact} job={job} manifest={manifest} />
       <Lineage lineage={lineage} currentJobId={job.id} />
     </div>

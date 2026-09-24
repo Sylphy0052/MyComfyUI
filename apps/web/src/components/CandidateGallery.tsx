@@ -35,6 +35,8 @@ interface Props {
   onChangeSource?: (artifactId: string) => void;
   /** 候補の生成条件からPresetを作る。処理は呼び出し側 (PresetPromotionPanel) へ委ねる。 */
   onPromoteToPreset?: (artifactId: string) => void;
+  /** 詳細に出した候補の生成条件を生成フォームへ戻す。 */
+  onApplySettings?: (job: GenerationJob, manifest: GenerationManifest) => void;
   active?: boolean;
   comparisonActive?: boolean;
   onClearComparison?: () => void;
@@ -140,7 +142,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
   const [storedDensity, setDensity] = useListDensity("candidates");
   // モードBは切替を出さないため、ラボで選んだ形式を持ち込まず従来の中サイズに固定する。
   const effectiveDensity = simple ? "m" : storedDensity;
@@ -445,6 +447,10 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
             job={selectedDetail.job}
             manifest={selectedDetail.manifest}
             lineage={selectedDetail.lineage}
+            onApplySettings={
+              onApplySettings &&
+              (() => onApplySettings(selectedDetail.job, selectedDetail.manifest))
+            }
           />
         )}
         {!simple && detailArtifactId && selectedDetailError && (
