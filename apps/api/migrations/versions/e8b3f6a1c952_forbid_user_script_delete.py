@@ -27,7 +27,7 @@ def upgrade() -> None:
     op.execute(
         "CREATE TRIGGER trg_user_script_no_delete "
         "BEFORE DELETE ON user_script "
-        "BEGIN SELECT RAISE(ABORT, 'user_script is immutable'); END"
+        "BEGIN SELECT RAISE(ABORT, 'user_script cannot be deleted'); END"
     )
     op.execute(
         "CREATE TRIGGER trg_user_script_run_no_delete "
