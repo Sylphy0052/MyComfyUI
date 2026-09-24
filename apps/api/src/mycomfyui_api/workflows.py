@@ -374,8 +374,9 @@ async def register_graph_version(
         existing_after_conflict = await _get_version(session, workflow_id, digest)
         if existing_after_conflict is None:
             logger.exception(
-                "Workflow版の登録が競合したが既存版を再取得できない: workflow_id=%s",
+                "Workflow版の登録が競合したが既存版を再取得できない: workflow_id=%s graph_sha256=%s",
                 workflow_id,
+                digest,
             )
             raise
         raise GraphVersionConflict(existing_after_conflict.id) from error
