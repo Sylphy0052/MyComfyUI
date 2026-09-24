@@ -376,9 +376,17 @@ def discard_artifacts(
     `artifacts/<job-id>/`も片付ける。
     """
     settings = settings or get_settings()
+    store = settings.artifacts_root.resolve()
     directories: set[Path] = set()
     for relative_path in relative_paths:
-        path = settings.data_root / relative_path
+        path = settings.data_root.resolve() / relative_path
+        # DBの値が壊れていても、Artifact storeの外は消さない。symlinkはリンク自体を
+        # 消すため、置き場所のディレクトリだけを解決して確かめる。
+        parent = path.parent.resolve()
+        if path.name in ("", ".", "..") or not parent.is_relative_to(store):
+            logger.warning("Artifact storeの外にあるため削除しません: %s", relative_path)
+            continue
+        path = parent / path.name
         try:
             path.unlink(missing_ok=True)
         except OSError:
@@ -386,6 +394,8 @@ def discard_artifacts(
             continue
         directories.add(path.parent)
     for directory in directories:
+        if directory == store:
+            continue
         try:
             directory.rmdir()
         except OSError:

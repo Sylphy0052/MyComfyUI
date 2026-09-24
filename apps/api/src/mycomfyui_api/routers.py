@@ -1,5 +1,6 @@
 import base64
 import binascii
+import copy
 import hashlib
 import json
 import logging
@@ -12,7 +13,18 @@ from typing import Annotated, Any, Literal, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
-from sqlalchemy import ColumnElement, Select, delete, exists, func, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Select,
+    String,
+    delete,
+    exists,
+    func,
+    or_,
+    select,
+    type_coerce,
+    update,
+)
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -2164,25 +2176,7 @@ async def operate_artifacts(
     trashはゴミ箱へ移し (論理削除)、restoreはゴミ箱から戻す。Workflowのスナップショットは
     生成記録が必ず参照するためゴミ箱へ移せず、1件でも含まれていれば何も変更しない。
     """
-    rows = list(
-        await session.scalars(
-            select(Artifact).where(Artifact.id.in_(payload.artifact_ids))
-        )
-    )
-    if len(rows) != len(payload.artifact_ids):
-        found = {row.id for row in rows}
-        raise ApiError(
-            "ARTIFACT_NOT_FOUND",
-            "指定したArtifactの一部がありません。",
-            status_code=status.HTTP_404_NOT_FOUND,
-            details={
-                "missing_ids": [
-                    item for item in payload.artifact_ids if item not in found
-                ]
-            },
-        )
-    ordered = {row.id: row for row in rows}
-    rows = [ordered[item] for item in payload.artifact_ids]
+    rows = await _artifacts_in_order(session, payload.artifact_ids)
     if payload.operation == "trash":
         workflow_ids = [row.id for row in rows if row.kind == "workflow"]
         if workflow_ids:
@@ -2303,6 +2297,213 @@ async def operate_artifacts(
         affected = rows
     await session.commit()
     return await _artifact_reads(session, affected)
+
+
+async def _artifacts_in_order(
+    session: AsyncSession, artifact_ids: list[str]
+) -> list[Artifact]:
+    """指定順にArtifactを引く。1件でも無ければ404にし、何も変更させない。"""
+    rows = list(
+        await session.scalars(select(Artifact).where(Artifact.id.in_(artifact_ids)))
+    )
+    if len(rows) != len(artifact_ids):
+        found = {row.id for row in rows}
+        raise ApiError(
+            "ARTIFACT_NOT_FOUND",
+            "指定したArtifactの一部がありません。",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={
+                "missing_ids": [item for item in artifact_ids if item not in found]
+            },
+        )
+    ordered = {row.id: row for row in rows}
+    return [ordered[item] for item in artifact_ids]
+
+
+def _json_mentions(column: Any, ids: Sequence[str]) -> ColumnElement[bool]:
+    """JSON列の本文にIDのどれかが現れる行を絞る。一致は呼出側で構造を見て確かめる。"""
+    return or_(*(type_coerce(column, String).like(f'%"{item}"%') for item in ids))
+
+
+def _clear_reference_slots(overrides: Any, ids: set[str]) -> tuple[Any, int]:
+    """キャラ参照セットの枠から、削除するArtifactへの表示用参照を外す。
+
+    旧形式の値を検証で弾かないよう、スキーマを通さずに該当キーだけを書き換える。
+    """
+    if not isinstance(overrides, dict):
+        return overrides, 0
+    updated = copy.deepcopy(overrides)
+    cleared = 0
+    for character in updated.get("characters") or []:
+        if not isinstance(character, dict):
+            continue
+        for reference_set in character.get("reference_sets") or []:
+            slots = reference_set.get("slots") if isinstance(reference_set, dict) else None
+            if not isinstance(slots, dict):
+                continue
+            for slot in slots.values():
+                if isinstance(slot, dict) and slot.get("artifact_id") in ids:
+                    slot["artifact_id"] = None
+                    cleared += 1
+    return updated, cleared
+
+
+@dataclass
+class _PurgePlan:
+    """完全削除で変わるもの。プレビューと実行で同じ判定を使う。"""
+
+    rows: list[Artifact]
+    not_trashed_ids: list[str]
+    #: 実際に消すファイルの相対パスと容量。
+    removed_files: dict[str, int]
+    shared_file_count: int
+    unreplayable_manifest_count: int
+    detached_child_count: int
+    thumbnail_projects: list[Project]
+    #: 参照セットの枠を外したあとのlocal_overridesと、外した枠の数。
+    slot_updates: list[tuple[Project, Any, int]]
+    tag_count: int
+    role_tag_count: int
+
+
+async def _plan_purge(session: AsyncSession, artifact_ids: list[str]) -> _PurgePlan:
+    rows = await _artifacts_in_order(session, artifact_ids)
+    ids = set(artifact_ids)
+    paths: dict[str, int] = {}
+    for row in rows:
+        paths.setdefault(row.relative_path, row.byte_size)
+    # コピーやProjectのcloneはファイルを複製せず、同じパスを共有する。
+    shared = set(
+        await session.scalars(
+            select(Artifact.relative_path)
+            .where(Artifact.relative_path.in_(list(paths)), Artifact.id.not_in(ids))
+            .distinct()
+        )
+    )
+    manifests = await session.execute(
+        select(GenerationManifest.input_refs).where(
+            _json_mentions(GenerationManifest.input_refs, artifact_ids)
+        )
+    )
+    unreplayable = sum(
+        1
+        for (refs,) in manifests
+        if isinstance(refs, list)
+        and any(isinstance(ref, dict) and ref.get("artifact_id") in ids for ref in refs)
+    )
+    children = await session.scalar(
+        select(func.count())
+        .select_from(Artifact)
+        .where(Artifact.parent_artifact_id.in_(ids), Artifact.id.not_in(ids))
+    )
+    projects = list(
+        await session.scalars(
+            select(Project).where(
+                or_(
+                    Project.thumbnail_artifact_id.in_(ids),
+                    _json_mentions(Project.local_overrides, artifact_ids),
+                )
+            )
+        )
+    )
+    slot_updates: list[tuple[Project, Any, int]] = []
+    for project in projects:
+        overrides, cleared = _clear_reference_slots(project.local_overrides, ids)
+        if cleared:
+            slot_updates.append((project, overrides, cleared))
+    tag_count = await session.scalar(
+        select(func.count()).select_from(ArtifactTag).where(ArtifactTag.artifact_id.in_(ids))
+    )
+    role_tag_count = await session.scalar(
+        select(func.count()).select_from(MediaRoleTag).where(MediaRoleTag.artifact_id.in_(ids))
+    )
+    return _PurgePlan(
+        rows=rows,
+        not_trashed_ids=[row.id for row in rows if row.deleted_at is None],
+        removed_files={
+            path: size for path, size in paths.items() if path not in shared
+        },
+        shared_file_count=len(shared),
+        unreplayable_manifest_count=unreplayable,
+        detached_child_count=children or 0,
+        thumbnail_projects=[
+            project for project in projects if project.thumbnail_artifact_id in ids
+        ],
+        slot_updates=slot_updates,
+        tag_count=tag_count or 0,
+        role_tag_count=role_tag_count or 0,
+    )
+
+
+@router.post("/artifacts/purge-preview", response_model=schemas.ArtifactPurgePreview)
+async def preview_artifact_purge(
+    payload: schemas.ArtifactPurgeTarget, session: SessionDep
+):
+    """完全削除で消えるものと外れる参照を返す。DBもファイルも変更しない。"""
+    plan = await _plan_purge(session, payload.artifact_ids)
+    return schemas.ArtifactPurgePreview(
+        artifacts=await _artifact_reads(session, plan.rows),
+        removed_file_count=len(plan.removed_files),
+        removed_byte_size=sum(plan.removed_files.values()),
+        shared_file_count=plan.shared_file_count,
+        unreplayable_manifest_count=plan.unreplayable_manifest_count,
+        detached_child_count=plan.detached_child_count,
+        thumbnail_project_ids=[project.id for project in plan.thumbnail_projects],
+        reference_slot_count=sum(cleared for _, _, cleared in plan.slot_updates),
+        tag_count=plan.tag_count,
+        role_tag_count=plan.role_tag_count,
+        not_trashed_ids=plan.not_trashed_ids,
+    )
+
+
+@router.post("/artifacts/purge", response_model=schemas.ArtifactPurgeResult)
+async def purge_artifacts(payload: schemas.ArtifactPurgeRequest, session: SessionDep):
+    """ゴミ箱にあるArtifactを、DBの記録と実ファイルごと完全に削除する。
+
+    取り消せないため`confirm=true`を必須にし、ゴミ箱に無いものが1件でも含まれていれば
+    何も削除しない。生成記録のJSONに残る参照は履歴として書き換えない。ファイルは
+    同じパスを使う記録が他に無いときだけ、commit後に消す。
+    """
+    if not payload.confirm:
+        raise ApiError(
+            "PURGE_NOT_CONFIRMED",
+            "完全削除は取り消せません。confirm=trueを指定してください。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    plan = await _plan_purge(session, payload.artifact_ids)
+    if plan.not_trashed_ids:
+        raise ApiError(
+            "ARTIFACT_NOT_TRASHED",
+            "ゴミ箱に無いArtifactは完全に削除できません。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"artifact_ids": plan.not_trashed_ids},
+        )
+    ids = list(payload.artifact_ids)
+    # FKにondeleteが無いため、参照する行を先に消すか外す。
+    for model in (ArtifactTag, ArtifactImport, MediaRoleTag, VoiceVerification):
+        await session.execute(delete(model).where(model.artifact_id.in_(ids)))
+    await session.execute(
+        update(Artifact)
+        .where(Artifact.parent_artifact_id.in_(ids))
+        .values(parent_artifact_id=None)
+    )
+    for project in plan.thumbnail_projects:
+        project.thumbnail_artifact_id = None
+    for project, overrides, _ in plan.slot_updates:
+        project.local_overrides = overrides
+    await session.execute(
+        delete(Artifact)
+        .where(Artifact.id.in_(ids))
+        .execution_options(synchronize_session=False)
+    )
+    await _commit(session)
+    # 消せなかったファイルはwarningを残して続ける。記録はもう無いため戻さない。
+    await run_in_threadpool(storage.discard_artifacts, list(plan.removed_files))
+    return schemas.ArtifactPurgeResult(
+        purged_ids=ids,
+        removed_file_count=len(plan.removed_files),
+        removed_byte_size=sum(plan.removed_files.values()),
+    )
 
 
 def _artifact_filters(
@@ -3460,6 +3661,53 @@ def _verify_local_input(reference: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
+async def _purged_input_artifacts(
+    session: AsyncSession, input_refs: Any
+) -> list[str]:
+    """入力に使った生成物のうち、記録が完全削除されて実ファイルも無いもののID。
+
+    コピーが同じファイルを残していれば内容は取得できるため、ここでは止めない。
+    """
+    refs = [
+        ref
+        for ref in (input_refs if isinstance(input_refs, list) else [])
+        if isinstance(ref, dict)
+        and ref.get("kind") == provenance.KIND_ARTIFACT
+        and isinstance(ref.get("artifact_id"), str)
+    ]
+    if not refs:
+        return []
+    existing = set(
+        await session.scalars(
+            select(Artifact.id).where(
+                Artifact.id.in_({ref["artifact_id"] for ref in refs})
+            )
+        )
+    )
+    purged: list[str] = []
+    for ref in refs:
+        if ref["artifact_id"] in existing:
+            continue
+        try:
+            storage.resolve_artifact(str(ref.get("relative_path")))
+        except storage.StorageError:
+            purged.append(ref["artifact_id"])
+    return purged
+
+
+async def _ensure_inputs_not_purged(
+    session: AsyncSession, job: GenerationJob, input_refs: Any
+) -> None:
+    purged = await _purged_input_artifacts(session, input_refs)
+    if purged:
+        raise ApiError(
+            "INPUT_ARTIFACT_PURGED",
+            "入力に使った生成物が完全に削除されているため、再実行できません。",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={"job_id": job.id, "artifact_ids": purged},
+        )
+
+
 def _local_input_entries(input_refs: Any) -> list[dict[str, Any]]:
     """参照APIで解決しない入力の参照を、比較結果の形へ揃える。"""
     if not isinstance(input_refs, list):
@@ -3639,6 +3887,7 @@ async def replay_generation_job(
     manifest = await _get_manifest(session, job)
     workflow_artifact = await _get_workflow_artifact(session, manifest)
     workflow_body = _read_workflow_snapshot(workflow_artifact)
+    await _ensure_inputs_not_purged(session, job, manifest.input_refs)
 
     current, failure = await _current_references(
         session, source, job, manifest.input_refs
@@ -3691,6 +3940,7 @@ async def regenerate_generation_job(
     manifest = await _get_manifest(session, job)
     workflow_artifact = await _get_workflow_artifact(session, manifest)
     workflow_body = _read_workflow_snapshot(workflow_artifact)
+    await _ensure_inputs_not_purged(session, job, manifest.input_refs)
 
     project_id, scene_id, shot_id = _reference_ids(job)
     resolved = await _resolve_references(session, source, project_id, scene_id, shot_id)
