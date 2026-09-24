@@ -48,7 +48,7 @@ import type { Notice } from "./components/ui/notify";
 import { ignoresShortcut } from "./components/ui/shortcuts";
 import { VideoPanel, MAX_REFERENCES } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
-import { WorkflowRegistry } from "./components/WorkflowRegistry";
+import { WorkflowRegistryDialog } from "./components/WorkflowRegistryDialog";
 import { tagCheckWarnings } from "./prompt/tagCheck";
 import { PIPELINE_STEPS, persistPipelineStep, readPipelineStep } from "./state/pipelineState";
 import type { PipelineStepId } from "./state/pipelineState";
@@ -113,7 +113,6 @@ const VIEWS: { value: View; label: string }[] = [
   { value: "generate", label: "生成" },
   { value: "assets", label: "資産ブラウザ" },
   { value: "characters", label: "キャラクター" },
-  { value: "workflows", label: "Workflow" },
 ];
 
 const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
@@ -331,6 +330,7 @@ export function App() {
   const [initialUiState] = useState(readInitialUiState);
   const [mode, setMode] = useState<Mode>(initialUiState.mode);
   const [view, setView] = useState<View>(initialUiState.view);
+  const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
   const [visitedViews, setVisitedViews] = useState<ReadonlySet<View>>(
     () =>
       new Set([
@@ -824,10 +824,6 @@ export function App() {
   const assetsSceneId = useFrozenWhenInactive(sceneId, assetsActive);
   const assetsShots = useFrozenWhenInactive(shots, assetsActive);
   const assetsShotId = useFrozenWhenInactive(shotId, assetsActive);
-
-  const workflowsActive = shownView === "workflows";
-  const workflowsSceneId = useFrozenWhenInactive(sceneId, workflowsActive);
-  const workflowsShotId = useFrozenWhenInactive(shotId, workflowsActive);
 
   const charactersActive = shownView === "characters";
   const charactersProjectId = useFrozenWhenInactive(projectId, charactersActive);
@@ -1496,6 +1492,13 @@ export function App() {
                 {item.label}
               </button>
             ))}
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() => setWorkflowDialogOpen(true)}
+            >
+              Workflow
+            </button>
           </nav>
         )}
       </header>
@@ -1692,7 +1695,7 @@ export function App() {
                     onManageWorkflows={() => {
                       // Workflow管理はラボにだけあるため、作品制作から開いたときもラボへ移る。
                       setMode("lab");
-                      setView("workflows");
+                      setWorkflowDialogOpen(true);
                     }}
                   />
                 </div>
@@ -1714,7 +1717,7 @@ export function App() {
                     sourceArtifactId={derivationSourceArtifactId}
                     onSourceArtifactChange={setDerivationSourceArtifactId}
                     onSubmittedJob={handleDerivedJob}
-                    onManageWorkflows={() => setView("workflows")}
+                    onManageWorkflows={() => setWorkflowDialogOpen(true)}
                   />
                 </div>
 
@@ -1927,14 +1930,12 @@ export function App() {
         </div>
       )}
 
-      {visitedViews.has("workflows") && (
-        <div className="full" hidden={shownView !== "workflows"}>
-          <WorkflowRegistry
-            sceneId={workflowsSceneId}
-            shotId={workflowsShotId}
-          />
-        </div>
-      )}
+      <WorkflowRegistryDialog
+        open={workflowDialogOpen}
+        onClose={() => setWorkflowDialogOpen(false)}
+        sceneId={sceneId}
+        shotId={shotId}
+      />
 
       {comparisonDialogEl
         ? createPortal(
