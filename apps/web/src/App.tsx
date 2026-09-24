@@ -480,6 +480,13 @@ export function App() {
   const [derivationSourceArtifactId, setDerivationSourceArtifactId] =
     useState<string | null>(null);
   const [promotionArtifactId, setPromotionArtifactId] = useState<string | null>(null);
+  // 生成済み画像から生成フォームへ戻す設定。押すたびにkeyを変え、同じ画像でも入れ直させる。
+  const [generationRestore, setGenerationRestore] = useState<{
+    key: string;
+    recipeId: string | null;
+    manifest: GenerationManifest;
+  } | null>(null);
+  const restoreSequenceRef = useRef(0);
   const [comparisonJobIds, setComparisonJobIds] = useState<string[] | null>(null);
   const [comparisonArtifactsByJob, setComparisonArtifactsByJob] = useState<
     Record<string, Artifact[]>
@@ -1450,6 +1457,20 @@ export function App() {
     void refreshJobs().catch((cause) => setError(describe(cause)));
   };
 
+  /** 生成済み画像の生成条件を生成フォームへ入れ、フォームを開く。 */
+  const applyGenerationSettings = (job: GenerationJob, manifest: GenerationManifest) => {
+    restoreSequenceRef.current += 1;
+    setGenerationRestore({
+      key: `${manifest.id}:${restoreSequenceRef.current}`,
+      recipeId: job.recipe_id,
+      manifest,
+    });
+    setGenerationTab("image");
+    setImageSubTab("generate");
+    setView("generate");
+    notify({ tone: "success", message: "画像の生成条件を生成フォームへ入れました。" });
+  };
+
   const handleGenerationTabKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
     currentTab: GenerationTab,
@@ -1720,6 +1741,7 @@ export function App() {
                     simple={isProduction}
                     shortcutActive={isProduction && shownImageSubTab === "generate"}
                     plan={generationPlan}
+                    restore={generationRestore}
                   />
                 </div>
 
@@ -1818,6 +1840,7 @@ export function App() {
                     setImageSubTab("change");
                   }}
                   onPromoteToPreset={setPromotionArtifactId}
+                  onApplySettings={applyGenerationSettings}
                   active={shownView === "generate" && shownGenerationTab === "image"}
                   simple={isProduction}
                   comparisonActive={comparisonJobIds !== null}
@@ -1957,6 +1980,7 @@ export function App() {
                 setView("generate");
               }}
               onRerunJob={handleDerivedJob}
+              onApplySettings={applyGenerationSettings}
             />
           </div>
           <div className="full" hidden={shownView !== "assets"}>

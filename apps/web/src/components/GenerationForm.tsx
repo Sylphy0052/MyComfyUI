@@ -7,6 +7,7 @@ import { ignoresShortcut } from "./ui/shortcuts";
 import type {
   AgentProvider,
   ApiError,
+  GenerationManifest,
   GenerationPreview,
   Recipe,
 } from "../api/client";
@@ -121,6 +122,33 @@ interface Props {
    * `scope` (Shotと工程) とPresetの組ごとに1回だけ入れ、その後の使用者の変更は上書きしない。
    */
   plan?: { scope: string; preset: PlanPreset | null; prompt: string } | null;
+  /**
+   * 生成済み画像の設定をフォームへ戻す。`key`が変わるたびに1回だけ入れる。
+   * `recipeId`が選択肢に無ければ現在のRecipeへ合う項目だけ入れる。
+   */
+  restore?: { key: string; recipeId: string | null; manifest: GenerationManifest } | null;
+}
+
+/** manifestの値をフォームの文字列へ直す。オブジェクトや配列は入力項目に対応しないので捨てる。 */
+function manifestText(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+/**
+ * 復元先のRecipe。元のRecipeが更新されて一覧から外れていれば、一覧にある後継を使う。
+ */
+function findRecipeOrSuccessor(recipes: Recipe[], recipeId: string | null): Recipe | null {
+  let current = recipeId;
+  const seen = new Set<string>();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const found = recipes.find((item) => item.id === current);
+    if (found) return found;
+    current = recipes.find((item) => item.supersedes_recipe_id === current)?.id ?? null;
+  }
+  return null;
 }
 
 export function GenerationForm({
@@ -135,6 +163,7 @@ export function GenerationForm({
   simple = false,
   shortcutActive = false,
   plan = null,
+  restore = null,
 }: Props) {
   const [recipeId, setRecipeId] = useState<string>("");
   const recipe = useMemo(
@@ -175,6 +204,10 @@ export function GenerationForm({
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [batchCount, setBatchCount] = useState("1");
   const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
+  // Recipeを切り替えて復元するとき、ModelSelectorが切替時に選択を空にするので、
+  // 切替後のRecipe変更の効果で入れ直すまでモデルの選択値をここに置く。
+  const pendingModelValuesRef = useRef<Record<string, string> | null>(null);
 
   useEffect(() => {
     if (!recipeId && recipes.length > 0) {
@@ -210,7 +243,56 @@ export function GenerationForm({
     setTouchedFields(nextTouched);
     // 開いている差分レビューは切替前の値を比べているので閉じる。
     setPromptDiff(null);
+    // 子のModelSelectorが先に選択を空にしているので、その後で復元値を入れる。
+    if (pendingModelValuesRef.current) {
+      setModelValues(pendingModelValuesRef.current);
+      pendingModelValuesRef.current = null;
+    }
   }, [recipe, allFields, defaultValues]);
+
+  // 生成済み画像の設定を入れる。値は触った印を付け、Recipeを切り替える場合は上の効果で持ち越させる。
+  const appliedRestoreRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!restore || recipes.length === 0) return;
+    if (appliedRestoreRef.current === restore.key) return;
+    const original = findRecipeOrSuccessor(recipes, restore.recipeId);
+    const target = original ?? recipe;
+    // 初回表示でRecipeがまだ選ばれていなければ、選ばれてから入れる。
+    if (!target) return;
+    appliedRestoreRef.current = restore.key;
+    const { manifest } = restore;
+    const raw: Record<string, unknown> = {
+      ...(manifest.parameters ?? {}),
+      positive_prompt: manifest.resolved_prompt,
+      seed: manifest.seed,
+    };
+    const filled: Record<string, string> = {};
+    const models: Record<string, string> = {};
+    for (const spec of toFieldSpecs(target)) {
+      if (spec.control === "model") {
+        const value = manifestText((manifest.model ?? {})[spec.name]);
+        if (value !== null && value !== "") models[spec.name] = value;
+        continue;
+      }
+      const value = manifestText(raw[spec.name]);
+      if (value !== null && isParsableAs(spec, value)) filled[spec.name] = value;
+    }
+    setUseInheritedDefaults(false);
+    setLookProfileIds([]);
+    setValues((current) => ({ ...current, ...filled }));
+    setTouchedFields((current) => new Set([...current, ...Object.keys(filled)]));
+    if (target.id !== recipeId) {
+      pendingModelValuesRef.current = models;
+      setRecipeId(target.id);
+    } else {
+      setModelValues(models);
+    }
+    setRestoreNotice(
+      original
+        ? null
+        : "元のRecipeが選択肢に無いため、現在のRecipeへ合う項目だけ入れました。",
+    );
+  }, [restore, recipes, recipe, recipeId]);
 
   // 計画のPresetとプロンプトを入れる。値は触った印を付け、上のRecipe変更の効果で持ち越させる。
   const appliedPlanRef = useRef<string | null>(null);
@@ -605,6 +687,7 @@ export function GenerationForm({
               ))}
             </select>
           </div>
+          {restoreNotice && <p className="muted">{restoreNotice}</p>}
           {plan?.preset && (
             <PlanPresetNote
               preset={plan.preset}
