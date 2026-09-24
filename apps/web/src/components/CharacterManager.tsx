@@ -554,6 +554,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
     setDraft((current) => current && ({
       ...current,
       outfits: current.outfits.filter((item) => item.id !== id),
+      outfit_tags: Object.fromEntries(Object.entries(current.outfit_tags).filter(([key]) => key !== id)),
       default_outfit_id: current.default_outfit_id === id ? "" : current.default_outfit_id,
     }));
   };
