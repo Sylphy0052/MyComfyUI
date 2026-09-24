@@ -1017,7 +1017,7 @@ export function App() {
       const job = jobs.find((item) => item.id === jobId);
       // 一覧に無いJobへ移ると、ラボへ切り替わるだけで何も選ばれない画面になる。
       if (!job) {
-        setError(`Job ${jobId} が現在のJob一覧に見つかりません。`);
+        setError(`Job ${jobId} が現在のJob一覧に見つかりません。削除されたか、一覧の同期待ちの可能性があります。少し待ってからもう一度開くか、ラボのJob一覧で確認してください。`);
         return;
       }
       setError(null);
