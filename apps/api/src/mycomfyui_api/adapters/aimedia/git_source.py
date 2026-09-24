@@ -112,18 +112,18 @@ class GitRepositoryReferenceSource:
         return await asyncio.to_thread(self._current)
 
     def _current(self) -> FixtureReferenceSource:
-        """refが今指すcommitの文書を返す。commitが変わったときだけ組み立て直す。"""
+        """refが今指すcommitの文書を返す。commitが変わったときだけ組み立て直す。
+
+        commitが変わらない間は、rev-parseだけでロックを取らずに返す。変わったときは
+        組み立てをロックで直列にし、待っていた要求は組み立て済みの文書を受け取る。
+        """
+        cached = self._cached
+        if cached is not None and cached[0] == self._revision():
+            return cached[1]
         with self._lock:
-            revision = (
-                self._git(
-                    "rev-parse",
-                    "--verify",
-                    "--end-of-options",
-                    f"{self._ref}^{{commit}}",
-                )
-                .decode()
-                .strip()
-            )
+            # 待つ間に別の要求が組み立てているか、refがさらに進んでいることがある。
+            # ロックを取ってから引き直し、古いcommitで最新の文書を上書きしない。
+            revision = self._revision()
             cached = self._cached
             if cached is not None and cached[0] == revision:
                 return cached[1]
@@ -137,6 +137,18 @@ class GitRepositoryReferenceSource:
                 revision,
             )
             return source
+
+    def _revision(self) -> str:
+        return (
+            self._git(
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                f"{self._ref}^{{commit}}",
+            )
+            .decode()
+            .strip()
+        )
 
     def _build(self, revision: str) -> dict[str, Any]:
         try:
@@ -176,6 +188,8 @@ class GitRepositoryReferenceSource:
 
     def _blobs(self, revision: str, paths: list[str]) -> dict[str, bytes | None]:
         """pathごとのblobの内容。commitに無いpathは`None`にする。"""
+        for path in paths:
+            _require_repository_path(path)
         wanted = [path for path in dict.fromkeys(paths) if "\n" not in path]
         if not wanted:
             return {}
@@ -483,6 +497,25 @@ def _yaml_files(files: list[str], directory: str) -> list[str]:
         and "/" not in path[len(directory) :]
         and path.endswith(".yaml")
     )
+
+
+def _require_repository_path(path: Any) -> None:
+    """リポジトリのroot起点で正規化済みのpathだけを通す。
+
+    参照先は作品正本の外 (`works/`など) を指す実データがあるため、範囲は
+    `projects_dir`に絞らずリポジトリ全体とする。`..`や絶対pathは、`cat-file`の
+    `<rev>:<path>`で作業ディレクトリ起点の解釈になり、書いた場所と別の
+    blobを読みうるため拒む。
+    """
+    if (
+        not isinstance(path, str)
+        or not path
+        or path.startswith("/")
+        or posixpath.normpath(path) != path
+        or path == ".."
+        or path.startswith("../")
+    ):
+        raise AiMediaUnavailable(f"参照データのpathが不正です: {path!r}")
 
 
 def _sha256(blob: bytes) -> str:
