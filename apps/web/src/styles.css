@@ -1810,6 +1810,90 @@ button.primary:hover:not(:disabled) {
   white-space: nowrap;
 }
 
+/* ボタンと同じ見た目のリンク。ページ遷移はbuttonでなくaで表す。 */
+.button-link {
+  display: inline-block;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.button-link:hover {
+  border-color: var(--color-accent);
+}
+
+/* 使用マニュアル (manual.html)。長文を読みやすい幅に収める。 */
+.manual {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6) var(--space-16);
+  line-height: 1.8;
+}
+
+.manual a:not(.button-link) {
+  color: var(--color-accent);
+}
+
+.manual-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.manual-header h1 {
+  font-size: var(--font-size-lg);
+  margin: 0;
+}
+
+.manual .panel {
+  margin-top: var(--space-8);
+  scroll-margin-top: var(--space-8);
+}
+
+.manual .panel h2 {
+  font-size: var(--font-size-lg);
+  color: var(--color-text);
+}
+
+.manual h3 {
+  font-size: var(--font-size-base);
+  margin: var(--space-8) 0 var(--space-2);
+}
+
+.manual-terms dt {
+  font-weight: var(--font-weight-semibold);
+  margin-top: var(--space-4);
+}
+
+.manual-terms dd {
+  margin-left: var(--space-8);
+}
+
+.manual-steps li + li {
+  margin-top: var(--space-4);
+}
+
+.manual-keys {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-8);
+}
+
+.manual-keys dd {
+  margin: 0;
+}
+
+.manual-back {
+  margin-bottom: 0;
+  text-align: right;
+  font-size: var(--font-size-sm);
+}
+
 .pipeline-stepper {
   display: flex;
   flex-direction: column;

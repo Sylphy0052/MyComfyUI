@@ -1494,6 +1494,15 @@ export function App() {
           ))}
         </nav>
         <ShortcutHelp />
+        {/* 画面状態と実行中Jobの監視を保つため、マニュアルは別タブで開く。 */}
+        <a
+          className="button-link"
+          href="/manual.html"
+          target="_blank"
+          rel="noopener"
+        >
+          使い方
+        </a>
         {!isProduction && (
           <nav className="row" aria-label="ラボの画面">
             {VIEWS.map((item) => (
