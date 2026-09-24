@@ -9,7 +9,7 @@ import type {
 } from "../api/client";
 import { MediaPicker, mediaTypeOf, toBase64 } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
-import { MEDIA_ROLE_LABEL, MEDIA_ROLE_OPTIONS } from "./mediaRole";
+import { MEDIA_ROLE_LABEL, MEDIA_ROLE_OPTIONS_BY_KIND } from "./mediaRole";
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
@@ -163,7 +163,7 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
             onChange={(event) => setRole(event.target.value as MediaRole | "")}
           >
             <option value="">役割を指定しない</option>
-            {MEDIA_ROLE_OPTIONS.map((item) => (
+            {MEDIA_ROLE_OPTIONS_BY_KIND.image.map((item) => (
               <option key={item} value={item}>
                 {MEDIA_ROLE_LABEL[item]}
               </option>

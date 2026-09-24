@@ -601,6 +601,8 @@ export function VideoPanel({
               projectId={projectId}
               sceneId={sceneId}
               shotId={shotId}
+              enableRoleTagging
+              defaultRole="guide_audio"
             />
             <label htmlFor="video-guide-frame-idx">
               guide_frame_idx (ガイド音声を当てはめるフレーム位置)

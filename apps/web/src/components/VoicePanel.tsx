@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import type {
   GenerationJob,
   GenerationPreview,
+  MediaRole,
   Recipe,
   VoiceBackendHealth,
   VoiceVerification,
@@ -17,6 +18,7 @@ import {
   type PlanPreset,
 } from "../state/productionPlan";
 import { ExecutionPreview } from "./ExecutionPreview";
+import { MediaRoleTagFields, useProjectCharacters } from "./MediaRoleTagFields";
 import { MediaViewer } from "./MediaViewer";
 import type { MediaViewerItem } from "./MediaViewer";
 import { PlanPresetNote } from "./ProductionPlanPanel";
@@ -33,6 +35,9 @@ interface VoiceBinding {
   leadingSilenceSec: string;
   /** 取り込んだファイルの表示名。指定済みかどうかの目印にする。 */
   fileName: string | null;
+  /** 取込時に参照音声へ付ける役割とキャラクター (Issue #249)。役割が空なら付けない。 */
+  role: MediaRole | "";
+  characterIds: string[];
 }
 
 const EMPTY_BINDING: VoiceBinding = {
@@ -42,6 +47,8 @@ const EMPTY_BINDING: VoiceBinding = {
   transcript: "",
   leadingSilenceSec: "0",
   fileName: null,
+  role: "voice_reference",
+  characterIds: [],
 };
 
 const STANDALONE_VOICE_ID = "standalone";
@@ -95,6 +102,7 @@ export function VoicePanel({
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
   usePlanPresetDefaults(planPreset, shotId, recipes, setRecipeId, setUseInheritedDefaults);
   const [canon, setCanon] = useState<CanonDescriptor[]>([]);
+  const characters = useProjectCharacters(projectId);
   const [health, setHealth] = useState<VoiceBackendHealth | null>(null);
   const [bindings, setBindings] = useState<Record<string, VoiceBinding>>({});
   const [seed, setSeed] = useState("-1");
@@ -244,6 +252,7 @@ export function VoicePanel({
 
   const upload = async (voiceId: string, file: File) => {
     setError(null);
+    const { role, characterIds } = bindings[voiceId] ?? EMPTY_BINDING;
     try {
       const stored = await api.createVoiceReference(
         file.name,
@@ -254,6 +263,26 @@ export function VoicePanel({
         sha256: stored.sha256,
         fileName: file.name,
       });
+      if (!role) return;
+      try {
+        await api.upsertMediaRoleTag({
+          relative_path: stored.relative_path,
+          sha256: stored.sha256,
+          file_name: file.name,
+          byte_size: stored.byte_size,
+          media_type: stored.media_type,
+          role,
+          // Projectを切り替える前に選んだキャラクターはAPIが422で弾くため除く。
+          character_ids: characterIds.filter((id) =>
+            characters.some((character) => character.id === id),
+          ),
+          project_id: projectId ?? undefined,
+          scene_id: sceneId ?? undefined,
+        });
+      } catch (cause) {
+        // 取込は済んでいるため参照音声の指定は残し、役割が付かなかった声を示す。
+        setError(`${voiceId}の参照音声に役割を付けられませんでした: ${describe(cause)}`);
+      }
     } catch (cause) {
       setError(describe(cause));
     }
@@ -524,6 +553,16 @@ export function VoicePanel({
                     ))}
                   </select>
                 )}
+                <MediaRoleTagFields
+                  kind="audio"
+                  role={binding.role}
+                  onRoleChange={(role) => update(voiceId, { role })}
+                  characters={characters}
+                  characterIds={binding.characterIds}
+                  onCharacterIdsChange={(characterIds) =>
+                    update(voiceId, { characterIds })
+                  }
+                />
                 <input
                   id={`reference-${voiceId}`}
                   type="file"

@@ -1521,8 +1521,19 @@ class ArtifactImportRead(ApiModel):
     created_at: str
 
 
-#: 画像取込物へ付ける役割。人物・キャラクターの外見参照、ポーズ、背景、衣装、その他。
-MediaRole = Literal["appearance_reference", "pose", "background", "costume", "other"]
+#: 取込物へ付ける役割。画像は人物・キャラクターの外見参照、ポーズ、背景、衣装。
+#: 音声は声質参照とガイド音声。`other`は画像と音声で共用する。
+MediaRole = Literal[
+    "appearance_reference",
+    "pose",
+    "background",
+    "costume",
+    "voice_reference",
+    "guide_audio",
+    "other",
+]
+#: 音声にだけ付ける役割。`other`以外の残りは画像にだけ付ける。
+AUDIO_MEDIA_ROLES = frozenset({"voice_reference", "guide_audio"})
 
 
 class MediaRoleTagTarget(ApiModel):
