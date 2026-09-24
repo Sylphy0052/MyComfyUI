@@ -96,7 +96,12 @@ async def lifespan(app: FastAPI):
     try:
         settings = get_settings()
         app.state.reference_source = create_reference_source(
-            settings.aimedia_base_url, settings.aimedia_fixture_path
+            settings.aimedia_base_url,
+            settings.aimedia_fixture_path,
+            repository_root=settings.aimedia_repository_root,
+            repository_ref=settings.aimedia_repository_ref,
+            repository_locator=settings.aimedia_repository_locator,
+            projects_dir=settings.aimedia_projects_dir,
         )
         # 提案Providerは接続を張らない。CLIが無い環境でも起動を止めず、提案を
         # 要求したときに初めて失敗する。

@@ -59,6 +59,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="ai-media API未接続時に使う参照fixtureのJSONファイル。",
     )
     parser.add_argument(
+        "--aimedia-repository-root",
+        help="ai-media実データを読むnovel-writerのgitリポジトリ。fixtureより優先する。",
+    )
+    parser.add_argument(
         "--allow-origin",
         action="append",
         metavar="ORIGIN",
@@ -85,6 +89,8 @@ def _apply_overrides(args: argparse.Namespace) -> None:
         os.environ["MYCOMFYUI_AIMEDIA_BASE_URL"] = args.aimedia_base_url
     if args.aimedia_fixture_path is not None:
         os.environ["MYCOMFYUI_AIMEDIA_FIXTURE_PATH"] = args.aimedia_fixture_path
+    if args.aimedia_repository_root is not None:
+        os.environ["MYCOMFYUI_AIMEDIA_REPOSITORY_ROOT"] = args.aimedia_repository_root
     if args.host is not None:
         os.environ["MYCOMFYUI_API_HOST"] = args.host
     if args.port is not None:

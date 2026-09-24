@@ -2,7 +2,7 @@
 
 MyComfyUIはSQLite、生成物、入力素材、実行中の一時ファイルを`data_root`配下へ保存する。既定値はOS標準の利用者データ領域であり、リポジトリ、既存作品、生成Backendの出力ディレクトリは管理対象にしない。
 
-既存作品はai-media参照APIから読取り専用で取得する。MyComfyUIは`novel-writer`などの作品正本を直接読まず、書き換えない。例外は、prompt提案のために`novel_writer_root`で指定したnovel-writerのprompt資産を読取り専用で参照することだけとする。
+既存作品はai-media参照APIから読取り専用で取得する。MyComfyUIは`novel-writer`などの作品正本を直接読まず、書き換えない。例外は、prompt提案のために`novel_writer_root`で指定したnovel-writerのprompt資産を読取り専用で参照することと、`aimedia_repository_root`で指定したnovel-writerのgitリポジトリからai-media実データを読取り専用で参照することの2つとする。
 
 ## 設定ファイル
 
@@ -32,6 +32,15 @@ WindowsとmacOSではplatformdirsが各OS標準の設定ディレクトリを選
 
 上流参照APIが未提供、または`aimedia_base_url`を設定していない場合は、同梱fixtureを使う。これは代表作品の画面・同期経路を確認するためのもので、既存作品のファイルを探索する機能ではない。検証用fixtureを使う場合だけ`aimedia_fixture_path`でJSONファイルを指定する。
 
+参照APIが無い間にnovel-writerの実データを使う場合は、`aimedia_repository_root`にnovel-writerのリポジトリを指定する。MyComfyUIは`aimedia_repository_ref` (既定は`origin/main`) が指すcommitの`tools/ai-media/projects/<project>/`を読み、Scene、Shot、Canon (voice、character、location) を参照APIと同じ形で返す。working treeの未コミットの変更は読まない。
+
+- gitは`rev-parse`、`ls-tree`、`cat-file`だけを`GIT_OPTIONAL_LOCKS=0`で実行し、fetch、checkout、indexの更新を行わない。`origin/main`を最新にするには、利用者がnovel-writer側で`git fetch`する。
+- refが別のcommitを指すと、次の参照から読み直す。revisionが変わるとcanon_idも変わるため、同期のプレビューではCanonが入れ替わって見える。
+- 参照に記録する`source_locator`は、`aimedia_repository_locator`が未設定ならremote.origin.urlから求める。GitHubのURLはSSH形式でも`https://github.com/<owner>/<repo>`へそろえる。
+- Scene、Shotが宣言する参照のうち、そのcommitに実体が無いpathは警告ログを出して参照とCanonから除外する。
+
+参照元の優先順は、`aimedia_base_url`、`aimedia_repository_root`、`aimedia_fixture_path`、同梱fixtureの順とする。
+
 ## novel-writerのprompt資産の参照
 
 `novel_writer_root` (環境変数`MYCOMFYUI_NOVEL_WRITER_ROOT`) にnovel-writerのリポジトリのルートを指定すると、画像promptの提案と一括生成計画の提案で、次の資産を抜き出してProviderへの指示に添える。未設定のとき、またはディレクトリが見つからないときは資産を参照せず、これまでと同じ提案を返す。
@@ -46,6 +55,6 @@ WindowsとmacOSではplatformdirsが各OS標準の設定ディレクトリを選
 
 ## 優先順位と秘密情報
 
-設定値はアプリケーション既定値、ユーザー設定TOML、`.env`、`MYCOMFYUI_`環境変数、起動時引数の順に上書きする。起動時引数は`--data-root`、`--aimedia-base-url`、`--aimedia-fixture-path`、`--config-file`を使える。
+設定値はアプリケーション既定値、ユーザー設定TOML、`.env`、`MYCOMFYUI_`環境変数、起動時引数の順に上書きする。起動時引数は`--data-root`、`--aimedia-base-url`、`--aimedia-fixture-path`、`--aimedia-repository-root`、`--config-file`を使える。
 
 APIキー、Cookie、token、認証headerをTOML、`.env`、SQLite、Manifest、Artifact名、ログへ保存しない。これらが必要な上流サービスはOS資格情報ストアまたは実行環境の秘密情報管理へ置く。

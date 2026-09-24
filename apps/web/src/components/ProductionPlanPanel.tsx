@@ -90,21 +90,24 @@ export function ProductionPlanPanel({
     };
   }, [projectId]);
 
+  // 同じ人物がSceneのid、Canonのcanon_id、ローカル定義のidで別々に届くため、
+  // idか表示名のどちらかが一致したら先に入った候補を残す。選択済みのキャラクターは
+  // 名前が重なっても隠すと選択を外せなくなるため、idが一致するときだけ省く。
   const characterOptions = useMemo(() => {
-    const options = new Map<string, NamedItem>();
-    for (const item of scene?.data.characters ?? []) {
-      options.set(item.id, { id: item.id, name: item.display_name || item.id });
-    }
+    const options: NamedItem[] = [];
+    const add = (item: NamedItem) => {
+      if (!options.some((current) => current.id === item.id || current.name === item.name)) options.push(item);
+    };
+    for (const item of scene?.data.characters ?? []) add({ id: item.id, name: item.display_name || item.id });
     for (const item of canon) {
-      if (item.kind === "character" && !options.has(item.canon_id)) {
-        options.set(item.canon_id, { id: item.canon_id, name: item.display_name || item.canon_id });
-      }
+      if (item.kind === "character") add({ id: item.canon_id, name: item.display_name || item.canon_id });
     }
+    for (const item of localCharacters) add({ id: item.id, name: item.name || item.id });
     for (const item of plan?.characters ?? []) {
-      if (!options.has(item.id)) options.set(item.id, item);
+      if (!options.some((current) => current.id === item.id)) options.push(item);
     }
-    return [...options.values()];
-  }, [scene, canon, plan?.characters]);
+    return options;
+  }, [scene, canon, localCharacters, plan?.characters]);
 
   // 話者ごとの声。声の中身 (Voice Canon) は音声の工程でvoice_idごとに選ぶ。
   // 同じIDのVoice Canonがあればその名前を出し、無ければvoice_idを出す。
