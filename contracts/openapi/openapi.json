@@ -9786,7 +9786,7 @@
     },
     "/api/v1/generation-jobs": {
       "get": {
-        "description": "キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。\n\n`project_id`、`scene_id`、`shot_id`は現在の整理先と突き合わせる。`unassigned`は\n現在Projectに所属しないJobだけへ絞る。生成時参照とManifestは所属変更で変えない。",
+        "description": "キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。\n\n`order=desc`で新しいJobから返す。limitは並べ替えの後に掛かる。\n\n`project_id`、`scene_id`、`shot_id`は現在の整理先と突き合わせる。`unassigned`は\n現在Projectに所属しないJobだけへ絞る。生成時参照とManifestは所属変更で変えない。",
         "operationId": "list_generation_jobs_api_v1_generation_jobs_get",
         "parameters": [
           {
@@ -9892,6 +9892,20 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
             }
           }
         ],

@@ -502,6 +502,8 @@ export interface paths {
          * List Generation Jobs
          * @description キュー状態の確認用。既定はqueue_sequence昇順、指定した条件で絞り込む。
          *
+         *     `order=desc`で新しいJobから返す。limitは並べ替えの後に掛かる。
+         *
          *     `project_id`、`scene_id`、`shot_id`は現在の整理先と突き合わせる。`unassigned`は
          *     現在Projectに所属しないJobだけへ絞る。生成時参照とManifestは所属変更で変えない。
          */
@@ -5771,6 +5773,7 @@ export interface operations {
                 unassigned?: boolean;
                 limit?: number;
                 offset?: number;
+                order?: "asc" | "desc";
             };
             header?: never;
             path?: never;

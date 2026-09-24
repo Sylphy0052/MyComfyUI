@@ -647,12 +647,14 @@ export const api = {
     sceneId?: string;
     shotId?: string;
     unassigned?: boolean;
+    order?: "asc" | "desc";
   }) => {
     const query = new URLSearchParams();
     if (params.projectId) query.set("project_id", params.projectId);
     if (params.sceneId) query.set("scene_id", params.sceneId);
     if (params.shotId) query.set("shot_id", params.shotId);
     if (params.unassigned) query.set("unassigned", "true");
+    if (params.order) query.set("order", params.order);
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request<GenerationJob[]>(`/generation-jobs${suffix}`);
   },
