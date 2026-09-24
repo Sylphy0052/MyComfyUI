@@ -1499,7 +1499,7 @@ export function App() {
           className="button-link"
           href="/manual.html"
           target="_blank"
-          rel="noopener"
+          rel="noopener noreferrer"
         >
           使い方
         </a>
