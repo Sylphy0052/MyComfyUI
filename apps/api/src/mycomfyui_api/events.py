@@ -59,16 +59,54 @@ class EventHub:
             logger.warning("Job状態の通知に失敗した job_id=%s", job_id, exc_info=True)
 
     def _publish_job(self, job_id: str, state: str) -> None:
-        event = self.event(
-            "generation_job.state_changed",
-            "generation_job",
-            job_id,
-            {
-                "job_id": job_id,
-                "state": state,
-                "phase": (state if state in NON_TERMINAL_JOB_STATES else "terminal"),
-            },
+        self._broadcast(
+            self.event(
+                "generation_job.state_changed",
+                "generation_job",
+                job_id,
+                {
+                    "job_id": job_id,
+                    "state": state,
+                    "phase": (
+                        state if state in NON_TERMINAL_JOB_STATES else "terminal"
+                    ),
+                },
+            )
         )
+
+    def publish_progress(
+        self,
+        job_id: str,
+        *,
+        value: int,
+        maximum: int,
+        node: str | None,
+        preview_seq: int,
+    ) -> None:
+        """実行中Jobの進捗を配る。状態の通知と同じく失敗は呼び出し元へ返さない。
+
+        `preview_seq`は最新プレビューの連番で、まだ無ければ0。画面はこの値を
+        `GET /generation-jobs/{id}/preview`のキャッシュ回避に使う。
+        """
+        try:
+            self._broadcast(
+                self.event(
+                    "generation_job.progress",
+                    "generation_job",
+                    job_id,
+                    {
+                        "job_id": job_id,
+                        "value": value,
+                        "max": maximum,
+                        "node": node,
+                        "preview_seq": preview_seq,
+                    },
+                )
+            )
+        except Exception:
+            logger.warning("Job進捗の通知に失敗した job_id=%s", job_id, exc_info=True)
+
+    def _broadcast(self, event: dict[str, object]) -> None:
         for queue in tuple(self._subscribers):
             if queue.full():
                 try:

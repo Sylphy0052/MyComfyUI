@@ -677,6 +677,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/generation-jobs/{job_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Preview
+         * @description 実行中Jobの最新プレビュー画像を返す。
+         *
+         *     プレビューはメモリ上にだけあり、Jobが終わると消える。画面は進捗イベントの
+         *     `preview_seq`をクエリへ付けて取り直すため、ブラウザにはキャッシュさせない。
+         */
+        get: operations["get_job_preview_api_v1_generation_jobs__job_id__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generation-jobs/{job_id}/regenerate": {
         parameters: {
             query?: never;
@@ -6044,6 +6067,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobLineageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_preview_api_v1_generation_jobs__job_id__preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
                 };
             };
             /** @description Validation Error */

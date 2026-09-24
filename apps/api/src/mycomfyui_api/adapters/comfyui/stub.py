@@ -26,6 +26,8 @@ from mycomfyui_api.adapters.comfyui.client import (
     ExecutionTimeout,
     OutputNotFound,
     OutputRef,
+    ProgressListener,
+    ProgressUpdate,
     WaitResult,
 )
 from mycomfyui_api.schemas import new_id
@@ -38,6 +40,9 @@ STUB_VERSION = "stub"
 
 #: 生成にかける見かけの時間。取消要求が実行中に届く経路を確かめられる長さにする。
 STUB_RUNTIME_SECONDS = 2.0
+
+#: 見かけの実行時間を何段に分けて進捗を通知するか。画面の進捗表示を確かめるために使う。
+STUB_PROGRESS_STEPS = 8
 
 #: 1本の生成にかけてよい時間。単色の動画と正弦波しか作らないため、これを超えるのは
 #: ffmpegが応答しなくなった場合とみなす。放置すると直列キューが止まったままになる。
@@ -105,22 +110,34 @@ class StubComfyUIClient:
         return prompt_id
 
     async def wait_for_completion(
-        self, prompt_id: str, *, cancel_event: Event, timeout: float
+        self,
+        prompt_id: str,
+        *,
+        cancel_event: Event,
+        timeout: float,
+        listener: ProgressListener | None = None,
     ) -> WaitResult:
         """見かけの実行時間だけ待ってから生成する。
 
         待っている間に取消要求が届けば、生成物を作らずに取消として返す。実Backendと
         同じく、取消後の`fetch_outputs`では何も取得できない。制限時間が見かけの実行
         時間より短ければ、実Backendと同じく時間切れとして扱う。
+        進捗は段ごとに通知する。プレビュー画像は作らない。
         """
-        try:
-            await asyncio.wait_for(
-                cancel_event.wait(), timeout=min(STUB_RUNTIME_SECONDS, timeout)
-            )
-        except TimeoutError:
-            pass
-        else:
-            return WaitResult.CANCEL_REQUESTED
+        runtime = min(STUB_RUNTIME_SECONDS, timeout)
+        for step in range(1, STUB_PROGRESS_STEPS + 1):
+            try:
+                await asyncio.wait_for(
+                    cancel_event.wait(), timeout=runtime / STUB_PROGRESS_STEPS
+                )
+            except TimeoutError:
+                pass
+            else:
+                return WaitResult.CANCEL_REQUESTED
+            if listener is not None:
+                listener.on_progress(
+                    ProgressUpdate(value=step, max=STUB_PROGRESS_STEPS, node=None)
+                )
         if timeout < STUB_RUNTIME_SECONDS:
             raise ExecutionTimeout(
                 f"生成が制限時間{timeout}秒以内に完了しませんでした。"

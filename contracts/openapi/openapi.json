@@ -10267,6 +10267,43 @@
         "summary": "Get Job Lineage"
       }
     },
+    "/api/v1/generation-jobs/{job_id}/preview": {
+      "get": {
+        "description": "実行中Jobの最新プレビュー画像を返す。\n\nプレビューはメモリ上にだけあり、Jobが終わると消える。画面は進捗イベントの\n`preview_seq`をクエリへ付けて取り直すため、ブラウザにはキャッシュさせない。",
+        "operationId": "get_job_preview_api_v1_generation_jobs__job_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {},
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job Preview"
+      }
+    },
     "/api/v1/generation-jobs/{job_id}/regenerate": {
       "post": {
         "description": "現在のCanonで再生成する(Regenerate with Current Canon)。\n\nScene、Shot、Canonだけを現在の参照APIから解決し直し、Recipe、Workflow、モデル、\nseed、パラメータは元Manifestを複製する。元Jobを親に持つ派生Jobとして記録する。",
