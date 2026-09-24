@@ -172,16 +172,27 @@ export function SceneBrowser(props: Props) {
       },
       onDragOver: (event: DragEvent<HTMLLIElement>) => {
         if (dragging?.kind !== kind) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
         const at = insertionIndex(event, kind, index);
         if (target !== at) setDropTarget(at === null ? null : { kind, index: at });
       },
-      onDrop: (event: DragEvent<HTMLLIElement>) => {
+      onDragEnd: clearDrag,
+    };
+  };
+
+  // 行の間の隙間へ落としても最後に示した位置へ入るよう、ドロップは一覧側で受ける。
+  const listDragProps = (kind: StructureKind) => {
+    if (!structureEditable) return {};
+    return {
+      onDragOver: (event: DragEvent<HTMLUListElement>) => {
         if (dragging?.kind !== kind) return;
         event.preventDefault();
-        const at = insertionIndex(event, kind, index);
+        event.dataTransfer.dropEffect = "move";
+      },
+      onDrop: (event: DragEvent<HTMLUListElement>) => {
+        if (dragging?.kind !== kind) return;
+        event.preventDefault();
         const from = dragging.index;
+        const at = dropTarget?.kind === kind ? dropTarget.index : null;
         clearDrag();
         if (at === null) return;
         const ids = (kind === "scene" ? scenes : shots).map((item) => item.id);
@@ -189,7 +200,6 @@ export function SceneBrowser(props: Props) {
         ids.splice(at > from ? at - 1 : at, 0, moved);
         void reorder(kind, ids);
       },
-      onDragEnd: clearDrag,
     };
   };
 
@@ -292,7 +302,7 @@ export function SceneBrowser(props: Props) {
             ))}
           </select>
         )}
-        {!simple && <ul className={`list structure-list density-${density}`}>
+        {!simple && <ul className={`list structure-list density-${density}`} {...listDragProps("scene")}>
           {scenes.map((item, index) => (
             <li key={item.id} {...rowDragProps("scene", index, scenes.length)}>
               <button type="button" aria-pressed={item.id === sceneId} onClick={() => onSelectScene(item.id)}>
@@ -346,7 +356,7 @@ export function SceneBrowser(props: Props) {
             ))}
           </select>
         )}
-        {!simple && <ul className={`list structure-list density-${density}`}>
+        {!simple && <ul className={`list structure-list density-${density}`} {...listDragProps("shot")}>
           {shots.map((item, index) => (
             <li key={item.id} {...rowDragProps("shot", index, shots.length)}>
               <button type="button" aria-pressed={item.id === shotId} onClick={() => onSelectShot(item.id)}>
