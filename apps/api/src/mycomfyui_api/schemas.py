@@ -376,6 +376,36 @@ class ProjectCharacterOutfit(ApiModel):
     prompt: str = Field(default="", max_length=2_000)
 
 
+class ProjectCharacterProfileExtraField(ApiModel):
+    """プロフィールの自由項目1件。固定5項目に無い情報を任意のkey/valueで持たせる。"""
+
+    key: str = Field(max_length=120)
+    value: str = Field(max_length=2_000)
+
+
+class ProjectCharacterPersonalProfile(ApiModel):
+    """キャラクターの性格などのプロフィール (#287)。生成プロンプトへは合成しない。"""
+
+    personality: str | None = Field(default=None, max_length=2_000)
+    age: str | None = Field(default=None, max_length=2_000)
+    first_person: str | None = Field(default=None, max_length=2_000)
+    speech_style: str | None = Field(default=None, max_length=2_000)
+    background: str | None = Field(default=None, max_length=2_000)
+    extra: list[ProjectCharacterProfileExtraField] = Field(
+        default_factory=list, max_length=30
+    )
+
+    @field_validator("extra")
+    @classmethod
+    def _unique_extra_keys(
+        cls, value: list[ProjectCharacterProfileExtraField]
+    ) -> list[ProjectCharacterProfileExtraField]:
+        keys = [item.key for item in value]
+        if len(set(keys)) != len(keys):
+            raise ValueError("自由項目のkeyを重複させられません。")
+        return value
+
+
 class ProjectCharacterProfile(ApiModel):
     id: ResourceId
     name: ProjectName
@@ -385,6 +415,11 @@ class ProjectCharacterProfile(ApiModel):
     )
     appearance: str | None = Field(default=None, max_length=2_000)
     voice: str | None = Field(default=None, max_length=2_000)
+    # キャラ固有の生成プロンプト断片。連結順は apps/web/src/state/characterPrompt.ts 側で決める (#287)。
+    prompt: str | None = Field(default=None, max_length=2_000)
+    negative_prompt: str | None = Field(default=None, max_length=2_000)
+    # 性格などのプロフィール。画像生成のプロンプトには合成しない (#287)。
+    profile: ProjectCharacterPersonalProfile | None = None
     outfits: list[ProjectCharacterOutfit] = Field(default_factory=list, max_length=20)
     default_outfit_id: ResourceId | None = None
     # 衣装ごとの参照画像セット。衣装が変わったときだけ新しいセットになる。
@@ -1510,6 +1545,7 @@ class ArtifactRead(ApiModel):
     created_at: str
     decision: str
     decision_at: str | None
+    deleted_at: str | None
     tags: list[str] = Field(default_factory=list)
 
 
@@ -1692,7 +1728,9 @@ class JobAssignmentUpdate(AssignmentTarget):
     include_artifacts: bool = False
 
 
-ArtifactBatchOperationType = Literal["move", "copy", "unassign", "tag"]
+ArtifactBatchOperationType = Literal[
+    "move", "copy", "unassign", "tag", "trash", "restore"
+]
 
 
 class ArtifactBatchOperation(ApiModel):
@@ -1710,6 +1748,52 @@ class ArtifactBatchOperation(ApiModel):
         if self.operation == "tag" and self.tag is None:
             raise ValueError("tag操作にはtagが必要です。")
         return self
+
+
+class ArtifactPurgeTarget(ApiModel):
+    """完全削除の対象。ゴミ箱にあるArtifactだけを指定できる。"""
+
+    artifact_ids: list[ResourceId] = Field(min_length=1, max_length=200)
+
+    @field_validator("artifact_ids")
+    @classmethod
+    def _unique_artifact_ids(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("artifact_idsを重複させられません。")
+        return value
+
+
+class ArtifactPurgeRequest(ArtifactPurgeTarget):
+    """完全削除の実行。取り消せないため、`confirm=true`が無ければ削除しない。"""
+
+    confirm: bool = False
+
+
+class ArtifactPurgePreview(ApiModel):
+    """完全削除の影響。DBもファイルも変更せずに数える。
+
+    `removed_file_count`と`removed_byte_size`は実際に消えるファイル、
+    `shared_file_count`は同じパスを他のArtifactが使っているため残るファイルを表す。
+    `not_trashed_ids`が空でなければ、完全削除は409になる。
+    """
+
+    artifacts: list[ArtifactRead]
+    removed_file_count: int
+    removed_byte_size: int
+    shared_file_count: int
+    unreplayable_manifest_count: int
+    detached_child_count: int
+    thumbnail_project_ids: list[str]
+    reference_slot_count: int
+    tag_count: int
+    role_tag_count: int
+    not_trashed_ids: list[str]
+
+
+class ArtifactPurgeResult(ApiModel):
+    purged_ids: list[str]
+    removed_file_count: int
+    removed_byte_size: int
 
 
 class ArtifactDecisionUpdate(ApiModel):

@@ -98,6 +98,10 @@ export type ProjectReferenceImage =
   components["schemas"]["ProjectReferenceImage"];
 export type ProjectCharacterOutfit =
   components["schemas"]["ProjectCharacterOutfit"];
+export type ProjectCharacterPersonalProfile =
+  components["schemas"]["ProjectCharacterPersonalProfile"];
+export type ProjectCharacterProfileExtraField =
+  components["schemas"]["ProjectCharacterProfileExtraField"];
 export type ProjectReferenceSet =
   components["schemas"]["ProjectReferenceSet"];
 export type ProjectReferenceSlot =
@@ -114,6 +118,9 @@ export type ProjectProgress = components["schemas"]["ProjectProgress"];
 export type AssignmentTarget = components["schemas"]["AssignmentTarget"];
 export type ArtifactBatchOperation =
   components["schemas"]["ArtifactBatchOperation"];
+export type ArtifactPurgePreview =
+  components["schemas"]["ArtifactPurgePreview"];
+export type ArtifactPurgeResult = components["schemas"]["ArtifactPurgeResult"];
 export type ProjectTemplate = components["schemas"]["ProjectTemplateRead"];
 export type ProjectPackage = components["schemas"]["ProjectPackage"];
 export type ProjectPackagePreflight =
@@ -761,6 +768,20 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  // 完全削除はゴミ箱にあるArtifactだけが対象。取り消せないため、プレビューで影響を
+  // 見せてから confirm を付けて呼ぶ。
+  previewArtifactPurge: (artifactIds: string[]) =>
+    request<ArtifactPurgePreview>("/artifacts/purge-preview", {
+      method: "POST",
+      body: JSON.stringify({ artifact_ids: artifactIds }),
+    }),
+
+  purgeArtifacts: (artifactIds: string[]) =>
+    request<ArtifactPurgeResult>("/artifacts/purge", {
+      method: "POST",
+      body: JSON.stringify({ artifact_ids: artifactIds, confirm: true }),
+    }),
+
   // tag は複数指定でき、すべてのタグが付いた Artifact だけが返る (AND)。
   // lineage_* は祖先と子孫の両方向を辿った結果へ絞る。
   listArtifacts: (params: {
@@ -775,6 +796,7 @@ export const api = {
     tags?: string[];
     lineageArtifactId?: string;
     lineageJobId?: string;
+    trashed?: boolean;
     limit?: number;
     offset?: number;
   }) => {
@@ -791,6 +813,7 @@ export const api = {
     if (params.lineageArtifactId)
       query.set("lineage_artifact_id", params.lineageArtifactId);
     if (params.lineageJobId) query.set("lineage_job_id", params.lineageJobId);
+    if (params.trashed) query.set("trashed", "true");
     if (params.limit) query.set("limit", String(params.limit));
     if (params.offset) query.set("offset", String(params.offset));
     const suffix = query.toString() ? `?${query.toString()}` : "";
@@ -889,6 +912,10 @@ export const api = {
 
   artifactContentUrl: (artifactId: string) =>
     `${apiBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}/content`,
+
+  // seq は進捗イベントの preview_seq。更新のたびに URL を変えて取り直させる。
+  jobPreviewUrl: (jobId: string, seq: number) =>
+    `${apiBaseUrl()}/generation-jobs/${encodeURIComponent(jobId)}/preview?seq=${seq}`,
 
   listAgentProviders: () => request<AgentProvider[]>("/agent-providers"),
 

@@ -24,6 +24,11 @@ import { AgentPanel } from "./components/AgentPanel";
 import { AssetBrowser } from "./components/AssetBrowser";
 import { CandidateGallery } from "./components/CandidateGallery";
 import { LatestImageViewer } from "./components/LatestImageViewer";
+import {
+  JobProgressPanel,
+  parseJobProgress,
+  type JobProgress,
+} from "./components/JobProgressPanel";
 import { CharacterManager } from "./components/CharacterManager";
 import type { Candidate } from "./components/CandidateGallery";
 import { ComposePanel } from "./components/ComposePanel";
@@ -60,7 +65,7 @@ import {
   readProductionPlan,
 } from "./state/productionPlan";
 import type { ProductionPlan } from "./state/productionPlan";
-import { characterPrompt } from "./state/characterPrompt";
+import { characterNegativePrompt, characterPrompt } from "./state/characterPrompt";
 import type { SceneOutfits } from "./state/characterPrompt";
 import { sceneReferenceImages } from "./state/referenceSlots";
 import { subscribeLookProfilesChanged } from "./preset/productionChoices";
@@ -381,6 +386,8 @@ export function App() {
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [recipesRetryToken, setRecipesRetryToken] = useState(0);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  // キューは1件ずつ実行するため、最後に進捗が届いた Job の分だけ持つ。
+  const [jobProgress, setJobProgress] = useState<JobProgress | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [manifest, setManifest] = useState<GenerationManifest | null>(null);
   const [artifactsByJob, setArtifactsByJob] = useState<
@@ -681,10 +688,16 @@ export function App() {
       imagePlanSlot === "character"
         ? characterPrompt(activePlan.characters, localCharacters, sceneOutfits, sceneId)
         : backgroundPrompt(activePlan);
+    // ネガティブプロンプトはキャラクター工程でだけ、選択中キャラのnegative_promptを合成する。
+    const negativePrompt =
+      imagePlanSlot === "character"
+        ? characterNegativePrompt(activePlan.characters, localCharacters)
+        : "";
     return {
       scope: `${activePlan.sceneId}:${shotId ?? ""}:${imagePlanSlot}`,
       preset: planPresets[imagePlanSlot],
       prompt,
+      negativePrompt,
     };
   }, [activePlan, imagePlanSlot, planPresets, shotId, localCharacters, sceneOutfits, sceneId]);
   const planMusic = useMemo(
@@ -1088,12 +1101,13 @@ export function App() {
       socket.onmessage = (event) => {
         try {
           const message: unknown = JSON.parse(String(event.data));
-          if (
-            message && typeof message === "object" &&
-            (message as Record<string, unknown>).event_type ===
-              "generation_job.state_changed"
-          ) {
+          if (!message || typeof message !== "object") return;
+          const record = message as Record<string, unknown>;
+          if (record.event_type === "generation_job.state_changed") {
             scheduleRefresh();
+          } else if (record.event_type === "generation_job.progress") {
+            const progress = parseJobProgress(record.payload);
+            if (progress) setJobProgress(progress);
           }
         } catch {
           // 通知は再取得トリガーだけなので、壊れた1件は無視して定期同期へ任せる。
@@ -1222,6 +1236,11 @@ export function App() {
             : latest,
         null,
       ),
+    [jobs],
+  );
+  // 実行中の Job。キューは直列なので、あっても1件になる。
+  const runningJob = useMemo(
+    () => jobs.find((job) => job.state === "running") ?? null,
     [jobs],
   );
   const latestImages = useMemo(
@@ -1821,6 +1840,15 @@ export function App() {
                     key={promotionCandidate.artifact.id}
                     candidate={promotionCandidate}
                     onClose={() => setPromotionArtifactId(null)}
+                  />
+                )}
+                {runningJob && (
+                  <JobProgressPanel
+                    key={runningJob.id}
+                    job={runningJob}
+                    progress={
+                      jobProgress?.jobId === runningJob.id ? jobProgress : null
+                    }
                   />
                 )}
                 <LatestImageViewer

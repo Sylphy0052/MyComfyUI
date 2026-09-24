@@ -206,6 +206,8 @@ export interface paths {
          * List Artifacts
          * @description Artifact履歴の一覧。既定は作成の新しい順に返す。
          *
+         *     ゴミ箱にあるArtifactは既定で除き、`trashed=true`のときはゴミ箱にあるものだけを返す。
+         *
          *     Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
          *     現在のProject所属を持たないArtifactだけへ絞る。
          *     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
@@ -239,6 +241,9 @@ export interface paths {
         /**
          * Operate Artifacts
          * @description Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。
+         *
+         *     trashはゴミ箱へ移し (論理削除)、restoreはゴミ箱から戻す。Workflowのスナップショットは
+         *     生成記録が必ず参照するためゴミ箱へ移せず、1件でも含まれていれば何も変更しない。
          */
         post: operations["operate_artifacts_api_v1_artifacts_batch_operation_post"];
         delete?: never;
@@ -272,6 +277,50 @@ export interface paths {
         get: operations["list_artifact_integrity_api_v1_artifacts_integrity_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/artifacts/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge Artifacts
+         * @description ゴミ箱にあるArtifactを、DBの記録と実ファイルごと完全に削除する。
+         *
+         *     取り消せないため`confirm=true`を必須にし、ゴミ箱に無いものが1件でも含まれていれば
+         *     何も削除しない。生成記録のJSONに残る参照は履歴として書き換えない。ファイルは
+         *     同じパスを使う記録が他に無いときだけ、commit後に消す。
+         */
+        post: operations["purge_artifacts_api_v1_artifacts_purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/artifacts/purge-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Artifact Purge
+         * @description 完全削除で消えるものと外れる参照を返す。DBもファイルも変更しない。
+         */
+        post: operations["preview_artifact_purge_api_v1_artifacts_purge_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -669,6 +718,30 @@ export interface paths {
          *     まとめて返し、画面側で辿れるようにする。
          */
         get: operations["get_job_lineage_api_v1_generation_jobs__job_id__lineage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generation-jobs/{job_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Preview
+         * @description 実行中Jobの最新プレビュー画像を返す。
+         *
+         *     プレビューはメモリ上にだけあり、Jobが終わると消える。`seq`は進捗イベントの
+         *     `preview_seq`で、画面が取り直しのURLを変えるためだけに付ける。値は見ずに常に
+         *     最新の1枚を返し、ブラウザにはキャッシュさせない。
+         */
+        get: operations["get_job_preview_api_v1_generation_jobs__job_id__preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2396,7 +2469,7 @@ export interface components {
              * Operation
              * @enum {string}
              */
-            operation: "move" | "copy" | "unassign" | "tag";
+            operation: "move" | "copy" | "unassign" | "tag" | "trash" | "restore";
             /** Tag */
             tag?: string | null;
             target?: components["schemas"]["AssignmentTarget"] | null;
@@ -2503,6 +2576,68 @@ export interface components {
             truncated: boolean;
         };
         /**
+         * ArtifactPurgePreview
+         * @description 完全削除の影響。DBもファイルも変更せずに数える。
+         *
+         *     `removed_file_count`と`removed_byte_size`は実際に消えるファイル、
+         *     `shared_file_count`は同じパスを他のArtifactが使っているため残るファイルを表す。
+         *     `not_trashed_ids`が空でなければ、完全削除は409になる。
+         */
+        ArtifactPurgePreview: {
+            /** Artifacts */
+            artifacts: components["schemas"]["ArtifactRead"][];
+            /** Detached Child Count */
+            detached_child_count: number;
+            /** Not Trashed Ids */
+            not_trashed_ids: string[];
+            /** Reference Slot Count */
+            reference_slot_count: number;
+            /** Removed Byte Size */
+            removed_byte_size: number;
+            /** Removed File Count */
+            removed_file_count: number;
+            /** Role Tag Count */
+            role_tag_count: number;
+            /** Shared File Count */
+            shared_file_count: number;
+            /** Tag Count */
+            tag_count: number;
+            /** Thumbnail Project Ids */
+            thumbnail_project_ids: string[];
+            /** Unreplayable Manifest Count */
+            unreplayable_manifest_count: number;
+        };
+        /**
+         * ArtifactPurgeRequest
+         * @description 完全削除の実行。取り消せないため、`confirm=true`が無ければ削除しない。
+         */
+        ArtifactPurgeRequest: {
+            /** Artifact Ids */
+            artifact_ids: string[];
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** ArtifactPurgeResult */
+        ArtifactPurgeResult: {
+            /** Purged Ids */
+            purged_ids: string[];
+            /** Removed Byte Size */
+            removed_byte_size: number;
+            /** Removed File Count */
+            removed_file_count: number;
+        };
+        /**
+         * ArtifactPurgeTarget
+         * @description 完全削除の対象。ゴミ箱にあるArtifactだけを指定できる。
+         */
+        ArtifactPurgeTarget: {
+            /** Artifact Ids */
+            artifact_ids: string[];
+        };
+        /**
          * ArtifactRead
          * @description Artifact 1件。`tags`は付けた順ではなくタグの昇順で返す。
          *
@@ -2526,6 +2661,8 @@ export interface components {
             decision: string;
             /** Decision At */
             decision_at: string | null;
+            /** Deleted At */
+            deleted_at: string | null;
             /** Id */
             id: string;
             /** Job Id */
@@ -3739,6 +3876,24 @@ export interface components {
              */
             prompt: string;
         };
+        /**
+         * ProjectCharacterPersonalProfile
+         * @description キャラクターの性格などのプロフィール (#287)。生成プロンプトへは合成しない。
+         */
+        ProjectCharacterPersonalProfile: {
+            /** Age */
+            age?: string | null;
+            /** Background */
+            background?: string | null;
+            /** Extra */
+            extra?: components["schemas"]["ProjectCharacterProfileExtraField"][];
+            /** First Person */
+            first_person?: string | null;
+            /** Personality */
+            personality?: string | null;
+            /** Speech Style */
+            speech_style?: string | null;
+        };
         /** ProjectCharacterProfile */
         ProjectCharacterProfile: {
             /** Appearance */
@@ -3749,8 +3904,13 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Negative Prompt */
+            negative_prompt?: string | null;
             /** Outfits */
             outfits?: components["schemas"]["ProjectCharacterOutfit"][];
+            profile?: components["schemas"]["ProjectCharacterPersonalProfile"] | null;
+            /** Prompt */
+            prompt?: string | null;
             /** Reference Images */
             reference_images?: components["schemas"]["ProjectReferenceImage"][];
             /** Reference Sets */
@@ -3761,6 +3921,16 @@ export interface components {
             updated_at?: string | null;
             /** Voice */
             voice?: string | null;
+        };
+        /**
+         * ProjectCharacterProfileExtraField
+         * @description プロフィールの自由項目1件。固定5項目に無い情報を任意のkey/valueで持たせる。
+         */
+        ProjectCharacterProfileExtraField: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
         };
         /** ProjectCloneRequest */
         ProjectCloneRequest: {
@@ -5326,6 +5496,7 @@ export interface operations {
                 tag?: string[] | null;
                 lineage_artifact_id?: string | null;
                 lineage_job_id?: string | null;
+                trashed?: boolean;
                 limit?: number;
                 offset?: number;
             };
@@ -5451,6 +5622,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArtifactIntegrityRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_artifacts_api_v1_artifacts_purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactPurgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactPurgeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_artifact_purge_api_v1_artifacts_purge_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactPurgeTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactPurgePreview"];
                 };
             };
             /** @description Validation Error */
@@ -6044,6 +6281,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobLineageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_preview_api_v1_generation_jobs__job_id__preview_get: {
+        parameters: {
+            query?: {
+                seq?: number | null;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
                 };
             };
             /** @description Validation Error */

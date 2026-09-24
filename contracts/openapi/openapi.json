@@ -667,7 +667,9 @@
               "move",
               "copy",
               "unassign",
-              "tag"
+              "tag",
+              "trash",
+              "restore"
             ],
             "title": "Operation",
             "type": "string"
@@ -932,6 +934,156 @@
         "title": "ArtifactIntegrityRead",
         "type": "object"
       },
+      "ArtifactPurgePreview": {
+        "additionalProperties": false,
+        "description": "完全削除の影響。DBもファイルも変更せずに数える。\n\n`removed_file_count`と`removed_byte_size`は実際に消えるファイル、\n`shared_file_count`は同じパスを他のArtifactが使っているため残るファイルを表す。\n`not_trashed_ids`が空でなければ、完全削除は409になる。",
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactRead"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "detached_child_count": {
+            "title": "Detached Child Count",
+            "type": "integer"
+          },
+          "not_trashed_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Trashed Ids",
+            "type": "array"
+          },
+          "reference_slot_count": {
+            "title": "Reference Slot Count",
+            "type": "integer"
+          },
+          "removed_byte_size": {
+            "title": "Removed Byte Size",
+            "type": "integer"
+          },
+          "removed_file_count": {
+            "title": "Removed File Count",
+            "type": "integer"
+          },
+          "role_tag_count": {
+            "title": "Role Tag Count",
+            "type": "integer"
+          },
+          "shared_file_count": {
+            "title": "Shared File Count",
+            "type": "integer"
+          },
+          "tag_count": {
+            "title": "Tag Count",
+            "type": "integer"
+          },
+          "thumbnail_project_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thumbnail Project Ids",
+            "type": "array"
+          },
+          "unreplayable_manifest_count": {
+            "title": "Unreplayable Manifest Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifacts",
+          "removed_file_count",
+          "removed_byte_size",
+          "shared_file_count",
+          "unreplayable_manifest_count",
+          "detached_child_count",
+          "thumbnail_project_ids",
+          "reference_slot_count",
+          "tag_count",
+          "role_tag_count",
+          "not_trashed_ids"
+        ],
+        "title": "ArtifactPurgePreview",
+        "type": "object"
+      },
+      "ArtifactPurgeRequest": {
+        "additionalProperties": false,
+        "description": "完全削除の実行。取り消せないため、`confirm=true`が無ければ削除しない。",
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Artifact Ids",
+            "type": "array"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "artifact_ids"
+        ],
+        "title": "ArtifactPurgeRequest",
+        "type": "object"
+      },
+      "ArtifactPurgeResult": {
+        "additionalProperties": false,
+        "properties": {
+          "purged_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Purged Ids",
+            "type": "array"
+          },
+          "removed_byte_size": {
+            "title": "Removed Byte Size",
+            "type": "integer"
+          },
+          "removed_file_count": {
+            "title": "Removed File Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "purged_ids",
+          "removed_file_count",
+          "removed_byte_size"
+        ],
+        "title": "ArtifactPurgeResult",
+        "type": "object"
+      },
+      "ArtifactPurgeTarget": {
+        "additionalProperties": false,
+        "description": "完全削除の対象。ゴミ箱にあるArtifactだけを指定できる。",
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Artifact Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifact_ids"
+        ],
+        "title": "ArtifactPurgeTarget",
+        "type": "object"
+      },
       "ArtifactRead": {
         "additionalProperties": false,
         "description": "Artifact 1件。`tags`は付けた順ではなくタグの昇順で返す。\n\n`tags`はArtifactを返すすべての経路で埋める。経路によって入ったり入らなかったり\nすると、空配列が「タグ無し」なのか「この経路では返していない」のか区別できない。",
@@ -995,6 +1147,17 @@
               }
             ],
             "title": "Decision At"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
           },
           "id": {
             "title": "Id",
@@ -1061,7 +1224,8 @@
           "assigned_shot_id",
           "created_at",
           "decision",
-          "decision_at"
+          "decision_at",
+          "deleted_at"
         ],
         "title": "ArtifactRead",
         "type": "object"
@@ -4567,6 +4731,82 @@
         "title": "ProjectCharacterOutfit",
         "type": "object"
       },
+      "ProjectCharacterPersonalProfile": {
+        "additionalProperties": false,
+        "description": "キャラクターの性格などのプロフィール (#287)。生成プロンプトへは合成しない。",
+        "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "background": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background"
+          },
+          "extra": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectCharacterProfileExtraField"
+            },
+            "maxItems": 30,
+            "title": "Extra",
+            "type": "array"
+          },
+          "first_person": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Person"
+          },
+          "personality": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personality"
+          },
+          "speech_style": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speech Style"
+          }
+        },
+        "title": "ProjectCharacterPersonalProfile",
+        "type": "object"
+      },
       "ProjectCharacterProfile": {
         "additionalProperties": false,
         "properties": {
@@ -4607,6 +4847,18 @@
             "title": "Name",
             "type": "string"
           },
+          "negative_prompt": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negative Prompt"
+          },
           "outfits": {
             "items": {
               "$ref": "#/components/schemas/ProjectCharacterOutfit"
@@ -4614,6 +4866,28 @@
             "maxItems": 20,
             "title": "Outfits",
             "type": "array"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectCharacterPersonalProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
           },
           "reference_images": {
             "items": {
@@ -4670,6 +4944,28 @@
           "name"
         ],
         "title": "ProjectCharacterProfile",
+        "type": "object"
+      },
+      "ProjectCharacterProfileExtraField": {
+        "additionalProperties": false,
+        "description": "プロフィールの自由項目1件。固定5項目に無い情報を任意のkey/valueで持たせる。",
+        "properties": {
+          "key": {
+            "maxLength": 120,
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 2000,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "ProjectCharacterProfileExtraField",
         "type": "object"
       },
       "ProjectCloneRequest": {
@@ -8863,7 +9159,7 @@
     },
     "/api/v1/artifacts": {
       "get": {
-        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nProjectコンテキストは現在の所属先と突き合わせる。`unassigned`は\n現在のProject所属を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
+        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nゴミ箱にあるArtifactは既定で除き、`trashed=true`のときはゴミ箱にあるものだけを返す。\n\nProjectコンテキストは現在の所属先と突き合わせる。`unassigned`は\n現在のProject所属を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
         "operationId": "list_artifacts_api_v1_artifacts_get",
         "parameters": [
           {
@@ -9060,6 +9356,16 @@
           },
           {
             "in": "query",
+            "name": "trashed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Trashed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -9161,7 +9467,7 @@
     },
     "/api/v1/artifacts/batch-operation": {
       "post": {
-        "description": "Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。",
+        "description": "Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。\n\ntrashはゴミ箱へ移し (論理削除)、restoreはゴミ箱から戻す。Workflowのスナップショットは\n生成記録が必ず参照するためゴミ箱へ移せず、1件でも含まれていれば何も変更しない。",
         "operationId": "operate_artifacts_api_v1_artifacts_batch_operation_post",
         "requestBody": {
           "content": {
@@ -9408,6 +9714,84 @@
           }
         },
         "summary": "List Artifact Integrity"
+      }
+    },
+    "/api/v1/artifacts/purge": {
+      "post": {
+        "description": "ゴミ箱にあるArtifactを、DBの記録と実ファイルごと完全に削除する。\n\n取り消せないため`confirm=true`を必須にし、ゴミ箱に無いものが1件でも含まれていれば\n何も削除しない。生成記録のJSONに残る参照は履歴として書き換えない。ファイルは\n同じパスを使う記録が他に無いときだけ、commit後に消す。",
+        "operationId": "purge_artifacts_api_v1_artifacts_purge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactPurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactPurgeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Artifacts"
+      }
+    },
+    "/api/v1/artifacts/purge-preview": {
+      "post": {
+        "description": "完全削除で消えるものと外れる参照を返す。DBもファイルも変更しない。",
+        "operationId": "preview_artifact_purge_api_v1_artifacts_purge_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactPurgeTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactPurgePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Artifact Purge"
       }
     },
     "/api/v1/artifacts/{artifact_id}": {
@@ -10265,6 +10649,60 @@
           }
         },
         "summary": "Get Job Lineage"
+      }
+    },
+    "/api/v1/generation-jobs/{job_id}/preview": {
+      "get": {
+        "description": "実行中Jobの最新プレビュー画像を返す。\n\nプレビューはメモリ上にだけあり、Jobが終わると消える。`seq`は進捗イベントの\n`preview_seq`で、画面が取り直しのURLを変えるためだけに付ける。値は見ずに常に\n最新の1枚を返し、ブラウザにはキャッシュさせない。",
+        "operationId": "get_job_preview_api_v1_generation_jobs__job_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "seq",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Seq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {},
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job Preview"
       }
     },
     "/api/v1/generation-jobs/{job_id}/regenerate": {
