@@ -196,6 +196,19 @@ def accepted_input_names(recipe: Recipe, template_name: str) -> frozenset[str]:
     return names
 
 
+def submittable_input_names(recipe: Recipe, template_name: str) -> frozenset[str]:
+    """Jobの投入時にinputsへ入れてよい変数名。`input_schema`があればそれで絞る。
+
+    `validate_against_input_schema`と同じ規則で、テンプレート変数のうちRecipeが
+    受け付けるものだけを返す。
+    """
+    names = accepted_input_names(recipe, template_name)
+    schema = recipe.input_schema
+    if not isinstance(schema, dict) or not schema:
+        return names
+    return names & frozenset(schema)
+
+
 def validate_against_input_schema(
     recipe: Recipe,
     template_name: str,

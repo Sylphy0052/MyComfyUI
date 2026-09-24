@@ -3064,6 +3064,65 @@
         "title": "GenerationPreviewRead",
         "type": "object"
       },
+      "GenerationPromptRevisionCreate": {
+        "additionalProperties": false,
+        "description": "生成済み画像の指示によるprompt修正と再投入の要求。",
+        "properties": {
+          "artifact_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "instruction": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Instruction",
+            "type": "string"
+          },
+          "provider_id": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude_code",
+                  "codex",
+                  "qwen",
+                  "stub"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Id"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "instruction"
+        ],
+        "title": "GenerationPromptRevisionCreate",
+        "type": "object"
+      },
+      "GenerationPromptRevisionRead": {
+        "additionalProperties": false,
+        "description": "修正後promptで投入した新Jobと、補完結果を合わせて返す。",
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/GenerationJobRead"
+          },
+          "prompt": {
+            "$ref": "#/components/schemas/ImagePromptAssistRead"
+          }
+        },
+        "required": [
+          "job",
+          "prompt"
+        ],
+        "title": "GenerationPromptRevisionRead",
+        "type": "object"
+      },
       "GenerationSweepAxes": {
         "additionalProperties": false,
         "properties": {
@@ -10723,6 +10782,56 @@
           }
         },
         "summary": "Get Job Preview"
+      }
+    },
+    "/api/v1/generation-jobs/{job_id}/prompt-revisions": {
+      "post": {
+        "description": "生成済み画像への指示でpromptを直し、新しいJobとして再投入する(#303)。\n\n元Jobの入力をRecipeが受け付ける範囲で引き継ぎ、positive_prompt、negative_promptを\n補完結果へ、seedを元の実値へ差し替える。Look Profileの値はresolved_promptと\nparametersへ合成済みのため、look_profile_idsは渡さない (渡すと二重に掛かる)。\n画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJobは\nProviderを呼ぶ前に``PROMPT_REVISION_UNSUPPORTED``で断る。",
+        "operationId": "create_generation_prompt_revision_api_v1_generation_jobs__job_id__prompt_revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationPromptRevisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationPromptRevisionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Generation Prompt Revision"
       }
     },
     "/api/v1/generation-jobs/{job_id}/regenerate": {
