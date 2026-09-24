@@ -41,7 +41,7 @@ const AVAILABILITY_OPTIONS = [
 
 /** 一度に取る件数。資産ブラウザは全件走査ではなく新しい順の窓で見る。 */
 const PAGE_SIZE = 60;
-// Workflowスナップショットは生成の記録で、資産として扱わない。
+/** Workflowスナップショットは生成の記録で、資産として扱わない。 */
 const EXCLUDED_KINDS = ["workflow"];
 
 /**
