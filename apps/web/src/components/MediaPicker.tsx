@@ -5,12 +5,11 @@ import { ApiError, api } from "../api/client";
 import type {
   Artifact,
   MediaRole,
-  ProjectCharacterProfile,
   ProjectReferenceImage,
 } from "../api/client";
 import { droppedFiles, hasArtifactDrag, hasFileDrag, readArtifactDrag } from "./artifactDrag";
 import type { ArtifactDragPayload } from "./artifactDrag";
-import { MEDIA_ROLE_LABEL, MEDIA_ROLE_OPTIONS } from "./mediaRole";
+import { MediaRoleTagFields, useProjectCharacters } from "./MediaRoleTagFields";
 
 /**
  * Job入力として渡す画像・音声の指定。既存Artifactを指すか、アップロード直後に
@@ -198,6 +197,8 @@ export interface MediaPickerProps {
    * 選択・アップロードのたびに `/media-role-tags` へ後付けで登録する。
    */
   enableRoleTagging?: boolean;
+  /** 役割タグ付けを有効にしたときの役割の初期値。用途が決まっている欄で使う (Issue #249)。 */
+  defaultRole?: MediaRole;
 }
 
 export function MediaPicker({
@@ -217,14 +218,15 @@ export function MediaPicker({
   sources = ["generated", "registered", "upload"],
   autoRegister = true,
   enableRoleTagging = false,
+  defaultRole,
 }: MediaPickerProps) {
   const [tab, setTab] = useState<SourceTab>(sources[0] ?? "upload");
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [pickedArtifactId, setPickedArtifactId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [characters, setCharacters] = useState<ProjectCharacterProfile[]>([]);
-  const [role, setRole] = useState<MediaRole | "">("");
+  const characters = useProjectCharacters(projectId, enableRoleTagging);
+  const [role, setRole] = useState<MediaRole | "">(defaultRole ?? "");
   const [characterIds, setCharacterIds] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
@@ -233,23 +235,6 @@ export function MediaPicker({
   useEffect(() => {
     // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾く。
     setCharacterIds([]);
-    if (!enableRoleTagging || !projectId) {
-      setCharacters([]);
-      return;
-    }
-    let active = true;
-    api
-      .getProjectLocalOverrides(projectId)
-      .then((overrides) => {
-        if (active) setCharacters(overrides.characters ?? []);
-      })
-      .catch(() => {
-        // キャラクター一覧を取れなくても役割タグ付け以外は継続する。
-        if (active) setCharacters([]);
-      });
-    return () => {
-      active = false;
-    };
   }, [enableRoleTagging, projectId]);
 
   // 役割タグ付けは選択操作を待たせないため投げっぱなしにする。
@@ -276,14 +261,6 @@ export function MediaPicker({
       .catch((cause) => {
         if (mountedRef.current) setError(describe(cause));
       });
-  };
-
-  const toggleCharacter = (characterId: string) => {
-    setCharacterIds((current) =>
-      current.includes(characterId)
-        ? current.filter((id) => id !== characterId)
-        : [...current, characterId],
-    );
   };
 
   useEffect(() => {
@@ -575,35 +552,15 @@ export function MediaPicker({
         />
       )}
       {enableRoleTagging && (
-        <div className="row media-picker-role-tagging">
-          <select
-            value={role}
-            disabled={disabled}
-            onChange={(event) => setRole(event.target.value as MediaRole | "")}
-          >
-            <option value="">役割を指定しない</option>
-            {MEDIA_ROLE_OPTIONS.map((item) => (
-              <option key={item} value={item}>
-                {MEDIA_ROLE_LABEL[item]}
-              </option>
-            ))}
-          </select>
-          {characters.length > 0 && (
-            <div className="row media-picker-characters">
-              {characters.map((character) => (
-                <label key={character.id} className="row">
-                  <input
-                    type="checkbox"
-                    checked={characterIds.includes(character.id)}
-                    disabled={disabled}
-                    onChange={() => toggleCharacter(character.id)}
-                  />
-                  {character.name}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
+        <MediaRoleTagFields
+          kind={kind}
+          role={role}
+          onRoleChange={setRole}
+          characters={characters}
+          characterIds={characterIds}
+          onCharacterIdsChange={setCharacterIds}
+          disabled={disabled}
+        />
       )}
       {error && <p className="error">{error}</p>}
       {value.length > 0 && (

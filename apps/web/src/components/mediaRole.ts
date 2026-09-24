@@ -6,6 +6,17 @@ export const MEDIA_ROLE_LABEL: Record<MediaRole, string> = {
   pose: "ポーズ",
   background: "背景",
   costume: "衣装",
+  voice_reference: "声質参照",
+  guide_audio: "ガイド音声",
   other: "その他",
 };
 export const MEDIA_ROLE_OPTIONS = Object.keys(MEDIA_ROLE_LABEL) as MediaRole[];
+
+/**
+ * 画像・音声それぞれに付けられる役割。`other`は両方で使う。
+ * API側は種別に合わない役割を422で弾く (`AUDIO_MEDIA_ROLES`)。
+ */
+export const MEDIA_ROLE_OPTIONS_BY_KIND: Record<"image" | "audio", MediaRole[]> = {
+  image: ["appearance_reference", "pose", "background", "costume", "other"],
+  audio: ["voice_reference", "guide_audio", "other"],
+};
