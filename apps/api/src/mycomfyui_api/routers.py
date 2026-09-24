@@ -4634,7 +4634,7 @@ def _decode_assist_image(
     detected = storage.detect_image_media_type(data[:32])
     if detected != image.media_type:
         raise _validation_error(
-            "添付画像の実形式とmedia_typeが一致しません。",
+            "添付画像の実形式とmedia_typeが一致しません。別の画像を選び直してください。",
             {"declared": image.media_type, "detected": detected},
         )
     return agent_base.ProposalImage(data=data, media_type=image.media_type)
