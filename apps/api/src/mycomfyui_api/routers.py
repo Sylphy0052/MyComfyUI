@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, TypeVar, get_args
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
@@ -134,6 +134,9 @@ TAG_LOOKUP_CHUNK = 200
 #: 1回の検索で指定できるタグの数。条件は1件ごとにEXISTSを重ねるため、際限なく
 #: 受け取るとクエリだけが肥大する。
 MAX_TAG_FILTERS = 10
+
+#: 1回の一覧で除外できる種別の数。ArtifactKindの値の数を超えて受け取る理由は無い。
+MAX_EXCLUDE_KINDS = len(get_args(schemas.ArtifactKind))
 
 #: 整合性一覧でhashを取り直すときの読み込み単位。
 DIGEST_CHUNK_SIZE = 1024 * 1024
@@ -2658,7 +2661,9 @@ async def list_artifacts(
     lineage_artifact_id: str | None = None,
     lineage_job_id: str | None = None,
     trashed: bool = False,
-    exclude_kind: Annotated[list[schemas.ArtifactKind] | None, Query()] = None,
+    exclude_kind: Annotated[
+        list[schemas.ArtifactKind] | None, Query(max_length=MAX_EXCLUDE_KINDS)
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
@@ -2915,7 +2920,9 @@ async def list_media_items(
     source: schemas.MediaItemSource | None = None,
     role: schemas.MediaRole | None = None,
     character_id: str | None = None,
-    exclude_kind: Annotated[list[schemas.ArtifactKind] | None, Query()] = None,
+    exclude_kind: Annotated[
+        list[schemas.ArtifactKind] | None, Query(max_length=MAX_EXCLUDE_KINDS)
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
@@ -3256,7 +3263,9 @@ async def list_artifact_integrity(
         list[schemas.ArtifactTagValue] | None, Query(max_length=MAX_TAG_FILTERS)
     ] = None,
     reason: Annotated[list[schemas.ArtifactIntegrityReason] | None, Query()] = None,
-    exclude_kind: Annotated[list[schemas.ArtifactKind] | None, Query()] = None,
+    exclude_kind: Annotated[
+        list[schemas.ArtifactKind] | None, Query(max_length=MAX_EXCLUDE_KINDS)
+    ] = None,
     include_canon: bool = True,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
