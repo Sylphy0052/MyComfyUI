@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     tag_dictionary_path: Path | None = None
     #: リクエストでProviderを指定しなかったときに使う既定値。APIキーを設定へ持たず、
     #: CLIの既存認証を使う。
-    agent_provider: AgentProviderId = "claude_code"
+    agent_provider: AgentProviderId = "qwen"
     #: Claude Code CLIの実行ファイル。PATH上の名前でも絶対パスでもよい。
     agent_cli_path: str = "claude"
     agent_model: str = "sonnet"
