@@ -4770,6 +4770,16 @@
             "title": "Id",
             "type": "string"
           },
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectReferenceImage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "name": {
             "maxLength": 120,
             "minLength": 1,
@@ -4781,6 +4791,16 @@
             "maxLength": 2000,
             "title": "Prompt",
             "type": "string"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Tags",
+            "type": "array"
           }
         },
         "required": [
@@ -4922,7 +4942,7 @@
             "items": {
               "$ref": "#/components/schemas/ProjectCharacterOutfit"
             },
-            "maxItems": 20,
+            "maxItems": 100,
             "title": "Outfits",
             "type": "array"
           },
@@ -4960,7 +4980,7 @@
             "items": {
               "$ref": "#/components/schemas/ProjectReferenceSet"
             },
-            "maxItems": 21,
+            "maxItems": 101,
             "title": "Reference Sets",
             "type": "array"
           },

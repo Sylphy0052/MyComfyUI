@@ -11,7 +11,7 @@ import type {
   ProjectReferenceImage,
 } from "../api/client";
 import type { SceneEnvelope, SceneSummary } from "../api/aimedia";
-import { MediaPicker, toReferenceImage } from "./MediaPicker";
+import { MediaPicker, readPickedImage, toReferenceImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 import { ReferenceSetPanel } from "./ReferenceSetPanel";
 import { Button } from "./ui/Button";
@@ -55,6 +55,8 @@ interface CharacterDraft {
   profile: ProfileDraft;
   reference_images: ProjectReferenceImage[];
   outfits: ProjectCharacterOutfit[];
+  /** 衣装ごとの分類タグの入力値 (カンマ区切り)。キーは衣装id。保存時に配列へ直す。 */
+  outfit_tags: Record<string, string>;
   default_outfit_id: string;
   /** フォームを開いた時点のupdated_at。保存直前の最新値と違えば他で更新されたとみなす。 */
   base_updated_at: string | null;
@@ -82,6 +84,9 @@ function toDraft(profile?: ProjectCharacterProfile): CharacterDraft {
         },
         reference_images: profile.reference_images ?? [],
         outfits: profile.outfits ?? [],
+        outfit_tags: Object.fromEntries(
+          (profile.outfits ?? []).map((outfit) => [outfit.id, (outfit.tags ?? []).join(", ")]),
+        ),
         default_outfit_id: profile.default_outfit_id ?? "",
         base_updated_at: profile.updated_at ?? null,
         existing: true,
@@ -97,10 +102,16 @@ function toDraft(profile?: ProjectCharacterProfile): CharacterDraft {
         profile: EMPTY_PROFILE,
         reference_images: [],
         outfits: [],
+        outfit_tags: {},
         default_outfit_id: "",
         base_updated_at: null,
         existing: false,
       };
+}
+
+/** カンマ区切りの入力をタグの配列にする。空要素と重複は落とす。 */
+function splitTags(text: string): string[] {
+  return [...new Set(text.split(",").map((value) => value.trim()).filter(Boolean))];
 }
 
 /**
@@ -300,6 +311,10 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
   const [overrides, setOverrides] = useState<ProjectLocalOverrides | null>(null);
   const [draft, setDraft] = useState<CharacterDraft | null>(null);
   const [pickedReference, setPickedReference] = useState<PickedMedia[]>([]);
+  const [pickedOutfitImage, setPickedOutfitImage] = useState<PickedMedia[]>([]);
+  const [outfitImageTags, setOutfitImageTags] = useState("");
+  const [addingOutfit, setAddingOutfit] = useState(false);
+  const [outfitTagFilter, setOutfitTagFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sceneData, setSceneData] = useState<Record<string, SceneEnvelope>>({});
   const [mediaImpact, setMediaImpact] = useState<MediaImpact | null>(null);
@@ -356,6 +371,17 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
 
   const characters = overrides?.characters ?? [];
   const selectedCharacter = characters.find((item) => item.id === selectedId) ?? null;
+
+  // 衣装の分類タグの絞り込み (#309)。選択中のタグが消えたら全件を表示する。
+  const outfitTagOptions = draft
+    ? [...new Set(draft.outfits.flatMap((outfit) => splitTags(draft.outfit_tags[outfit.id] ?? "")))].sort()
+    : [];
+  const activeOutfitTag = outfitTagOptions.includes(outfitTagFilter) ? outfitTagFilter : "";
+  const visibleOutfits = draft
+    ? draft.outfits.filter((outfit) => (
+      !activeOutfitTag || splitTags(draft.outfit_tags[outfit.id] ?? "").includes(activeOutfitTag)
+    ))
+    : [];
 
   const scenesFeaturing = useMemo(() => {
     if (!selectedCharacter) return [];
@@ -454,6 +480,41 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
     }));
   };
 
+  /**
+   * 画像から衣装を1件作る (#309)。先にTaggerで抽出し、失敗したら衣装を足さない。
+   * 抽出タグは`prompt`へ、指定の分類タグは`tags`へ入れ、画像は入力cacheへ保存する。
+   */
+  const addOutfitFromImage = async () => {
+    const item = pickedOutfitImage[0];
+    if (!item) return;
+    const tags = splitTags(outfitImageTags);
+    setAddingOutfit(true);
+    setError(null);
+    try {
+      const { base64, mediaType } = await readPickedImage(item);
+      const extracted = await api.extractImageTags(base64, mediaType);
+      const image = await toReferenceImage(item);
+      const outfit: ProjectCharacterOutfit = {
+        id: crypto.randomUUID(),
+        name: (tags.join(" ") || image.file_name).slice(0, 120),
+        prompt: extracted.tags.join(", "),
+        tags,
+        image,
+      };
+      setDraft((current) => current && ({
+        ...current,
+        outfits: [...current.outfits, outfit],
+        outfit_tags: { ...current.outfit_tags, [outfit.id]: tags.join(", ") },
+      }));
+      setPickedOutfitImage([]);
+      setOutfitImageTags("");
+    } catch (cause) {
+      setError(describe(cause));
+    } finally {
+      setAddingOutfit(false);
+    }
+  };
+
   const updateOutfit = (id: string, patch: Partial<ProjectCharacterOutfit>) => {
     setDraft((current) => current && ({
       ...current,
@@ -493,6 +554,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
     setDraft((current) => current && ({
       ...current,
       outfits: current.outfits.filter((item) => item.id !== id),
+      outfit_tags: Object.fromEntries(Object.entries(current.outfit_tags).filter(([key]) => key !== id)),
       default_outfit_id: current.default_outfit_id === id ? "" : current.default_outfit_id,
     }));
   };
@@ -509,7 +571,12 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
       draft.tags.split(",").map((value) => value.trim()).filter(Boolean),
     )];
     const outfits = draft.outfits
-      .map((item) => ({ ...item, name: item.name.trim(), prompt: item.prompt.trim() }))
+      .map((item) => ({
+        ...item,
+        name: item.name.trim(),
+        prompt: item.prompt.trim(),
+        tags: splitTags(draft.outfit_tags[item.id] ?? ""),
+      }))
       .filter((item) => item.name.length > 0);
     const outfitIds = new Set(outfits.map((item) => item.id));
     const profile: ProjectCharacterProfile = {
@@ -727,8 +794,17 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
             <fieldset className="stack">
               <legend>衣装</legend>
               {draft.outfits.length === 0 && <p className="muted">衣装はまだありません。</p>}
+              {outfitTagOptions.length > 0 && (
+                <label>
+                  分類タグで絞り込む
+                  <select value={activeOutfitTag} onChange={(event) => setOutfitTagFilter(event.target.value)}>
+                    <option value="">すべて</option>
+                    {outfitTagOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+                  </select>
+                </label>
+              )}
               <ul className="list">
-                {draft.outfits.map((outfit) => (
+                {visibleOutfits.map((outfit) => (
                   <li key={outfit.id} className="stack">
                     <label>
                       名前
@@ -739,6 +815,14 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
                         onChange={(event) => updateOutfit(outfit.id, { name: event.target.value })}
                       />
                     </label>
+                    <label>
+                      分類タグ（カンマ区切り）
+                      <input
+                        value={draft.outfit_tags[outfit.id] ?? ""}
+                        onChange={(event) => setDraft({ ...draft, outfit_tags: { ...draft.outfit_tags, [outfit.id]: event.target.value } })}
+                      />
+                    </label>
+                    {outfit.image && <span className="muted">元画像: {outfit.image.file_name}</span>}
                     <label>
                       プロンプト
                       <textarea
@@ -760,7 +844,32 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
                   </li>
                 ))}
               </ul>
-              <Button disabled={draft.outfits.length >= 20} onClick={addOutfit}>衣装を追加</Button>
+              <Button disabled={draft.outfits.length >= 100} onClick={addOutfit}>衣装を追加</Button>
+              <div className="tag-extractor">
+                <MediaPicker
+                  kind="image"
+                  label="画像から衣装を追加"
+                  value={pickedOutfitImage}
+                  onChange={setPickedOutfitImage}
+                  multiple={false}
+                  disabled={busy || addingOutfit || draft.outfits.length >= 100}
+                  maxBytes={25 * 1024 * 1024}
+                  projectId={projectId}
+                />
+                <label>
+                  分類タグ（カンマ区切り、例: 制服, 夏）
+                  <input value={outfitImageTags} onChange={(event) => setOutfitImageTags(event.target.value)} />
+                </label>
+                <div className="row">
+                  <Button
+                    disabled={busy || addingOutfit || pickedOutfitImage.length === 0 || draft.outfits.length >= 100}
+                    onClick={addOutfitFromImage}
+                  >
+                    {addingOutfit ? "抽出中..." : "画像から衣装を追加"}
+                  </Button>
+                </div>
+                <p className="muted">画像はComfyUIのWD14 Taggerへ送信し、抽出したタグを衣装のプロンプトにします。</p>
+              </div>
             </fieldset>
 
             <MediaPicker
