@@ -583,13 +583,14 @@ class MediaRoleTag(Base):
     行になる。そのため`file_name`・`byte_size`・`media_type`もここへ保持する
     (artifact_id指定時はArtifact側に同じ情報があるため常にNULLのままでよい)。
     1件の対象につき役割は1つ、キャラクターは複数へ関連付けられるため`character_ids`
-    はリストで持つ(JSON列。件数は少数を想定し、絞り込みはPython側で行う)。
+    はリストで持つ(JSON列。絞り込みはSQLiteの`json_each`で要素を展開して行う)。
     """
 
     __tablename__ = "media_role_tag"
     __table_args__ = (
         CheckConstraint(
-            "role in ('appearance_reference','pose','background','costume','other')",
+            "role in ('appearance_reference','pose','background','costume',"
+            "'voice_reference','guide_audio','other')",
             name="ck_media_role_tag_role",
         ),
         CheckConstraint(

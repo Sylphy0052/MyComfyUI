@@ -910,6 +910,11 @@ export interface paths {
          *     `shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを
          *     持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った
          *     結果を返す。`character_reference`もProject単位のまま返す。
+         *
+         *     絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って
+         *     から並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと
+         *     同じ結果になる。`character_reference`はProjectのJSON設定から作るため、
+         *     メモリ上で絞る。
          */
         get: operations["list_media_items_api_v1_media_items_get"];
         put?: never;
@@ -3509,7 +3514,7 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "appearance_reference" | "pose" | "background" | "costume" | "other";
+            role: "appearance_reference" | "pose" | "background" | "costume" | "voice_reference" | "guide_audio" | "other";
             /** Scene Id */
             scene_id?: string | null;
             /** Sha256 */
@@ -6468,7 +6473,7 @@ export interface operations {
                 unassigned?: boolean;
                 kind?: ("image" | "video" | "audio" | "workflow" | "log") | null;
                 source?: ("generated" | "external_import" | "registered" | "registered_input" | "character_reference") | null;
-                role?: ("appearance_reference" | "pose" | "background" | "costume" | "other") | null;
+                role?: ("appearance_reference" | "pose" | "background" | "costume" | "voice_reference" | "guide_audio" | "other") | null;
                 character_id?: string | null;
                 limit?: number;
                 offset?: number;

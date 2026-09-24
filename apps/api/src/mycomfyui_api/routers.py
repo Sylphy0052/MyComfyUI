@@ -12,7 +12,7 @@ from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
-from sqlalchemy import Select, delete, func, select, update
+from sqlalchemy import ColumnElement, Select, delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -2412,6 +2412,17 @@ async def _validate_role_tag_characters(
         )
 
 
+def _validate_role_for_media(role: str, media_type: str) -> None:
+    """音声の役割は音声だけに、画像の役割は音声以外だけに付けさせる。`other`は共用。"""
+    if role == "other":
+        return
+    if (role in schemas.AUDIO_MEDIA_ROLES) != (_media_item_kind(media_type) == "audio"):
+        raise _validation_error(
+            "役割がメディアの種別(画像・音声)と合いません。",
+            details={"role": role, "media_type": media_type},
+        )
+
+
 @router.put("/media-role-tags", response_model=schemas.MediaRoleTagRead)
 async def upsert_media_role_tag(
     payload: schemas.MediaRoleTagUpsert,
@@ -2436,11 +2447,14 @@ async def upsert_media_role_tag(
             session, payload.project_id, payload.character_ids
         )
     if payload.artifact_id is not None:
-        await _get_or_404(session, Artifact, "Artifact", payload.artifact_id)
+        artifact = await _get_or_404(session, Artifact, "Artifact", payload.artifact_id)
+        _validate_role_for_media(payload.role, artifact.media_type)
         existing = await session.scalar(
             select(MediaRoleTag).where(MediaRoleTag.artifact_id == payload.artifact_id)
         )
     else:
+        # relative_path指定時のmedia_typeはスキーマで必須にしてある。
+        _validate_role_for_media(payload.role, payload.media_type or "")
         existing = await session.scalar(
             select(MediaRoleTag).where(
                 MediaRoleTag.relative_path == payload.relative_path
@@ -2552,6 +2566,23 @@ def _media_item_kind(media_type: str) -> str:
     return "image"
 
 
+def _media_role_tag_conditions(
+    role: str | None, character_id: str | None
+) -> list[ColumnElement[bool]]:
+    """役割タグを役割・キャラクターで絞る条件。`character_ids`はJSON配列のため、
+    SQLiteの`json_each`で要素へ展開して突き合わせる。
+    """
+    conditions: list[ColumnElement[bool]] = []
+    if role is not None:
+        conditions.append(MediaRoleTag.role == role)
+    if character_id is not None:
+        member = func.json_each(MediaRoleTag.character_ids).table_valued("value")
+        conditions.append(
+            exists(select(1).select_from(member).where(member.c.value == character_id))
+        )
+    return conditions
+
+
 @router.get("/media-items", response_model=list[schemas.MediaItemRead])
 async def list_media_items(
     session: SessionDep,
@@ -2577,6 +2608,11 @@ async def list_media_items(
     `shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを
     持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った
     結果を返す。`character_reference`もProject単位のまま返す。
+
+    絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って
+    から並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと
+    同じ結果になる。`character_reference`はProjectのJSON設定から作るため、
+    メモリ上で絞る。
     """
     if unassigned and any(
         value is not None for value in (project_id, scene_id, shot_id)
@@ -2585,22 +2621,44 @@ async def list_media_items(
             "unassignedとProjectコンテキストの絞り込みは同時に指定できません。"
         )
 
+    window = offset + limit
     items: list[schemas.MediaItemRead] = []
+    tag_conditions = _media_role_tag_conditions(role, character_id)
 
     # 1) Artifact由来 (生成物・外部取込・登録素材)
-    artifact_query = select(Artifact).order_by(
-        Artifact.created_at.desc(), Artifact.id.asc()
-    )
-    artifact_query = _artifact_filters(
-        artifact_query,
-        project_id=project_id,
-        scene_id=scene_id,
-        shot_id=shot_id,
-        unassigned=unassigned,
-        job_id=None,
-        kind=kind,
-    )
-    artifacts = list((await session.execute(artifact_query)).scalars().all())
+    artifacts: list[Artifact] = []
+    if source not in ("registered_input", "character_reference"):
+        artifact_query = select(Artifact).order_by(
+            Artifact.created_at.desc(), Artifact.id.asc()
+        )
+        artifact_query = _artifact_filters(
+            artifact_query,
+            project_id=project_id,
+            scene_id=scene_id,
+            shot_id=shot_id,
+            unassigned=unassigned,
+            job_id=None,
+            kind=kind,
+        )
+        imported = select(ArtifactImport.artifact_id)
+        if source == "generated":
+            artifact_query = artifact_query.where(Artifact.job_id.is_not(None))
+        elif source == "external_import":
+            artifact_query = artifact_query.where(
+                Artifact.job_id.is_(None), Artifact.id.in_(imported)
+            )
+        elif source == "registered":
+            artifact_query = artifact_query.where(
+                Artifact.job_id.is_(None), Artifact.id.not_in(imported)
+            )
+        if tag_conditions:
+            tagged = select(MediaRoleTag.artifact_id).where(
+                MediaRoleTag.artifact_id.is_not(None), *tag_conditions
+            )
+            artifact_query = artifact_query.where(Artifact.id.in_(tagged))
+        artifacts = list(
+            (await session.execute(artifact_query.limit(window))).scalars().all()
+        )
     artifact_ids = [artifact.id for artifact in artifacts]
     imported_ids = await _artifact_import_ids(session, artifact_ids)
     artifact_role_tags = await _media_role_tag_map(session, artifact_ids)
@@ -2633,23 +2691,41 @@ async def list_media_items(
             )
         )
 
-    # 2) 役割タグを付けた入力cacheファイル (registered_input)
-    input_tag_query = select(MediaRoleTag).where(
-        MediaRoleTag.relative_path.is_not(None)
-    )
-    if project_id is not None:
-        input_tag_query = input_tag_query.where(
-            MediaRoleTag.assigned_project_id == project_id
+    # 2) 役割タグを付けた入力cacheファイル (registered_input)。種別はmedia_typeから
+    #    決まり、画像か音声のどちらかになる。
+    input_tags: list[MediaRoleTag] = []
+    if source in (None, "registered_input") and kind in (None, "image", "audio"):
+        input_tag_query = (
+            select(MediaRoleTag)
+            .where(MediaRoleTag.relative_path.is_not(None), *tag_conditions)
+            .order_by(MediaRoleTag.created_at.desc(), MediaRoleTag.id.asc())
         )
-    if scene_id is not None:
-        input_tag_query = input_tag_query.where(
-            MediaRoleTag.assigned_scene_id == scene_id
+        if project_id is not None:
+            input_tag_query = input_tag_query.where(
+                MediaRoleTag.assigned_project_id == project_id
+            )
+        if scene_id is not None:
+            input_tag_query = input_tag_query.where(
+                MediaRoleTag.assigned_scene_id == scene_id
+            )
+        if unassigned:
+            input_tag_query = input_tag_query.where(
+                MediaRoleTag.assigned_project_id.is_(None)
+            )
+        if kind == "audio":
+            input_tag_query = input_tag_query.where(
+                MediaRoleTag.media_type.like("audio/%")
+            )
+        elif kind == "image":
+            input_tag_query = input_tag_query.where(
+                or_(
+                    MediaRoleTag.media_type.is_(None),
+                    MediaRoleTag.media_type.not_like("audio/%"),
+                )
+            )
+        input_tags = list(
+            (await session.execute(input_tag_query.limit(window))).scalars().all()
         )
-    if unassigned:
-        input_tag_query = input_tag_query.where(
-            MediaRoleTag.assigned_project_id.is_(None)
-        )
-    input_tags = list((await session.execute(input_tag_query)).scalars().all())
     for tag in input_tags:
         media_type = tag.media_type or "application/octet-stream"
         items.append(
@@ -2674,14 +2750,25 @@ async def list_media_items(
 
     # 3) Projectのキャラクター参照画像 (character_reference)。Project単位の設定の
     #    ため、project_idを指定したときだけ含める。
-    if project_id is not None:
+    if (
+        project_id is not None
+        and source in (None, "character_reference")
+        and role in (None, "appearance_reference")
+    ):
         project = await session.get(Project, project_id)
         if project is not None:
             overrides = schemas.ProjectLocalOverrides.model_validate(
                 project.local_overrides or {}
             )
             for character in overrides.characters:
+                if character_id is not None and character.id != character_id:
+                    continue
                 for reference in character.reference_images:
+                    if (
+                        kind is not None
+                        and _media_item_kind(reference.media_type) != kind
+                    ):
+                        continue
                     items.append(
                         schemas.MediaItemRead(
                             key=f"character:{character.id}:{reference.relative_path}",
@@ -2702,17 +2789,8 @@ async def list_media_items(
                         )
                     )
 
-    if source is not None:
-        items = [item for item in items if item.source == source]
-    if role is not None:
-        items = [item for item in items if item.role == role]
-    if character_id is not None:
-        items = [item for item in items if character_id in item.character_ids]
-    if kind is not None:
-        items = [item for item in items if item.kind == kind]
-
     items.sort(key=lambda item: item.created_at, reverse=True)
-    return items[offset : offset + limit]
+    return items[offset:window]
 
 
 def _integrity_finding(

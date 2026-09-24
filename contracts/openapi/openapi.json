@@ -3906,6 +3906,8 @@
               "pose",
               "background",
               "costume",
+              "voice_reference",
+              "guide_audio",
               "other"
             ],
             "title": "Role",
@@ -10836,7 +10838,7 @@
     },
     "/api/v1/media-items": {
       "get": {
-        "description": "生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。\n\nArtifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力\ncacheファイル(`registered_input`)、Projectのキャラクター参照画像\n(`character_reference`)を横断して返す。人物参照はProject単位の設定のため\n`project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。\n`character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、\n常に一覧の末尾寄りになる。\n`shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを\n持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った\n結果を返す。`character_reference`もProject単位のまま返す。",
+        "description": "生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。\n\nArtifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力\ncacheファイル(`registered_input`)、Projectのキャラクター参照画像\n(`character_reference`)を横断して返す。人物参照はProject単位の設定のため\n`project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。\n`character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、\n常に一覧の末尾寄りになる。\n`shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを\n持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った\n結果を返す。`character_reference`もProject単位のまま返す。\n\n絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って\nから並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと\n同じ結果になる。`character_reference`はProjectのJSON設定から作るため、\nメモリ上で絞る。",
         "operationId": "list_media_items_api_v1_media_items_get",
         "parameters": [
           {
@@ -10955,6 +10957,8 @@
                     "pose",
                     "background",
                     "costume",
+                    "voice_reference",
+                    "guide_audio",
                     "other"
                   ],
                   "type": "string"
