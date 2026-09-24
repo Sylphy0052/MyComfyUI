@@ -461,7 +461,7 @@ class ProjectLocalOverrides(ApiModel):
     )
     scene_prompts: dict[str, str] = Field(default_factory=dict)
     shot_prompts: dict[str, str] = Field(default_factory=dict)
-    # 場面ごとに選んだ衣装。{scene_id: {character_id: outfit_id}}。
+    # 場面ごとに選んだ衣装を{scene_id: {character_id: outfit_id}}の形で持つ。
     scene_outfits: dict[str, dict[str, str]] = Field(default_factory=dict)
 
     @field_validator("characters")
