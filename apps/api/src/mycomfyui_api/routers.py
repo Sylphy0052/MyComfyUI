@@ -2624,6 +2624,10 @@ async def list_media_items(
             "unassignedとProjectコンテキストの絞り込みは同時に指定できません。"
         )
 
+    # `character_id=`の空文字はどのキャラクターとも一致せず常に空になるため、
+    # 未指定として扱う。
+    character_id = character_id or None
+
     window = offset + limit
     items: list[schemas.MediaItemRead] = []
     tag_conditions = _media_role_tag_conditions(role, character_id)
