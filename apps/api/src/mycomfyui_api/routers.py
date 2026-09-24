@@ -2156,6 +2156,14 @@ async def operate_artifacts(
                 "Workflowのスナップショットはゴミ箱へ移せません。",
                 {"artifact_ids": workflow_ids},
             )
+    elif payload.operation != "restore":
+        # ゴミ箱のまま割当やタグを書き換えると、復元時に元の整理先へ戻らない。
+        trashed_ids = [row.id for row in rows if row.deleted_at is not None]
+        if trashed_ids:
+            raise _validation_error(
+                "ゴミ箱にあるArtifactは復元してから操作してください。",
+                {"artifact_ids": trashed_ids},
+            )
     target: tuple[str | None, str | None, str | None] | None = None
     if payload.operation in ("move", "copy"):
         target = await _validate_assignment_target(session, source, payload.target)
