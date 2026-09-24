@@ -24,6 +24,8 @@ interface Props {
   onJobsChanged: () => void;
   activeComparisonId: string | null;
   onCompare: (experimentId: string, jobIds: string[]) => void;
+  /** Project未選択の案内から、シーン一覧のProjectセレクトへ移る。 */
+  onSelectProject: () => void;
 }
 
 function describe(error: unknown): string {
@@ -51,6 +53,7 @@ export function GenerationSweepPanel({
   onJobsChanged,
   activeComparisonId,
   onCompare,
+  onSelectProject,
 }: Props) {
   const [name, setName] = useState("探索スイープ");
   const [recipeId, setRecipeId] = useState("");
@@ -236,7 +239,7 @@ export function GenerationSweepPanel({
           action={
             <button
               type="button"
-              onClick={() => document.getElementById("generation-project")?.focus()}
+              onClick={onSelectProject}
             >
               Projectを選ぶ
             </button>
