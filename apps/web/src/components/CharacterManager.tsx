@@ -413,6 +413,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged }: Props
 
   const openDraft = (profile?: ProjectCharacterProfile) => {
     const next = toDraft(profile);
+    setError(null);
     setDraft(next);
     setSelectedId(next.id);
   };
