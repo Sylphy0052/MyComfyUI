@@ -18,7 +18,8 @@
       "enum": [
         "connection.ready",
         "connection.heartbeat",
-        "generation_job.state_changed"
+        "generation_job.state_changed",
+        "generation_job.progress"
       ]
     },
     "occurred_at": {"type": "string"},
@@ -41,6 +42,18 @@
               "enum": ["queued", "running", "cancelling", "succeeded", "failed", "cancelled"]
             },
             "phase": {"enum": ["queued", "running", "cancelling", "terminal"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["job_id", "value", "max", "node", "preview_seq"],
+          "properties": {
+            "job_id": {"type": "string", "minLength": 1, "maxLength": 36},
+            "value": {"type": "integer", "minimum": 0},
+            "max": {"type": "integer", "minimum": 0},
+            "node": {"type": ["string", "null"]},
+            "preview_seq": {"type": "integer", "minimum": 0}
           }
         }
       ]

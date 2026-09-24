@@ -117,6 +117,8 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 
 `WebSocket /api/v1/events`は`queued`、`running`、`cancelling`、終端状態の変化を通知する。通知は画面がRESTを再取得するトリガーであり、状態の正本ではない。切断中もJobは継続し、再接続時は`GET /api/v1/generation-jobs`で復元する。イベント本文は`contracts/events/job-event.schema.json`に従う。
 
+実行中のJobは`generation_job.progress`で進捗(`value`/`max`)と最新プレビューの連番(`preview_seq`)を通知する。プレビュー画像は`GET /api/v1/generation-jobs/{job_id}/preview`で取得する。進捗とプレビューはメモリ上にだけ持ち、Jobの終了やAPIの再起動で消える。ComfyUIへは投入ごとに`extra_data.preview_method`(設定`comfyui_preview_method`、既定`auto`)を送る。
+
 ### ai-media 参照
 
 `contracts/ai-media/v1/openapi.yaml` の契約に従い、Project、Scene、Shot を読取り専用で中継する。

@@ -25,11 +25,15 @@ from mycomfyui_api.adapters.comfyui.client import (
     InterruptFailed,
     OutputNotFound,
     OutputRef,
+    PreviewImage,
+    ProgressListener,
+    ProgressUpdate,
     UploadFailed,
     WaitResult,
     WorkflowRejected,
 )
 from mycomfyui_api.adapters.comfyui.factory import create_comfyui_client
+from mycomfyui_api.job_progress import job_progress
 from mycomfyui_api.models import Artifact, GenerationJob, GenerationManifest, Recipe
 from mycomfyui_api.queue import ExecutionOutcome
 from mycomfyui_api.settings import Settings, get_settings
@@ -106,6 +110,8 @@ class ComfyUIExecutor:
         try:
             return await self._execute(client, context, cancel_event)
         finally:
+            # 進捗は実行中の表示用で、終わったJobには残さない。
+            job_progress.clear(context.job_id)
             await client.aclose()
 
     async def _execute(
@@ -183,6 +189,7 @@ class ComfyUIExecutor:
                 prompt_id,
                 cancel_event=cancel_event,
                 timeout=self._settings.comfyui_timeout_seconds,
+                listener=_progress_listener(context.job_id),
             )
         except ExecutionFailed as error:
             return _failed(
@@ -519,6 +526,20 @@ class ComfyUIExecutor:
                     context.job_id,
                     exc_info=True,
                 )
+
+
+def _progress_listener(job_id: str) -> ProgressListener:
+    def on_progress(update: ProgressUpdate) -> None:
+        job_progress.update_progress(
+            job_id, value=update.value, maximum=update.max, node=update.node
+        )
+
+    def on_preview(preview: PreviewImage) -> None:
+        job_progress.update_preview(
+            job_id, data=preview.data, media_type=preview.media_type
+        )
+
+    return ProgressListener(on_progress=on_progress, on_preview=on_preview)
 
 
 def _template_name(recipe: Recipe) -> str:
