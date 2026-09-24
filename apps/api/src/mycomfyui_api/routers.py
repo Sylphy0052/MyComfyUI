@@ -2389,7 +2389,12 @@ async def _plan_purge(session: AsyncSession, artifact_ids: list[str]) -> _PurgeP
         1
         for (refs,) in manifests
         if isinstance(refs, list)
-        and any(isinstance(ref, dict) and ref.get("artifact_id") in ids for ref in refs)
+        and any(
+            isinstance(ref, dict)
+            and ref.get("kind") == provenance.KIND_ARTIFACT
+            and ref.get("artifact_id") in ids
+            for ref in refs
+        )
     )
     children = await session.scalar(
         select(func.count())
@@ -3667,6 +3672,7 @@ async def _purged_input_artifacts(
     """入力に使った生成物のうち、記録が完全削除されて実ファイルも無いもののID。
 
     コピーが同じファイルを残していれば内容は取得できるため、ここでは止めない。
+    パスを持たない壊れた参照は完全削除と区別できないため、再現性の検査に任せる。
     """
     refs = [
         ref
@@ -3674,6 +3680,7 @@ async def _purged_input_artifacts(
         if isinstance(ref, dict)
         and ref.get("kind") == provenance.KIND_ARTIFACT
         and isinstance(ref.get("artifact_id"), str)
+        and isinstance(ref.get("relative_path"), str)
     ]
     if not refs:
         return []
@@ -3689,7 +3696,7 @@ async def _purged_input_artifacts(
         if ref["artifact_id"] in existing:
             continue
         try:
-            storage.resolve_artifact(str(ref.get("relative_path")))
+            await run_in_threadpool(storage.resolve_artifact, ref["relative_path"])
         except storage.StorageError:
             purged.append(ref["artifact_id"])
     return purged
