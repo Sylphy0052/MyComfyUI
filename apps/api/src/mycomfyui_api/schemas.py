@@ -1856,6 +1856,8 @@ class AgentProviderRead(ApiModel):
     available: bool
     #: 画像を添付してプロンプト補完を依頼できるか。
     supports_images: bool = False
+    #: 設定の既定Providerか。Providerを指定しない要求はこのProviderへ送られる。
+    is_default: bool = False
     #: 常駐するProviderと、状態を読めないProviderではnull。
     backend: AgentBackendStatusRead | None = None
 

@@ -70,6 +70,12 @@ class ProposalImage:
     data: bytes
     media_type: str
 
+    def __post_init__(self) -> None:
+        # Providerごとの形式表 (Codexの拡張子など) は許可リストの形式しか持たない。
+        # 呼び出し経路が増えても、許可リスト外の形式はここで止める。
+        if self.media_type not in PROPOSAL_IMAGE_MEDIA_TYPES:
+            raise ValueError(f"添付できない画像形式です: {self.media_type}")
+
 
 @dataclass(frozen=True)
 class ProposalRequest:
