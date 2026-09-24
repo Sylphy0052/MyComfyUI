@@ -146,13 +146,13 @@ export function SceneBrowser(props: Props) {
     setDropTarget(null);
   };
 
-  // ドラッグ中に編集不可へ変わるとハンドルがアンマウントされてdragendが届かない。状態を残さない。
+  // ドラッグ中に編集不可へ変わる、またはbusyでdraggableが外れると、dragendが届かないことがある。状態を残さない。
   useEffect(() => {
-    if (!structureEditable) {
+    if (!structureEditable || busy) {
       setDragging(null);
       setDropTarget(null);
     }
-  }, [structureEditable]);
+  }, [structureEditable, busy]);
 
   // 行の上半分なら行の前、下半分なら行の後へ挿入する。並びが変わらない位置はnull。
   const insertionIndex = (event: DragEvent<HTMLLIElement>, kind: StructureKind, index: number) => {
