@@ -56,6 +56,7 @@ from mycomfyui_api.execution import (
     PreparationError,
     PreparedExecution,
 )
+from mycomfyui_api.job_progress import job_progress
 from mycomfyui_api.models import (
     AgentProposal,
     AgentProposalApplication,
@@ -1739,6 +1740,39 @@ async def list_job_artifacts(job_id: str, session: SessionDep):
     return await _artifact_reads(session, result.scalars().all())
 
 
+@router.get(
+    "/generation-jobs/{job_id}/preview",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/jpeg": {}, "image/png": {}}},
+    },
+)
+async def get_job_preview(
+    job_id: str,
+    session: SessionDep,
+    seq: Annotated[int | None, Query(ge=0)] = None,
+):
+    """実行中Jobの最新プレビュー画像を返す。
+
+    プレビューはメモリ上にだけあり、Jobが終わると消える。`seq`は進捗イベントの
+    `preview_seq`で、画面が取り直しのURLを変えるためだけに付ける。値は見ずに常に
+    最新の1枚を返し、ブラウザにはキャッシュさせない。
+    """
+    await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
+    entry = job_progress.get(job_id)
+    if entry is None or entry.preview is None or entry.preview_media_type is None:
+        raise ApiError(
+            "PREVIEW_NOT_FOUND",
+            "プレビュー画像がありません。",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    return Response(
+        content=entry.preview,
+        media_type=entry.preview_media_type,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post(
     "/generation-jobs/{job_id}/cancel", response_model=schemas.GenerationJobRead
 )
@@ -2125,7 +2159,11 @@ async def operate_artifacts(
     session: SessionDep,
     source: ReferenceSourceDep,
 ):
-    """Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。"""
+    """Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。
+
+    trashはゴミ箱へ移し (論理削除)、restoreはゴミ箱から戻す。Workflowのスナップショットは
+    生成記録が必ず参照するためゴミ箱へ移せず、1件でも含まれていれば何も変更しない。
+    """
     rows = list(
         await session.scalars(
             select(Artifact).where(Artifact.id.in_(payload.artifact_ids))
@@ -2145,6 +2183,21 @@ async def operate_artifacts(
         )
     ordered = {row.id: row for row in rows}
     rows = [ordered[item] for item in payload.artifact_ids]
+    if payload.operation == "trash":
+        workflow_ids = [row.id for row in rows if row.kind == "workflow"]
+        if workflow_ids:
+            raise _validation_error(
+                "Workflowのスナップショットはゴミ箱へ移せません。",
+                {"artifact_ids": workflow_ids},
+            )
+    elif payload.operation != "restore":
+        # ゴミ箱のまま割当やタグを書き換えると、復元時に元の整理先へ戻らない。
+        trashed_ids = [row.id for row in rows if row.deleted_at is not None]
+        if trashed_ids:
+            raise _validation_error(
+                "ゴミ箱にあるArtifactは復元してから操作してください。",
+                {"artifact_ids": trashed_ids},
+            )
     target: tuple[str | None, str | None, str | None] | None = None
     if payload.operation in ("move", "copy"):
         target = await _validate_assignment_target(session, source, payload.target)
@@ -2217,6 +2270,16 @@ async def operate_artifacts(
                     )
                 )
             affected.append(copied)
+    elif payload.operation == "trash":
+        now = schemas.now_iso()
+        for artifact in rows:
+            if artifact.deleted_at is None:
+                artifact.deleted_at = now
+        affected = rows
+    elif payload.operation == "restore":
+        for artifact in rows:
+            artifact.deleted_at = None
+        affected = rows
     else:
         existing = set(
             await session.scalars(
@@ -2254,13 +2317,18 @@ def _artifact_filters(
     decision: str | None = None,
     availability: str | None = None,
     tags: list[str] | None = None,
+    trashed: bool = False,
 ) -> Select[tuple[Artifact]]:
     """Artifactの絞り込み条件を組み立てる。条件はすべてANDで重ねる。
 
+    既定ではゴミ箱にあるArtifactを除き、`trashed`を指定したときはゴミ箱にあるものだけに絞る。
     ProjectコンテキストはArtifactの現在の整理先と突き合わせる。
     `tags`を複数指定したときは、すべてのタグが付いたArtifactだけを返す。資産を絞り
     込む用途では和集合より積集合が要る。
     """
+    query = query.where(
+        Artifact.deleted_at.is_not(None) if trashed else Artifact.deleted_at.is_(None)
+    )
     if job_id is not None:
         query = query.where(Artifact.job_id == job_id)
     if (
@@ -2352,10 +2420,13 @@ async def list_artifacts(
     ] = None,
     lineage_artifact_id: str | None = None,
     lineage_job_id: str | None = None,
+    trashed: bool = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """Artifact履歴の一覧。既定は作成の新しい順に返す。
+
+    ゴミ箱にあるArtifactは既定で除き、`trashed=true`のときはゴミ箱にあるものだけを返す。
 
     Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
     現在のProject所属を持たないArtifactだけへ絞る。
@@ -2386,6 +2457,7 @@ async def list_artifacts(
         decision=decision,
         availability=availability,
         tags=tag,
+        trashed=trashed,
     )
     query, truncated = await _apply_lineage_filters(
         session,
@@ -4116,6 +4188,7 @@ async def _context_artifacts(session: AsyncSession, scene_id: str) -> list[Artif
         .where(Artifact.job_id.in_(jobs))
         .where(Artifact.kind == "image")
         .where(Artifact.availability == "complete")
+        .where(Artifact.deleted_at.is_(None))
         .order_by(Artifact.created_at.desc(), Artifact.id.asc())
         .limit(AGENT_CONTEXT_ARTIFACT_LIMIT)
     )

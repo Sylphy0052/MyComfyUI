@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     data_root: Path = user_data_path("MyComfyUI", appauthor=False)
     comfyui_base_url: str = "http://127.0.0.1:8188"
     comfyui_timeout_seconds: float = Field(default=600.0, gt=0)
+    #: 生成途中のプレビュー画像の作り方。投入ごとにComfyUIへ渡す。`none`で止める。
+    comfyui_preview_method: Literal["auto", "latent2rgb", "taesd", "none"] = "auto"
     #: ai-media参照APIの接続先。未設定の間は同梱fixtureを参照する。
     aimedia_base_url: str | None = None
     #: 参照fixtureの差し替え先。上流が未実装の間、Canonが更新された状態を再現して

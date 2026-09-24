@@ -206,6 +206,8 @@ export interface paths {
          * List Artifacts
          * @description Artifact履歴の一覧。既定は作成の新しい順に返す。
          *
+         *     ゴミ箱にあるArtifactは既定で除き、`trashed=true`のときはゴミ箱にあるものだけを返す。
+         *
          *     Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
          *     現在のProject所属を持たないArtifactだけへ絞る。
          *     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
@@ -239,6 +241,9 @@ export interface paths {
         /**
          * Operate Artifacts
          * @description Artifactを一括整理する。copyは元Artifactを親に持つ新しい記録を作る。
+         *
+         *     trashはゴミ箱へ移し (論理削除)、restoreはゴミ箱から戻す。Workflowのスナップショットは
+         *     生成記録が必ず参照するためゴミ箱へ移せず、1件でも含まれていれば何も変更しない。
          */
         post: operations["operate_artifacts_api_v1_artifacts_batch_operation_post"];
         delete?: never;
@@ -669,6 +674,30 @@ export interface paths {
          *     まとめて返し、画面側で辿れるようにする。
          */
         get: operations["get_job_lineage_api_v1_generation_jobs__job_id__lineage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generation-jobs/{job_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job Preview
+         * @description 実行中Jobの最新プレビュー画像を返す。
+         *
+         *     プレビューはメモリ上にだけあり、Jobが終わると消える。`seq`は進捗イベントの
+         *     `preview_seq`で、画面が取り直しのURLを変えるためだけに付ける。値は見ずに常に
+         *     最新の1枚を返し、ブラウザにはキャッシュさせない。
+         */
+        get: operations["get_job_preview_api_v1_generation_jobs__job_id__preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2396,7 +2425,7 @@ export interface components {
              * Operation
              * @enum {string}
              */
-            operation: "move" | "copy" | "unassign" | "tag";
+            operation: "move" | "copy" | "unassign" | "tag" | "trash" | "restore";
             /** Tag */
             tag?: string | null;
             target?: components["schemas"]["AssignmentTarget"] | null;
@@ -2526,6 +2555,8 @@ export interface components {
             decision: string;
             /** Decision At */
             decision_at: string | null;
+            /** Deleted At */
+            deleted_at: string | null;
             /** Id */
             id: string;
             /** Job Id */
@@ -5359,6 +5390,7 @@ export interface operations {
                 tag?: string[] | null;
                 lineage_artifact_id?: string | null;
                 lineage_job_id?: string | null;
+                trashed?: boolean;
                 limit?: number;
                 offset?: number;
             };
@@ -6077,6 +6109,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobLineageRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_preview_api_v1_generation_jobs__job_id__preview_get: {
+        parameters: {
+            query?: {
+                seq?: number | null;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
                 };
             };
             /** @description Validation Error */

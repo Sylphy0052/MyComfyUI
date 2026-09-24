@@ -779,6 +779,7 @@ export const api = {
     tags?: string[];
     lineageArtifactId?: string;
     lineageJobId?: string;
+    trashed?: boolean;
     limit?: number;
     offset?: number;
   }) => {
@@ -795,6 +796,7 @@ export const api = {
     if (params.lineageArtifactId)
       query.set("lineage_artifact_id", params.lineageArtifactId);
     if (params.lineageJobId) query.set("lineage_job_id", params.lineageJobId);
+    if (params.trashed) query.set("trashed", "true");
     if (params.limit) query.set("limit", String(params.limit));
     if (params.offset) query.set("offset", String(params.offset));
     const suffix = query.toString() ? `?${query.toString()}` : "";
@@ -893,6 +895,10 @@ export const api = {
 
   artifactContentUrl: (artifactId: string) =>
     `${apiBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}/content`,
+
+  // seq は進捗イベントの preview_seq。更新のたびに URL を変えて取り直させる。
+  jobPreviewUrl: (jobId: string, seq: number) =>
+    `${apiBaseUrl()}/generation-jobs/${encodeURIComponent(jobId)}/preview?seq=${seq}`,
 
   listAgentProviders: () => request<AgentProvider[]>("/agent-providers"),
 

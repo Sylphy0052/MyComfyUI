@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import PurePosixPath
@@ -36,6 +37,14 @@ POLL_INTERVAL_SECONDS = 1.0
 
 #: 新しいノード定義APIが選択肢の型として返すマーカー。
 COMBO_TYPE = "COMBO"
+
+#: WebSocketのbinary frameの先頭4byteに入るイベント種別(ComfyUIの
+#: `protocol.py`の`BinaryEventTypes`)。
+BINARY_PREVIEW_IMAGE = 1
+BINARY_PREVIEW_IMAGE_WITH_METADATA = 4
+
+#: `PREVIEW_IMAGE`の画像種別。
+PREVIEW_IMAGE_TYPES = {1: "image/jpeg", 2: "image/png"}
 
 
 class ComfyUIError(Exception):
@@ -132,6 +141,34 @@ class BackendStatus:
     base_url: str
     version: str | None
     devices: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProgressUpdate:
+    """実行中ノードの進み具合。ComfyUIの`progress`メッセージ1件に当たる。"""
+
+    value: int
+    max: int
+    node: str | None
+
+
+@dataclass(frozen=True)
+class PreviewImage:
+    """サンプリング途中のプレビュー画像。"""
+
+    data: bytes
+    media_type: str
+
+
+@dataclass(frozen=True)
+class ProgressListener:
+    """実行監視中に届いた進捗とプレビューの受け取り先。
+
+    WebSocket監視のときだけ呼ばれる。ポーリングへ落ちた場合は呼ばれない。
+    """
+
+    on_progress: Callable[[ProgressUpdate], None]
+    on_preview: Callable[[PreviewImage], None]
 
 
 class ComfyUIClient:
@@ -244,7 +281,16 @@ class ComfyUIClient:
         """Workflowを投入し、`prompt_id`を返す。"""
         try:
             response = await self._client.post(
-                "/prompt", json={"prompt": workflow, "client_id": self._client_id}
+                "/prompt",
+                json={
+                    "prompt": workflow,
+                    "client_id": self._client_id,
+                    # 途中画像の出し方はprompt単位で指定できる。ComfyUI側の起動
+                    # 設定に依らずプレビューを受け取るために毎回送る。
+                    "extra_data": {
+                        "preview_method": self._settings.comfyui_preview_method
+                    },
+                },
             )
         except httpx.HTTPError as error:
             raise ComfyUIUnavailable(
@@ -263,14 +309,19 @@ class ComfyUIClient:
         return prompt_id
 
     async def wait_for_completion(
-        self, prompt_id: str, *, cancel_event: asyncio.Event, timeout: float
+        self,
+        prompt_id: str,
+        *,
+        cancel_event: asyncio.Event,
+        timeout: float,
+        listener: ProgressListener | None = None,
     ) -> WaitResult:
         """実行完了、取消要求、制限時間のいずれかまで待つ。
 
         監視方式はこのメソッドへ隠蔽する。WebSocketを使えない環境ではhistoryの
         ポーリングへ自動的に切り替える。
         """
-        monitor = asyncio.create_task(self._monitor(prompt_id))
+        monitor = asyncio.create_task(self._monitor(prompt_id, listener))
         cancel_wait = asyncio.create_task(cancel_event.wait())
         try:
             done, _ = await asyncio.wait(
@@ -294,9 +345,9 @@ class ComfyUIClient:
             f"生成が制限時間{timeout}秒以内に完了しませんでした。prompt_id={prompt_id}"
         )
 
-    async def _monitor(self, prompt_id: str) -> None:
+    async def _monitor(self, prompt_id: str, listener: ProgressListener | None) -> None:
         try:
-            completed = await self._monitor_via_websocket(prompt_id)
+            completed = await self._monitor_via_websocket(prompt_id, listener)
         except (OSError, WebSocketException) as error:
             logger.warning(
                 "WebSocket監視を使えないためポーリングへ切り替えます。prompt_id=%s (%s)",
@@ -317,7 +368,9 @@ class ComfyUIClient:
                 f"実行の監視接続が切れ、履歴も取得できません。prompt_id={prompt_id}"
             ) from error
 
-    async def _monitor_via_websocket(self, prompt_id: str) -> bool:
+    async def _monitor_via_websocket(
+        self, prompt_id: str, listener: ProgressListener | None
+    ) -> bool:
         """WebSocketで完了を検知できたかを返す。
 
         ComfyUIが正常クローズでWebSocketを閉じると`async for`は例外を出さずに終わる
@@ -334,9 +387,17 @@ class ComfyUIClient:
                     return True
             async for raw in connection:
                 if not isinstance(raw, str):
+                    if listener is not None:
+                        preview = _parse_preview(raw, prompt_id)
+                        if preview is not None:
+                            _notify(listener.on_preview, preview)
                     continue
                 if _is_completion_message(raw, prompt_id):
                     return True
+                if listener is not None:
+                    progress = _parse_progress(raw, prompt_id)
+                    if progress is not None:
+                        _notify(listener.on_progress, progress)
         return False
 
     async def _monitor_via_polling(self, prompt_id: str) -> None:
@@ -501,6 +562,72 @@ def _to_websocket_url(base_url: str, client_id: str) -> str:
     scheme, _, rest = base_url.partition("://")
     ws_scheme = "wss" if scheme == "https" else "ws"
     return f"{ws_scheme}://{rest}/ws?{urlencode({'clientId': client_id})}"
+
+
+def _notify[T](callback: Callable[[T], None], value: T) -> None:
+    """listenerの失敗を監視へ持ち込まない。
+
+    進捗とプレビューは表示用の補助情報で、生成の成否には関わらない。受け取り側の
+    例外を素通しすると、進んでいる生成が監視ごと失敗扱いになる。
+    """
+    try:
+        callback(value)
+    except Exception:
+        logger.warning("進捗の受け取りに失敗した", exc_info=True)
+
+
+def _parse_progress(raw: str, prompt_id: str) -> ProgressUpdate | None:
+    """対象promptの`progress`メッセージなら進み具合を取り出す。"""
+    try:
+        message = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(message, dict) or message.get("type") != "progress":
+        return None
+    data = message.get("data")
+    if not isinstance(data, dict) or data.get("prompt_id") != prompt_id:
+        return None
+    value = data.get("value")
+    maximum = data.get("max")
+    if not isinstance(value, int) or not isinstance(maximum, int) or maximum <= 0:
+        return None
+    node = data.get("node")
+    return ProgressUpdate(
+        value=value, max=maximum, node=node if isinstance(node, str) else None
+    )
+
+
+def _parse_preview(raw: bytes, prompt_id: str) -> PreviewImage | None:
+    """binary frameがプレビュー画像なら取り出す。
+
+    `PREVIEW_IMAGE`はprompt_idを持たない。投入時の`client_id`宛てにだけ届き、
+    clientはJobごとに作るため、届いたものは対象promptの画像として扱う。
+    """
+    if len(raw) < 8:
+        return None
+    event_type = int.from_bytes(raw[0:4], "big")
+    if event_type == BINARY_PREVIEW_IMAGE:
+        media_type = PREVIEW_IMAGE_TYPES.get(int.from_bytes(raw[4:8], "big"))
+        if media_type is None or len(raw) == 8:
+            return None
+        return PreviewImage(data=bytes(raw[8:]), media_type=media_type)
+    if event_type != BINARY_PREVIEW_IMAGE_WITH_METADATA:
+        return None
+    metadata_end = 8 + int.from_bytes(raw[4:8], "big")
+    if metadata_end >= len(raw):
+        return None
+    try:
+        metadata = json.loads(raw[8:metadata_end])
+    except ValueError:
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    if metadata.get("prompt_id") not in (None, prompt_id):
+        return None
+    media_type = metadata.get("image_type")
+    if media_type not in PREVIEW_IMAGE_TYPES.values():
+        return None
+    return PreviewImage(data=bytes(raw[metadata_end:]), media_type=media_type)
 
 
 def _is_completion_message(raw: str, prompt_id: str) -> bool:

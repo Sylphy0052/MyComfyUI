@@ -2026,3 +2026,16 @@ button.primary:hover:not(:disabled) {
 .latest-image-slider input[type="range"] {
   flex: 1;
 }
+
+/* 実行中 Job の進捗と生成途中のプレビュー。 */
+.job-progress progress {
+  width: 100%;
+}
+
+.job-progress .preview {
+  display: block;
+  max-height: 50vh;
+  max-width: 100%;
+  margin: var(--space-2) auto 0;
+  object-fit: contain;
+}

@@ -1545,6 +1545,7 @@ class ArtifactRead(ApiModel):
     created_at: str
     decision: str
     decision_at: str | None
+    deleted_at: str | None
     tags: list[str] = Field(default_factory=list)
 
 
@@ -1727,7 +1728,9 @@ class JobAssignmentUpdate(AssignmentTarget):
     include_artifacts: bool = False
 
 
-ArtifactBatchOperationType = Literal["move", "copy", "unassign", "tag"]
+ArtifactBatchOperationType = Literal[
+    "move", "copy", "unassign", "tag", "trash", "restore"
+]
 
 
 class ArtifactBatchOperation(ApiModel):
