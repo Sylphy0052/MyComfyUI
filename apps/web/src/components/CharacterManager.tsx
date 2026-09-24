@@ -203,7 +203,8 @@ function VoiceReferenceSection({
           offset,
         });
         found.push(...page);
-        if (page.length < VOICE_REFERENCE_PAGE_SIZE) return found;
+        // アンマウント後は残りのページを取りに行かない。
+        if (!alive || page.length < VOICE_REFERENCE_PAGE_SIZE) return found;
       }
     };
     loadAll()
