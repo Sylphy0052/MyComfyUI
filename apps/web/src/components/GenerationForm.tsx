@@ -861,6 +861,27 @@ export function GenerationForm({
   return (
     <section className="panel">
       <h2>生成</h2>
+      {/* 投入操作はフォームの長さに関わらず押せるよう、上端へ固定する。 */}
+      <div className="form-actions">
+        {simple && invalid && <p className="error">{invalid}</p>}
+        <button
+          type="button"
+          hidden={simple}
+          disabled={actionsDisabled}
+          onClick={runPreview}
+        >
+          {previewing ? "確認中..." : "投入前に確認"}
+        </button>
+        <button
+          type="button"
+          className="primary"
+          disabled={actionsDisabled}
+          onClick={submit}
+        >
+          {submitting ? "投入中..." : "画像生成を投入"}
+        </button>
+        {!simple && <span className="muted">バッチ {batchCount || "1"}</span>}
+      </div>
       <div className="stack">
         <fieldset className="form-section">
           <legend>プロンプト</legend>
@@ -1013,28 +1034,6 @@ export function GenerationForm({
             loading={previewing}
           />
         </fieldset>
-      </div>
-
-      {/* 投入操作はフォームの長さに関わらず押せるよう、下端へ固定する。 */}
-      <div className="form-actions">
-        {simple && invalid && <p className="error">{invalid}</p>}
-        <button
-          type="button"
-          hidden={simple}
-          disabled={actionsDisabled}
-          onClick={runPreview}
-        >
-          {previewing ? "確認中..." : "投入前に確認"}
-        </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={actionsDisabled}
-          onClick={submit}
-        >
-          {submitting ? "投入中..." : "画像生成を投入"}
-        </button>
-        {!simple && <span className="muted">バッチ {batchCount || "1"}</span>}
       </div>
     </section>
   );

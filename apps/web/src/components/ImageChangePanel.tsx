@@ -228,6 +228,17 @@ export function ImageChangePanel({
   return (
     <section className="panel">
       <h2>画像を変更</h2>
+      {/* 投入操作はパネルの長さに関わらず押せるよう、上端へ固定する。 */}
+      <div className="form-actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !sourceReady}
+          onClick={() => void execute()}
+        >
+          {busy ? "処理中..." : "変更を投入"}
+        </button>
+      </div>
       <div className="stack">
         <MediaPicker
           kind="image"
@@ -266,14 +277,6 @@ export function ImageChangePanel({
           onChange={(event) => setPrompt(event.target.value)}
         />
         {error && <p className="error">{error}</p>}
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || !sourceReady}
-          onClick={() => void execute()}
-        >
-          {busy ? "処理中..." : "変更を投入"}
-        </button>
       </div>
     </section>
   );

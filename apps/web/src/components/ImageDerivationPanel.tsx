@@ -348,6 +348,11 @@ export function ImageDerivationPanel({
   return (
     <section className="panel">
       <h2>画像派生生成</h2>
+      {/* 投入操作はパネルの長さに関わらず押せるよう、上端へ固定する。 */}
+      <div className="form-actions">
+        <button type="button" disabled={busy || !modelsValid || !sourceReady} onClick={() => void execute(true)}>投入前に確認</button>
+        <button type="button" className="primary" disabled={busy || !modelsValid || !sourceReady} onClick={() => void execute(false)}>{busy ? "処理中..." : "派生生成を投入"}</button>
+      </div>
       <div className="stack">
         <label htmlFor="derivation-recipe">ベース (Recipe)</label>
         <select id="derivation-recipe" value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>
@@ -458,10 +463,6 @@ export function ImageDerivationPanel({
           </div>
         </>}
         {error && <p className="error">{error}</p>}
-        <div className="row">
-          <button type="button" disabled={busy || !modelsValid || !sourceReady} onClick={() => void execute(true)}>投入前に確認</button>
-          <button type="button" className="primary" disabled={busy || !modelsValid || !sourceReady} onClick={() => void execute(false)}>{busy ? "処理中..." : "派生生成を投入"}</button>
-        </div>
         <ExecutionPreview preview={preview} error={previewError} loading={busy} />
       </div>
     </section>
