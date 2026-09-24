@@ -892,6 +892,10 @@ export const api = {
   artifactContentUrl: (artifactId: string) =>
     `${apiBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}/content`,
 
+  // seq は進捗イベントの preview_seq。更新のたびに URL を変えて取り直させる。
+  jobPreviewUrl: (jobId: string, seq: number) =>
+    `${apiBaseUrl()}/generation-jobs/${encodeURIComponent(jobId)}/preview?seq=${seq}`,
+
   listAgentProviders: () => request<AgentProvider[]>("/agent-providers"),
 
   assistImagePrompt: (payload: {
