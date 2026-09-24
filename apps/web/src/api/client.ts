@@ -802,6 +802,7 @@ export const api = {
     lineageArtifactId?: string;
     lineageJobId?: string;
     trashed?: boolean;
+    excludeKinds?: string[];
     limit?: number;
     offset?: number;
   }) => {
@@ -819,6 +820,8 @@ export const api = {
       query.set("lineage_artifact_id", params.lineageArtifactId);
     if (params.lineageJobId) query.set("lineage_job_id", params.lineageJobId);
     if (params.trashed) query.set("trashed", "true");
+    for (const kind of params.excludeKinds ?? [])
+      query.append("exclude_kind", kind);
     if (params.limit) query.set("limit", String(params.limit));
     if (params.offset) query.set("offset", String(params.offset));
     const suffix = query.toString() ? `?${query.toString()}` : "";

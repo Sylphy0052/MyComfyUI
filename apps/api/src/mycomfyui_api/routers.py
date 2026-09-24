@@ -2552,6 +2552,7 @@ def _artifact_filters(
     availability: str | None = None,
     tags: list[str] | None = None,
     trashed: bool = False,
+    exclude_kinds: list[str] | None = None,
 ) -> Select[tuple[Artifact]]:
     """Artifactの絞り込み条件を組み立てる。条件はすべてANDで重ねる。
 
@@ -2581,6 +2582,8 @@ def _artifact_filters(
             query = query.where(Artifact.assigned_shot_id == shot_id)
     if kind is not None:
         query = query.where(Artifact.kind == kind)
+    if exclude_kinds:
+        query = query.where(Artifact.kind.not_in(exclude_kinds))
     if decision is not None:
         query = query.where(Artifact.decision == decision)
     if availability is not None:
@@ -2655,6 +2658,7 @@ async def list_artifacts(
     lineage_artifact_id: str | None = None,
     lineage_job_id: str | None = None,
     trashed: bool = False,
+    exclude_kind: Annotated[list[schemas.ArtifactKind] | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
@@ -2665,6 +2669,8 @@ async def list_artifacts(
     Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
     現在のProject所属を持たないArtifactだけへ絞る。
     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
+    `exclude_kind`は複数指定でき、指定した種別を除く。一覧から記録用の種別だけを外す
+    用途では、取得後に除くとページの件数が欠けるためDB側で除く。
 
     `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
     は`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の
@@ -2692,6 +2698,7 @@ async def list_artifacts(
         availability=availability,
         tags=tag,
         trashed=trashed,
+        exclude_kinds=exclude_kind,
     )
     query, truncated = await _apply_lineage_filters(
         session,
