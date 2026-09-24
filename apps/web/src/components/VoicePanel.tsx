@@ -38,6 +38,8 @@ interface VoiceBinding {
   /** 取込時に参照音声へ付ける役割とキャラクター (Issue #249)。役割が空なら付けない。 */
   role: MediaRole | "";
   characterIds: string[];
+  /** 取込は済んだが役割を付けられなかったときの理由。次にこの声を取り込むまで残す。 */
+  roleTagError: string | null;
 }
 
 const EMPTY_BINDING: VoiceBinding = {
@@ -49,6 +51,7 @@ const EMPTY_BINDING: VoiceBinding = {
   fileName: null,
   role: "voice_reference",
   characterIds: [],
+  roleTagError: null,
 };
 
 const STANDALONE_VOICE_ID = "standalone";
@@ -202,6 +205,19 @@ export function VoicePanel({
     );
   }, [voiceIds]);
 
+  // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾くため、
+  // MediaPickerと同じくProject切替時に選択を空へ戻す。取り込んだ参照音声は残す。
+  useEffect(() => {
+    setBindings((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([id, binding]) => [
+          id,
+          { ...binding, characterIds: [] },
+        ]),
+      ),
+    );
+  }, [projectId]);
+
   // Job を素早く切り替えたとき、遅れて届いた前の Job の応答で表示を上書きしない。
   const verificationsSequence = useRef(0);
 
@@ -260,6 +276,7 @@ export function VoicePanel({
 
   const upload = async (voiceId: string, file: File) => {
     setError(null);
+    update(voiceId, { roleTagError: null });
     const { role, characterIds } = bindings[voiceId] ?? EMPTY_BINDING;
     try {
       const stored = await api.createVoiceReference(
@@ -280,16 +297,16 @@ export function VoicePanel({
           byte_size: stored.byte_size,
           media_type: stored.media_type,
           role,
-          // Projectを切り替える前に選んだキャラクターはAPIが422で弾くため除く。
-          character_ids: characterIds.filter((id) =>
-            characters.some((character) => character.id === id),
-          ),
+          character_ids: characterIds,
           project_id: projectId ?? undefined,
           scene_id: sceneId ?? undefined,
         });
       } catch (cause) {
         // 取込は済んでいるため参照音声の指定は残し、役割が付かなかった声を示す。
-        setError(`${voiceId}の参照音声に役割を付けられませんでした: ${describe(cause)}`);
+        // 他の声の取込で消えないよう、全体のエラーでなくbindingに持たせる。
+        update(voiceId, {
+          roleTagError: `役割を付けられませんでした: ${describe(cause)}`,
+        });
       }
     } catch (cause) {
       setError(describe(cause));
@@ -587,6 +604,9 @@ export function VoicePanel({
                       ? "参照音声は未取り込み。Voice Canonのsource_sha256と一致するwavを選ぶ。"
                       : "参照音声は未取り込み。話者の特徴が分かるwavを選ぶ。"}
                 </p>
+                {binding.roleTagError && (
+                  <p className="error">{binding.roleTagError}</p>
+                )}
                 <textarea
                   aria-label={`${voiceId}の参照テキスト`}
                   placeholder="参照音声の書き起こし"
