@@ -28,7 +28,7 @@ function Section({
 }) {
   const title = SECTIONS.find((section) => section.id === id)?.title;
   return (
-    <section id={id} className="panel manual-section">
+    <section id={id} className="panel">
       <h2>{title}</h2>
       {children}
       <p className="manual-back">
