@@ -10,6 +10,8 @@ import type { ToastItem } from "./ToastRegion";
 const TOASTS: ToastItem[] = [{ id: "t1", tone: "success", message: "保存した" }];
 
 // App.tsxと同じく、CandidateGalleryが通知した<dialog>をToastHostの表示先へ渡す。
+// この配線自体はAppと別に再実装しているため、App側の配線漏れは検出できない。
+// 検証するのはToastHostの切替と、CandidateGalleryの通知 (開閉・0件でのアンマウント) まで。
 function Harness({ candidates }: { candidates: { artifact: Artifact; jobId: string }[] }) {
   const [dialogEl, setDialogEl] = useState<HTMLDialogElement | null>(null);
   return (
