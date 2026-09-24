@@ -10,6 +10,11 @@
 # 参照API未提供時に検証用JSONを明示的に差し替える場合だけ指定する。
 # aimedia_fixture_path = "/absolute/path/to/reference.json"
 
+# 参照API未提供時にnovel-writerのgitリポジトリからai-media実データを読取り専用で読む。
+# aimedia_fixture_pathより優先する。refが指すcommitを読み、fetchはしない。
+# aimedia_repository_root = "/absolute/path/to/novel-writer"
+# aimedia_repository_ref = "origin/main"
+
 # prompt提案で作法と既存作品のpromptを読取り専用で参照するnovel-writerのルート。
 # novel_writer_root = "/absolute/path/to/novel-writer"
 

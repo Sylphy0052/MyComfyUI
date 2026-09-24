@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     #: 参照fixtureの差し替え先。上流が未実装の間、Canonが更新された状態を再現して
     #: 更新警告と再実行の判定を確かめるために使う。未設定なら同梱fixtureを読む。
     aimedia_fixture_path: Path | None = None
+    #: novel-writerのgitリポジトリの場所。指定すると`aimedia_repository_ref`が指すcommitの
+    #: ai-media実データを読取り専用で参照する。`aimedia_fixture_path`より優先する。
+    aimedia_repository_root: Path | None = None
+    #: 参照するref。fetchはしないため、最新にするには利用者がリポジトリ側でfetchする。
+    aimedia_repository_ref: str = "origin/main"
+    #: 参照に記録するsource_locator。未設定ならremote.origin.urlから求める。
+    aimedia_repository_locator: str | None = None
+    #: リポジトリ内でProjectを置くディレクトリ。
+    aimedia_projects_dir: str = "tools/ai-media/projects"
     #: novel-writerのリポジトリの場所。prompt提案が作法・実測知見・既存作品のpromptを
     #: 読み取り専用で参照する。未設定なら参照しない。
     novel_writer_root: Path | None = None
