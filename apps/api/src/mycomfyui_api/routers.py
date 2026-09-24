@@ -4363,6 +4363,9 @@ async def create_generation_prompt_revision(
     """
     job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
     artifact = await _get_or_404(session, Artifact, "Artifact", payload.artifact_id)
+    # 動画・音声のJobは画像のArtifactを持たないため、Artifactの検証より先に断る。
+    if job.kind != "image":
+        raise _prompt_revision_unsupported(job.id)
     if (
         artifact.job_id != job.id
         or artifact.kind != "image"
@@ -4372,15 +4375,13 @@ async def create_generation_prompt_revision(
             "artifact_idは、このJobが完成させた画像を指す必要があります。",
             {"job_id": job.id, "artifact_id": payload.artifact_id},
         )
-    if job.kind != "image":
-        raise _prompt_revision_unsupported(job.id)
     manifest = await _get_manifest(session, job)
     recipe = await _get_or_404(session, Recipe, "Recipe", job.recipe_id)
     try:
         template_name = comfyui_prepare.resolve_template_name(recipe)
     except PreparationError as error:
         raise _prompt_revision_unsupported(job.id) from error
-    accepted = comfyui_prepare.accepted_input_names(recipe, template_name)
+    accepted = comfyui_prepare.submittable_input_names(recipe, template_name)
     if (
         template_name in comfyui_prepare.DERIVATION_TEMPLATES
         or "positive_prompt" not in accepted
@@ -4421,7 +4422,8 @@ async def create_generation_prompt_revision(
 
     # manifestはモデル変数をmodelへ、残りをparametersへ分けて記録している。parameters
     # にはlook_profilesやprompt_revisionなどテンプレート変数でない記録も混ざるため、
-    # そのままinputsにせず、Recipeが受け付ける変数名だけに絞る。
+    # そのままinputsにせず、Recipeが受け付ける変数名だけに絞る。input_schemaを持つ
+    # Recipeはモデル変数を受け付けないことがあり、その場合モデルはRecipeの既定値になる。
     recorded = {**(manifest.parameters or {}), **(manifest.model or {})}
     inputs: dict[str, Any] = {
         key: value for key, value in recorded.items() if key in accepted
