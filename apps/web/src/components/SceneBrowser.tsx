@@ -296,9 +296,9 @@ export function SceneBrowser(props: Props) {
         </div>
         {/* モードBでは件数に関わらず操作要素を1個に保つため、一覧をselectに畳む。 */}
         {simple && scenes.length > 0 && (
-          <select aria-label="Scene" value={sceneId ?? ""}
+          <select aria-label="Scene" value={scenes.some((s) => s.id === sceneId) ? sceneId ?? "" : ""}
             onChange={(event) => { if (event.target.value) onSelectScene(event.target.value); }}>
-            {(!sceneId || !scenes.some((s) => s.id === sceneId)) && <option value="">選択してください</option>}
+            {!scenes.some((s) => s.id === sceneId) && <option value="">選択してください</option>}
             {scenes.map((item) => (
               <option key={item.id} value={item.id}>#{item.sequence} {item.summary}</option>
             ))}
@@ -350,9 +350,9 @@ export function SceneBrowser(props: Props) {
         </div>
         {/* モードBでは件数に関わらず操作要素を1個に保つため、一覧をselectに畳む。 */}
         {simple && shots.length > 0 && (
-          <select aria-label="Shot" value={shotId ?? ""}
+          <select aria-label="Shot" value={shots.some((s) => s.id === shotId) ? shotId ?? "" : ""}
             onChange={(event) => { if (event.target.value) onSelectShot(event.target.value); }}>
-            {(!shotId || !shots.some((s) => s.id === shotId)) && <option value="">選択してください</option>}
+            {!shots.some((s) => s.id === shotId) && <option value="">選択してください</option>}
             {shots.map((item) => (
               <option key={item.id} value={item.id}>#{item.sequence} {item.summary}</option>
             ))}

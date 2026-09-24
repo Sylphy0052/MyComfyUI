@@ -118,9 +118,7 @@ export function readUrlUiState(search: string): Partial<UiState> {
   // modeが無ければラボで開く。modeが明示されていればそちらを優先する。
   const mode = pickEnum(MODE_VALUES, params.get(PARAM_NAMES.mode));
   if (mode) partial.mode = mode;
-  else if (params.has(PARAM_NAMES.view) || params.has(PARAM_NAMES.generationTab)) {
-    partial.mode = "lab";
-  }
+  else if (view || generationTab || imageSubTab) partial.mode = "lab";
 
   return partial;
 }
@@ -218,7 +216,8 @@ export function toSearchString(state: UiState): string {
   // modeの無いview/tab付きURLはラボとして読むため、view/tabを書くときはmodeも明示する。
   const hasLabPosition =
     state.view !== DEFAULT_UI_STATE.view ||
-    state.generationTab !== DEFAULT_UI_STATE.generationTab;
+    state.generationTab !== DEFAULT_UI_STATE.generationTab ||
+    state.imageSubTab !== DEFAULT_UI_STATE.imageSubTab;
   if (state.mode !== DEFAULT_UI_STATE.mode || hasLabPosition) {
     params.set(PARAM_NAMES.mode, state.mode);
   }
