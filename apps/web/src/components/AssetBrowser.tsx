@@ -31,7 +31,6 @@ const KIND_OPTIONS = [
   { value: "image", label: "画像" },
   { value: "video", label: "動画" },
   { value: "audio", label: "音声・音楽" },
-  { value: "workflow", label: "Workflowスナップショット" },
   { value: "log", label: "ログ" },
 ];
 
@@ -42,6 +41,8 @@ const AVAILABILITY_OPTIONS = [
 
 /** 一度に取る件数。資産ブラウザは全件走査ではなく新しい順の窓で見る。 */
 const PAGE_SIZE = 60;
+// Workflowスナップショットは生成の記録で、資産として扱わない。
+const EXCLUDED_KINDS = ["workflow"];
 
 /**
  * 選択したArtifactの出自。Artifact自体は持たず、一覧側の最新の値を使う。
@@ -152,6 +153,7 @@ export function AssetBrowser({
           lineageArtifactId: lineageArtifactId ?? undefined,
           lineageJobId: lineageJobId ?? undefined,
           trashed,
+          excludeKinds: EXCLUDED_KINDS,
           limit: PAGE_SIZE,
         });
         if (!active) return;
