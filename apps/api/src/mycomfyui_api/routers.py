@@ -2552,6 +2552,7 @@ def _artifact_filters(
     availability: str | None = None,
     tags: list[str] | None = None,
     trashed: bool = False,
+    exclude_kinds: list[str] | None = None,
 ) -> Select[tuple[Artifact]]:
     """Artifactの絞り込み条件を組み立てる。条件はすべてANDで重ねる。
 
@@ -2581,6 +2582,8 @@ def _artifact_filters(
             query = query.where(Artifact.assigned_shot_id == shot_id)
     if kind is not None:
         query = query.where(Artifact.kind == kind)
+    if exclude_kinds:
+        query = query.where(Artifact.kind.not_in(exclude_kinds))
     if decision is not None:
         query = query.where(Artifact.decision == decision)
     if availability is not None:
@@ -2655,6 +2658,7 @@ async def list_artifacts(
     lineage_artifact_id: str | None = None,
     lineage_job_id: str | None = None,
     trashed: bool = False,
+    exclude_kind: Annotated[list[schemas.ArtifactKind] | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
@@ -2665,6 +2669,8 @@ async def list_artifacts(
     Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
     現在のProject所属を持たないArtifactだけへ絞る。
     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
+    `exclude_kind`は複数指定でき、指定した種別を除く。一覧から記録用の種別だけを外す
+    用途では、取得後に除くとページの件数が欠けるためDB側で除く。
 
     `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
     は`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の
@@ -2692,6 +2698,7 @@ async def list_artifacts(
         availability=availability,
         tags=tag,
         trashed=trashed,
+        exclude_kinds=exclude_kind,
     )
     query, truncated = await _apply_lineage_filters(
         session,
@@ -2908,6 +2915,7 @@ async def list_media_items(
     source: schemas.MediaItemSource | None = None,
     role: schemas.MediaRole | None = None,
     character_id: str | None = None,
+    exclude_kind: Annotated[list[schemas.ArtifactKind] | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
@@ -2922,6 +2930,7 @@ async def list_media_items(
     `shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを
     持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った
     結果を返す。`character_reference`もProject単位のまま返す。
+    `exclude_kind`は複数指定でき、指定した種別を全系統から除く。
 
     絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って
     から並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと
@@ -2940,6 +2949,7 @@ async def list_media_items(
     character_id = character_id or None
 
     window = offset + limit
+    excluded_kinds = set(exclude_kind or [])
     items: list[schemas.MediaItemRead] = []
     tag_conditions = _media_role_tag_conditions(role, character_id)
 
@@ -2957,6 +2967,7 @@ async def list_media_items(
             unassigned=unassigned,
             job_id=None,
             kind=kind,
+            exclude_kinds=exclude_kind,
         )
         imported = select(ArtifactImport.artifact_id)
         if source == "generated":
@@ -3012,7 +3023,12 @@ async def list_media_items(
     # 2) 役割タグを付けた入力cacheファイル (registered_input)。種別はmedia_typeから
     #    決まり、画像か音声のどちらかになる。
     input_tags: list[MediaRoleTag] = []
-    if source in (None, "registered_input") and kind in (None, "image", "audio"):
+    input_kinds = {
+        value
+        for value in ("image", "audio")
+        if kind in (None, value) and value not in excluded_kinds
+    }
+    if source in (None, "registered_input") and input_kinds:
         input_tag_query = (
             select(MediaRoleTag)
             .where(MediaRoleTag.relative_path.is_not(None), *tag_conditions)
@@ -3030,11 +3046,11 @@ async def list_media_items(
             input_tag_query = input_tag_query.where(
                 MediaRoleTag.assigned_project_id.is_(None)
             )
-        if kind == "audio":
+        if input_kinds == {"audio"}:
             input_tag_query = input_tag_query.where(
                 MediaRoleTag.media_type.like("audio/%")
             )
-        elif kind == "image":
+        elif input_kinds == {"image"}:
             input_tag_query = input_tag_query.where(
                 or_(
                     MediaRoleTag.media_type.is_(None),
@@ -3082,10 +3098,10 @@ async def list_media_items(
                 if character_id is not None and character.id != character_id:
                     continue
                 for reference in character.reference_images:
+                    reference_kind = _media_item_kind(reference.media_type)
                     if (
-                        kind is not None
-                        and _media_item_kind(reference.media_type) != kind
-                    ):
+                        kind is not None and reference_kind != kind
+                    ) or reference_kind in excluded_kinds:
                         continue
                     items.append(
                         schemas.MediaItemRead(
@@ -3240,6 +3256,7 @@ async def list_artifact_integrity(
         list[schemas.ArtifactTagValue] | None, Query(max_length=MAX_TAG_FILTERS)
     ] = None,
     reason: Annotated[list[schemas.ArtifactIntegrityReason] | None, Query()] = None,
+    exclude_kind: Annotated[list[schemas.ArtifactKind] | None, Query()] = None,
     include_canon: bool = True,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -3251,6 +3268,7 @@ async def list_artifact_integrity(
     判定し、まだ対象が残っている場合は`truncated`を`true`にする。
 
     `reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。
+    `exclude_kind`は複数指定でき、指定した種別を判定の対象から除く。
     `include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。
     このとき`canon_available`は`false`になる。判定した結果として更新が無かったのか、
     そもそも見ていないのかを取り違えさせない。
@@ -3273,6 +3291,7 @@ async def list_artifact_integrity(
         job_id=job_id,
         kind=kind,
         tags=tag,
+        exclude_kinds=exclude_kind,
     )
     result = await session.execute(query.limit(limit + 1).offset(offset))
     candidates = list(result.scalars().all())
