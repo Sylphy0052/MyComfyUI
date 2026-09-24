@@ -170,6 +170,8 @@ interface MediaImpact {
   unknownTime: number;
 }
 
+const VOICE_REFERENCE_PAGE_SIZE = 200;
+
 /**
  * 選んだキャラクターに`voice_reference`で紐付いた参照音声の確認・追加・解除 (#287)。
  * 専用endpointは作らず、既存の`listMediaItems`と`upsertMediaRoleTag`で足りる範囲へ絞る。
@@ -190,8 +192,22 @@ function VoiceReferenceSection({
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    api
-      .listMediaItems({ projectId, role: "voice_reference", limit: 200 })
+    // APIの`limit`上限(200)で切れないよう、1ページに満たなくなるまで辿る。
+    const loadAll = async () => {
+      const found: MediaItem[] = [];
+      for (let offset = 0; ; offset += VOICE_REFERENCE_PAGE_SIZE) {
+        const page = await api.listMediaItems({
+          projectId,
+          role: "voice_reference",
+          limit: VOICE_REFERENCE_PAGE_SIZE,
+          offset,
+        });
+        found.push(...page);
+        // アンマウント後は残りのページを取りに行かない。
+        if (!alive || page.length < VOICE_REFERENCE_PAGE_SIZE) return found;
+      }
+    };
+    loadAll()
       .then((found) => alive && setItems(found))
       .catch((cause) => alive && setError(describe(cause)))
       .finally(() => alive && setLoading(false));
@@ -200,10 +216,8 @@ function VoiceReferenceSection({
     };
   }, [projectId, reloadToken]);
 
-  const itemKey = (item: MediaItem) => item.artifact_id ?? item.relative_path;
-
   const toggle = async (item: MediaItem, attach: boolean) => {
-    setBusyKey(itemKey(item));
+    setBusyKey(item.key);
     setError(null);
     try {
       const characterIds = attach
@@ -242,7 +256,7 @@ function VoiceReferenceSection({
       {linked.length === 0 && !loading && <p className="muted">紐付いた参照音声はありません。</p>}
       <ul className="list">
         {linked.map((item) => (
-          <li key={itemKey(item)} className="row spread">
+          <li key={item.key} className="row spread">
             <span>{item.label ?? item.relative_path}</span>
             {item.artifact_id && (
               <audio src={api.artifactContentUrl(item.artifact_id)} controls />
@@ -258,7 +272,7 @@ function VoiceReferenceSection({
           <summary>他の参照音声から追加</summary>
           <ul className="list">
             {unlinked.map((item) => (
-              <li key={itemKey(item)} className="row spread">
+              <li key={item.key} className="row spread">
                 <span>{item.label ?? item.relative_path}</span>
                 <Button disabled={busyKey !== null} onClick={() => void toggle(item, true)}>
                   追加
