@@ -2493,6 +2493,7 @@ async def delete_media_role_tag(
         )
     if relative_path:
         # PUTと同じ検証を通し、登録できない形のパスは照合せずに弾く。
+        # PUTは正規化した値(前後の空白を除いた値)で記録するため、照合も同じ値で行う。
         try:
             relative_path = schemas.input_cache_relative_path(relative_path)
         except ValueError as error:

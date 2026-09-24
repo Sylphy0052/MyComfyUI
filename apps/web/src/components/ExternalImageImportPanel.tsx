@@ -38,6 +38,8 @@ export function ExternalImageImportPanel({ assignment, onImported }: Props) {
   const [characterIds, setCharacterIds] = useState<string[]>([]);
 
   useEffect(() => {
+    // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾く。
+    setCharacterIds([]);
     if (!assignment.project_id) {
       setCharacters([]);
       return;

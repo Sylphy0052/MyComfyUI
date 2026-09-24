@@ -231,6 +231,8 @@ export function MediaPicker({
   const needsArtifacts = sources.includes("generated") || sources.includes("registered");
 
   useEffect(() => {
+    // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾く。
+    setCharacterIds([]);
     if (!enableRoleTagging || !projectId) {
       setCharacters([]);
       return;
@@ -251,7 +253,8 @@ export function MediaPicker({
   }, [enableRoleTagging, projectId]);
 
   // 役割タグ付けは選択操作を待たせないため投げっぱなしにする。
-  // 応答前に閉じられたときはエラー表示を捨てる。
+  // 応答前に閉じられたときはエラー表示を捨てる。StrictModeの再マウントでも
+  // cleanupの後に本体が再実行されるため、本体でtrueへ戻す。
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
