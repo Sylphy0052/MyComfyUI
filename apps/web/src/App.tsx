@@ -208,12 +208,24 @@ export function App() {
   paneLayoutRef.current = paneLayout;
 
   useEffect(() => {
+    function clearPaneDrag() {
+      paneDragRef.current = null;
+      delete appRef.current?.dataset.paneDragging;
+    }
     function handlePointerMove(event: PointerEvent) {
       const drag = paneDragRef.current;
       if (!drag) return;
+      if (event.buttons === 0) {
+        // pointerupもpointercancelも届かずにボタンが離されていた場合の防御。
+        handlePointerUp();
+        return;
+      }
       const deltaX = event.clientX - drag.startX;
       const signedDelta = drag.side === "left" ? deltaX : -deltaX;
-      const nextWidth = clampPaneWidth(drag.startWidth + signedDelta);
+      const nextWidth = clampPaneWidth(
+        drag.startWidth + signedDelta,
+        drag.paneId,
+      );
       setPaneLayout((previous) => ({
         ...previous,
         widths: { ...previous.widths, [drag.paneId]: nextWidth },
@@ -221,12 +233,12 @@ export function App() {
     }
     function handlePointerUp() {
       if (!paneDragRef.current) return;
-      paneDragRef.current = null;
+      clearPaneDrag();
       persistPaneLayoutState(paneLayoutRef.current);
     }
     function handlePointerCancel() {
       // ドラッグ中にポインタが失われた場合も掴んだ状態を残さない。
-      paneDragRef.current = null;
+      clearPaneDrag();
     }
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
@@ -242,12 +254,15 @@ export function App() {
     (paneId: PaneId, side: "left" | "right") =>
       (event: ReactPointerEvent<HTMLDivElement>) => {
         event.preventDefault();
+        // ハンドル外へ出ても、window外でボタンを離してもpointerupを受け取れるようにする。
+        event.currentTarget.setPointerCapture(event.pointerId);
         paneDragRef.current = {
           paneId,
           side,
           startX: event.clientX,
           startWidth: paneLayoutRef.current.widths[paneId],
         };
+        if (appRef.current) appRef.current.dataset.paneDragging = "true";
       },
     [],
   );
@@ -265,7 +280,10 @@ export function App() {
       if (step === undefined) return;
       event.preventDefault();
       setPaneLayout((previous) => {
-        const nextWidth = clampPaneWidth(previous.widths[paneId] + step);
+        const nextWidth = clampPaneWidth(
+          previous.widths[paneId] + step,
+          paneId,
+        );
         const next: PaneLayoutState = {
           ...previous,
           widths: { ...previous.widths, [paneId]: nextWidth },
