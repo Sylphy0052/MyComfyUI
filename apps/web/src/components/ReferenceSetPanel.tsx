@@ -15,8 +15,7 @@ import type {
   ProjectReferenceSlot,
   Recipe,
 } from "../api/client";
-import { REFERENCE_SLOTS, slotPrompt } from "../state/referenceSlots";
-import type { ReferenceSlotKey } from "../state/referenceSlots";
+import { REFERENCE_SLOTS, slotPrompt, type ReferenceSlotKey } from "../state/referenceSlots";
 import { MediaPicker, toReferenceImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 import { Button } from "./ui/Button";
