@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { ApiError, api } from "../api/client";
 import type {
@@ -26,6 +27,8 @@ interface Props {
   onCompare: (experimentId: string, jobIds: string[]) => void;
   /** Project未選択の案内から、シーン一覧のProjectセレクトへ移る。 */
   onSelectProject: () => void;
+  /** 実験一覧の描画先。右カラムに置かれたDOMノードへportalし、フォームは左カラムに残す (#317)。 */
+  resultSlot?: HTMLElement | null;
 }
 
 function describe(error: unknown): string {
@@ -54,6 +57,7 @@ export function GenerationSweepPanel({
   activeComparisonId,
   onCompare,
   onSelectProject,
+  resultSlot,
 }: Props) {
   const [name, setName] = useState("探索スイープ");
   const [recipeId, setRecipeId] = useState("");
@@ -248,56 +252,12 @@ export function GenerationSweepPanel({
       </section>
     );
   }
-  return (
+  // 実験一覧は右カラムのresultSlotへportalする。未取得時 (初回描画・呼び出し元未対応) は
+  // フォームの下にそのまま表示し、一覧が見えなくならないようにする。
+  const experimentsPanel = (
     <section className="panel">
-      <h2>探索スイープ</h2>
+      <h2>探索実験一覧</h2>
       <div className="stack">
-        {error && <p className="error">{error}</p>}
-        <label>実験名<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label>ベース (Recipe)<select value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>展開方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="cartesian">直積</option><option value="zip">zip</option></select></label>
-        {promptDiff ? (
-          <PromptDiffReview
-            fields={promptDiff}
-            onCancel={() => setPromptDiff(null)}
-            onAccept={(result) => {
-              if ("positive_prompt" in result) setPrompt(result.positive_prompt);
-              if ("negative_prompt" in result) setNegative(result.negative_prompt);
-              setPromptDiff(null);
-            }}
-          />
-        ) : (
-          <PromptAssist
-            providers={providers}
-            idPrefix="sweep"
-            recipeId={recipeId}
-            current={{ positive: prompt, negative }}
-            projectId={projectId}
-            placeholder="例: 夕暮れの海辺に立つ少女。構図は引きで。"
-            onApply={(result) => {
-              // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
-              setPromptDiff([
-                { key: "positive_prompt", label: "基本プロンプト", current: prompt, proposed: result.positive },
-                { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },
-              ]);
-            }}
-          />
-        )}
-        {/* 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。 */}
-        <label>基本プロンプト<textarea value={prompt} readOnly={promptDiff !== null} onChange={(event) => setPrompt(event.target.value)} /></label>
-        <label>ネガティブプロンプト<textarea value={negative} readOnly={promptDiff !== null} onChange={(event) => setNegative(event.target.value)} /></label>
-        <div className="row">
-          <label>seed<input value={seedAxis} onChange={(event) => setSeedAxis(event.target.value)} placeholder="-1,1,2" /></label>
-          <label>CFG<input value={cfgAxis} onChange={(event) => setCfgAxis(event.target.value)} placeholder="4,5,6" /></label>
-          <label>steps<input value={stepsAxis} onChange={(event) => setStepsAxis(event.target.value)} placeholder="20,30" /></label>
-        </div>
-        <label>プロンプト断片（1行1候補）<textarea value={fragmentAxis} onChange={(event) => setFragmentAxis(event.target.value)} /></label>
-        <LookProfileManager kind="image" recipe={recipe} selectedIds={lookProfileIds} onSelectionChange={setLookProfileIds} />
-        <div className="row">
-          <button type="button" disabled={busy || !sceneId || !shotId || !recipeId} onClick={() => void runPreview()}>展開を確認</button>
-          <button type="button" className="primary" disabled={busy || !preview} onClick={() => void create()}>{busy ? "処理中..." : "確認した実験を作成"}</button>
-        </div>
-        {preview && <div><p>{preview.job_count}variant / 重複除外{preview.duplicate_count}件</p><ol>{preview.items.map((item) => <li key={item.ordinal} className="mono">#{item.ordinal + 1} {JSON.stringify(item.variables)}</li>)}</ol></div>}
         <div className="stack">
           {experiments.map((experiment) => {
             const jobIds = experiment.items.map((item) => item.job_id).filter((id): id is string => Boolean(id));
@@ -321,5 +281,62 @@ export function GenerationSweepPanel({
         </div>
       </div>
     </section>
+  );
+
+  return (
+    <>
+      <section className="panel">
+        <h2>探索スイープ</h2>
+        <div className="form-actions">
+          <button type="button" disabled={busy || !sceneId || !shotId || !recipeId} onClick={() => void runPreview()}>展開を確認</button>
+          <button type="button" className="primary" disabled={busy || !preview} onClick={() => void create()}>{busy ? "処理中..." : "確認した実験を作成"}</button>
+        </div>
+        <div className="stack">
+          {error && <p className="error">{error}</p>}
+          <label>実験名<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label>ベース (Recipe)<select value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label>展開方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="cartesian">直積</option><option value="zip">zip</option></select></label>
+          {promptDiff ? (
+            <PromptDiffReview
+              fields={promptDiff}
+              onCancel={() => setPromptDiff(null)}
+              onAccept={(result) => {
+                if ("positive_prompt" in result) setPrompt(result.positive_prompt);
+                if ("negative_prompt" in result) setNegative(result.negative_prompt);
+                setPromptDiff(null);
+              }}
+            />
+          ) : (
+            <PromptAssist
+              providers={providers}
+              idPrefix="sweep"
+              recipeId={recipeId}
+              current={{ positive: prompt, negative }}
+              projectId={projectId}
+              placeholder="例: 夕暮れの海辺に立つ少女。構図は引きで。"
+              onApply={(result) => {
+                // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+                setPromptDiff([
+                  { key: "positive_prompt", label: "基本プロンプト", current: prompt, proposed: result.positive },
+                  { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },
+                ]);
+              }}
+            />
+          )}
+          {/* 差分レビュー中に書き換えると、反映したときに書いた分が黙って消える。 */}
+          <label>基本プロンプト<textarea value={prompt} readOnly={promptDiff !== null} onChange={(event) => setPrompt(event.target.value)} /></label>
+          <label>ネガティブプロンプト<textarea value={negative} readOnly={promptDiff !== null} onChange={(event) => setNegative(event.target.value)} /></label>
+          <div className="row">
+            <label>seed<input value={seedAxis} onChange={(event) => setSeedAxis(event.target.value)} placeholder="-1,1,2" /></label>
+            <label>CFG<input value={cfgAxis} onChange={(event) => setCfgAxis(event.target.value)} placeholder="4,5,6" /></label>
+            <label>steps<input value={stepsAxis} onChange={(event) => setStepsAxis(event.target.value)} placeholder="20,30" /></label>
+          </div>
+          <label>プロンプト断片（1行1候補）<textarea value={fragmentAxis} onChange={(event) => setFragmentAxis(event.target.value)} /></label>
+          <LookProfileManager kind="image" recipe={recipe} selectedIds={lookProfileIds} onSelectionChange={setLookProfileIds} />
+          {preview && <div><p>{preview.job_count}variant / 重複除外{preview.duplicate_count}件</p><ol>{preview.items.map((item) => <li key={item.ordinal} className="mono">#{item.ordinal + 1} {JSON.stringify(item.variables)}</li>)}</ol></div>}
+        </div>
+      </section>
+      {resultSlot ? createPortal(experimentsPanel, resultSlot) : experimentsPanel}
+    </>
   );
 }

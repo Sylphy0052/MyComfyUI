@@ -428,6 +428,9 @@ export function App() {
   const [workflowDialogEl, setWorkflowDialogEl] = useState<HTMLDialogElement | null>(null);
   // 2つのdialogはどちらもモーダルで、同時には開かない。
   const toastDialogEl = comparisonDialogEl ?? workflowDialogEl;
+  // 探索スイープの実験一覧は結果カラム側へportalで出す (#317)。GenerationSweepPanel自体は
+  // 入力カラムに留めたまま、一覧部分だけこのDOMノードへ描画する。
+  const [sweepResultSlot, setSweepResultSlot] = useState<HTMLDivElement | null>(null);
   // ジョブ一覧を初めて取得した時点と、スコープ切替直後はnullに戻し、
   // 既存ジョブや無関係スコープのジョブを完了通知として出さないようにする。
   const previousJobStatesRef = useRef<Map<string, string> | null>(null);
@@ -1779,178 +1782,187 @@ export function App() {
               role="tabpanel"
               aria-labelledby="generation-tab-image"
               hidden={shownGenerationTab !== "image"}
-              className="image-workspace"
             >
-              <div className="image-input-column">
-                <nav
-                  className="image-subtabs"
-                  role="tablist"
-                  aria-label="画像の入力種別"
-                >
-                  {(isProduction
-                    ? IMAGE_SUBTABS.filter((item) => PRODUCTION_IMAGE_SUBTABS.has(item.value))
-                    : IMAGE_SUBTABS
-                  ).map((item) => (
-                    <button
-                      key={item.value}
-                      id={`image-subtab-${item.value}`}
-                      type="button"
-                      role="tab"
-                      aria-selected={shownImageSubTab === item.value}
-                      aria-controls={`image-subpanel-${item.value}`}
-                      tabIndex={shownImageSubTab === item.value ? 0 : -1}
-                      className={shownImageSubTab === item.value ? "primary" : undefined}
-                      onClick={() => setImageSubTab(item.value)}
-                      onKeyDown={(event) =>
-                        handleImageSubTabKeyDown(event, item.value)
-                      }
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </nav>
+              <nav
+                className="image-subtabs"
+                role="tablist"
+                aria-label="画像の入力種別"
+              >
+                {(isProduction
+                  ? IMAGE_SUBTABS.filter((item) => PRODUCTION_IMAGE_SUBTABS.has(item.value))
+                  : IMAGE_SUBTABS
+                ).map((item) => (
+                  <button
+                    key={item.value}
+                    id={`image-subtab-${item.value}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={shownImageSubTab === item.value}
+                    aria-controls={`image-subpanel-${item.value}`}
+                    tabIndex={shownImageSubTab === item.value ? 0 : -1}
+                    className={shownImageSubTab === item.value ? "primary" : undefined}
+                    onClick={() => setImageSubTab(item.value)}
+                    onKeyDown={(event) =>
+                      handleImageSubTabKeyDown(event, item.value)
+                    }
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
 
-                <div
-                  id="image-subpanel-generate"
-                  role="tabpanel"
-                  aria-labelledby="image-subtab-generate"
-                  hidden={shownImageSubTab !== "generate"}
-                >
-                  <GenerationForm
-                    projectId={projectId}
-                    recipes={txt2imgRecipes}
-                    submitting={submitting}
-                    onSubmit={submit}
-                    onPreview={preview}
-                    previewing={previewing}
-                    preview={previewResult}
-                    previewError={previewError}
-                    simple={isProduction}
-                    shortcutActive={isProduction && shownImageSubTab === "generate"}
-                    plan={generationPlan}
-                    restore={generationRestore}
-                    characters={localCharacters}
-                    onRegisterOutfit={registerCharacterOutfit}
-                  />
+              <div className="image-workspace">
+                <div className="image-input-column">
+                  <div
+                    id="image-subpanel-generate"
+                    role="tabpanel"
+                    aria-labelledby="image-subtab-generate"
+                    hidden={shownImageSubTab !== "generate"}
+                  >
+                    <GenerationForm
+                      projectId={projectId}
+                      recipes={txt2imgRecipes}
+                      submitting={submitting}
+                      onSubmit={submit}
+                      onPreview={preview}
+                      previewing={previewing}
+                      preview={previewResult}
+                      previewError={previewError}
+                      simple={isProduction}
+                      shortcutActive={isProduction && shownImageSubTab === "generate"}
+                      plan={generationPlan}
+                      restore={generationRestore}
+                      characters={localCharacters}
+                      onRegisterOutfit={registerCharacterOutfit}
+                    />
+                  </div>
+
+                  <div
+                    id="image-subpanel-change"
+                    role="tabpanel"
+                    aria-labelledby="image-subtab-change"
+                    hidden={shownImageSubTab !== "change"}
+                  >
+                    <ImageChangePanel
+                      projectId={projectId}
+                      sceneId={sceneId}
+                      shotId={shotId}
+                      recipes={changeRecipes}
+                      recipesLoading={recipesLoading}
+                      recipesError={recipesError}
+                      onRetryRecipes={() => setRecipesRetryToken((token) => token + 1)}
+                      sourceArtifactId={derivationSourceArtifactId}
+                      onSourceArtifactChange={setDerivationSourceArtifactId}
+                      onSubmittedJob={handleDerivedJob}
+                      onManageWorkflows={() => {
+                        // Workflow管理はラボにだけあるため、作品制作から開いたときもラボへ移る。
+                        setMode("lab");
+                        setWorkflowDialogOpen(true);
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    id="image-subpanel-derive"
+                    role="tabpanel"
+                    aria-labelledby="image-subtab-derive"
+                    hidden={shownImageSubTab !== "derive"}
+                  >
+                    <ImageDerivationPanel
+                      projectId={projectId}
+                      sceneId={sceneId}
+                      shotId={shotId}
+                      recipes={derivationRecipes}
+                      recipesLoading={recipesLoading}
+                      recipesError={recipesError}
+                      onRetryRecipes={() => setRecipesRetryToken((token) => token + 1)}
+                      sourceArtifactId={derivationSourceArtifactId}
+                      onSourceArtifactChange={setDerivationSourceArtifactId}
+                      onSubmittedJob={handleDerivedJob}
+                      onManageWorkflows={() => setWorkflowDialogOpen(true)}
+                    />
+                  </div>
+
+                  <div
+                    id="image-subpanel-sweep"
+                    role="tabpanel"
+                    aria-labelledby="image-subtab-sweep"
+                    hidden={shownImageSubTab !== "sweep"}
+                  >
+                    <GenerationSweepPanel
+                      active={
+                        shownView === "generate" &&
+                        shownGenerationTab === "image" &&
+                        shownImageSubTab === "sweep"
+                      }
+                      projectId={projectId}
+                      sceneId={sceneId}
+                      shotId={shotId}
+                      recipes={txt2imgRecipes}
+                      onJobsChanged={() => { void refreshJobs().catch((cause) => setError(describe(cause))); }}
+                      activeComparisonId={comparisonExperimentId}
+                      onCompare={compareExperiment}
+                      onSelectProject={focusProjectSelect}
+                      resultSlot={sweepResultSlot}
+                    />
+                  </div>
                 </div>
 
-                <div
-                  id="image-subpanel-change"
-                  role="tabpanel"
-                  aria-labelledby="image-subtab-change"
-                  hidden={shownImageSubTab !== "change"}
-                >
-                  <ImageChangePanel
-                    projectId={projectId}
-                    sceneId={sceneId}
-                    shotId={shotId}
-                    recipes={changeRecipes}
-                    recipesLoading={recipesLoading}
-                    recipesError={recipesError}
-                    onRetryRecipes={() => setRecipesRetryToken((token) => token + 1)}
-                    sourceArtifactId={derivationSourceArtifactId}
-                    onSourceArtifactChange={setDerivationSourceArtifactId}
-                    onSubmittedJob={handleDerivedJob}
-                    onManageWorkflows={() => {
-                      // Workflow管理はラボにだけあるため、作品制作から開いたときもラボへ移る。
-                      setMode("lab");
-                      setWorkflowDialogOpen(true);
+                <div className="image-result-column">
+                  {promotionCandidate && !isProduction && (
+                    <PresetPromotionPanel
+                      key={promotionCandidate.artifact.id}
+                      candidate={promotionCandidate}
+                      onClose={() => setPromotionArtifactId(null)}
+                    />
+                  )}
+                  {runningJob && (
+                    <JobProgressPanel
+                      key={runningJob.id}
+                      job={runningJob}
+                      progress={
+                        jobProgress?.jobId === runningJob.id ? jobProgress : null
+                      }
+                    />
+                  )}
+                  <LatestImageViewer
+                    job={latestSucceededJob}
+                    images={latestImages}
+                  />
+                  <CandidateGallery
+                    candidates={visibleCandidates}
+                    busyArtifactId={busyArtifactId}
+                    onDecide={decide}
+                    onDerive={(artifactId) => {
+                      setDerivationSourceArtifactId(artifactId);
+                      setImageSubTab("derive");
+                    }}
+                    onChangeSource={(artifactId) => {
+                      setDerivationSourceArtifactId(artifactId);
+                      setImageSubTab("change");
+                    }}
+                    onPromoteToPreset={setPromotionArtifactId}
+                    onApplySettings={applyGenerationSettings}
+                    onRevisedJob={handleRevisedJob}
+                    active={shownView === "generate" && shownGenerationTab === "image"}
+                    simple={isProduction}
+                    comparisonActive={comparisonJobIds !== null}
+                    onDialogOpenChange={setComparisonDialogEl}
+                    onClearComparison={() => {
+                      comparisonRequestSequence.current += 1;
+                      setComparisonJobIds(null);
+                      setComparisonArtifactsByJob({});
+                      setComparisonExperimentId(null);
                     }}
                   />
-                </div>
 
-                <div
-                  id="image-subpanel-derive"
-                  role="tabpanel"
-                  aria-labelledby="image-subtab-derive"
-                  hidden={shownImageSubTab !== "derive"}
-                >
-                  <ImageDerivationPanel
-                    projectId={projectId}
-                    sceneId={sceneId}
-                    shotId={shotId}
-                    recipes={derivationRecipes}
-                    recipesLoading={recipesLoading}
-                    recipesError={recipesError}
-                    onRetryRecipes={() => setRecipesRetryToken((token) => token + 1)}
-                    sourceArtifactId={derivationSourceArtifactId}
-                    onSourceArtifactChange={setDerivationSourceArtifactId}
-                    onSubmittedJob={handleDerivedJob}
-                    onManageWorkflows={() => setWorkflowDialogOpen(true)}
+                  {/* 探索スイープの実験一覧はGenerationSweepPanelがportalで描画する。スイープタブの間だけ見せる。 */}
+                  <div
+                    className="image-sweep-experiments"
+                    ref={setSweepResultSlot}
+                    hidden={shownImageSubTab !== "sweep"}
                   />
                 </div>
-
-                <div
-                  id="image-subpanel-sweep"
-                  role="tabpanel"
-                  aria-labelledby="image-subtab-sweep"
-                  hidden={shownImageSubTab !== "sweep"}
-                >
-                  <GenerationSweepPanel
-                    active={
-                      shownView === "generate" &&
-                      shownGenerationTab === "image" &&
-                      shownImageSubTab === "sweep"
-                    }
-                    projectId={projectId}
-                    sceneId={sceneId}
-                    shotId={shotId}
-                    recipes={txt2imgRecipes}
-                    onJobsChanged={() => { void refreshJobs().catch((cause) => setError(describe(cause))); }}
-                    activeComparisonId={comparisonExperimentId}
-                    onCompare={compareExperiment}
-                    onSelectProject={focusProjectSelect}
-                  />
-                </div>
-              </div>
-
-              <div className="image-result-column">
-                {promotionCandidate && !isProduction && (
-                  <PresetPromotionPanel
-                    key={promotionCandidate.artifact.id}
-                    candidate={promotionCandidate}
-                    onClose={() => setPromotionArtifactId(null)}
-                  />
-                )}
-                {runningJob && (
-                  <JobProgressPanel
-                    key={runningJob.id}
-                    job={runningJob}
-                    progress={
-                      jobProgress?.jobId === runningJob.id ? jobProgress : null
-                    }
-                  />
-                )}
-                <LatestImageViewer
-                  job={latestSucceededJob}
-                  images={latestImages}
-                />
-                <CandidateGallery
-                  candidates={visibleCandidates}
-                  busyArtifactId={busyArtifactId}
-                  onDecide={decide}
-                  onDerive={(artifactId) => {
-                    setDerivationSourceArtifactId(artifactId);
-                    setImageSubTab("derive");
-                  }}
-                  onChangeSource={(artifactId) => {
-                    setDerivationSourceArtifactId(artifactId);
-                    setImageSubTab("change");
-                  }}
-                  onPromoteToPreset={setPromotionArtifactId}
-                  onApplySettings={applyGenerationSettings}
-                  onRevisedJob={handleRevisedJob}
-                  active={shownView === "generate" && shownGenerationTab === "image"}
-                  simple={isProduction}
-                  comparisonActive={comparisonJobIds !== null}
-                  onDialogOpenChange={setComparisonDialogEl}
-                  onClearComparison={() => {
-                    comparisonRequestSequence.current += 1;
-                    setComparisonJobIds(null);
-                    setComparisonArtifactsByJob({});
-                    setComparisonExperimentId(null);
-                  }}
-                />
               </div>
             </div>
 

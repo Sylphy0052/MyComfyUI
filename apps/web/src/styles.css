@@ -860,7 +860,7 @@ details summary {
 
 .image-workspace:not([hidden]) {
   display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(380px, 1fr) minmax(0, 1fr);
   gap: var(--space-6);
   align-items: start;
 }
@@ -871,23 +871,23 @@ details summary {
   }
 }
 
-/* 入力カラムは追従させ、結果を見ながら投入できるようにする。 */
 .image-input-column {
+  min-width: 0;
+}
+
+/* 結果カラムを追従させ、左カラムをスクロールしても最新画像が見えたままにする。 */
+.image-result-column {
   position: sticky;
   top: 12px;
   min-width: 0;
-  /* ヘッダとタブ列の分を引き、ページ最上部でも投入バーが画面内へ収まる高さにする。 */
+  /* ヘッダとサブタブ列の分を引き、ページ最上部でも画面内へ収まる高さにする。 */
   max-height: calc(100vh - 140px);
   overflow-y: auto;
 }
 
-.image-result-column {
-  min-width: 0;
-}
-
-/* 1カラムへ落ちた場合は、入力カラムの追従と内部スクロールを解除する。 */
+/* 1カラムへ落ちた場合は、結果カラムの追従と内部スクロールを解除する。 */
 @container (max-width: 720px) {
-  .image-input-column {
+  .image-result-column {
     position: static;
     max-height: none;
     overflow-y: visible;
@@ -972,17 +972,18 @@ details summary {
   min-width: 0;
 }
 
+/* 投入操作はパネルの長さに関わらず押せるよう、上端へ固定する。 */
 .form-actions {
   position: sticky;
-  bottom: 0;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  margin: var(--space-6) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+  margin: 0 calc(-1 * var(--space-6)) var(--space-6);
   padding: var(--space-5) var(--space-6);
   background: var(--color-surface);
-  border-top: var(--border-default);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-bottom: var(--border-default);
 }
 
 .gallery video,
