@@ -21,6 +21,9 @@ const REASON_ORDER: ArtifactIntegrityReason[] = [
 /** 判定対象の範囲。返る件数ではなく、実ファイルを読んで判定する上限である。 */
 const CHECK_LIMIT = 100;
 
+/** Workflowスナップショットは生成の記録で、資産として扱わない。 */
+const EXCLUDED_KINDS = ["workflow"];
+
 interface Props {
   sceneId: string | null;
   shotId: string | null;
@@ -54,6 +57,7 @@ export function IntegrityList({ sceneId, shotId }: Props) {
           sceneId: sceneId ?? undefined,
           shotId: shotId ?? undefined,
           reasons: reasons.length > 0 ? reasons : undefined,
+          excludeKinds: EXCLUDED_KINDS,
           includeCanon,
           limit: CHECK_LIMIT,
         });

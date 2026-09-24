@@ -27,7 +27,9 @@ const SOURCE_LABEL: Record<MediaItemSource, string> = {
 };
 const SOURCE_OPTIONS = Object.keys(SOURCE_LABEL) as MediaItemSource[];
 
-const KIND_OPTIONS = ["image", "audio", "video", "workflow", "log"];
+const KIND_OPTIONS = ["image", "audio", "video", "log"];
+/** Workflowスナップショットは生成の記録で、資産として扱わない。 */
+const EXCLUDED_KINDS = ["workflow"];
 
 interface Props {
   projectId: string | null;
@@ -94,6 +96,7 @@ export function MediaLibrary({ projectId, sceneId, shotId }: Props) {
         source: source || undefined,
         role: role || undefined,
         characterId: characterId || undefined,
+        excludeKinds: EXCLUDED_KINDS,
         limit: PAGE_SIZE,
       })
       .then((found) => {

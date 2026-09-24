@@ -840,6 +840,7 @@ export const api = {
     kind?: string;
     tags?: string[];
     reasons?: ArtifactIntegrityReason[];
+    excludeKinds?: string[];
     includeCanon?: boolean;
     limit?: number;
     offset?: number;
@@ -853,6 +854,8 @@ export const api = {
     if (params.kind) query.set("kind", params.kind);
     for (const tag of params.tags ?? []) query.append("tag", tag);
     for (const reason of params.reasons ?? []) query.append("reason", reason);
+    for (const kind of params.excludeKinds ?? [])
+      query.append("exclude_kind", kind);
     if (params.includeCanon !== undefined)
       query.set("include_canon", String(params.includeCanon));
     if (params.limit) query.set("limit", String(params.limit));
@@ -1080,6 +1083,7 @@ export const api = {
     source?: MediaItemSource;
     role?: MediaRole;
     characterId?: string;
+    excludeKinds?: string[];
     limit?: number;
     offset?: number;
   }) => {
@@ -1092,6 +1096,8 @@ export const api = {
     if (params.source) query.set("source", params.source);
     if (params.role) query.set("role", params.role);
     if (params.characterId) query.set("character_id", params.characterId);
+    for (const kind of params.excludeKinds ?? [])
+      query.append("exclude_kind", kind);
     if (params.limit) query.set("limit", String(params.limit));
     if (params.offset) query.set("offset", String(params.offset));
     const suffix = query.toString() ? `?${query.toString()}` : "";
