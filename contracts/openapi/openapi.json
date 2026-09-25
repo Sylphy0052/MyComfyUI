@@ -3313,6 +3313,13 @@
             "title": "Rationale",
             "type": "string"
           },
+          "tag_glosses": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePromptTagGloss"
+            },
+            "title": "Tag Glosses",
+            "type": "array"
+          },
           "tag_line": {
             "default": "",
             "maxLength": 4000,
@@ -3328,6 +3335,26 @@
           "model"
         ],
         "title": "ImagePromptAssistRead",
+        "type": "object"
+      },
+      "ImagePromptTagGloss": {
+        "additionalProperties": false,
+        "description": "prompt補完結果のタグ1つと、その日本語訳。",
+        "properties": {
+          "ja": {
+            "title": "Ja",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag",
+          "ja"
+        ],
+        "title": "ImagePromptTagGloss",
         "type": "object"
       },
       "ImageReferenceCreate": {

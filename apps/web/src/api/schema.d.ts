@@ -3467,11 +3467,23 @@ export interface components {
             provider_id: "claude_code" | "codex" | "qwen" | "stub";
             /** Rationale */
             rationale: string;
+            /** Tag Glosses */
+            tag_glosses?: components["schemas"]["ImagePromptTagGloss"][];
             /**
              * Tag Line
              * @default
              */
             tag_line: string;
+        };
+        /**
+         * ImagePromptTagGloss
+         * @description prompt補完結果のタグ1つと、その日本語訳。
+         */
+        ImagePromptTagGloss: {
+            /** Ja */
+            ja: string;
+            /** Tag */
+            tag: string;
         };
         /**
          * ImageReferenceCreate

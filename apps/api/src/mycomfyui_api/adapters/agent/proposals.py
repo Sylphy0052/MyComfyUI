@@ -143,10 +143,21 @@ class PromptBody(ProposalOutput):
     negative_prompt: str = Field(default="", max_length=MAX_NEGATIVE_PROMPT_LENGTH)
 
 
+class TagGloss(ProposalOutput):
+    """prompt案のタグ1つと、その日本語訳。利用者がタグの意味を確かめるのに使う。"""
+
+    tag: PromptTag
+    ja: str = Field(max_length=100)
+
+
 class ImagePromptOutput(PromptBody):
     """画像生成のprompt案。承認後の生成Job投入に使う。"""
 
     rationale: str = Field(default="", max_length=2000)
+    #: タグ配列の全タグの日本語訳。生成には使わず、表示だけに使う。
+    tag_glosses: list[TagGloss] = Field(
+        default_factory=list, max_length=MAX_PROMPT_TAGS * len(TAG_BLOCK_FIELDS)
+    )
 
 
 class VideoPromptOutput(ProposalOutput):
@@ -306,7 +317,11 @@ TAGS_STYLE_DIRECTIVE = (
 KIND_DIRECTIVES: dict[ProposalKind, str] = {
     "image_prompt": (
         "与えたShotまたは利用者説明に沿う画像生成promptを1件提案する。\n"
+        "current_positive_promptが与えられたときは、それを土台に利用者の指示の点だけを"
+        "直し、指示と関係の無いタグや文は残す。\n"
         + PROMPT_DIRECTIVE
+        + "\ntag_glossesには、タグ配列に入れた全てのタグについて、tagにタグをそのまま、"
+        "jaにその意味を短い日本語で書く。"
     ),
     "shot_breakdown": (
         "与えたSceneをShotへ分割する案を出す。各Shotの内容、カメラ、登場人物、"

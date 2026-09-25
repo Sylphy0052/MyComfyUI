@@ -291,6 +291,30 @@ textarea {
   resize: vertical;
 }
 
+/* prompt は長くなるため、既定で他の textarea より高くする。 */
+textarea.prompt-textarea {
+  min-height: 200px;
+}
+
+.tag-glosses dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 4px 0 0;
+}
+
+.tag-glosses dl > div {
+  display: contents;
+}
+
+.tag-glosses dt {
+  font-family: monospace;
+}
+
+.tag-glosses dd {
+  margin: 0;
+}
+
 .tag-extractor {
   margin-top: var(--space-4);
 }
