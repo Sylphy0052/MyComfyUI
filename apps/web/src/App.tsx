@@ -1572,14 +1572,6 @@ export function App() {
   };
 
   /**
-   * 指示でプロンプトを直した新しいJobは一覧へ反映するだけにし、選択は元のJobに残す (#303)。
-   * 選択を移すと元画像の詳細が閉じ、直したプロンプトの表示も消える。
-   */
-  const handleRevisedJob = () => {
-    void refreshJobs().catch((cause) => setError(describe(cause)));
-  };
-
-  /**
    * 生成済み画像の生成条件を生成フォームへ入れ、フォームを開く。
    * `scope`省略時は`"all"`。`"prompt"`/`"seed"`はRecipeの系譜解決を省き、対象の値だけ入れる (#320)。
    */
@@ -2052,7 +2044,6 @@ export function App() {
                     onApplySettings={applyGenerationSettings}
                     onApplyPromptOnly={applyPromptOnly}
                     onApplySeedOnly={applySeedOnly}
-                    onRevisedJob={handleRevisedJob}
                     active={shownView === "generate" && shownGenerationTab === "image"}
                     simple={isProduction}
                     comparisonActive={comparisonJobIds !== null}

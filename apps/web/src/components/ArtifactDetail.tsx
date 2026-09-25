@@ -5,7 +5,6 @@ import type {
   GenerationManifest,
   JobLineage,
 } from "../api/client";
-import { ArtifactPromptRevision } from "./ArtifactPromptRevision";
 import { KIND_LABEL, asText, shorten } from "./CanonWarning";
 
 const STATE_LABEL: Record<string, string> = {
@@ -34,7 +33,6 @@ export function ArtifactDetail({
   manifest,
   lineage,
   onApplySettings,
-  onRevisedJob,
 }: {
   artifact: Artifact;
   job: GenerationJob;
@@ -42,8 +40,6 @@ export function ArtifactDetail({
   lineage: JobLineage;
   /** 渡されたときだけ、生成条件を生成フォームへ戻すボタンを出す。 */
   onApplySettings?: () => void;
-  /** 渡されたときだけ、画像を見て指示でプロンプトを直す欄を出す (#303)。 */
-  onRevisedJob?: (job: GenerationJob) => void;
 }) {
   return (
     <div className="stack">
@@ -55,9 +51,6 @@ export function ArtifactDetail({
         </div>
       )}
       <ManifestDetail artifact={artifact} job={job} manifest={manifest} />
-      {onRevisedJob && artifact.kind === "image" && job.kind === "image" && (
-        <ArtifactPromptRevision key={artifact.id} artifactId={artifact.id} jobId={job.id} onRevisedJob={onRevisedJob} />
-      )}
       <Lineage lineage={lineage} currentJobId={job.id} />
     </div>
   );

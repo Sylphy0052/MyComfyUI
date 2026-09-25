@@ -41,8 +41,6 @@ interface Props {
   onApplyPromptOnly?: (job: GenerationJob, manifest: GenerationManifest) => void;
   /** 候補のseedだけを生成フォームへ戻す (#320)。 */
   onApplySeedOnly?: (job: GenerationJob, manifest: GenerationManifest) => void;
-  /** 渡されたときだけ、詳細に画像を見て指示でプロンプトを直す欄を出す (#303)。 */
-  onRevisedJob?: (job: GenerationJob) => void;
   active?: boolean;
   comparisonActive?: boolean;
   onClearComparison?: () => void;
@@ -148,7 +146,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, onRevisedJob, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
   const [storedDensity, setDensity] = useListDensity("candidates");
   // モードBは切替を出さないため、ラボで選んだ形式を持ち込まず従来の中サイズに固定する。
   const effectiveDensity = simple ? "m" : storedDensity;
@@ -486,7 +484,6 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
               onApplySettings &&
               (() => onApplySettings(selectedDetail.job, selectedDetail.manifest))
             }
-            onRevisedJob={onRevisedJob}
           />
         )}
         {!simple && detailArtifactId && selectedDetailError && (
