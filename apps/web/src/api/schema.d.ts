@@ -753,33 +753,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/generation-jobs/{job_id}/prompt-revisions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create Generation Prompt Revision
-         * @description 生成済み画像への指示でpromptを直し、新しいJobとして再投入する(#303)。
-         *
-         *     元Jobの入力をRecipeが受け付ける範囲で引き継ぎ、positive_prompt、negative_promptを
-         *     補完結果へ、seedを元の実値へ差し替える。Look Profileの値はresolved_promptと
-         *     parametersへ合成済みのため、look_profile_idsは渡さない (渡すと二重に掛かる)。
-         *     画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJob、
-         *     seedを受け付けないRecipeのJobは
-         *     Providerを呼ぶ前に``PROMPT_REVISION_UNSUPPORTED``で断る。
-         */
-        post: operations["create_generation_prompt_revision_api_v1_generation_jobs__job_id__prompt_revisions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/generation-jobs/{job_id}/regenerate": {
         parameters: {
             query?: never;
@@ -3367,26 +3340,6 @@ export interface components {
             workflow_name: string | null;
             /** Workflow Version Id */
             workflow_version_id: string | null;
-        };
-        /**
-         * GenerationPromptRevisionCreate
-         * @description 生成済み画像の指示によるprompt修正と再投入の要求。
-         */
-        GenerationPromptRevisionCreate: {
-            /** Artifact Id */
-            artifact_id: string;
-            /** Instruction */
-            instruction: string;
-            /** Provider Id */
-            provider_id?: ("claude_code" | "codex" | "qwen" | "stub") | null;
-        };
-        /**
-         * GenerationPromptRevisionRead
-         * @description 修正後promptで投入した新Jobと、補完結果を合わせて返す。
-         */
-        GenerationPromptRevisionRead: {
-            job: components["schemas"]["GenerationJobRead"];
-            prompt: components["schemas"]["ImagePromptAssistRead"];
         };
         /** GenerationSweepAxes */
         GenerationSweepAxes: {
@@ -6482,41 +6435,6 @@ export interface operations {
                 content: {
                     "image/jpeg": unknown;
                     "image/png": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_generation_prompt_revision_api_v1_generation_jobs__job_id__prompt_revisions_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GenerationPromptRevisionCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GenerationPromptRevisionRead"];
                 };
             };
             /** @description Validation Error */
