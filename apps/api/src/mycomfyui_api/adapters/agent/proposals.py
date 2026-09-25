@@ -736,6 +736,8 @@ def _record_dropped_items(data: dict[str, Any], dropped: int, reason: str) -> No
 def _append_rationale_note(data: dict[str, Any], note: str) -> None:
     """実装側で案を変えたことを`rationale`の末尾へ注記する。"""
     rationale = data.get("rationale") or ""
+    # タグの一覧を並べた注記は、それだけで上限を超えうる。
+    note = note[:MAX_RATIONALE_LENGTH]
     # 注記は必ず残す。末尾から切ると、説明が上限まで書かれているときに注記だけ消える。
     room = MAX_RATIONALE_LENGTH - len(note) - 1
     body = rationale[:room].rstrip() if room > 0 else ""
