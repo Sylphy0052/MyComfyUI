@@ -1,4 +1,4 @@
-# Qwen-Image (Anima) プロンプト規約 調査メモ
+# Anima プロンプト規約 調査メモ
 
 MyComfyUI の画像生成プロンプトを改善するにあたり、先行して運用実績のある `novel-writer` リポジトリ (`~/workspace/github/novel-writer`) のプロンプト規約を調査してまとめたもの。目的は次の 2 点を MyComfyUI 側へ持ち込むための下地づくりである。
 
@@ -307,7 +307,7 @@ output:
 
 「Qwen」という語がこのリポジトリでは 2 つの意味で使われている点にまず注意が要る。
 
-- **Qwen-Image 系ワークフロー** — ComfyUI 上の画像生成テンプレート (`anima_txt2img` など) が、CLIP の代わりに Qwen3 をテキストエンコーダとして使う構成 (`qwen_3_06b_base.safetensors` / `qwen_image_vae.safetensors`)
+- **Anima のワークフロー** — ComfyUI 上の画像生成テンプレート (`anima_txt2img` など) が、CLIP の代わりに Qwen3 をテキストエンコーダとして使う構成 (`qwen_3_06b_base.safetensors` / `qwen_image_vae.safetensors`)
 - **Qwen LLM (推論サーバー)** — `adapters/agent/qwen.py` の `QwenProvider` が OpenAI 互換 API 経由でローカル Qwen へプロンプト提案やタグ整理を依頼する
 
 プロンプト文字列を組み立てているのは後者の周辺である。
@@ -543,3 +543,34 @@ rating については、追記の初回に `rating:sensitive` という値が�
 作法を指示文へ書けば、27B の量子化モデルでも規約のうち機械的に確かめにくい部分 (識別属性の振り分け、アングルタグの位置) は守られる。一方で、書いていないこと (自然文の言語、rating の要否、空値の書き方) はモデルごと・経路ごとに揺れる。規約は「守らせたいことを漏れなく書く」必要がある。
 
 検証に使ったスクリプトは `~/.claude/bin/qwen-prompt-check.py` と `~/.claude/bin/qwen-batch-check.py` に置いた。接続先は `MYCOMFYUI_AGENT_QWEN_BASE_URL` と `MYCOMFYUI_AGENT_QWEN_MODEL` で渡す。
+
+## 13. 公式・コミュニティの作法の追加反映 (#392)
+
+novel-writer の実測に加えて、次の 2 つを出典として指示文との差分を洗い、足りないものを反映した。
+
+- 公式モデルカード: https://huggingface.co/circlestone-labs/Anima
+- コミュニティガイド: https://github.com/CalamitousFelicitousness/ai-prompting-guides/blob/main/docs/anima.md
+
+### 13.1 指示文 (`PROMPT_DIRECTIVE`) へ足したもの
+
+- キャラクター名だけに頼らない。`character_tags` では作品名をキャラクター名の直後に置き、外見は `general_tags` か `natural_text` で必ず書く。複数キャラを名前だけで並べるとモデルが取り違える (公式)
+- `natural_text` は 2〜3 文、50 語程度にする。5 節の実測値を指示文へ入れた
+- 服、キャラクター、画風はタグで書き、組み合わせた動作や構図は自然文で書く。ポーズは既知の Danbooru タグで表せるものだけをタグにする (コミュニティ)
+- タグは画像に関係するものだけを入れ、言い換えで水増ししない。学習時に tag dropout が使われているため、全部を並べる必要はない (公式)
+- `score_` で始まるタグだけはアンダースコアを残す。Danbooru と Gelbooru で表記が違えば Gelbooru に合わせる (公式)
+- 画像内の文字は 1 単語までにする (コミュニティ、6 節と同じ)
+- 自然文でキャラクター名を書くときは英語の通常の大文字表記にする (公式)
+
+### 13.2 実装で補うもの
+
+positive の rating より上の段階を negative へ足す。段階は `safe` < `sensitive` < `nsfw` < `explicit` で、positive が `safe` なら `sensitive, nsfw, explicit` を足す (コミュニティ)。`_attach_prompt_text` で提案の `negative_prompt` (追加分) へ入れるため、補完・バッチ計画・生成 Job 投入の 3 経路すべてに効く。
+
+### 13.3 見送ったもの
+
+- `score_7` など score タグの既定付与。aesthetic 版では score タグが画質を下げると作者が明言しており、既定の `chosenMixAnima_v10` がどの版に近いか判断できない
+- 重みの書式。Anima は SDXL より強い倍率 (`(chibi:2)` 程度) が要るとされるが、提案では重みを使わせていないため指示しない
+- turbo 版 (CFG 1) では negative が効かない。モデル別の切り替えは 11.7 節と同じく別 Issue とする
+
+### 13.4 呼称の訂正
+
+本メモと実装のコメントでは Anima を「Qwen-Image (Anima)」と呼んでいたが、Anima は Qwen-Image ではない。Cosmos Predict2 の DiT に Qwen3-0.6B のテキストエンコーダを組み合わせ、VAE だけ Qwen-Image のものを使う (1 節)。表題とコメントを「Anima」へ直した。ファイル名は実装のコメントから参照しているため変えていない。
