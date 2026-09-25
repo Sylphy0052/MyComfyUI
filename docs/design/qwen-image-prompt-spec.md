@@ -580,7 +580,7 @@ positive の rating より上の段階を negative へ足す。段階は `safe` 
 指示文や後処理を変えたときに良くなったか悪くなったかを数字で比べるため、評価セットと採点を入れた。
 
 - 評価セット: `apps/api/scripts/prompt_eval/cases.json` の 10 ケース。1 人、2 人、3 人、作品名付きのキャラクター、rating、人物なしの背景、画像内の文字、タグで表しにくい動作、`prompt_style=tags`、2 Shot のバッチ計画を含む。各ケースの `expect` に人数・必須タグ・rating の下限・バッチの件数を書く
-- 採点: `prompt_checks.check_output` が規則ごとの違反を返す。規則は `rating`, `subject_mix`, `identity_leak`, `natural_length`, `weight_syntax`, `underscore`, `conflict`, `unknown_tag` の 8 つで、評価スクリプトはこれに `expect` の照合を足す。`unknown_tag` はタグ辞書 (`MYCOMFYUI_TAG_DICTIONARY_PATH`) に無いタグを 1 件以上含む試行を数え、その割合を detail に出す。参考値であり合否には使わない
+- 採点: `prompt_checks.check_output` が規則ごとの違反を返す。規則は `rating`, `subject_mix`, `identity_leak`, `natural_length`, `weight_syntax`, `underscore`, `conflict`, `unknown_tag` の 8 つで、評価スクリプトはこれに `expect` の照合を足す。`unknown_tag` はタグ辞書 (`MYCOMFYUI_TAG_DICTIONARY_PATH`) に無いタグを 1 件以上含む試行を数える。試行内で辞書に無いタグの割合は detail に出す。参考値であり合否には使わない
 - 実行: `apps/api/scripts/prompt_eval.py` が routers と同じ組み立てと後処理を通した出力を採点し、違反率と平均所要時間を JSON へ書き出す。`--compare base.json head.json` で 2 つの結果を並べる
 
 ### 14.1 基準値 (2026-09-25)
@@ -590,9 +590,9 @@ positive の rating より上の段階を negative へ足す。段階は `safe` 
 - 対象: 10 ケース 30 試行。全試行で出力を得た
 - 平均所要時間: 29.4 秒
 - `natural_length`: 16/30。16 件とも自然文が 4 文で、語数は 55〜82 語。上限の 3 文を 1 文超える形がそろっている
-- `underscore`: 19/30。ほぼすべてが `@kana_komatsu` のような画家タグで、実在しない画家名を作ってアンダースコア付きで入れている
+- `underscore`: 19/30。19 件とも `@kana_komatsu` のような画家タグを含む。ケースの指示には画家名が無く、モデルが画家名を足してアンダースコア付きで書いている
 - `expect`: 6/30。`named_character_with_work_title` で `gotoh hitori` と作品名が欠ける (3/3)、`in_image_text` で人物なしの指示に `1girl` が入る (3/3)
-- `unknown_tag` (参考値): 20/30 の試行で辞書に無いタグが 1 件以上混ざる。全試行の平均では、タグの 37% が辞書に無い
+- `unknown_tag` (参考値): 20/30 の試行で辞書に無いタグが 1 件以上混ざる。試行ごとの「辞書に無いタグの割合」を 30 試行で平均すると 37% になる
 - `rating`, `subject_mix`, `identity_leak`, `weight_syntax`, `conflict`: 0/30
 
 `tags_style` (`prompt_style=tags`) だけは参考値以外の違反が出ていない。自然文を書かない経路では `natural_length` が起きず、画家タグも付かなかった。
