@@ -392,16 +392,29 @@ export function GenerationForm({
       if (value !== null && isParsableAs(spec, value)) filled[spec.name] = value;
     }
     // hires fix (#318) より前の画像はオフで生成されている。今の入力のオンを持ち越さない。
+    const targetSpecs = toFieldSpecs(target);
     if (
-      toFieldSpecs(target).some((spec) => spec.name === HIRES_ENABLED_FIELD_NAME) &&
+      targetSpecs.some((spec) => spec.name === HIRES_ENABLED_FIELD_NAME) &&
       filled[HIRES_ENABLED_FIELD_NAME] === undefined
     ) {
       filled[HIRES_ENABLED_FIELD_NAME] = "false";
     }
+    // オフの画像はhires fixの詳細を記録しない。今の入力を持ち越さず、Recipeの既定値へ戻す。
+    const targetDefaults = initialValues(target, targetSpecs);
+    const hiresDefaults: Record<string, string> = {};
+    for (const name of HIRES_FIELD_NAMES) {
+      if (filled[name] === undefined && targetDefaults[name] !== undefined) {
+        hiresDefaults[name] = targetDefaults[name];
+      }
+    }
     setUseInheritedDefaults(false);
     setLookProfileIds([]);
-    setValues((current) => ({ ...current, ...filled }));
-    setTouchedFields((current) => new Set([...current, ...Object.keys(filled)]));
+    setValues((current) => ({ ...current, ...hiresDefaults, ...filled }));
+    setTouchedFields((current) => {
+      const next = new Set([...current, ...Object.keys(filled)]);
+      for (const name of Object.keys(hiresDefaults)) next.delete(name);
+      return next;
+    });
     if (target.id !== recipeId) {
       pendingModelValuesRef.current = models;
       setRecipeId(target.id);
