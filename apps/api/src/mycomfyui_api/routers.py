@@ -48,7 +48,6 @@ from mycomfyui_api.adapters.aimedia.client import (
     AiMediaUnavailable,
     ReferenceSource,
 )
-from mycomfyui_api.adapters.comfyui import prepare as comfyui_prepare
 from mycomfyui_api.adapters.comfyui import workflow as comfyui_workflow
 from mycomfyui_api.adapters.comfyui.client import ComfyUIError
 from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
@@ -715,13 +714,8 @@ async def _submit_generation_job(
     session: AsyncSession,
     source: ReferenceSource,
     payload: schemas.GenerationJobCreate,
-    *,
-    extra_parameters: dict[str, Any] | None = None,
 ) -> GenerationJob:
-    """JobとManifestのIDを先行採番して作成する、Job投入の共通処理。
-
-    `/generation-jobs`と`/generation-jobs/{job_id}/prompt-revisions`が共有する。
-    """
+    """JobとManifestのIDを先行採番して作成する、Job投入の共通処理。"""
     await _validate_project_context(session, payload.project_id)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
@@ -733,16 +727,6 @@ async def _submit_generation_job(
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
     prepared = await _prepare_execution(recipe, effective, source, resolved, session)
     await _validate_resolved_models(recipe, prepared)
-    # extra_parametersはmanifest.parametersの末尾へ展開する記録で、同名のテンプレート
-    # 変数があると実際に生成へ使った値を上書きしてしまう。記録を書く前に断る。
-    conflicted = sorted(set(extra_parameters or {}) & set(prepared.parameters))
-    if conflicted:
-        raise ApiError(
-            "GENERATION_PARAMETER_CONFLICT",
-            "Recipeの変数名が生成記録用の項目名と重なっているため、投入できません。",
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            details={"recipe_id": recipe.id, "keys": conflicted},
-        )
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
     job_id = schemas.new_id()
@@ -760,7 +744,6 @@ async def _submit_generation_job(
             resolved,
             preferences,
             look_profiles,
-            extra_parameters,
         )
         await _persist_job_records(session, job, workflow_artifact, manifest)
     except Exception:
@@ -1477,7 +1460,6 @@ def _build_job_records(
     resolved: _ResolvedReferences,
     preferences: dict[str, Any] | None = None,
     look_profiles: list[dict[str, Any]] | None = None,
-    extra_parameters: dict[str, Any] | None = None,
 ) -> tuple[GenerationJob, Artifact, GenerationManifest]:
     manifest_id = schemas.new_id()
     workflow_artifact_id = schemas.new_id()
@@ -1540,7 +1522,6 @@ def _build_job_records(
                 if preferences
                 else {}
             ),
-            **(extra_parameters or {}),
         },
         input_refs=_merge_input_refs(
             resolved.input_refs([]), prepared.input_refs, payload.input_refs
@@ -4395,146 +4376,6 @@ AgentProvidersDep = Annotated[dict[str, AgentProvider], Depends(get_agent_provid
 AGENT_CONTEXT_ARTIFACT_LIMIT = 20
 
 
-def _prompt_revision_unsupported(job_id: str) -> ApiError:
-    return ApiError(
-        "PROMPT_REVISION_UNSUPPORTED",
-        "このJobはprompt修正による再生成に対応していません。",
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        details={"job_id": job_id},
-    )
-
-
-@router.post(
-    "/generation-jobs/{job_id}/prompt-revisions",
-    response_model=schemas.GenerationPromptRevisionRead,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_generation_prompt_revision(
-    job_id: str,
-    payload: schemas.GenerationPromptRevisionCreate,
-    session: SessionDep,
-    source: ReferenceSourceDep,
-    providers: AgentProvidersDep,
-):
-    """生成済み画像への指示でpromptを直し、新しいJobとして再投入する(#303)。
-
-    元Jobの入力をRecipeが受け付ける範囲で引き継ぎ、positive_prompt、negative_promptを
-    補完結果へ、seedを元の実値へ差し替える。Look Profileの値はresolved_promptと
-    parametersへ合成済みのため、look_profile_idsは渡さない (渡すと二重に掛かる)。
-    画像以外のJob、派生Template (img2imgなど元画像の入力が要るもの)、promptの無いJob、
-    seedを受け付けないRecipeのJobは
-    Providerを呼ぶ前に``PROMPT_REVISION_UNSUPPORTED``で断る。
-    """
-    job = await _get_or_404(session, GenerationJob, "GenerationJob", job_id)
-    artifact = await _get_or_404(session, Artifact, "Artifact", payload.artifact_id)
-    # 動画・音声のJobは画像のArtifactを持たないため、Artifactの検証より先に断る。
-    if job.kind != "image":
-        raise _prompt_revision_unsupported(job.id)
-    if (
-        artifact.job_id != job.id
-        or artifact.kind != "image"
-        or artifact.availability != "complete"
-    ):
-        raise _validation_error(
-            "artifact_idは、このJobが完成させた画像を指す必要があります。",
-            {"job_id": job.id, "artifact_id": payload.artifact_id},
-        )
-    manifest = await _get_manifest(session, job)
-    recipe = await _get_or_404(session, Recipe, "Recipe", job.recipe_id)
-    try:
-        template_name = comfyui_prepare.resolve_template_name(recipe)
-    except PreparationError as error:
-        raise _prompt_revision_unsupported(job.id) from error
-    accepted = comfyui_prepare.submittable_input_names(recipe, template_name)
-    if (
-        template_name in comfyui_prepare.DERIVATION_TEMPLATES
-        or "positive_prompt" not in accepted
-        # seedを渡せないRecipeでは新Jobのseedが元と変わり、指示の効果だけを比べられない。
-        or "seed" not in accepted
-        or not (manifest.resolved_prompt or "").strip()
-    ):
-        raise _prompt_revision_unsupported(job.id)
-
-    provider = _resolve_agent_provider(providers, payload.provider_id)
-    if not provider.supports_images:
-        raise ApiError(
-            "AGENT_IMAGE_UNSUPPORTED",
-            f"{provider.label}は画像の入力に対応していません。"
-            "画像に対応するAIを選んでください。",
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        )
-    try:
-        artifact_path = storage.resolve_artifact(artifact.relative_path)
-        image_bytes = artifact_path.read_bytes()
-    except (storage.StorageError, OSError) as error:
-        raise ApiError(
-            "ARTIFACT_FILE_MISSING",
-            "Artifactの実ファイルを取得できませんでした。",
-            status_code=status.HTTP_404_NOT_FOUND,
-            details={"artifact_id": artifact.id},
-        ) from error
-    image = _proposal_image_from_bytes(image_bytes, artifact.media_type)
-
-    current_positive = manifest.resolved_prompt or ""
-    current_negative = str((manifest.parameters or {}).get("negative_prompt") or "")
-    prompt = await _assist_image_prompt(
-        provider,
-        recipe,
-        payload.instruction,
-        current_positive,
-        current_negative,
-        (image,),
-    )
-
-    # manifestはモデル変数をmodelへ、残りをparametersへ分けて記録している。parameters
-    # にはlook_profilesやprompt_revisionなどテンプレート変数でない記録も混ざるため、
-    # そのままinputsにせず、Recipeが受け付ける変数名だけに絞る。input_schemaを持つ
-    # Recipeはモデル変数を受け付けないことがあり、その場合モデルはRecipeの既定値になる。
-    recorded = {**(manifest.parameters or {}), **(manifest.model or {})}
-    inputs: dict[str, Any] = {
-        key: value for key, value in recorded.items() if key in accepted
-    }
-    inputs["positive_prompt"] = prompt.positive_prompt
-    if "negative_prompt" in accepted:
-        inputs["negative_prompt"] = prompt.negative_prompt
-    inputs["seed"] = manifest.seed
-
-    job_payload = schemas.GenerationJobCreate(
-        kind=job.kind,
-        project_id=job.assigned_project_id,
-        scene_id=job.assigned_scene_id,
-        shot_id=job.assigned_shot_id,
-        recipe_id=job.recipe_id,
-        parent_job_id=job.id,
-        look_profile_ids=[],
-        inputs=inputs,
-        input_refs=[],
-    )
-    try:
-        new_job = await _submit_generation_job(
-            session,
-            source,
-            job_payload,
-            extra_parameters={
-                "prompt_revision": {
-                    "source_job_id": job.id,
-                    "source_artifact_id": artifact.id,
-                    "instruction": payload.instruction,
-                    "provider_id": provider.id,
-                    "model": prompt.model,
-                }
-            },
-        )
-    except ApiError as error:
-        # 補完は済んでいるため、投入に失敗しても直したpromptを捨てずに返す。
-        details = error.details if isinstance(error.details, dict) else {}
-        error.details = {**details, "revised_prompt": prompt.model_dump()}
-        raise
-    return schemas.GenerationPromptRevisionRead(
-        job=schemas.GenerationJobRead.model_validate(new_job), prompt=prompt
-    )
-
-
 async def _describe_agent_provider(
     provider: AgentProvider,
 ) -> schemas.AgentProviderRead:
@@ -5343,10 +5184,7 @@ async def _assist_image_prompt(
     current_negative_prompt: str,
     images: tuple[agent_base.ProposalImage, ...],
 ) -> schemas.ImagePromptAssistRead:
-    """画像promptの補完・修正を1回実行する共通処理。
-
-    `/image-prompt-assists`と`/generation-jobs/{job_id}/prompt-revisions`が共有する。
-    """
+    """画像promptの補完・修正を1回実行する。"""
     context: dict[str, Any] = {
         key: value
         for key, value in (
