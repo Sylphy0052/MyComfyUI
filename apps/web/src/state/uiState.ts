@@ -165,15 +165,15 @@ export function readStoredUiState(): Partial<UiState> {
   const rawView = typeof source.view === "string" ? source.view : null;
   const view = pickEnum(VIEW_VALUES, rawView);
   if (view) partial.view = view;
-  else if (rawView === "characters") {
-    partial.view = "projects";
-    partial.projectTab = "characters";
-  }
   const projectTab = pickEnum(
     PROJECT_TAB_VALUES,
     typeof source.projectTab === "string" ? source.projectTab : null,
   );
   if (projectTab) partial.projectTab = projectTab;
+  if (!view && rawView === "characters") {
+    partial.view = "projects";
+    partial.projectTab = "characters";
+  }
   const generationTab = pickEnum(
     GENERATION_TAB_VALUES,
     typeof source.generationTab === "string" ? source.generationTab : null,

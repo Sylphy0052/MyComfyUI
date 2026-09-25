@@ -200,7 +200,7 @@ function SceneDetails({
       {error && (
         <p className="error">
           Shot一覧を取得できません。{error}{" "}
-          <button type="button" onClick={load}>
+          <button type="button" onClick={load} disabled={loading}>
             再試行
           </button>
         </p>
