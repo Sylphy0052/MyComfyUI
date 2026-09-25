@@ -1293,6 +1293,26 @@ export function App() {
     () => jobs.find((job) => job.state === "running") ?? null,
     [jobs],
   );
+  // seedの「前回」ボタンに使う。直前に完了したJobのmanifestからseedだけ読む (#319)。
+  const [lastSeed, setLastSeed] = useState<number | null>(null);
+  useEffect(() => {
+    if (!latestSucceededJob) {
+      setLastSeed(null);
+      return;
+    }
+    let active = true;
+    void api
+      .getManifest(latestSucceededJob.manifest_id)
+      .then((found) => {
+        if (active) setLastSeed(typeof found.seed === "number" ? found.seed : null);
+      })
+      .catch(() => {
+        if (active) setLastSeed(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [latestSucceededJob]);
   const latestImages = useMemo(
     () =>
       latestSucceededJob
@@ -1841,6 +1861,7 @@ export function App() {
                       restore={generationRestore}
                       characters={localCharacters}
                       onRegisterOutfit={registerCharacterOutfit}
+                      lastSeed={lastSeed}
                     />
                   </div>
 
@@ -1887,6 +1908,7 @@ export function App() {
                       onSourceArtifactChange={setDerivationSourceArtifactId}
                       onSubmittedJob={handleDerivedJob}
                       onManageWorkflows={() => setWorkflowDialogOpen(true)}
+                      lastSeed={lastSeed}
                     />
                   </div>
 
