@@ -28,11 +28,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from mycomfyui_api import routers
 from mycomfyui_api.adapters import tag_preflight
 from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import (
     create_agent_providers,
-    prompt_assets,
     prompt_checks,
     proposals,
 )
@@ -55,6 +55,14 @@ def load_cases() -> list[dict[str, Any]]:
     cases = data.get("cases")
     if not isinstance(cases, list) or not cases:
         raise ValueError(f"{CASES_PATH}にcasesが無い")
+    for case in cases:
+        # 手で書く値は、問い合わせを始める前に確かめる。途中で落ちると結果が残らない。
+        min_rating = case.get("expect", {}).get("min_rating")
+        if min_rating is not None and min_rating not in proposals.RATING_LEVELS:
+            raise ValueError(
+                f"{case.get('id')}: expect.min_ratingは"
+                f"{', '.join(proposals.RATING_LEVELS)}のどれか: {min_rating}"
+            )
     return cases
 
 
@@ -69,37 +77,6 @@ def build_context(case: dict[str, Any]) -> dict[str, Any]:
     if case["kind"] == "batch_generation_plan":
         context["shots"] = proposals.shot_list_context(case.get("shots", []))
     return context
-
-
-def build_guidance(kind: str, instruction: str, context: dict[str, Any]) -> str:
-    """`routers._prompt_guidance`と同じ組み立て。novel-writerの資産を読める設定でなければ空文字。"""
-    style = context.get("prompt_style")
-    if kind not in proposals.PROMPT_STYLE_KINDS or style is None:
-        return ""
-    hint = "\n".join([instruction, json.dumps(context, ensure_ascii=False)])
-    guidance = prompt_assets.load_guidance(
-        get_settings().novel_writer_root, style, hint
-    )
-    if guidance is None:
-        return ""
-    context["prompt_assets"] = list(guidance.sources)
-    return guidance.text
-
-
-def context_shot_ids(context: dict[str, Any]) -> set[str]:
-    """`routers._context_shot_ids`と同じ。バッチ計画のitemを絞る対象Shot IDの集合。"""
-    entries = context.get("shots")
-    if not isinstance(entries, list):
-        return set()
-    return {
-        str(entry["id"])
-        for entry in entries
-        if isinstance(entry, dict) and entry.get("id")
-    }
-
-
-def _violation_to_dict(violation: prompt_checks.Violation) -> dict[str, Any]:
-    return asdict(violation)
 
 
 def check_expect(
@@ -176,7 +153,11 @@ async def run_attempt(
     それ以外の`AgentError` (応答の形が壊れているなど) は1回分の失敗として記録する。
     """
     context = build_context(case)
-    guidance = build_guidance(case["kind"], case["instruction"], context)
+    # guidanceとShot IDはroutersの実体を呼び、Endpointとの食い違いを作らない。
+    # contextの組み立てだけはDB sessionを要するため`build_context`で代える。
+    guidance = await routers._prompt_guidance(
+        case["kind"], case["instruction"], context
+    )
     request = agent_base.ProposalRequest(
         kind=case["kind"],
         instruction=case["instruction"],
@@ -202,7 +183,7 @@ async def run_attempt(
         case["kind"],
         output,
         artifact_ids=set(),
-        shot_ids=context_shot_ids(context),
+        shot_ids=routers._context_shot_ids(context),
         recipe_input_names=set(),
     )
     violations = prompt_checks.check_output(
@@ -211,7 +192,7 @@ async def run_attempt(
     violations.extend(check_expect(case, output))
     return {
         "output": output,
-        "violations": [_violation_to_dict(violation) for violation in violations],
+        "violations": [asdict(violation) for violation in violations],
         "exception": None,
         "duration_sec": round(time.monotonic() - started, 3),
     }
@@ -264,7 +245,7 @@ async def run_eval(provider_id: str, repeat: int, out_path: Path) -> int:
         "repeat": repeat,
         "generated_at": datetime.now(UTC).isoformat(),
         "cases": [],
-        "partial": False,
+        "partial": True,
     }
     exit_code = 0
     try:
@@ -281,7 +262,6 @@ async def run_eval(provider_id: str, repeat: int, out_path: Path) -> int:
                         provider, case, settings.tag_dictionary_path
                     )
                 except agent_base.AgentUnavailable as error:
-                    report["partial"] = True
                     report["fatal_error"] = {
                         "type": type(error).__name__,
                         "message": str(error),
@@ -289,18 +269,21 @@ async def run_eval(provider_id: str, repeat: int, out_path: Path) -> int:
                     exit_code = 1
                     break
                 case_report["attempts"].append(attempt)
-            if report["partial"]:
+            if "fatal_error" in report:
                 break
+        report["partial"] = "fatal_error" in report
     finally:
+        # 想定外の例外で抜けるときも、済んだ試行はここで書き出す。例外はそのまま伝わる。
+        # `partial`は最後まで回り切ったときだけFalseへ戻るため、その場合はTrueのまま残る。
         await provider.aclose()
-    report["summary"] = summarize(report["cases"])
-    write_report(report, out_path)
-    print_summary(report)
-    if report["partial"]:
-        print(
-            f"AgentUnavailable: 途中で打ち切った。ここまでの結果を{out_path}へ書き出した。",
-            file=sys.stderr,
-        )
+        report["summary"] = summarize(report["cases"])
+        write_report(report, out_path)
+        print_summary(report)
+        if report["partial"]:
+            print(
+                f"途中で打ち切った。ここまでの結果を{out_path}へ書き出した。",
+                file=sys.stderr,
+            )
     return exit_code
 
 
@@ -340,7 +323,7 @@ def compare_reports(base_path: Path, head_path: Path) -> int:
     try:
         base = json.loads(base_path.read_text(encoding="utf-8"))
         head = json.loads(head_path.read_text(encoding="utf-8"))
-    except OSError as error:
+    except (OSError, json.JSONDecodeError) as error:
         print(f"レポートを読めない: {error}", file=sys.stderr)
         return 1
     base_rates = base.get("summary", {}).get("rule_rates", {})
