@@ -1308,8 +1308,10 @@ export function App() {
   // 設定・プロンプト・seed再利用 (#320) に使う。
   const [latestManifest, setLatestManifest] = useState<GenerationManifest | null>(null);
   useEffect(() => {
+    // Job切替直後は前Jobのmanifestを即クリアする。残したままだと取得完了までの間、
+    // 表示中の画像(新Job)と異なるJob(旧Job)の設定が「設定を適用」等から適用されてしまう (#320)。
+    setLatestManifest(null);
     if (!latestSucceededJob) {
-      setLatestManifest(null);
       return;
     }
     let active = true;
@@ -2012,7 +2014,7 @@ export function App() {
                     onApplySeedOnly={(job, manifest) =>
                       applyGenerationSettings(job, manifest, "seed")
                     }
-                    onDerive={handleDerive}
+                    onDerive={isProduction ? undefined : handleDerive}
                     onChangeSource={handleChangeSource}
                   />
                   <CandidateGallery
