@@ -160,7 +160,9 @@ function toSegment(text: string, paragraph = false): PromptSegment {
 
 /**
  * プロンプトを空行で段落へ分ける。`splitPrompt`と同じく、エスケープ済みの括弧と
- * 重み付けの括弧の内側にある空行では区切らない。
+ * 重み付けの括弧の内側にある空行では区切らない。閉じていない括弧が残ったときは
+ * 括弧を数えずに空行だけで分ける。そうしないと、閉じ忘れの後ろにある自然文まで
+ * タグ行と1つの段落になる。
  */
 function splitParagraphs(prompt: string): string[] {
   const paragraphs: string[] = [];
@@ -168,7 +170,7 @@ function splitParagraphs(prompt: string): string[] {
   let depth = 0;
   for (let index = 0; index < prompt.length; index += 1) {
     const char = prompt[index];
-    if (char === "\\") {
+    if (char === "\\" && index + 1 < prompt.length) {
       index += 1;
     } else if (char === "(") {
       depth += 1;
@@ -182,6 +184,7 @@ function splitParagraphs(prompt: string): string[] {
       start = index + 1;
     }
   }
+  if (depth > 0) return prompt.split(/\n[^\S\n]*\n/);
   paragraphs.push(prompt.slice(start));
   return paragraphs;
 }
