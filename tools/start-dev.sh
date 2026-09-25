@@ -3,6 +3,10 @@ set -m
 
 API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-5173}"
+# プロンプト補完用のQwenを手元のOllamaで動かす。Remote側のQwenを使うなら START_OLLAMA=0。
+START_OLLAMA="${START_OLLAMA:-1}"
+export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-8192}"
 
 # 指定ポートを掴んでいるプロセスを終了させ、LISTEN が消えるまで待つ。
 free_port() {
@@ -58,6 +62,22 @@ trap 'exit 143' TERM
 
 free_port "$API_PORT"
 free_port "$WEB_PORT"
+
+if [ "$START_OLLAMA" != "0" ]; then
+  OLLAMA_BIN="${OLLAMA_BIN:-$(command -v ollama || true)}"
+  [ -n "$OLLAMA_BIN" ] || OLLAMA_BIN="$HOME/.local/ollama/bin/ollama"
+  if [ -x "$OLLAMA_BIN" ]; then
+    # OLLAMA_HOST はポート省略時に 11434 を使う (scheme 付きの指定も許す)。
+    ollama_port="${OLLAMA_HOST#*://}"
+    ollama_port="${ollama_port##*:}"
+    [[ "$ollama_port" =~ ^[0-9]+$ ]] || ollama_port=11434
+    free_port "$ollama_port"
+    # 他のジョブと同じく cleanup がプロセスグループごと停止する。
+    "$OLLAMA_BIN" serve &
+  else
+    echo "[start-dev] ollama not found (set OLLAMA_BIN) -> skipping Qwen" >&2
+  fi
+fi
 
 npm run api:dev &
 
