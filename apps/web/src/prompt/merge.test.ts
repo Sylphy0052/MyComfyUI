@@ -129,10 +129,33 @@ describe("空白だけの行を挟んだ3段落", () => {
   });
 });
 
+describe("空行の後ろも自然文でないプロンプト", () => {
+  const current = "1girl, smile\n\nrain, night";
+
+  it("2つ目の段落もタグとして区切る", () => {
+    expect(summarize(diffPrompt(current, "1girl, smile\n\nrain, city"))).toEqual([
+      { id: "remove:3", before: "night", after: null },
+      { id: "add:3", before: null, after: "city" },
+    ]);
+  });
+
+  it("反映するとタグ行へまとめる", () => {
+    expect(acceptAll(current, "1girl, smile\n\nrain, city")).toBe("1girl, smile, rain, city");
+  });
+
+  it("マージしたタグは末尾のタグの後ろへ入る", () => {
+    expect(mergePrompt(current, "umbrella")).toEqual({
+      prompt: "1girl, smile, rain, night, umbrella",
+      added: 1,
+    });
+  });
+});
+
 describe("タグだけのプロンプト", () => {
   const current = "masterpiece, 1girl, smile";
 
   it("タグごとにhunkを作る", () => {
+    expect(diffPrompt(current, current)).toEqual([]);
     expect(summarize(diffPrompt(current, "masterpiece, 1girl, (smile:1.2), rain"))).toEqual([
       { id: "change:2", before: "smile", after: "(smile:1.2)" },
       { id: "add:3", before: null, after: "rain" },
