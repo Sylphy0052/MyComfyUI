@@ -253,6 +253,8 @@ function findRecipeOrSuccessor(recipes: Recipe[], lineage: string[]): Recipe | n
   return null;
 }
 
+const DRAFT_KEY = "generation-form";
+
 /** 下書きに残したnegative_promptの合成記録。形が崩れていれば記録なしとして扱う。 */
 function draftPlanNegative(value: unknown): { merged: string; source: string } | null {
   if (!value || typeof value !== "object") return null;
@@ -278,7 +280,9 @@ export function GenerationForm({
   lastSeed = null,
 }: Props) {
   // 未投入の入力の下書き (#327)。開発サーバの作り直しや再読み込みの後、初期値の代わりに使う。
-  const draftKey = `generation-form.${projectId ?? "lab"}${simple ? ".simple" : ""}`;
+  // フォームは画面に1つだけで、Projectやモードを切り替えても作り直さず入力を持ち越すため、
+  // キーを分けずに今のstateをそのまま写す。分けると切替時に前の入力が別のキーへ書き込まれる。
+  const draftKey = DRAFT_KEY;
   const [draft] = useState(() => readFormDraft(draftKey));
   const [recipeId, setRecipeId] = useState<string>(() => draftString(draft?.recipeId) ?? "");
   const recipe = useMemo(
