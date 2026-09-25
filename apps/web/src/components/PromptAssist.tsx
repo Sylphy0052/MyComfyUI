@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
+import { draftString, readFormDraft, writeFormDraft } from "../state/formDraft";
 import type { AgentProvider, AgentProviderId } from "../api/client";
 import { noticeSuffix } from "./BackendNotice";
 import { MediaPicker, readPickedImage } from "./MediaPicker";
@@ -18,6 +19,8 @@ interface Props {
   projectId?: string | null;
   /** 選択中の Recipe。Workflow に応じて、タグと自然文を併用するかタグだけで組むかを API が決める。 */
   recipeId?: string | null;
+  /** 指定すると説明文を下書きとして保存し、作り直しや再読み込みの後も残す (#327)。 */
+  draftKey?: string;
   /** 補完結果の反映。呼び出し元の prompt と negative へ入れる。 */
   onApply: (result: { positive: string; negative: string }) => void;
 }
@@ -69,6 +72,8 @@ interface FieldProps {
   /** 画像を添えて直せるようにするか。真のときだけ画像欄を出す。 */
   allowImage?: boolean;
   projectId?: string | null;
+  /** 指定すると説明文を下書きとして保存し、作り直しや再読み込みの後も残す (#327)。 */
+  draftKey?: string;
   /** API を呼んで結果を反映する。失敗は例外で返すと欄の下に表示する。 */
   onAssist: (request: AssistRequest) => Promise<void>;
 }
@@ -83,13 +88,20 @@ export function PromptAssistField({
   submitLabel,
   allowImage = false,
   projectId,
+  draftKey,
   onAssist,
 }: FieldProps) {
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(
+    () => (draftKey && draftString(readFormDraft(draftKey)?.description)) || "",
+  );
   const [providerId, setProviderId] = useState<AgentProviderId | "">("");
   const [images, setImages] = useState<PickedMedia[]>([]);
   const [assisting, setAssisting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (draftKey) writeFormDraft(draftKey, { description });
+  }, [draftKey, description]);
 
   const withImage = allowImage && images.length > 0;
   const selectedProvider = providers.find((provider) => provider.id === providerId);
