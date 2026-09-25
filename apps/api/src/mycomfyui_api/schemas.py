@@ -2,6 +2,7 @@ import json
 import math
 from datetime import datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from pydantic import (
@@ -1967,6 +1968,67 @@ class AgentProviderRead(ApiModel):
     is_default: bool = False
     #: 常駐するProviderと、状態を読めないProviderではnull。
     backend: AgentBackendStatusRead | None = None
+
+
+def _optional_http_url(value: str | None) -> str | None:
+    """http(s)のURLだけを受け付ける。空文字は未設定として扱う。
+
+    接続先を任意に変えられるが、本アプリはlocalhostでの個人利用が前提のため、スキームと
+    ホストの有無だけを確かめる。
+    """
+    if value is None:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if any(char.isspace() for char in candidate):
+        raise ValueError("URLに空白を含められません。")
+    parsed = urlsplit(candidate)
+    # portは不正な値を読んだ時点でValueErrorを投げる。
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.port == 0:
+        raise ValueError("http://またはhttps://で始まるURLを指定してください。")
+    return candidate
+
+
+def _optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip() or None
+
+
+OptionalHttpUrl = Annotated[
+    str | None, Field(max_length=2048), AfterValidator(_optional_http_url)
+]
+
+
+class QwenSettingsValues(ApiModel):
+    """Qwenの接続設定の値。"""
+
+    base_url: str
+    model: str
+    #: 状態照会口。nullなら状態を確かめず、到達性だけで判断する。
+    status_url: str | None = None
+    supports_images: bool
+
+
+class QwenSettingsUpdate(ApiModel):
+    """保存するQwenの接続設定。nullの項目は保存値を消し、環境変数の値へ戻す。"""
+
+    base_url: OptionalHttpUrl = None
+    model: Annotated[
+        str | None, Field(max_length=200), AfterValidator(_optional_text)
+    ] = None
+    status_url: OptionalHttpUrl = None
+    supports_images: bool | None = None
+
+
+class QwenSettingsRead(ApiModel):
+    """Qwenの接続設定。実効値、環境変数の値、DBの保存値を分けて返す。"""
+
+    effective: QwenSettingsValues
+    defaults: QwenSettingsValues
+    #: 保存していない項目はnullになる。
+    saved: QwenSettingsUpdate
 
 
 class AgentProposalCreate(ApiModel):

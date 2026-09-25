@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api } from "../api/client";
+import { api, subscribeAgentProvidersChanged } from "../api/client";
 import { mergePrompt } from "../prompt/merge";
 import { planPresetBlocker, type PlanPreset } from "../state/productionPlan";
 import { ignoresShortcut } from "./ui/shortcuts";
@@ -400,7 +400,11 @@ export function GenerationForm({
   }, [plan, recipes]);
 
   useEffect(() => {
-    void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+    const load = () =>
+      void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+    load();
+    // 接続設定を保存したら取り直す (#337)。
+    return subscribeAgentProvidersChanged(load);
   }, []);
 
   // 抽出タグをプロンプト初期値にする (#316)。ユーザーがまだ登録欄を触っていない間だけ。

@@ -34,6 +34,8 @@ export type ReferenceChangeEntry =
   components["schemas"]["ReferenceChangeEntry"];
 export type JobLineage = components["schemas"]["JobLineageRead"];
 export type AgentProvider = components["schemas"]["AgentProviderRead"];
+export type QwenSettings = components["schemas"]["QwenSettingsRead"];
+export type QwenSettingsUpdate = components["schemas"]["QwenSettingsUpdate"];
 export type AgentProposal = components["schemas"]["AgentProposalRead"];
 export type AgentProposalKind =
   components["schemas"]["AgentProposalCreate"]["kind"];
@@ -207,6 +209,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return undefined as T;
   }
   return (await response.json()) as T;
+}
+
+/** Provider一覧を持つ画面へ、接続設定が変わったことを知らせるイベント名 (#337)。 */
+const AGENT_PROVIDERS_CHANGED_EVENT = "mycomfyui:agent-providers-changed";
+
+export function notifyAgentProvidersChanged(): void {
+  window.dispatchEvent(new Event(AGENT_PROVIDERS_CHANGED_EVENT));
+}
+
+export function subscribeAgentProvidersChanged(listener: () => void): () => void {
+  window.addEventListener(AGENT_PROVIDERS_CHANGED_EVENT, listener);
+  return () => window.removeEventListener(AGENT_PROVIDERS_CHANGED_EVENT, listener);
 }
 
 export const api = {
@@ -943,6 +957,15 @@ export const api = {
     `${apiBaseUrl()}/generation-jobs/${encodeURIComponent(jobId)}/preview?seq=${seq}`,
 
   listAgentProviders: () => request<AgentProvider[]>("/agent-providers"),
+
+  getQwenSettings: () => request<QwenSettings>("/settings/qwen"),
+
+  /** nullの項目は保存値を消し、環境変数の値へ戻す。 */
+  updateQwenSettings: (payload: QwenSettingsUpdate) =>
+    request<QwenSettings>("/settings/qwen", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
 
   assistImagePrompt: (payload: {
     instruction: string;

@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -797,3 +799,16 @@ class VoiceVerification(Base):
     target_duration_sec: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AppSetting(Base):
+    """Web UIから変更した設定の保存値 (#337)。
+
+    keyは`Settings`の属性名とする。行が無い項目は環境変数の値を使う。
+    """
+
+    __tablename__ = "app_setting"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)

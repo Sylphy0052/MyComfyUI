@@ -6645,6 +6645,119 @@
         "title": "PromptTagFindingRead",
         "type": "object"
       },
+      "QwenSettingsRead": {
+        "additionalProperties": false,
+        "description": "Qwenの接続設定。実効値、環境変数の値、DBの保存値を分けて返す。",
+        "properties": {
+          "defaults": {
+            "$ref": "#/components/schemas/QwenSettingsValues"
+          },
+          "effective": {
+            "$ref": "#/components/schemas/QwenSettingsValues"
+          },
+          "saved": {
+            "$ref": "#/components/schemas/QwenSettingsUpdate"
+          }
+        },
+        "required": [
+          "effective",
+          "defaults",
+          "saved"
+        ],
+        "title": "QwenSettingsRead",
+        "type": "object"
+      },
+      "QwenSettingsUpdate": {
+        "additionalProperties": false,
+        "description": "保存するQwenの接続設定。nullの項目は保存値を消し、環境変数の値へ戻す。",
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "status_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Url"
+          },
+          "supports_images": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supports Images"
+          }
+        },
+        "title": "QwenSettingsUpdate",
+        "type": "object"
+      },
+      "QwenSettingsValues": {
+        "additionalProperties": false,
+        "description": "Qwenの接続設定の値。",
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "status_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Url"
+          },
+          "supports_images": {
+            "title": "Supports Images",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "base_url",
+          "model",
+          "supports_images"
+        ],
+        "title": "QwenSettingsValues",
+        "type": "object"
+      },
       "RecipeCreate": {
         "additionalProperties": false,
         "properties": {
@@ -9238,7 +9351,7 @@
     },
     "/api/v1/artifacts": {
       "get": {
-        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nゴミ箱にあるArtifactは既定で除き、`trashed=true`のときはゴミ箱にあるものだけを返す。\n\nProjectコンテキストは現在の所属先と突き合わせる。`unassigned`は\n現在のProject所属を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
+        "description": "Artifact履歴の一覧。既定は作成の新しい順に返す。\n\nゴミ箱にあるArtifactは既定で除き、`trashed=true`のときはゴミ箱にあるものだけを返す。\n\nProjectコンテキストは現在の所属先と突き合わせる。`unassigned`は\n現在のProject所属を持たないArtifactだけへ絞る。\nWorkflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。\n`exclude_kind`は複数指定でき、指定した種別を除く。一覧から記録用の種別だけを外す\n用途では、取得後に除くとページの件数が欠けるためDB側で除く。\n\n`tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`\nは`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の\n両方向へ辿り、指定した資産の派生関係に属するものだけへ絞る。\n\n派生関係の探索を上限で打ち切った場合は`X-Lineage-Truncated: true`を返す。結果の\n件数だけでは、絞り込みの対象が全件だったのか途中で止めたのかが判らない。",
         "operationId": "list_artifacts_api_v1_artifacts_get",
         "parameters": [
           {
@@ -9445,6 +9558,33 @@
           },
           {
             "in": "query",
+            "name": "exclude_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "image",
+                      "video",
+                      "audio",
+                      "workflow",
+                      "log"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Kind"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -9589,7 +9729,7 @@
     },
     "/api/v1/artifacts/integrity": {
       "get": {
-        "description": "整合性を欠いたArtifactを理由付きで一覧する。\n\n`limit`と`offset`は判定する対象の範囲であり、返す件数ではない。実ファイルを読んで\nhashを取り直すため、対象を絞らずに走らせると重い。作成の新しい順に`limit`件だけを\n判定し、まだ対象が残っている場合は`truncated`を`true`にする。\n\n`reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。\n`include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。\nこのとき`canon_available`は`false`になる。判定した結果として更新が無かったのか、\nそもそも見ていないのかを取り違えさせない。\n\n判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。",
+        "description": "整合性を欠いたArtifactを理由付きで一覧する。\n\n`limit`と`offset`は判定する対象の範囲であり、返す件数ではない。実ファイルを読んで\nhashを取り直すため、対象を絞らずに走らせると重い。作成の新しい順に`limit`件だけを\n判定し、まだ対象が残っている場合は`truncated`を`true`にする。\n\n`reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。\n`exclude_kind`は複数指定でき、指定した種別を判定の対象から除く。\n`include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。\nこのとき`canon_available`は`false`になる。判定した結果として更新が無かったのか、\nそもそも見ていないのかを取り違えさせない。\n\n判定は読み取りのみで、ManifestとArtifactの記録値を更新しない。",
         "operationId": "list_artifact_integrity_api_v1_artifacts_integrity_get",
         "parameters": [
           {
@@ -9727,6 +9867,7 @@
                     ],
                     "type": "string"
                   },
+                  "maxItems": 4,
                   "type": "array"
                 },
                 {
@@ -9734,6 +9875,33 @@
                 }
               ],
               "title": "Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "image",
+                      "video",
+                      "audio",
+                      "workflow",
+                      "log"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Kind"
             }
           },
           {
@@ -11419,7 +11587,7 @@
     },
     "/api/v1/media-items": {
       "get": {
-        "description": "生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。\n\nArtifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力\ncacheファイル(`registered_input`)、Projectのキャラクター参照画像\n(`character_reference`)を横断して返す。人物参照はProject単位の設定のため\n`project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。\n`character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、\n常に一覧の末尾寄りになる。\n`shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを\n持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った\n結果を返す。`character_reference`もProject単位のまま返す。\n\n絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って\nから並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと\n同じ結果になる。`character_reference`はProjectのJSON設定から作るため、\nメモリ上で絞る。",
+        "description": "生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。\n\nArtifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力\ncacheファイル(`registered_input`)、Projectのキャラクター参照画像\n(`character_reference`)を横断して返す。人物参照はProject単位の設定のため\n`project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。\n`character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、\n常に一覧の末尾寄りになる。\n`shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを\n持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った\n結果を返す。`character_reference`もProject単位のまま返す。\n`exclude_kind`は複数指定でき、指定した種別を全系統から除く。\n\n絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って\nから並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと\n同じ結果になる。`character_reference`はProjectのJSON設定から作るため、\nメモリ上で絞る。",
         "operationId": "list_media_items_api_v1_media_items_get",
         "parameters": [
           {
@@ -11565,6 +11733,33 @@
                 }
               ],
               "title": "Character Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "image",
+                      "video",
+                      "audio",
+                      "workflow",
+                      "log"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exclude Kind"
             }
           },
           {
@@ -15101,6 +15296,68 @@
           }
         },
         "summary": "Get Recipe"
+      }
+    },
+    "/api/v1/settings/qwen": {
+      "get": {
+        "description": "Qwenの接続設定を、実効値・環境変数の値・保存値に分けて返す。",
+        "operationId": "read_qwen_settings_api_v1_settings_qwen_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QwenSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Qwen Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "description": "Qwenの保存値を丸ごと置き換える。nullの項目は保存値を消し、環境変数の値へ戻す。",
+        "operationId": "update_qwen_settings_api_v1_settings_qwen_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QwenSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QwenSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Qwen Settings",
+        "tags": [
+          "settings"
+        ]
       }
     },
     "/api/v1/user-scripts": {
