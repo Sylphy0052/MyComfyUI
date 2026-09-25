@@ -1,6 +1,11 @@
 import unittest
 
-from mycomfyui_api.adapters.agent.proposals import _warn_untranslated_rationale
+from mycomfyui_api.adapters.agent.base import AgentInvalidResponse
+from mycomfyui_api.adapters.agent.proposals import (
+    MAX_PROMPT_TAGS,
+    _warn_untranslated_rationale,
+    revise_current_prompt,
+)
 
 LOGGER_NAME = "mycomfyui_api.adapters.agent.proposals"
 
@@ -35,6 +40,70 @@ class WarnUntranslatedRationaleTest(unittest.TestCase):
                     _warn_untranslated_rationale(body)
 
                 self.assertEqual(body["rationale"], rationale)
+
+
+SENTENCE = "a girl standing in the rain at night"
+
+
+def _revision(**fields: object) -> dict[str, object]:
+    """全ブロックを空にしたレビュー案。指定したフィールドだけ上書きする。"""
+    output: dict[str, object] = {
+        "quality_tags": [],
+        "subject_tags": [],
+        "character_tags": [],
+        "artist_tags": [],
+        "general_tags": [],
+        "removed_tags": [],
+        "natural_text": "",
+        "tag_glosses": [],
+        "rationale": "",
+    }
+    output.update(fields)
+    return output
+
+
+class ReviseCurrentPromptTest(unittest.TestCase):
+    def test_restored_tags_over_limit_are_rejected(self) -> None:
+        current = ", ".join(f"item{i}" for i in range(MAX_PROMPT_TAGS + 1))
+
+        with (
+            self.assertLogs(LOGGER_NAME, level="WARNING"),
+            self.assertRaises(AgentInvalidResponse) as raised,
+        ):
+            revise_current_prompt(_revision(), current, "")
+
+        message = str(raised.exception)
+        self.assertIn(f"general_tagsが{MAX_PROMPT_TAGS + 1}件", message)
+        self.assertIn(f"上限の{MAX_PROMPT_TAGS}件", message)
+        self.assertIn(f"戻したタグ: {MAX_PROMPT_TAGS + 1}件", message)
+
+    def test_restored_tags_at_limit_are_kept(self) -> None:
+        tags = [f"item{i}" for i in range(MAX_PROMPT_TAGS)]
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING"):
+            revised = revise_current_prompt(_revision(), ", ".join(tags), "")
+
+        self.assertEqual(revised["general_tags"], tags)
+
+    def test_dropped_sentence_is_reported_in_warning(self) -> None:
+        current = f"1girl, smile, {SENTENCE}"
+        output = _revision(subject_tags=["1girl"], general_tags=["smile"])
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as logs:
+            revised = revise_current_prompt(output, current, "")
+
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn(f"文とみなして戻さなかった区切り: {SENTENCE}", logs.output[0])
+        self.assertNotIn(SENTENCE, revised["general_tags"])
+
+    def test_sentence_listed_in_removed_tags_is_not_reported(self) -> None:
+        current = f"1girl, smile, {SENTENCE}"
+        output = _revision(
+            subject_tags=["1girl"], general_tags=["smile"], removed_tags=[SENTENCE]
+        )
+
+        with self.assertNoLogs(LOGGER_NAME, level="WARNING"):
+            revise_current_prompt(output, current, "")
 
 
 if __name__ == "__main__":
