@@ -45,7 +45,8 @@ interface Props {
  * だけを採用状態にし、削除は未選択にする。提案側はAIの再生成結果や抽出タグだけの
  * ことが多く、提案に無い既存の記述をすべて削除扱いにすると、そのまま反映したとき
  * に既存の記述が消えるため。削除したいhunkは利用者が明示的に選ぶ。
- * `acceptRemovals`を立てた欄だけは削除も採用状態にする。
+ * `acceptRemovals`を立てた欄だけは削除も採用状態にする。既定で選ばれた削除は
+ * 利用者が選んだものと見た目で区別できるよう「(既定で選択)」と注記する (#366)。
  */
 export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props) {
   const diffs = fields.map((field) => ({
@@ -113,6 +114,8 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
             <ul className="list plain">
               {hunks.map((hunk) => {
                 const id = `${field.key}\u0000${hunk.id}`;
+                // 既定採用の削除hunkにのみ「(既定で選択)」の注記を出す。
+                const isDefaultRemoval = hunk.kind === "remove" && field.acceptRemovals;
                 return (
                   <li key={id} className="row">
                     <label className="row">
@@ -124,6 +127,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
                       <span className={`badge change-${badgeKind(hunk.kind)}`}>
                         {hunkLabel(hunk.kind)}
                       </span>
+                      {isDefaultRemoval && <span className="muted">(既定で選択)</span>}
                     </label>
                     <span className="mono">{describeHunk(hunk)}</span>
                   </li>
