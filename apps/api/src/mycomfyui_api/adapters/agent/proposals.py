@@ -78,7 +78,7 @@ MAX_MERGED_NEGATIVE_LENGTH = 4000
 #: Proposal履歴としてDBへ載るサイズが大きくなりすぎる。件数によらず合計へ上限を課す。
 MAX_BATCH_POSITIVE_PROMPT_TOTAL = 20000
 
-#: タグ行を組み立てるブロックの順序。Qwen-Image(Anima)公式の並びに合わせる。
+#: タグ行を組み立てるブロックの順序。Anima公式の並びに合わせる。
 #: Providerが書いた順序ではなくこの順で連結し、並びを実装側で固定する。
 TAG_BLOCK_FIELDS = (
     "quality_tags",
@@ -88,7 +88,7 @@ TAG_BLOCK_FIELDS = (
     "general_tags",
 )
 
-#: negative promptの基準値。Qwen-Image(Anima)公式のbaselineをそのまま使う。
+#: negative promptの基準値。Anima公式のbaselineをそのまま使う。
 #: Providerにはショット固有の追加分だけを書かせ、この基準値は実装側で足す。
 DEFAULT_NEGATIVE_PROMPT = (
     "worst quality, low quality, score_1, score_2, score_3, artist name, "
@@ -105,6 +105,9 @@ RATING_TAGS = frozenset({"safe", "sensitive", "nsfw", "explicit"})
 #: ratingが落ちていたときに実装側で補うタグと、その日本語訳。
 FALLBACK_RATING_TAG = "safe"
 FALLBACK_RATING_GLOSS = "全年齢向け"
+#: ratingの段階。positiveにある最も高い段階より上をnegativeへ足し、意図より
+#: 露出の多い絵へ寄るのを抑える。Anima向けコミュニティガイドの作法に従う。
+RATING_LEVELS = ("safe", "sensitive", "nsfw", "explicit")
 
 
 class ProposalOutput(BaseModel):
@@ -309,7 +312,7 @@ OUTPUT_MODELS: dict[ProposalKind, type[ProposalOutput]] = {
 }
 
 #: prompt案の書き方。prompt案を持つ種別で同じ規約を使う。
-#: 出典はQwen-Image(Anima)の作法。詳細は`docs/design/qwen-image-prompt-spec.md`。
+#: 出典はAnimaの作法。詳細は`docs/design/qwen-image-prompt-spec.md`。
 PROMPT_DIRECTIVE = (
     "promptはタグと自然文で組み立てる。タグはブロックごとの配列で返し、"
     "1つの配列へ他ブロックの語を混ぜない。連結の順序は実装側が決めるため、"
@@ -318,20 +321,30 @@ PROMPT_DIRECTIVE = (
     "ratingはsafe、sensitive、nsfw、explicitのうち1つを必ず入れる。"
     "`rating:`のような接頭辞を付けず値だけを書く。"
     "指示から判断できなければsafeにする\n"
-    "- subject_tags: 1girl、2girls、soloなどの人数\n"
-    "- character_tags: キャラクター名と作品名\n"
+    "- subject_tags: 1girl、2girls、soloなどの人数。全体の人数を表すタグだけを入れ、"
+    "1girlと2girlsのように人数の違うタグを同居させない\n"
+    "- character_tags: キャラクター名と作品名。作品名はキャラクター名の直後に置く。"
+    "名前だけに頼らず、髪・瞳・服などの外見も必ず書く。書く場所は後述の人数の規則に従う\n"
     "- artist_tags: 絵師。`@`を前に付ける\n"
     "- general_tags: 外見、ポーズ、カメラ、背景、光。この順に並べる。"
-    "from belowやfrom sideなどのアングルは前の方へ置く\n"
+    "from belowやfrom sideなどのアングルは前の方へ置く。服と画風は"
+    "タグで書く。ポーズは既知のDanbooruタグで表せるものだけをタグにし、"
+    "組み合わせた動作や構図はnatural_textで書く\n"
     "タグは英語の小文字とスペースで書き、値へカンマを含めない。"
-    "矛盾するタグを同居させず、同じ部位へ同義のタグを3つ以上置かない。\n"
+    "`score_`で始まるタグだけはアンダースコアを残す。DanbooruとGelbooruで"
+    "表記が違うタグはGelbooruの表記に合わせる。"
+    "タグは画像に関係するものだけを入れ、同じ概念を言い換えて水増ししない。"
+    "矛盾するタグを同居させず、同じ部位へ同義のタグを3つ以上置かない。"
+    "画像内の文字は1単語までにし、長い文字列を描かせない。\n"
     "natural_textには、タグでは結び付けられない関係を書く。"
     "誰がどこにいて何に触れているか、視線の向き、光源の向きと光が当たる面を、"
-    "代名詞を使わず主語を名詞にして2文以上で書く。"
+    "代名詞を使わず主語を名詞にして2〜3文、50語程度で書く。"
+    "キャラクター名は英語の通常の大文字表記で書き、名前の後に髪・瞳・服を続ける。"
     "利用者の指示が日本語でも、natural_textは英語で書く。\n"
     "subject_tagsが2人以上を示すときは、髪色・髪型・眼鏡など見分けに使う属性を"
     "general_tagsへ入れず、natural_text側でキャラクターごとに書く。"
-    "タグへ残してよいのは全員に共通する属性だけとする。\n"
+    "タグへ残してよいのは全員に共通する属性だけとする。"
+    "この規則は外見や服をタグで書く指示より優先する。\n"
     "negative_promptには、このショット固有の避けたい要素だけを英語で書く。"
     "品質系の基準値は実装側が足すため書かない。"
     "避けたい要素が無ければ空文字にする。区切りだけの値を返さない。"
@@ -557,6 +570,46 @@ def _ensure_rating_tag(quality_tags: list[Any]) -> list[Any]:
     return [*quality_tags, FALLBACK_RATING_TAG]
 
 
+def _strip_rating_prefix(quality_tags: list[Any]) -> list[Any]:
+    """`rating:safe`のようなDanbooruの検索構文を`safe`へ直す。
+
+    指示文で接頭辞を禁じても返ることがある。残すとratingとして数えられず、
+    `_ensure_rating_tag`が`safe`を補い、`rating:explicit`の意図が`safe`扱いに
+    なってnegativeで打ち消される。`rating:`の後ろが段階に無い値ならタグごと落とし、
+    意味の無い語をpositiveへ渡さない。落としたratingは`_ensure_rating_tag`が補う。
+    """
+    stripped: list[Any] = []
+    for tag in quality_tags:
+        if isinstance(tag, str):
+            head, sep, value = tag.strip().partition(":")
+            if sep and head.strip().lower() == "rating":
+                value = value.strip().lower()
+                if value not in RATING_LEVELS:
+                    logger.warning("prompt案の未知のratingを落としました: %s", tag)
+                    continue
+                tag = value
+        stripped.append(tag)
+    return stripped
+
+
+def rating_negative_tags(quality_tags: list[Any]) -> list[str]:
+    """positiveのratingより上の段階を、negativeへ足すタグとして返す。
+
+    positiveに複数のratingがあれば最も高い段階を基準にする。`explicit`なら
+    足すものは無い。ratingが無いときは`_ensure_rating_tag`が先に`safe`を補う前提で、
+    ここでは空配列を返す。
+    """
+    levels = [
+        RATING_LEVELS.index(key)
+        for tag in quality_tags
+        if isinstance(tag, str)
+        and (key := _dedupe_key(_normalize_tag(tag))) in RATING_LEVELS
+    ]
+    if not levels:
+        return []
+    return list(RATING_LEVELS[max(levels) + 1 :])
+
+
 def _gloss_fallback_rating(body: dict[str, Any]) -> None:
     """実装側で補ったratingタグの訳を`tag_glosses`へ足す。
 
@@ -619,10 +672,18 @@ def _attach_prompt_text(body: dict[str, Any]) -> None:
     """
     quality_tags = body.get("quality_tags")
     if isinstance(quality_tags, list):
+        quality_tags = _strip_rating_prefix(quality_tags)
         ensured = _ensure_rating_tag(quality_tags)
         if ensured is not quality_tags:
             _gloss_fallback_rating(body)
         body["quality_tags"] = ensured
+        # 3つの経路 (補完、バッチ計画、生成Jobの投入) はどれも提案のnegative_promptへ
+        # 基準値を足して使う。ここで追加分へ入れておけば全経路に効く。
+        # `apply_prompt_style`で再度通っても、`merge_negative_prompt`が重複を落とすため増えない。
+        body["negative_prompt"] = merge_negative_prompt(
+            str(body.get("negative_prompt") or ""),
+            ", ".join(rating_negative_tags(ensured)),
+        )
     tag_line = compose_tag_line(body)
     natural_text = str(body.get("natural_text") or "").strip()
     positive_prompt = compose_positive_prompt(tag_line, natural_text)
@@ -868,6 +929,8 @@ def revise_current_prompt(
             for tag in (_normalize_tag(value) for value in data.get(name) or [])
             if tag
         ]
+    # ratingの判定より先に`rating:`接頭辞を外す。後で外すと判定から漏れる。
+    data["quality_tags"] = _strip_rating_prefix(data["quality_tags"])
 
     requested = [
         tag

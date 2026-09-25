@@ -112,7 +112,7 @@ DEFAULT_VALUES: dict[str, Any] = {
     "clip_name": "qwen_3_06b_base.safetensors",
     "vae_name": "qwen_image_vae.safetensors",
     "filename_prefix": "mycomfyui",
-    #: Qwen-Image(Anima)公式のbaseline。prompt案の追加分はここへ足して使う。
+    #: Anima公式のbaseline。prompt案の追加分はここへ足して使う。
     "negative_prompt": agent_proposals.DEFAULT_NEGATIVE_PROMPT,
     "width": 832,
     "height": 1216,
