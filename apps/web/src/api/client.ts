@@ -43,8 +43,6 @@ export type AgentProviderId =
   NonNullable<components["schemas"]["AgentProposalCreate"]["provider_id"]>;
 export type ImagePromptAssist =
   components["schemas"]["ImagePromptAssistRead"];
-export type GenerationPromptRevision =
-  components["schemas"]["GenerationPromptRevisionRead"];
 export type VideoPromptAssist =
   components["schemas"]["VideoPromptAssistRead"];
 export type MusicPromptAssist =
@@ -933,20 +931,6 @@ export const api = {
     request<GenerationJob>(
       `/generation-jobs/${encodeURIComponent(jobId)}/regenerate`,
       { method: "POST" },
-    ),
-
-  // 生成済み画像への指示で prompt を直し、新しい Job として再投入する (#303)。
-  revisePrompt: (
-    jobId: string,
-    payload: {
-      artifact_id: string;
-      instruction: string;
-      provider_id?: AgentProviderId | null;
-    },
-  ) =>
-    request<GenerationPromptRevision>(
-      `/generation-jobs/${encodeURIComponent(jobId)}/prompt-revisions`,
-      { method: "POST", body: JSON.stringify(payload) },
     ),
 
   artifactContentUrl: (artifactId: string) =>
