@@ -55,7 +55,8 @@ def _revision(**fields: object) -> dict[str, object]:
         "character_tags": [],
         "artist_tags": [],
         "general_tags": [],
-        "removed_tags": [],
+        "tag_changes": [],
+        "natural_text_change": {"change": "unchanged", "reason": ""},
         "natural_text": "",
         "tag_glosses": [],
         "rationale": "",
@@ -132,10 +133,14 @@ class ReviseCurrentPromptTest(unittest.TestCase):
         self.assertIn(f"文とみなして戻さなかった区切り: {SENTENCE}", logs.output[0])
         self.assertNotIn(SENTENCE, revised["general_tags"])
 
-    def test_sentence_listed_in_removed_tags_is_not_reported(self) -> None:
+    def test_sentence_listed_as_removed_is_not_reported(self) -> None:
         current = f"1girl, smile, {SENTENCE}"
         output = _revision(
-            subject_tags=["1girl"], general_tags=["smile"], removed_tags=[SENTENCE]
+            subject_tags=["1girl"],
+            general_tags=["smile"],
+            tag_changes=[
+                {"tag": SENTENCE, "change": "removed", "field": "general_tags"}
+            ],
         )
 
         with self.assertNoLogs(LOGGER_NAME, level="WARNING"):

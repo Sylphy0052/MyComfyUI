@@ -762,6 +762,7 @@ export function GenerationForm({
           current: values.positive_prompt ?? "",
           proposed: result.positive,
           acceptRemovals: result.review,
+          reasons: result.notes,
         },
         {
           key: "negative_prompt",

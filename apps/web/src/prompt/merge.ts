@@ -110,7 +110,7 @@ export function normalizeSegment(segment: string): string {
 }
 
 /** 重み付けと括弧を外した、分類のための素の文字列を返す。 */
-function bareTag(segment: string): string {
+export function bareTag(segment: string): string {
   let text = segment.trim();
   // 重み付け `(tag:1.2)` から中身だけを取り出す。入れ子は外側から順に剥がす。
   let previous = "";

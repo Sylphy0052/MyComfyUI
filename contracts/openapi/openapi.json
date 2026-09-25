@@ -3287,6 +3287,9 @@
             "title": "Natural Text",
             "type": "string"
           },
+          "natural_text_change": {
+            "$ref": "#/components/schemas/ImagePromptNaturalTextChange"
+          },
           "negative_prompt": {
             "maxLength": 4000,
             "title": "Negative Prompt",
@@ -3313,6 +3316,13 @@
             "title": "Rationale",
             "type": "string"
           },
+          "tag_changes": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePromptTagChange"
+            },
+            "title": "Tag Changes",
+            "type": "array"
+          },
           "tag_glosses": {
             "items": {
               "$ref": "#/components/schemas/ImagePromptTagGloss"
@@ -3335,6 +3345,61 @@
           "model"
         ],
         "title": "ImagePromptAssistRead",
+        "type": "object"
+      },
+      "ImagePromptNaturalTextChange": {
+        "additionalProperties": false,
+        "description": "現在のpromptを直した案で、自然文をどう変えたかと、その理由。",
+        "properties": {
+          "change": {
+            "default": "unchanged",
+            "enum": [
+              "unchanged",
+              "added",
+              "removed",
+              "modified"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "ImagePromptNaturalTextChange",
+        "type": "object"
+      },
+      "ImagePromptTagChange": {
+        "additionalProperties": false,
+        "description": "現在のpromptを直した案で、足したか消したタグ1つと、その理由。",
+        "properties": {
+          "change": {
+            "enum": [
+              "added",
+              "removed"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag",
+          "change"
+        ],
+        "title": "ImagePromptTagChange",
         "type": "object"
       },
       "ImagePromptTagGloss": {

@@ -2103,6 +2103,23 @@ class ImagePromptTagGloss(ApiModel):
     ja: str
 
 
+class ImagePromptTagChange(ApiModel):
+    """現在のpromptを直した案で、足したか消したタグ1つと、その理由。"""
+
+    tag: str
+    change: Literal["added", "removed"]
+    #: モデルが理由を書かなかった変更は空文字。
+    reason: str = Field(default="", max_length=500)
+
+
+class ImagePromptNaturalTextChange(ApiModel):
+    """現在のpromptを直した案で、自然文をどう変えたかと、その理由。"""
+
+    change: Literal["unchanged", "added", "removed", "modified"] = "unchanged"
+    #: 変えていないとき、またはモデルが理由を書かなかったときは空文字。
+    reason: str = Field(default="", max_length=500)
+
+
 class ImagePromptAssistRead(ApiModel):
     """構造化検証済みの画像prompt補完結果。
 
@@ -2121,6 +2138,11 @@ class ImagePromptAssistRead(ApiModel):
     rationale: str = Field(max_length=2000)
     #: タグと日本語訳の対応。表示だけに使い、生成の入力には含めない。
     tag_glosses: list[ImagePromptTagGloss] = Field(default_factory=list)
+    #: 現在のpromptからの実際の差分。現在のpromptを渡さなかったときは空。
+    tag_changes: list[ImagePromptTagChange] = Field(default_factory=list)
+    natural_text_change: ImagePromptNaturalTextChange = Field(
+        default_factory=ImagePromptNaturalTextChange
+    )
     provider_id: AgentProviderId
     model: str | None
 
