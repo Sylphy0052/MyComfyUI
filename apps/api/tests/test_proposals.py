@@ -2,7 +2,9 @@ import unittest
 
 from mycomfyui_api.adapters.agent.base import AgentInvalidResponse
 from mycomfyui_api.adapters.agent.proposals import (
+    MAX_CURRENT_TAG_WORDS,
     MAX_PROMPT_TAGS,
+    _current_tags,
     _warn_untranslated_rationale,
     revise_current_prompt,
 )
@@ -62,6 +64,19 @@ def _revision(**fields: object) -> dict[str, object]:
     return output
 
 
+class CurrentTagsTest(unittest.TestCase):
+    def test_long_or_period_ended_segments_are_sentences(self) -> None:
+        longest_tag = " ".join(["word"] * MAX_CURRENT_TAG_WORDS)
+        shortest_sentence = " ".join(["word"] * (MAX_CURRENT_TAG_WORDS + 1))
+
+        tags, sentences = _current_tags(
+            f"1girl, {longest_tag}, {shortest_sentence}, she smiles."
+        )
+
+        self.assertEqual(tags, ["1girl", longest_tag])
+        self.assertEqual(sentences, [shortest_sentence, "she smiles."])
+
+
 class ReviseCurrentPromptTest(unittest.TestCase):
     def test_restored_tags_over_limit_are_rejected(self) -> None:
         current = ", ".join(f"item{i}" for i in range(MAX_PROMPT_TAGS + 1))
@@ -85,7 +100,7 @@ class ReviseCurrentPromptTest(unittest.TestCase):
 
         self.assertEqual(revised["general_tags"], tags)
 
-    def test_dropped_sentence_is_reported_in_warning(self) -> None:
+    def test_dropped_sentence_is_reported_and_not_restored(self) -> None:
         current = f"1girl, smile, {SENTENCE}"
         output = _revision(subject_tags=["1girl"], general_tags=["smile"])
 
