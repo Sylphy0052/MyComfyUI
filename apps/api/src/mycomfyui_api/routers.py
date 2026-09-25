@@ -5355,6 +5355,14 @@ async def _assist_image_prompt(
         )
     except agent_base.AgentError as error:
         raise _agent_error(error) from error
+    if current_positive_prompt.strip() and not images:
+        # 画像を添えたときは画像から直す点を探すため、タグの増減を画像に任せる。
+        try:
+            output = proposals.revise_current_prompt(
+                output, current_positive_prompt, instruction
+            )
+        except agent_base.AgentError as error:
+            raise _agent_error(error) from error
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],
         tag_line=output.get("tag_line", ""),

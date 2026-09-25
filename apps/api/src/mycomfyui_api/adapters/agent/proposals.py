@@ -161,6 +161,11 @@ class ImagePromptOutput(PromptBody):
     tag_glosses: list[TagGloss] = Field(
         default_factory=list, max_length=MAX_PROMPT_TAGS * len(TAG_BLOCK_FIELDS)
     )
+    #: 現在のpromptを直したときに、そこから消したタグ。これに無いタグは
+    #: `revise_current_prompt`が残す。
+    removed_tags: list[PromptTag] = Field(
+        default_factory=list, max_length=MAX_PROMPT_TAGS * len(TAG_BLOCK_FIELDS)
+    )
 
 
 class VideoPromptOutput(ProposalOutput):
@@ -706,6 +711,137 @@ def apply_prompt_style(
     return data
 
 
+#: 現在のpromptのうち、タグとして読む単語数の上限。これより長い区切りは文とみなす。
+MAX_CURRENT_TAG_WORDS = 6
+#: 人数を示すタグ。現在のpromptから残すとき`subject_tags`へ戻す。
+SUBJECT_TAG_PATTERN = re.compile(r"^(?:\d+\+?(?:girl|boy|other)s?|solo|multiple \w+)$")
+#: 品質、meta、yearのタグ。現在のpromptから残すとき`quality_tags`へ戻す。
+QUALITY_TAG_PATTERN = re.compile(
+    r"^(?:masterpiece|(?:best|high|good|normal|low|worst) quality|absurdres|highres"
+    r"|score_\d+(?:_up)?|(?:year )?\d{4}|newest|recent)$"
+)
+#: 現在のpromptに無ければ足さないブロック。内容の指示から導けない固有名と品質である。
+REVISION_LOCKED_FIELDS = ("quality_tags", "character_tags", "artist_tags")
+
+
+def _current_tags(current_positive_prompt: str) -> list[str]:
+    """現在のpromptのタグ行からタグを取り出す。
+
+    タグ行と自然文は空行で区切って組み立てる(`compose_positive_prompt`)。先頭の段落
+    だけを読み、単語数が多い区切りは文の一部とみなして落とす。
+    """
+    tag_line = current_positive_prompt.strip().split("\n\n", 1)[0]
+    tags = [_normalize_tag(value) for value in tag_line.split(",")]
+    return _dedupe(
+        tag
+        for tag in tags
+        if tag and len(tag.split()) <= MAX_CURRENT_TAG_WORDS and not tag.endswith(".")
+    )
+
+
+def _mentioned(key: str, instruction: str) -> bool:
+    """タグが利用者の指示に綴りどおり書かれているか。語の途中の一致は数えない。"""
+    pattern = rf"(?<![a-z0-9_]){re.escape(key)}(?![a-z0-9_])"
+    return re.search(pattern, instruction.casefold()) is not None
+
+
+def _restored_field(tag: str) -> str:
+    """現在のpromptから残すタグを入れるブロック。分からなければ`general_tags`。"""
+    key = _dedupe_key(tag)
+    if key in RATING_TAGS or QUALITY_TAG_PATTERN.match(key):
+        return "quality_tags"
+    if key.startswith("@"):
+        return "artist_tags"
+    if SUBJECT_TAG_PATTERN.match(key):
+        return "subject_tags"
+    return "general_tags"
+
+
+def revise_current_prompt(
+    output: dict[str, Any], current_positive_prompt: str, instruction: str
+) -> dict[str, Any]:
+    """現在のpromptを直した案を、指示と関係の無いタグが変わらないよう整える (#356)。
+
+    小さいモデルは直すつもりでも作り直し、指示に無いrating、キャラクター、絵師を足したり、
+    関係の無いタグを落としたりする。指示文だけでは防げないため実装側で次を保つ。
+
+    - `removed_tags`に挙げずに落とした現在のタグは戻す
+    - 品質、キャラクター、絵師のタグは、現在のpromptか指示に綴りが無ければ足さない
+    - ratingは指示に綴りが無ければ現在のpromptの値を使い、無ければ`safe`にする
+    """
+    current = _current_tags(current_positive_prompt)
+    current_keys = {_dedupe_key(tag) for tag in current}
+    data = dict(output)
+    for name in TAG_BLOCK_FIELDS:
+        data[name] = [
+            tag
+            for tag in (_normalize_tag(value) for value in data.get(name) or [])
+            if tag
+        ]
+
+    requested = [
+        tag
+        for tag in data["quality_tags"]
+        if _dedupe_key(tag) in RATING_TAGS and _mentioned(_dedupe_key(tag), instruction)
+    ]
+    current_ratings = [tag for tag in current if _dedupe_key(tag) in RATING_TAGS]
+    rating = (requested or current_ratings or [FALLBACK_RATING_TAG])[0]
+    data["quality_tags"] = [
+        tag for tag in data["quality_tags"] if _dedupe_key(tag) not in RATING_TAGS
+    ]
+
+    added: list[str] = []
+    for name in REVISION_LOCKED_FIELDS:
+        kept = []
+        for tag in data[name]:
+            key = _dedupe_key(tag)
+            if key in current_keys or _mentioned(key, instruction):
+                kept.append(tag)
+            else:
+                added.append(tag)
+        data[name] = kept
+
+    # `indoors`を`indoor`と書くような単複の揺れは、消したものとして扱う。
+    removed_keys = {
+        _dedupe_key(_normalize_tag(tag)).removesuffix("s")
+        for tag in data.get("removed_tags") or []
+    }
+    output_keys = {_dedupe_key(tag) for name in TAG_BLOCK_FIELDS for tag in data[name]}
+    restored: list[str] = []
+    for tag in current:
+        key = _dedupe_key(tag)
+        if (
+            key in RATING_TAGS
+            or key in output_keys
+            or key.removesuffix("s") in removed_keys
+        ):
+            continue
+        data[_restored_field(tag)].append(tag)
+        restored.append(tag)
+    data["quality_tags"].append(rating)
+
+    if added or restored:
+        logger.warning(
+            "レビュー案を整えました。足さなかったタグ: %s / 戻したタグ: %s",
+            ", ".join(added) or "なし",
+            ", ".join(restored) or "なし",
+        )
+    final_keys = {_dedupe_key(tag) for name in TAG_BLOCK_FIELDS for tag in data[name]}
+    glosses = [
+        gloss
+        for gloss in data.get("tag_glosses") or []
+        if isinstance(gloss, dict)
+        and _dedupe_key(_normalize_tag(gloss.get("tag"))) in final_keys
+    ]
+    if _dedupe_key(rating) == FALLBACK_RATING_TAG and not any(
+        gloss.get("tag") == FALLBACK_RATING_TAG for gloss in glosses
+    ):
+        glosses.append({"tag": FALLBACK_RATING_TAG, "ja": FALLBACK_RATING_GLOSS})
+    data["tag_glosses"] = glosses
+    _attach_prompt_text(data)
+    return data
+
+
 #: 画面の内容を表すタグ配列。品質と絵師のタグだけでは何を描くかが決まらない。
 CONTENT_TAG_FIELDS = tuple(
     name for name in TAG_BLOCK_FIELDS if name not in {"quality_tags", "artist_tags"}
@@ -731,6 +867,23 @@ IMAGE_DIRECTIVE = (
 )
 
 
+#: 現在のpromptを渡して直させるときに本文へ足す説明。小さいモデルは作り直すつもりで
+#: 全ブロックを埋め、指示に無いキャラクター、絵師、ratingを足したり、指示と関係の無い
+#: タグを落としたりする (#356)。
+REVISION_DIRECTIVE = (
+    "## 現在のpromptを直すとき\n"
+    "対象の情報のcurrent_positive_promptが、直す元のpromptである。そのタグを1つずつ"
+    "該当するブロックの配列へ写し、利用者の指示に関わるタグだけを足すか消すか置き換える。"
+    "指示に関わらないタグは1つも消さない。current_positive_promptに無いキャラクター、"
+    "作品、絵師、meta、year、ratingのタグは足さず、そのブロックは空配列のままにする。"
+    "指示に関わらない外見、表情、ポーズ、アングルのタグも足さない。"
+    "ratingはcurrent_positive_promptにある値をそのまま使い、無ければsafeにする。"
+    "removed_tagsには、current_positive_promptから消したタグと置き換えた元のタグを"
+    "そのまま書く。"
+    "rationaleには実際に変えたタグだけを書き、変えていない点を変えたと書かない。"
+)
+
+
 def build_prompt(request: ProposalRequest) -> str:
     """Providerへ渡す本文。コマンド行ではなく標準入力へ流す。"""
     sections = [KIND_DIRECTIVES[request.kind], ""]
@@ -750,6 +903,10 @@ def build_prompt(request: ProposalRequest) -> str:
             json.dumps(request.context, ensure_ascii=False, indent=2),
         ]
     )
+    if request.kind == "image_prompt" and request.context.get(
+        "current_positive_prompt"
+    ):
+        sections.extend(["", REVISION_DIRECTIVE])
     if request.images:
         sections.extend(["", IMAGE_DIRECTIVE])
     return "\n".join(sections)
