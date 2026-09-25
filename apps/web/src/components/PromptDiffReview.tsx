@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { applyPromptDiff, diffPrompt } from "../prompt/merge";
 import type { DiffHunk } from "../prompt/merge";
+import type { AssistResult } from "./PromptAssist";
 
 /** 差分計算の対象になる1つのプロンプト欄。 */
 export interface PromptDiffField {
@@ -16,6 +17,16 @@ export interface PromptDiffField {
    * 記述を消す意図とみなせる欄だけで立てる (#357)。
    */
   acceptRemovals?: boolean;
+}
+
+/**
+ * 開いている差分レビュー。差分と、そこに添える AI の説明・タグ訳を1つの値で持ち、
+ * 開く・閉じるときに両方が必ず一緒に変わるようにする (#360)。
+ */
+export interface PromptDiffState {
+  fields: PromptDiffField[];
+  /** 補完から開いた差分に添える説明とタグ訳。補完以外から開いた差分では null (#354)。 */
+  notes: AssistResult | null;
 }
 
 interface Props {

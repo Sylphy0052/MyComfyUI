@@ -11,9 +11,8 @@ import type {
 } from "../api/client";
 import { LookProfileManager } from "./LookProfileManager";
 import { AssistNotes, PromptAssist } from "./PromptAssist";
-import type { AssistResult } from "./PromptAssist";
 import { PromptDiffReview } from "./PromptDiffReview";
-import type { PromptDiffField } from "./PromptDiffReview";
+import type { PromptDiffState } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
 
 interface Props {
@@ -66,9 +65,7 @@ export function GenerationSweepPanel({
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState("");
   const [providers, setProviders] = useState<AgentProvider[]>([]);
-  const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
-  // 補完から開いた差分に添える AI の説明とタグ訳。補完以外から開いた差分では null (#354)。
-  const [promptDiffNotes, setPromptDiffNotes] = useState<AssistResult | null>(null);
+  const [promptDiff, setPromptDiff] = useState<PromptDiffState | null>(null);
   const [seedAxis, setSeedAxis] = useState("-1");
   const [cfgAxis, setCfgAxis] = useState("4,5");
   const [stepsAxis, setStepsAxis] = useState("20,30");
@@ -301,7 +298,7 @@ export function GenerationSweepPanel({
           <label>展開方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="cartesian">直積</option><option value="zip">zip</option></select></label>
           {promptDiff ? (
             <PromptDiffReview
-              fields={promptDiff}
+              fields={promptDiff.fields}
               onCancel={() => setPromptDiff(null)}
               onAccept={(result) => {
                 if ("positive_prompt" in result) setPrompt(result.positive_prompt);
@@ -309,7 +306,7 @@ export function GenerationSweepPanel({
                 setPromptDiff(null);
               }}
             >
-              {promptDiffNotes && <AssistNotes result={promptDiffNotes} />}
+              {promptDiff.notes && <AssistNotes result={promptDiff.notes} />}
             </PromptDiffReview>
           ) : (
             <PromptAssist
@@ -321,17 +318,19 @@ export function GenerationSweepPanel({
               placeholder="例: 夕暮れの海辺に立つ少女。構図は引きで。"
               onApply={(result) => {
                 // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
-                setPromptDiffNotes(result.notes);
-                setPromptDiff([
-                  {
-                    key: "positive_prompt",
-                    label: "基本プロンプト",
-                    current: prompt,
-                    proposed: result.positive,
-                    acceptRemovals: result.review,
-                  },
-                  { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },
-                ]);
+                setPromptDiff({
+                  notes: result.notes,
+                  fields: [
+                    {
+                      key: "positive_prompt",
+                      label: "基本プロンプト",
+                      current: prompt,
+                      proposed: result.positive,
+                      acceptRemovals: result.review,
+                    },
+                    { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },
+                  ],
+                });
               }}
             />
           )}
