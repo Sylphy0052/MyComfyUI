@@ -553,12 +553,17 @@ def _drop_untranslated_glosses(body: dict[str, Any]) -> None:
     glosses = body.get("tag_glosses")
     if not isinstance(glosses, list):
         return
-    body["tag_glosses"] = [
+    kept = [
         gloss
         for gloss in glosses
         if isinstance(gloss, dict)
         and JAPANESE_CHARACTER.search(str(gloss.get("ja") or ""))
     ]
+    if len(kept) < len(glosses):
+        logger.warning(
+            "日本語になっていないタグ訳を%d件除きました。", len(glosses) - len(kept)
+        )
+    body["tag_glosses"] = kept
 
 
 def _attach_prompt_text(body: dict[str, Any]) -> None:
@@ -642,8 +647,10 @@ def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
         raise AgentInvalidResponse(f"提案の形が期待と異なります: {error}") from error
     data = validated.model_dump()
     if kind == "image_prompt":
-        _drop_untranslated_glosses(data)
+        # 補ったratingの訳は日本語のため除かれない。先に除くと、全訳が写しだったときに
+        # 訳の一覧が空になり、補ったratingの訳も足されなくなる。
         _attach_prompt_text(data)
+        _drop_untranslated_glosses(data)
     elif kind == "batch_generation_plan":
         original = data.get("items", [])
         items = [
