@@ -327,6 +327,7 @@ export function GenerationSweepPanel({
                       current: prompt,
                       proposed: result.positive,
                       acceptRemovals: result.review,
+                      reasons: result.notes,
                     },
                     { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },
                   ],

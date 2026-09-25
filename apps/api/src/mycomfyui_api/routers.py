@@ -5363,6 +5363,8 @@ async def _assist_image_prompt(
         )
     except agent_base.AgentError as error:
         raise _agent_error(error) from error
+    # 書き方の整形で自然文が落ちることもあるため、整形後の案で差分を取る。
+    output = proposals.describe_prompt_changes(output, current_positive_prompt)
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],
         tag_line=output.get("tag_line", ""),
@@ -5372,6 +5374,8 @@ async def _assist_image_prompt(
         ),
         rationale=output["rationale"],
         tag_glosses=output.get("tag_glosses", []),
+        tag_changes=output["tag_changes"],
+        natural_text_change=output["natural_text_change"],
         provider_id=provider.id,
         model=result.model,
     )

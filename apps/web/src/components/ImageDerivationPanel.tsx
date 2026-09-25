@@ -428,6 +428,7 @@ export function ImageDerivationPanel({
                       current: prompt,
                       proposed: result.positive,
                       acceptRemovals: result.review,
+                      reasons: result.notes,
                     },
                     {
                       key: "negative_prompt",

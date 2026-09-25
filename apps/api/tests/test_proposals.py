@@ -6,6 +6,7 @@ from mycomfyui_api.adapters.agent.proposals import (
     MAX_PROMPT_TAGS,
     _current_tags,
     _warn_untranslated_rationale,
+    describe_prompt_changes,
     revise_current_prompt,
 )
 
@@ -55,7 +56,8 @@ def _revision(**fields: object) -> dict[str, object]:
         "character_tags": [],
         "artist_tags": [],
         "general_tags": [],
-        "removed_tags": [],
+        "tag_changes": [],
+        "natural_text_change": {"change": "unchanged", "reason": ""},
         "natural_text": "",
         "tag_glosses": [],
         "rationale": "",
@@ -132,14 +134,185 @@ class ReviseCurrentPromptTest(unittest.TestCase):
         self.assertIn(f"文とみなして戻さなかった区切り: {SENTENCE}", logs.output[0])
         self.assertNotIn(SENTENCE, revised["general_tags"])
 
-    def test_sentence_listed_in_removed_tags_is_not_reported(self) -> None:
+    def test_sentence_listed_as_removed_is_not_reported(self) -> None:
         current = f"1girl, smile, {SENTENCE}"
         output = _revision(
-            subject_tags=["1girl"], general_tags=["smile"], removed_tags=[SENTENCE]
+            subject_tags=["1girl"],
+            general_tags=["smile"],
+            tag_changes=[
+                {"tag": SENTENCE, "change": "removed", "field": "general_tags"}
+            ],
         )
 
         with self.assertNoLogs(LOGGER_NAME, level="WARNING"):
             revise_current_prompt(output, current, "")
+
+    def test_character_tag_without_instruction_spelling_is_restored(self) -> None:
+        current = "hatsune miku"
+        output = _revision(
+            tag_changes=[
+                {"tag": "hatsune miku", "change": "removed", "field": "character_tags"}
+            ]
+        )
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as logs:
+            revised = revise_current_prompt(output, current, "")
+
+        self.assertIn("hatsune miku", revised["character_tags"])
+        self.assertIn("指示に綴りが無く消さなかったタグ: hatsune miku", logs.output[0])
+
+    def test_artist_and_quality_tags_are_restored_regardless_of_declared_field(
+        self,
+    ) -> None:
+        current = "masterpiece, @wlop"
+        output = _revision(
+            tag_changes=[
+                {"tag": "masterpiece", "change": "removed", "field": "general_tags"},
+                {"tag": "@wlop", "change": "removed", "field": "general_tags"},
+            ]
+        )
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING"):
+            revised = revise_current_prompt(output, current, "")
+
+        self.assertIn("masterpiece", revised["quality_tags"])
+        self.assertIn("@wlop", revised["artist_tags"])
+
+    def test_character_tag_with_instruction_spelling_is_removed(self) -> None:
+        current = "hatsune miku"
+        output = _revision(
+            tag_changes=[
+                {"tag": "hatsune miku", "change": "removed", "field": "character_tags"}
+            ]
+        )
+        instruction = "hatsune mikuの要素を消してください。"
+
+        with self.assertNoLogs(LOGGER_NAME, level="WARNING"):
+            revised = revise_current_prompt(output, current, instruction)
+
+        self.assertEqual(revised["character_tags"], [])
+
+    def test_general_tag_removal_is_kept_even_without_instruction_spelling(
+        self,
+    ) -> None:
+        current = "smile"
+        output = _revision(
+            tag_changes=[{"tag": "smile", "change": "removed", "field": "general_tags"}]
+        )
+
+        revised = revise_current_prompt(output, current, "")
+
+        self.assertEqual(revised["general_tags"], [])
+
+    def test_natural_text_dropped_without_reason_is_restored(self) -> None:
+        current = "1girl\n\nA girl stands in the rain."
+        output = _revision(subject_tags=["1girl"])
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as logs:
+            revised = revise_current_prompt(output, current, "")
+
+        self.assertEqual(revised["natural_text"], "A girl stands in the rain.")
+        self.assertIn("自然文を戻した: はい", logs.output[0])
+
+    def test_natural_text_marked_removed_is_dropped(self) -> None:
+        current = "1girl\n\nA girl stands in the rain."
+        output = _revision(
+            subject_tags=["1girl"],
+            natural_text_change={"change": "removed", "reason": "不要だった"},
+        )
+
+        with self.assertNoLogs(LOGGER_NAME, level="WARNING"):
+            revised = revise_current_prompt(output, current, "")
+
+        self.assertEqual(revised["natural_text"], "")
+
+
+class DescribePromptChangesTest(unittest.TestCase):
+    def test_tag_diff_uses_actual_difference_and_model_reasons(self) -> None:
+        current = "1girl, smile, @wlop"
+        output = _revision(
+            tag_line="1girl, happy, @wlop, masterpiece",
+            tag_changes=[
+                {"tag": "happy", "change": "added", "reason": "表情を変えた"},
+                {"tag": "smile", "change": "removed", "reason": ""},
+                {"tag": "masterpiece", "change": "added"},
+            ],
+        )
+
+        result = describe_prompt_changes(output, current)
+
+        self.assertEqual(
+            result["tag_changes"],
+            [
+                {"tag": "happy", "change": "added", "reason": "表情を変えた"},
+                {"tag": "masterpiece", "change": "added", "reason": ""},
+                {"tag": "smile", "change": "removed", "reason": ""},
+            ],
+        )
+
+    def test_natural_text_change_detects_added(self) -> None:
+        current = "1girl"
+        output = _revision(
+            tag_line="1girl",
+            natural_text="A girl in the rain.",
+            natural_text_change={"change": "added", "reason": "情景を書き足した"},
+        )
+
+        result = describe_prompt_changes(output, current)
+
+        self.assertEqual(result["tag_changes"], [])
+        self.assertEqual(
+            result["natural_text_change"],
+            {"change": "added", "reason": "情景を書き足した"},
+        )
+
+    def test_natural_text_change_detects_removed(self) -> None:
+        current = "1girl\n\nA girl stands in the rain."
+        output = _revision(
+            tag_line="1girl",
+            natural_text="",
+            natural_text_change={"change": "removed", "reason": "説明が不要だった"},
+        )
+
+        result = describe_prompt_changes(output, current)
+
+        self.assertEqual(
+            result["natural_text_change"],
+            {"change": "removed", "reason": "説明が不要だった"},
+        )
+
+    def test_natural_text_change_detects_modified(self) -> None:
+        current = "1girl\n\nA girl stands in the rain."
+        output = _revision(
+            tag_line="1girl",
+            natural_text="A girl stands in the snow.",
+            natural_text_change={"change": "modified", "reason": "天候を変えた"},
+        )
+
+        result = describe_prompt_changes(output, current)
+
+        self.assertEqual(
+            result["natural_text_change"],
+            {"change": "modified", "reason": "天候を変えた"},
+        )
+
+    def test_empty_current_prompt_returns_no_changes(self) -> None:
+        output = _revision(
+            tag_line="1girl",
+            natural_text="hi",
+            tag_changes=[{"tag": "1girl", "change": "added", "reason": "x"}],
+            natural_text_change={"change": "added", "reason": "y"},
+        )
+
+        for current in ("", "   "):
+            with self.subTest(current=repr(current)):
+                result = describe_prompt_changes(output, current)
+
+                self.assertEqual(result["tag_changes"], [])
+                self.assertEqual(
+                    result["natural_text_change"],
+                    {"change": "unchanged", "reason": ""},
+                )
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { applyPromptDiff, diffPrompt } from "../prompt/merge";
-import type { DiffHunk } from "../prompt/merge";
-import type { AssistResult } from "./PromptAssist";
+import { applyPromptDiff, bareTag, diffPrompt } from "../prompt/merge";
+import type { DiffHunk, PromptSegment } from "../prompt/merge";
+import { MISSING_REASON, describeNaturalTextChange } from "./PromptAssist";
+import type { AssistResult, TagChange } from "./PromptAssist";
 
 /** 差分計算の対象になる1つのプロンプト欄。 */
 export interface PromptDiffField {
@@ -17,6 +18,11 @@ export interface PromptDiffField {
    * 記述を消す意図とみなせる欄だけで立てる (#357)。
    */
   acceptRemovals?: boolean;
+  /**
+   * 各hunkに添える変更理由。AI が現在のプロンプトを直した欄だけで渡す。理由は
+   * positive prompt についてのものなので、他の欄には渡さない (#382)。
+   */
+  reasons?: AssistResult;
 }
 
 /**
@@ -130,6 +136,9 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
                       {isDefaultRemoval && <span className="muted">(既定で選択)</span>}
                     </label>
                     <span className="mono">{describeHunk(hunk)}</span>
+                    {field.reasons && (
+                      <span className="muted">{hunkReason(hunk, field.reasons)}</span>
+                    )}
                   </li>
                 );
               })}
@@ -165,4 +174,29 @@ function describeHunk(hunk: DiffHunk): string {
   if (hunk.kind === "add") return hunk.after?.text ?? "";
   if (hunk.kind === "remove") return hunk.before?.text ?? "";
   return `${hunk.before?.text ?? ""} → ${hunk.after?.text ?? ""}`;
+}
+
+/** 変更一覧から、同じタグ・同じ種別の理由を探す。重み付けと大文字小文字は区別しない。 */
+function tagReason(
+  changes: readonly TagChange[],
+  change: TagChange["change"],
+  segment: PromptSegment | null,
+): string | null {
+  if (!segment) return null;
+  const key = bareTag(segment.text);
+  const found = changes.find((item) => item.change === change && bareTag(item.tag) === key);
+  return found ? found.reason || MISSING_REASON : null;
+}
+
+/** hunkに添える理由。自然文の段落は自然文の変更理由を、タグはタグの変更理由を返す。 */
+function hunkReason(hunk: DiffHunk, reasons: AssistResult): string {
+  if (hunk.before?.paragraph || hunk.after?.paragraph) {
+    return describeNaturalTextChange(reasons.naturalTextChange) ?? MISSING_REASON;
+  }
+  const changes = reasons.tagChanges ?? [];
+  const found = [
+    hunk.kind !== "add" && tagReason(changes, "removed", hunk.before),
+    hunk.kind !== "remove" && tagReason(changes, "added", hunk.after),
+  ].filter((reason): reason is string => Boolean(reason));
+  return found.length > 0 ? found.join(" / ") : MISSING_REASON;
 }

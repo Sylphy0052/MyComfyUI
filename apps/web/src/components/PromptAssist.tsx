@@ -85,7 +85,12 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
             current_negative_prompt: current.negative,
           }),
         });
-        const notes = { rationale: result.rationale, tagGlosses: result.tag_glosses ?? [] };
+        const notes = {
+          rationale: result.rationale,
+          tagGlosses: result.tag_glosses ?? [],
+          tagChanges: result.tag_changes ?? [],
+          naturalTextChange: result.natural_text_change,
+        };
         onApply({
           positive: result.positive_prompt,
           negative: result.negative_prompt,
@@ -107,10 +112,27 @@ export interface AssistRequest {
   review: boolean;
 }
 
-/** 補完後に欄の下へ出す、AI の説明とタグの日本語訳。 */
+/** 現在の prompt を直した案で、足したか消したタグ1つと、その理由 (#382)。 */
+export interface TagChange {
+  tag: string;
+  change: "added" | "removed";
+  /** AI が理由を書かなかったときは空文字。 */
+  reason: string;
+}
+
+/** 現在の prompt を直した案で、自然文をどう変えたかと、その理由 (#382)。 */
+export interface NaturalTextChange {
+  change: "unchanged" | "added" | "removed" | "modified";
+  reason: string;
+}
+
+/** 補完後に欄の下へ出す、AI の説明とタグの日本語訳、直した案の変更理由。 */
 export interface AssistResult {
   rationale?: string;
   tagGlosses?: { tag: string; ja: string }[];
+  /** 現在の prompt を直したときだけ入る。変更一覧は API が実際の差分から組み立てる (#382)。 */
+  tagChanges?: TagChange[];
+  naturalTextChange?: NaturalTextChange;
 }
 
 interface FieldProps {
@@ -302,11 +324,49 @@ export function PromptAssistField({
   );
 }
 
-/** AI の説明とタグの日本語訳。補完欄の下と、補完から開いた差分レビューの上に出す。 */
+/** 理由が空のときに出す文言。 */
+export const MISSING_REASON = "理由の記載なし";
+
+const TAG_CHANGE_LABELS: Record<TagChange["change"], string> = {
+  added: "追加",
+  removed: "削除",
+};
+
+const NATURAL_TEXT_CHANGE_LABELS: Record<NaturalTextChange["change"], string> = {
+  unchanged: "変更なし",
+  added: "追加",
+  removed: "削除",
+  modified: "修正",
+};
+
+/** 自然文の変更を「自然文を修正: 理由」の形で返す。変えていなければ null。 */
+export function describeNaturalTextChange(change: NaturalTextChange | undefined): string | null {
+  if (!change || change.change === "unchanged") return null;
+  return `自然文を${NATURAL_TEXT_CHANGE_LABELS[change.change]}: ${change.reason || MISSING_REASON}`;
+}
+
+/** AI の説明とタグの日本語訳、直した案の変更理由。補完欄の下と、補完から開いた差分レビューの上に出す。 */
 export function AssistNotes({ result }: { result: AssistResult }) {
+  const naturalText = describeNaturalTextChange(result.naturalTextChange);
   return (
     <>
       {result.rationale && <p className="muted">AIの説明: {result.rationale}</p>}
+      {result.tagChanges && result.tagChanges.length > 0 && (
+        <details className="tag-glosses" open>
+          <summary>タグの変更と理由 ({result.tagChanges.length})</summary>
+          <dl>
+            {result.tagChanges.map((change, index) => (
+              <div key={`${change.change}-${change.tag}-${index}`}>
+                <dt>
+                  {TAG_CHANGE_LABELS[change.change]}: {change.tag}
+                </dt>
+                <dd>{change.reason || MISSING_REASON}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
+      {naturalText && <p className="muted">{naturalText}</p>}
       {result.tagGlosses && result.tagGlosses.length > 0 && (
         <details className="tag-glosses" open>
           <summary>タグの日本語訳 ({result.tagGlosses.length})</summary>

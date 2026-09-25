@@ -12,7 +12,7 @@ import json
 import logging
 import re
 from collections.abc import Iterable, Mapping
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -153,6 +153,32 @@ class TagGloss(ProposalOutput):
     ja: str = Field(max_length=100)
 
 
+TagChangeKind = Literal["added", "removed"]
+NaturalTextChangeKind = Literal["unchanged", "added", "removed", "modified"]
+TagBlockField = Literal[
+    "quality_tags", "subject_tags", "character_tags", "artist_tags", "general_tags"
+]
+#: 変更1件の理由の長さの上限。
+MAX_CHANGE_REASON_LENGTH = 500
+
+
+class TagChange(ProposalOutput):
+    """現在のpromptを直したときに足した、または消したタグ1つと、その理由。"""
+
+    tag: PromptTag
+    change: TagChangeKind
+    #: タグが属する(消したときは属していた)ブロック。消すタグの検証に使う。
+    field: TagBlockField
+    reason: str = Field(default="", max_length=MAX_CHANGE_REASON_LENGTH)
+
+
+class NaturalTextChange(ProposalOutput):
+    """現在のpromptを直したときの自然文の変更と、その理由。自然文は1段落として扱う。"""
+
+    change: NaturalTextChangeKind = "unchanged"
+    reason: str = Field(default="", max_length=MAX_CHANGE_REASON_LENGTH)
+
+
 class ImagePromptOutput(PromptBody):
     """画像生成のprompt案。承認後の生成Job投入に使う。"""
 
@@ -161,11 +187,12 @@ class ImagePromptOutput(PromptBody):
     tag_glosses: list[TagGloss] = Field(
         default_factory=list, max_length=MAX_PROMPT_TAGS * len(TAG_BLOCK_FIELDS)
     )
-    #: 現在のpromptを直したときに、そこから消したタグ。これに無いタグは
+    #: 現在のpromptを直したときに、足したタグと消したタグ。消したタグに無いタグは
     #: `revise_current_prompt`が残す。
-    removed_tags: list[PromptTag] = Field(
-        default_factory=list, max_length=MAX_PROMPT_TAGS * len(TAG_BLOCK_FIELDS)
+    tag_changes: list[TagChange] = Field(
+        default_factory=list, max_length=MAX_PROMPT_TAGS * len(TAG_BLOCK_FIELDS) * 2
     )
+    natural_text_change: NaturalTextChange = Field(default_factory=NaturalTextChange)
 
 
 class VideoPromptOutput(ProposalOutput):
@@ -331,6 +358,8 @@ KIND_DIRECTIVES: dict[ProposalKind, str] = {
         '例: {"tag": "school uniform", "ja": "制服"}、'
         '{"tag": "holding umbrella", "ja": "傘を持つ"}。\n'
         "rationaleは日本語で書く。"
+        "tag_changesとnatural_text_changeは現在のpromptを直すときだけ使う。"
+        "それ以外はtag_changesを空配列、natural_text_changeのchangeをunchangedにする。"
     ),
     "shot_breakdown": (
         "与えたSceneをShotへ分割する案を出す。各Shotの内容、カメラ、登場人物、"
@@ -755,6 +784,12 @@ def _current_tags(current_positive_prompt: str) -> tuple[list[str], list[str]]:
     return _dedupe(tags), _dedupe(sentences)
 
 
+def _current_natural_text(current_positive_prompt: str) -> str:
+    """現在のpromptの自然文。タグ行より後ろの段落をまとめて1つの自然文とみなす。"""
+    parts = current_positive_prompt.strip().split("\n\n", 1)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
 def _mentioned(key: str, instruction: str) -> bool:
     """タグが利用者の指示に綴りどおり書かれているか。語の途中の一致は数えない。"""
     pattern = rf"(?<![a-z0-9_]){re.escape(key)}(?![a-z0-9_])"
@@ -773,6 +808,25 @@ def _restored_field(tag: str) -> str:
     return "general_tags"
 
 
+def _locked_removal_field(key: str, declared_field: Any) -> str | None:
+    """消すタグが`REVISION_LOCKED_FIELDS`に属するなら、そのブロックを返す。
+
+    現在のpromptの文字列からはキャラクターのタグを見分けられないため、モデルが申告した
+    ブロックを使う。申告を誤っても素通りしないよう、書き方で品質か絵師と分かるタグは
+    申告によらず対象にする。キャラクターを別のブロックと申告された場合は見分けられない。
+    括弧書き (`saber (fate)`) は一般のタグにも使うため、キャラクターの目印にしない。
+    ratingは別に扱うため対象外とする。
+    """
+    if not key or key in RATING_TAGS:
+        return None
+    inferred = _restored_field(key)
+    if inferred in REVISION_LOCKED_FIELDS:
+        return inferred
+    if declared_field in REVISION_LOCKED_FIELDS:
+        return str(declared_field)
+    return None
+
+
 def revise_current_prompt(
     output: dict[str, Any], current_positive_prompt: str, instruction: str
 ) -> dict[str, Any]:
@@ -781,8 +835,10 @@ def revise_current_prompt(
     小さいモデルは直すつもりでも作り直し、指示に無いrating、キャラクター、絵師を足したり、
     関係の無いタグを落としたりする。指示文だけでは防げないため実装側で次を保つ。
 
-    - `removed_tags`に挙げずに落とした現在のタグは戻す
+    - `tag_changes`で消したと挙げずに落とした現在のタグは戻す
     - 品質、キャラクター、絵師のタグは、現在のpromptか指示に綴りが無ければ足さない
+    - 同じく、指示に綴りが無ければ`tag_changes`で消したと挙げても戻す (#382)
+    - `natural_text_change`で消したと挙げずに自然文を空にしたら、現在の自然文を戻す
     - ratingは指示に綴りが無ければ現在のpromptの値を使い、無ければ`safe`にする
 
     戻した結果がブロックの件数上限(`MAX_PROMPT_TAGS`)を超えたときは拒否する。文の
@@ -820,13 +876,21 @@ def revise_current_prompt(
                 added.append(tag)
         data[name] = kept
 
-    # `indoors`を`indoor`と書くような単複の揺れは、消したものとして扱う。
-    removed_keys = {
-        _dedupe_key(_normalize_tag(tag)).removesuffix("s")
-        for tag in data.get("removed_tags") or []
-    }
+    # `indoors`を`indoor`と書くような単複の揺れは、消したものとして扱う。消すタグの
+    # うち品質、キャラクター、絵師は、指示に綴りが無ければ消したものとして扱わない。
+    removed_keys: set[str] = set()
+    locked_removals: dict[str, str] = {}
+    for change in data.get("tag_changes") or []:
+        if not isinstance(change, dict) or change.get("change") != "removed":
+            continue
+        key = _dedupe_key(_normalize_tag(change.get("tag")))
+        locked_field = _locked_removal_field(key, change.get("field"))
+        if locked_field and not _mentioned(key, instruction):
+            locked_removals[key.removesuffix("s")] = locked_field
+        else:
+            removed_keys.add(key.removesuffix("s"))
     output_keys = {_dedupe_key(tag) for name in TAG_BLOCK_FIELDS for tag in data[name]}
-    restored: list[str] = []
+    restored: list[tuple[str, str]] = []
     for tag in current:
         key = _dedupe_key(tag)
         if (
@@ -835,8 +899,9 @@ def revise_current_prompt(
             or key.removesuffix("s") in removed_keys
         ):
             continue
-        data[_restored_field(tag)].append(tag)
-        restored.append(tag)
+        field = locked_removals.get(key.removesuffix("s"), _restored_field(tag))
+        data[field].append(tag)
+        restored.append((tag, field))
     data["quality_tags"].append(rating)
     unrestored = [
         sentence
@@ -844,19 +909,50 @@ def revise_current_prompt(
         if _dedupe_key(sentence) not in output_keys
         and _dedupe_key(sentence).removesuffix("s") not in removed_keys
     ]
+    unremoved = [
+        tag
+        for tag, _ in restored
+        if _dedupe_key(tag).removesuffix("s") in locked_removals
+    ]
+    dropped = [tag for tag, _ in restored if tag not in unremoved]
 
-    if added or restored or unrestored:
+    # 自然文は綴りで指示との関係を判定できない。理由を添えずに消したときだけ戻す。
+    # 上限を超える自然文は案へ入れられないため戻さず、warningで知らせる。
+    current_natural_text = _current_natural_text(current_positive_prompt)
+    natural_text_change = data.get("natural_text_change")
+    dropped_natural_text = bool(
+        current_natural_text
+        and not str(data.get("natural_text") or "").strip()
+        and not (
+            isinstance(natural_text_change, dict)
+            and natural_text_change.get("change") == "removed"
+        )
+    )
+    restored_natural_text = (
+        dropped_natural_text and len(current_natural_text) <= MAX_NATURAL_TEXT_LENGTH
+    )
+    if restored_natural_text:
+        data["natural_text"] = current_natural_text
+
+    if added or restored or unrestored or dropped_natural_text:
         logger.warning(
             "レビュー案を整えました。足さなかったタグ: %s / 戻したタグ: %s"
-            " / 文とみなして戻さなかった区切り: %s",
+            " / 指示に綴りが無く消さなかったタグ: %s"
+            " / 文とみなして戻さなかった区切り: %s / 自然文を戻した: %s",
             ", ".join(added) or "なし",
-            ", ".join(restored) or "なし",
+            ", ".join(dropped) or "なし",
+            ", ".join(unremoved) or "なし",
             ", ".join(unrestored) or "なし",
+            "はい"
+            if restored_natural_text
+            else "上限を超えるため戻せず"
+            if dropped_natural_text
+            else "いいえ",
         )
     # 上限を超えたブロックはすべて報告する。1つずつ直して再実行させないため (#378)。
     over_limit = [
         f"{name}が{len(data[name])}件 (うち現在のpromptから戻したタグ: "
-        f"{sum(1 for tag in restored if _restored_field(tag) == name)}件)"
+        f"{sum(1 for _, field in restored if field == name)}件)"
         for name in TAG_BLOCK_FIELDS
         if len(data[name]) > MAX_PROMPT_TAGS
     ]
@@ -878,6 +974,71 @@ def revise_current_prompt(
         glosses.append({"tag": FALLBACK_RATING_TAG, "ja": FALLBACK_RATING_GLOSS})
     data["tag_glosses"] = glosses
     _attach_prompt_text(data)
+    return data
+
+
+def _tag_line_items(tag_line: str) -> list[str]:
+    """タグ行をカンマで区切り、空でない区切りを重複なく返す。"""
+    return _dedupe(
+        tag for tag in (_normalize_tag(value) for value in tag_line.split(",")) if tag
+    )
+
+
+def describe_prompt_changes(
+    output: dict[str, Any], current_positive_prompt: str
+) -> dict[str, Any]:
+    """`tag_changes`と`natural_text_change`を、案と現在のpromptの実際の差分で組み直す。
+
+    モデルの申告は、戻したタグや書き方の整形と食い違う。変更の有無は最終的な案との
+    差分で決め、理由だけをモデルの出力からタグのキーで引く。理由が無い変更は空文字に
+    する。現在のpromptが無ければ直した案ではないため、変更なしとして返す。
+    """
+    data = dict(output)
+    if not current_positive_prompt.strip():
+        data["tag_changes"] = []
+        data["natural_text_change"] = {"change": "unchanged", "reason": ""}
+        return data
+
+    reasons: dict[tuple[str, str], str] = {}
+    for change in data.get("tag_changes") or []:
+        if isinstance(change, dict):
+            key = _dedupe_key(_normalize_tag(change.get("tag"))).removesuffix("s")
+            reason = str(change.get("reason") or "").strip()
+            reasons.setdefault((str(change.get("change")), key), reason)
+
+    def tag_change(tag: str, kind: str) -> dict[str, str]:
+        key = _dedupe_key(tag).removesuffix("s")
+        return {"tag": tag, "change": kind, "reason": reasons.get((kind, key), "")}
+
+    before = _tag_line_items(current_positive_prompt.strip().split("\n\n", 1)[0])
+    after = _tag_line_items(str(data.get("tag_line") or ""))
+    before_keys = {_dedupe_key(tag) for tag in before}
+    after_keys = {_dedupe_key(tag) for tag in after}
+    data["tag_changes"] = [
+        tag_change(tag, "added") for tag in after if _dedupe_key(tag) not in before_keys
+    ] + [
+        tag_change(tag, "removed")
+        for tag in before
+        if _dedupe_key(tag) not in after_keys
+    ]
+
+    current_text = " ".join(_current_natural_text(current_positive_prompt).split())
+    proposed_text = " ".join(str(data.get("natural_text") or "").split())
+    if current_text == proposed_text:
+        kind = "unchanged"
+    elif not current_text:
+        kind = "added"
+    elif not proposed_text:
+        kind = "removed"
+    else:
+        kind = "modified"
+    declared = data.get("natural_text_change")
+    reason = (
+        str(declared.get("reason") or "").strip()
+        if kind != "unchanged" and isinstance(declared, dict)
+        else ""
+    )
+    data["natural_text_change"] = {"change": kind, "reason": reason}
     return data
 
 
@@ -917,8 +1078,14 @@ REVISION_DIRECTIVE = (
     "作品、絵師、meta、year、ratingのタグは足さず、そのブロックは空配列のままにする。"
     "指示に関わらない外見、表情、ポーズ、アングルのタグも足さない。"
     "ratingはcurrent_positive_promptにある値をそのまま使い、無ければsafeにする。"
-    "removed_tagsには、current_positive_promptから消したタグと置き換えた元のタグを"
-    "そのまま書く。"
+    "tag_changesには、足したタグ(置き換えた先を含む)をchange=added、"
+    "current_positive_promptから消したタグ(置き換えた元を含む)をchange=removedとして"
+    "1件ずつ書く。tagはタグをそのまま、fieldはそのタグが属する(消したタグは属していた)"
+    "ブロック名、reasonには利用者の指示のどこに対応する変更かを日本語で書く。"
+    "current_positive_promptの2段落目が現在の自然文である。natural_text_changeのchangeには、"
+    "自然文を変えなければunchanged、新しく書けばadded、消せばremoved、書き換えれば"
+    "modifiedを入れ、reasonに理由を日本語で書く。指示に関わらない自然文は"
+    "そのままnatural_textへ写す。"
     "rationaleには実際に変えたタグだけを書き、変えていない点を変えたと書かない。"
 )
 

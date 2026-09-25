@@ -3456,6 +3456,7 @@ export interface components {
              * @default
              */
             natural_text: string;
+            natural_text_change?: components["schemas"]["ImagePromptNaturalTextChange"];
             /** Negative Prompt */
             negative_prompt: string;
             /** Positive Prompt */
@@ -3467,6 +3468,8 @@ export interface components {
             provider_id: "claude_code" | "codex" | "qwen" | "stub";
             /** Rationale */
             rationale: string;
+            /** Tag Changes */
+            tag_changes?: components["schemas"]["ImagePromptTagChange"][];
             /** Tag Glosses */
             tag_glosses?: components["schemas"]["ImagePromptTagGloss"][];
             /**
@@ -3474,6 +3477,41 @@ export interface components {
              * @default
              */
             tag_line: string;
+        };
+        /**
+         * ImagePromptNaturalTextChange
+         * @description 現在のpromptを直した案で、自然文をどう変えたかと、その理由。
+         */
+        ImagePromptNaturalTextChange: {
+            /**
+             * Change
+             * @default unchanged
+             * @enum {string}
+             */
+            change: "unchanged" | "added" | "removed" | "modified";
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /**
+         * ImagePromptTagChange
+         * @description 現在のpromptを直した案で、足したか消したタグ1つと、その理由。
+         */
+        ImagePromptTagChange: {
+            /**
+             * Change
+             * @enum {string}
+             */
+            change: "added" | "removed";
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Tag */
+            tag: string;
         };
         /**
          * ImagePromptTagGloss
