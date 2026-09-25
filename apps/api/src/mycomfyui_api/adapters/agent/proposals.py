@@ -575,7 +575,8 @@ def _strip_rating_prefix(quality_tags: list[Any]) -> list[Any]:
 
     指示文で接頭辞を禁じても返ることがある。残すとratingとして数えられず、
     `_ensure_rating_tag`が`safe`を補い、`rating:explicit`の意図が`safe`扱いに
-    なってnegativeで打ち消される。
+    なってnegativeで打ち消される。`rating:`の後ろが段階に無い値ならタグごと落とし、
+    意味の無い語をpositiveへ渡さない。落としたratingは`_ensure_rating_tag`が補う。
     """
     stripped: list[Any] = []
     for tag in quality_tags:
@@ -583,8 +584,10 @@ def _strip_rating_prefix(quality_tags: list[Any]) -> list[Any]:
             head, sep, value = tag.strip().partition(":")
             if sep and head.strip().lower() == "rating":
                 value = value.strip().lower()
-                if value in RATING_LEVELS:
-                    tag = value
+                if value not in RATING_LEVELS:
+                    logger.warning("prompt案の未知のratingを落としました: %s", tag)
+                    continue
+                tag = value
         stripped.append(tag)
     return stripped
 
@@ -676,6 +679,7 @@ def _attach_prompt_text(body: dict[str, Any]) -> None:
         body["quality_tags"] = ensured
         # 3つの経路 (補完、バッチ計画、生成Jobの投入) はどれも提案のnegative_promptへ
         # 基準値を足して使う。ここで追加分へ入れておけば全経路に効く。
+        # `apply_prompt_style`で再度通っても、`merge_negative_prompt`が重複を落とすため増えない。
         body["negative_prompt"] = merge_negative_prompt(
             str(body.get("negative_prompt") or ""),
             ", ".join(rating_negative_tags(ensured)),
@@ -925,6 +929,8 @@ def revise_current_prompt(
             for tag in (_normalize_tag(value) for value in data.get(name) or [])
             if tag
         ]
+    # ratingの判定より先に`rating:`接頭辞を外す。後で外すと判定から漏れる。
+    data["quality_tags"] = _strip_rating_prefix(data["quality_tags"])
 
     requested = [
         tag
