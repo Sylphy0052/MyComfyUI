@@ -211,11 +211,12 @@ def load_tag_dictionary(path: Path) -> tuple[dict[str, int], frozenset[str]]:
     """タグ辞書を読み、投稿件数への対応とキャラクターのタグ名を返す。
 
     どちらも正規化したタグ名と別名で引けるようにする。正規のタグ名と別名が衝突した
-    ときは、件数は正規のタグ名を優先する。
+    ときは、件数も種別も正規のタグ名を優先する。
     """
     counts: dict[str, int] = {}
     aliases: dict[str, int] = {}
     characters: set[str] = set()
+    character_aliases: set[str] = set()
     try:
         with path.open(encoding="utf-8", newline="") as file:
             for line_number, row in enumerate(csv.reader(file), start=1):
@@ -233,16 +234,19 @@ def load_tag_dictionary(path: Path) -> tuple[dict[str, int], frozenset[str]]:
                     ) from error
                 name = normalize_tag(row[0])
                 counts[name] = count
-                names = [name]
+                is_character = row[1].strip() == CHARACTER_CATEGORY
+                if is_character:
+                    characters.add(name)
                 if len(row) >= 4:
                     for alias in row[3].split(","):
                         if alias.strip():
                             aliases.setdefault(normalize_tag(alias), count)
-                            names.append(normalize_tag(alias))
-                if row[1].strip() == CHARACTER_CATEGORY:
-                    characters.update(names)
+                            if is_character:
+                                character_aliases.add(normalize_tag(alias))
     except (OSError, UnicodeDecodeError, csv.Error) as error:
         raise TagDictionaryError(f"タグ辞書を読めない: {error}") from error
+    # `black_hood`のように、別名が別の種別の正規のタグ名と重なるときは正規の方に従う。
+    characters.update(character_aliases - counts.keys())
     return {**aliases, **counts}, frozenset(characters)
 
 
