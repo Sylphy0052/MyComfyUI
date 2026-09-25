@@ -211,6 +211,8 @@ export interface paths {
          *     Projectコンテキストは現在の所属先と突き合わせる。`unassigned`は
          *     現在のProject所属を持たないArtifactだけへ絞る。
          *     Workflowスナップショットも記録として残すため、種別で絞りたい場合は`kind`を使う。
+         *     `exclude_kind`は複数指定でき、指定した種別を除く。一覧から記録用の種別だけを外す
+         *     用途では、取得後に除くとページの件数が欠けるためDB側で除く。
          *
          *     `tag`は複数指定でき、すべてのタグが付いたArtifactだけを返す。`lineage_artifact_id`
          *     は`parent_artifact_id`、`lineage_job_id`は`parent_job_id`をそれぞれ祖先と子孫の
@@ -268,6 +270,7 @@ export interface paths {
          *     判定し、まだ対象が残っている場合は`truncated`を`true`にする。
          *
          *     `reason`を指定すると、その理由が付いたArtifactだけを返す。複数指定はORとする。
+         *     `exclude_kind`は複数指定でき、指定した種別を判定の対象から除く。
          *     `include_canon`を`false`にすると参照APIを引かず、ファイルと入力の判定だけを行う。
          *     このとき`canon_available`は`false`になる。判定した結果として更新が無かったのか、
          *     そもそも見ていないのかを取り違えさせない。
@@ -1012,6 +1015,7 @@ export interface paths {
          *     `shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを
          *     持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った
          *     結果を返す。`character_reference`もProject単位のまま返す。
+         *     `exclude_kind`は複数指定でき、指定した種別を全系統から除く。
          *
          *     絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って
          *     から並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと
@@ -1922,6 +1926,30 @@ export interface paths {
         /** Get Recipe */
         get: operations["get_recipe_api_v1_recipes__recipe_id__get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/qwen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Qwen Settings
+         * @description Qwenの接続設定を、実効値・環境変数の値・保存値に分けて返す。
+         */
+        get: operations["read_qwen_settings_api_v1_settings_qwen_get"];
+        /**
+         * Update Qwen Settings
+         * @description Qwenの保存値を丸ごと置き換える。nullの項目は保存値を消し、環境変数の値へ戻す。
+         */
+        put: operations["update_qwen_settings_api_v1_settings_qwen_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4494,6 +4522,43 @@ export interface components {
             /** Tag */
             tag: string;
         };
+        /**
+         * QwenSettingsRead
+         * @description Qwenの接続設定。実効値、環境変数の値、DBの保存値を分けて返す。
+         */
+        QwenSettingsRead: {
+            defaults: components["schemas"]["QwenSettingsValues"];
+            effective: components["schemas"]["QwenSettingsValues"];
+            saved: components["schemas"]["QwenSettingsUpdate"];
+        };
+        /**
+         * QwenSettingsUpdate
+         * @description 保存するQwenの接続設定。nullの項目は保存値を消し、環境変数の値へ戻す。
+         */
+        QwenSettingsUpdate: {
+            /** Base Url */
+            base_url?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Status Url */
+            status_url?: string | null;
+            /** Supports Images */
+            supports_images?: boolean | null;
+        };
+        /**
+         * QwenSettingsValues
+         * @description Qwenの接続設定の値。
+         */
+        QwenSettingsValues: {
+            /** Base Url */
+            base_url: string;
+            /** Model */
+            model: string;
+            /** Status Url */
+            status_url?: string | null;
+            /** Supports Images */
+            supports_images: boolean;
+        };
         /** RecipeCreate */
         RecipeCreate: {
             /** Defaults */
@@ -5547,6 +5612,7 @@ export interface operations {
                 lineage_artifact_id?: string | null;
                 lineage_job_id?: string | null;
                 trashed?: boolean;
+                exclude_kind?: ("image" | "video" | "audio" | "workflow" | "log")[] | null;
                 limit?: number;
                 offset?: number;
             };
@@ -5655,6 +5721,7 @@ export interface operations {
                 kind?: ("image" | "video" | "audio" | "workflow" | "log") | null;
                 tag?: string[] | null;
                 reason?: ("file_missing" | "hash_mismatch" | "reference_broken" | "canon_updated")[] | null;
+                exclude_kind?: ("image" | "video" | "audio" | "workflow" | "log")[] | null;
                 include_canon?: boolean;
                 limit?: number;
                 offset?: number;
@@ -6834,6 +6901,7 @@ export interface operations {
                 source?: ("generated" | "external_import" | "registered" | "registered_input" | "character_reference") | null;
                 role?: ("appearance_reference" | "pose" | "background" | "costume" | "voice_reference" | "guide_audio" | "other") | null;
                 character_id?: string | null;
+                exclude_kind?: ("image" | "video" | "audio" | "workflow" | "log")[] | null;
                 limit?: number;
                 offset?: number;
             };
@@ -9028,6 +9096,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecipeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_qwen_settings_api_v1_settings_qwen_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QwenSettingsRead"];
+                };
+            };
+        };
+    };
+    update_qwen_settings_api_v1_settings_qwen_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QwenSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QwenSettingsRead"];
                 };
             };
             /** @description Validation Error */
