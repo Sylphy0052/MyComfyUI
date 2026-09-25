@@ -2197,6 +2197,7 @@ export function App() {
             onApplyPromptOnly={applyPromptOnly}
             onApplySeedOnly={applySeedOnly}
             active={shownView === "compare"}
+            showCompare
             comparisonActive={comparisonJobIds !== null}
             onDialogOpenChange={setComparisonDialogEl}
             onClearComparison={clearComparison}

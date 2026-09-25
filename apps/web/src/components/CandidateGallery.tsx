@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { api } from "../api/client";
@@ -156,6 +156,8 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   const [storedDensity, setDensity] = useListDensity("candidates");
   const [storedCollapsed, toggleCollapsed] = usePanelCollapsed("candidates");
   const collapsed = collapsible && storedCollapsed;
+  // 生成画面と画像比較ページで2つ同時にマウントされるため、本文のidは固定値にしない。
+  const bodyId = useId();
   // A/B比較 (比較のA/B・全画面・メタデータ差分) を出すか。モードBと生成画面の一覧では出さない。
   const compareEnabled = !simple && showCompare;
   // モードBは切替を出さないため、ラボで選んだ形式を持ち込まず従来の中サイズに固定する。
@@ -475,16 +477,17 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
             </button>
           )}
           {!simple && <ToggleGroup label="候補の表示形式" options={GALLERY_DENSITY_OPTIONS} value={storedDensity} onChange={setDensity} />}
-          {collapsible && <PanelCollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} controls="candidate-gallery-body" label="候補" />}
+          {collapsible && <PanelCollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} controls={bodyId} label="候補" />}
         </div>
       </div>
-      <div id="candidate-gallery-body" hidden={collapsed}>
+      {/* 閉じている間に適用が失敗しても気付けるよう、エラーは開閉の外に置く (#402)。 */}
+      {error && <p className="error">{error}</p>}
+      <div id={bodyId} hidden={collapsed}>
       {comparisonActive && (
         <p className="muted">
           実験の比較で絞り込み中です。新しく投入した候補は、絞込みを解除するまで表示されません。
         </p>
       )}
-      {error && <p className="error">{error}</p>}
       {candidates.length === 0 ? <EmptyState title="成功したJobの画像がまだありません。" description="生成が成功すると、ここに候補が並びます。" /> : <>
         {compareEnabled && compare}
         {!simple && detailArtifactId && byId.has(detailArtifactId) && selectedDetail?.lineage && (
