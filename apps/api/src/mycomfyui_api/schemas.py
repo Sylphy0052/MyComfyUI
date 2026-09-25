@@ -2096,6 +2096,13 @@ class ImagePromptAssistCreate(ApiModel):
     current_negative_prompt: str = Field(default="", max_length=4000)
 
 
+class ImagePromptTagGloss(ApiModel):
+    """prompt補完結果のタグ1つと、その日本語訳。"""
+
+    tag: str
+    ja: str
+
+
 class ImagePromptAssistRead(ApiModel):
     """構造化検証済みの画像prompt補完結果。
 
@@ -2112,6 +2119,8 @@ class ImagePromptAssistRead(ApiModel):
     natural_text: str = Field(default="", max_length=2000)
     negative_prompt: str = Field(max_length=4000)
     rationale: str = Field(max_length=2000)
+    #: タグと日本語訳の対応。表示だけに使い、生成の入力には含めない。
+    tag_glosses: list[ImagePromptTagGloss] = Field(default_factory=list)
     provider_id: AgentProviderId
     model: str | None
 

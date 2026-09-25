@@ -25,9 +25,21 @@ interface Props {
   onApply: (result: { positive: string; negative: string }) => void;
 }
 
+/** 方向を書かずにレビューさせたときに送る指示。 */
+const DEFAULT_REVIEW_DIRECTION = "重複・矛盾・不要なタグを整理する。";
+
+/** レビューの方向を、現在の prompt を土台に直させる指示へ組み立てる。 */
+function reviewInstruction(direction: string): string {
+  return (
+    "現在のプロンプトをレビューして直す。指示の点だけを直し、関係の無いタグや文は残す。\n" +
+    `指示: ${direction.trim() || DEFAULT_REVIEW_DIRECTION}`
+  );
+}
+
 /**
  * 日本語の説明から positive prompt と negative prompt を AI に補完させる入力欄。
  * 画像を添えると、画像と現在の prompt を突き合わせて直した案を返す。
+ * レビューを選ぶと、画像なしでも現在の prompt を土台に指示の点だけ直す。
  */
 export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
   return (
@@ -37,17 +49,23 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
       outputLabel="プロンプトとネガティブプロンプト"
       submitLabel="プロンプトを補完"
       allowImage
-      onAssist={async ({ image, ...request }) => {
+      allowReview
+      onAssist={async ({ image, review, instruction, ...request }) => {
+        if (review && !current.positive.trim()) {
+          throw new Error("レビューするプロンプトがありません。先にプロンプトを入力してください。");
+        }
         const result = await api.assistImagePrompt({
           ...request,
+          instruction: review ? reviewInstruction(instruction) : instruction,
           recipe_id: recipeId || null,
-          ...(image && {
-            image,
+          ...(image && { image }),
+          ...((image || review) && {
             current_positive_prompt: current.positive,
             current_negative_prompt: current.negative,
           }),
         });
         onApply({ positive: result.positive_prompt, negative: result.negative_prompt });
+        return { rationale: result.rationale, tagGlosses: result.tag_glosses ?? [] };
       }}
     />
   );
@@ -58,6 +76,14 @@ export interface AssistRequest {
   instruction: string;
   provider_id: AgentProviderId | null;
   image: { content_base64: string; media_type: string } | null;
+  /** 現在の prompt を土台に直させるか。`allowReview` が偽なら常に偽。 */
+  review: boolean;
+}
+
+/** 補完後に欄の下へ出す、AI の説明とタグの日本語訳。 */
+export interface AssistResult {
+  rationale?: string;
+  tagGlosses?: { tag: string; ja: string }[];
 }
 
 interface FieldProps {
@@ -71,11 +97,13 @@ interface FieldProps {
   submitLabel: string;
   /** 画像を添えて直せるようにするか。真のときだけ画像欄を出す。 */
   allowImage?: boolean;
+  /** 現在の prompt をレビューして直すモードを出すか。 */
+  allowReview?: boolean;
   projectId?: string | null;
   /** 指定すると説明文を下書きとして保存し、作り直しや再読み込みの後も残す (#327)。 */
   draftKey?: string;
   /** API を呼んで結果を反映する。失敗は例外で返すと欄の下に表示する。 */
-  onAssist: (request: AssistRequest) => Promise<void>;
+  onAssist: (request: AssistRequest) => Promise<AssistResult | void>;
 }
 
 /** 日本語の説明から、媒体ごとの生成条件を AI に補完させる入力欄。 */
@@ -87,6 +115,7 @@ export function PromptAssistField({
   outputLabel,
   submitLabel,
   allowImage = false,
+  allowReview = false,
   projectId,
   draftKey,
   onAssist,
@@ -98,12 +127,15 @@ export function PromptAssistField({
   const [images, setImages] = useState<PickedMedia[]>([]);
   const [assisting, setAssisting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [result, setResult] = useState<AssistResult | null>(null);
 
   useEffect(() => {
     if (draftKey) writeFormDraft(draftKey, { description });
   }, [draftKey, description]);
 
   const withImage = allowImage && images.length > 0;
+  const review = allowReview && reviewing;
   const selectedProvider = providers.find((provider) => provider.id === providerId);
   const defaultProvider = providers.find((provider) => provider.is_default);
   // 「既定のAI」のままなら、要求を受けるのは設定の既定Provider。
@@ -111,20 +143,23 @@ export function PromptAssistField({
   const imageUnsupported = withImage && effectiveProvider?.supports_images === false;
 
   const assist = async () => {
-    if (!description.trim()) {
+    if (!description.trim() && !review) {
       setError(withImage ? "直したい点を入力してください。" : `${subject}を入力してください。`);
       return;
     }
     if (imageUnsupported) return;
     setAssisting(true);
     setError(null);
+    setResult(null);
     try {
       const image = withImage ? await readPickedImage(images[0]) : null;
-      await onAssist({
+      const assisted = await onAssist({
         instruction: description,
         provider_id: providerId || null,
         image: image && { content_base64: image.base64, media_type: image.mediaType },
+        review,
       });
+      if (assisted) setResult(assisted);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -134,20 +169,43 @@ export function PromptAssistField({
 
   return (
     <>
+      {allowReview && (
+        <label className="checkbox-field">
+          <input
+            type="checkbox"
+            checked={reviewing}
+            disabled={assisting}
+            onChange={(event) => {
+              setReviewing(event.target.checked);
+              setError(null);
+              setResult(null);
+            }}
+          />
+          現在のプロンプトをレビューして直す
+        </label>
+      )}
       <div>
         <label htmlFor={`${idPrefix}-description`}>
-          {withImage ? "直したい点" : subject}
+          {review ? "レビューの方向 (任意)" : withImage ? "直したい点" : subject}
         </label>
         <textarea
           id={`${idPrefix}-description`}
           value={description}
           onChange={(event) => setDescription(event.target.value)}
-          placeholder={withImage ? "例: 髪がはねすぎ。もっと引いた構図に。" : placeholder}
+          placeholder={
+            review
+              ? "例: 光の量を増やす。背景を屋外に変える。Aを消してBを追加。重複しているタグを削除。"
+              : withImage
+                ? "例: 髪がはねすぎ。もっと引いた構図に。"
+                : placeholder
+          }
         />
         <p className="muted">
-          {withImage
-            ? `画像と現在のプロンプトを見比べて、AIが直した${outputLabel}を差分で示します。`
-            : `日本語で説明するとAIが${outputLabel}を補完します。`}
+          {review
+            ? `現在のプロンプトを土台に、AIが指示の点だけ直した${outputLabel}を差分で示します。空なら重複や矛盾を整理します。`
+            : withImage
+              ? `画像と現在のプロンプトを見比べて、AIが直した${outputLabel}を差分で示します。`
+              : `日本語で説明するとAIが${outputLabel}を補完します。`}
         </p>
       </div>
       {allowImage && (
@@ -193,7 +251,13 @@ export function PromptAssistField({
           disabled={assisting || imageUnsupported}
           onClick={() => void assist()}
         >
-          {assisting ? "補完中..." : withImage ? "画像を見て直す" : submitLabel}
+          {assisting
+            ? "補完中..."
+            : withImage
+              ? "画像を見て直す"
+              : review
+                ? "レビューして直す"
+                : submitLabel}
         </button>
       </div>
       {imageUnsupported && (
@@ -202,6 +266,20 @@ export function PromptAssistField({
         </p>
       )}
       {error && <p className="error">{error}</p>}
+      {result?.rationale && <p className="muted">AIの説明: {result.rationale}</p>}
+      {result?.tagGlosses && result.tagGlosses.length > 0 && (
+        <details className="tag-glosses" open>
+          <summary>タグの日本語訳 ({result.tagGlosses.length})</summary>
+          <dl>
+            {result.tagGlosses.map((gloss, index) => (
+              <div key={`${gloss.tag}-${index}`}>
+                <dt>{gloss.tag}</dt>
+                <dd>{gloss.ja}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
     </>
   );
 }

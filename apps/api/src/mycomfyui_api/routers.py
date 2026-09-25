@@ -5363,6 +5363,7 @@ async def _assist_image_prompt(
             proposals.DEFAULT_NEGATIVE_PROMPT, output.get("negative_prompt", "")
         ),
         rationale=output["rationale"],
+        tag_glosses=output.get("tag_glosses", []),
         provider_id=provider.id,
         model=result.model,
     )

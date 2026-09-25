@@ -893,6 +893,7 @@ export function GenerationForm({
       {field.control === "textarea" ? (
         <textarea
           id={`field-${field.name}`}
+          className={PROMPT_FIELD_NAMES.has(field.name) ? "prompt-textarea" : undefined}
           disabled={useInheritedDefaults}
           readOnly={readOnly}
           value={values[field.name] ?? ""}
