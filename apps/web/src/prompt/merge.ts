@@ -20,6 +20,8 @@ const BLOCK_COUNT = 1;
 const BLOCK_ARTIST = 2;
 const BLOCK_GENERAL = 3;
 const BLOCK_SENTENCE = 4;
+/** 空行で区切られた自然文の段落。カンマ区切りの文よりも後ろに置く。 */
+const BLOCK_PARAGRAPH = 5;
 
 /** quality / meta / year / rating 枠として扱う既知語。 */
 const QUALITY_TAGS = new Set([
@@ -64,6 +66,8 @@ export interface PromptSegment {
   readonly key: string;
   /** タグ順のブロック。 */
   readonly block: number;
+  /** 空行で区切られた自然文の段落を、カンマで分けずに1つとして持つか。 */
+  readonly paragraph: boolean;
 }
 
 /**
@@ -144,18 +148,75 @@ export function classifySegment(segment: string): number {
   return BLOCK_GENERAL;
 }
 
-function toSegment(text: string): PromptSegment {
+function toSegment(text: string, paragraph = false): PromptSegment {
   const trimmed = text.trim();
   return {
     text: trimmed,
     key: normalizeSegment(trimmed),
-    block: classifySegment(trimmed),
+    block: paragraph ? BLOCK_PARAGRAPH : classifySegment(trimmed),
+    paragraph,
   };
 }
 
-/** プロンプト文字列をセグメントの列へ変換する。 */
+/**
+ * プロンプトを空行で段落へ分ける。`splitPrompt`と同じく、エスケープ済みの括弧と
+ * 重み付けの括弧の内側にある空行では区切らない。閉じていない括弧が残ったときは
+ * 括弧を数えずに空行だけで分ける。そうしないと、閉じ忘れの後ろにある自然文まで
+ * タグ行と1つの段落になる。
+ */
+function splitParagraphs(prompt: string): string[] {
+  const paragraphs: string[] = [];
+  let start = 0;
+  let depth = 0;
+  for (let index = 0; index < prompt.length; index += 1) {
+    const char = prompt[index];
+    if (char === "\\" && index + 1 < prompt.length) {
+      index += 1;
+    } else if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth = Math.max(0, depth - 1);
+    } else if (char === "\n" && depth === 0) {
+      const blank = /^\n[^\S\n]*\n/.exec(prompt.slice(index));
+      if (!blank) continue;
+      paragraphs.push(prompt.slice(start, index));
+      index += blank[0].length - 1;
+      start = index + 1;
+    }
+  }
+  if (depth > 0) return prompt.split(/\n[^\S\n]*\n/);
+  paragraphs.push(prompt.slice(start));
+  return paragraphs;
+}
+
+/**
+ * プロンプト文字列をセグメントの列へ変換する。
+ *
+ * タグ行と自然文は空行で区切って組み立てる (API の`compose_positive_prompt`)。空行で
+ * 段落に分け、先頭の段落はタグ行としてカンマで区切る。2つ目以降の段落は、文の区切りを
+ * 1つでも含めば自然文として1つのセグメントに保つ。先頭の段落を常にタグ行とするのは、
+ * `hoshino ai \(oshi no ko\)`のような5語以上のタグで始まるタグ行を自然文と取り違え
+ * ないためで、API がタグ行を読むとき (`_current_tags`) と同じ扱いになる。
+ */
 export function parsePrompt(prompt: string): PromptSegment[] {
-  return splitPrompt(prompt).map(toSegment);
+  if (!prompt) return [];
+  return splitParagraphs(prompt).flatMap((paragraph, index) => {
+    const parts = splitPrompt(paragraph);
+    if (index > 0 && parts.some(isSentence)) return [toSegment(paragraph, true)];
+    return parts.map((part) => toSegment(part));
+  });
+}
+
+/** セグメントをプロンプト文字列へ戻す。自然文の段落の前後は空行で区切る。 */
+function joinSegments(segments: readonly PromptSegment[]): string {
+  return segments
+    .map((segment, index) => {
+      if (index === 0) return segment.text;
+      const previous = segments[index - 1];
+      const separator = previous.paragraph || segment.paragraph ? "\n\n" : ", ";
+      return separator + segment.text;
+    })
+    .join("");
 }
 
 /** 並び順を保ったまま、同じセグメントの2つ目以降を落とす。 */
@@ -191,7 +252,7 @@ export function mergePrompt(current: string, incoming: string): MergeResult {
     // 並べ替えはせず受け取った順のまま入れる。重複と空のセグメントだけを落とす。
     const unique = dedupe(parsePrompt(incoming));
     return {
-      prompt: unique.map((segment) => segment.text).join(", "),
+      prompt: joinSegments(unique),
       added: unique.length,
     };
   }
@@ -216,7 +277,7 @@ export function mergePrompt(current: string, incoming: string): MergeResult {
 
   // 追加が無いときは既存の表記をそのまま返し、空白やカンマの書き方を変えない。
   if (added === 0) return { prompt: current.trim(), added: 0 };
-  return { prompt: segments.map((segment) => segment.text).join(", "), added };
+  return { prompt: joinSegments(segments), added };
 }
 
 /**
@@ -357,7 +418,7 @@ export function applyPromptDiff(
       seen.add(hunk.after.key);
       ordered.push(hunk.after);
     }
-    return ordered.map((segment) => segment.text).join(", ");
+    return joinSegments(ordered);
   }
 
   // `id`は`diffPrompt`が付けた`remove:<index>`/`change:<index>`の形式で、`index`は
@@ -392,5 +453,5 @@ export function applyPromptDiff(
     result = [...result.slice(0, insertAt + 1), addition, ...result.slice(insertAt + 1)];
   }
 
-  return result.map((segment) => segment.text).join(", ");
+  return joinSegments(result);
 }
