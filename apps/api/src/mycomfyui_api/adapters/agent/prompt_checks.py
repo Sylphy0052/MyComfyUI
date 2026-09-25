@@ -370,7 +370,7 @@ def _check_conflict(body: Mapping[str, Any]) -> list[Violation]:
 def _check_unknown_tag(
     body: Mapping[str, Any], tag_dictionary_path: Path | str | None
 ) -> Violation | None:
-    """タグ辞書が設定されているときだけ、辞書に無いタグの割合を出す。
+    """タグ辞書が設定され、辞書に無いタグが1件以上あるときだけ、その割合を出す。
 
     合否には使わず参考値とするため、`reference=True`を立てる。辞書を読めない
     ときは何も返さない(`tag_preflight`自身が投入を妨げないのと同じ扱い)。
@@ -391,6 +391,8 @@ def _check_unknown_tag(
     if not candidates:
         return None
     unknown = [tag for tag in candidates if tag not in counts]
+    if not unknown:
+        return None
     ratio = len(unknown) / len(candidates)
     message = (
         f"{len(unknown)}/{len(candidates)} tags not found in the tag dictionary "
