@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { api, subscribeAgentProvidersChanged } from "../api/client";
 import { mergePrompt } from "../prompt/merge";
@@ -23,6 +24,13 @@ import type { PromptDiffField } from "./PromptDiffReview";
 import { conflictNotice } from "./BackendNotice";
 import { MediaPicker, readPickedImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
+import { NumberSlider, SeedButtons, SwapButton, SLIDER_SPECS } from "./OutputControls";
+
+/** 出力設定で1行にまとめる項目名。存在する項目だけ1行へ並ぶ (#319)。 */
+const ROW_GROUPS: readonly (readonly string[])[] = [
+  ["sampler_name", "scheduler"],
+  ["steps", "cfg"],
+];
 
 /** Recipe の `input_schema` の 1 項目。表示用の項目は任意とする。 */
 interface FieldSpec {
@@ -51,7 +59,11 @@ const HIRES_FIELD_NAMES = new Set([
   "hires_steps",
   "hires_denoise",
 ]);
-/** 数値入力のmin・max・step。値の検証はAPIが行い、ここは入力補助だけとする。 */
+/**
+ * 数値入力のmin・max・step。値の検証はAPIが行い、ここは入力補助だけとする。
+ * width/heightは`SLIDER_SPECS`(#319)が先に処理するため実際には参照されないが、
+ * hires_scale等が同じmapを使うため残す。
+ */
 const NUMBER_FIELD_BOUNDS: Record<string, { min: number; max: number; step: number }> = {
   width: { min: IMAGE_DIMENSION_MIN, max: IMAGE_DIMENSION_MAX, step: IMAGE_DIMENSION_STEP },
   height: { min: IMAGE_DIMENSION_MIN, max: IMAGE_DIMENSION_MAX, step: IMAGE_DIMENSION_STEP },
@@ -195,6 +207,8 @@ interface Props {
   } | null;
   /** Projectのローカルキャラクター定義。衣装のpromptをプロンプトへ足すのに使う (#309)。 */
   characters?: ProjectCharacterProfile[];
+  /** 直前に完了したJobのseed。seedの「前回」ボタンに使う。完了Jobが無ければnull (#319)。 */
+  lastSeed?: number | null;
   /**
    * 選択中キャラクターへ衣装をその場で登録する (#316)。`App.tsx`の`changeSceneOutfit`と同じ
    * 読み直し→追加→保存の手順を想定する。失敗はこのコンポーネント側で表示するので、
@@ -244,6 +258,7 @@ export function GenerationForm({
   restore = null,
   characters = [],
   onRegisterOutfit,
+  lastSeed = null,
 }: Props) {
   const [recipeId, setRecipeId] = useState<string>("");
   const recipe = useMemo(
@@ -781,6 +796,15 @@ export function GenerationForm({
           value={values[field.name] ?? ""}
           onChange={(event) => changeField(field.name, event.target.value)}
         />
+      ) : field.control === "number" && SLIDER_SPECS[field.name] ? (
+        <NumberSlider
+          id={`field-${field.name}`}
+          value={values[field.name] ?? ""}
+          spec={SLIDER_SPECS[field.name]}
+          disabled={useInheritedDefaults}
+          readOnly={readOnly}
+          onChange={(next) => changeField(field.name, next)}
+        />
       ) : field.control === "checkbox" ? (
         <input
           id={`field-${field.name}`}
@@ -807,15 +831,24 @@ export function GenerationForm({
           ))}
         </select>
       ) : (
-        <input
-          id={`field-${field.name}`}
-          disabled={useInheritedDefaults}
-          type={field.control === "number" ? "number" : "text"}
-          {...(field.control === "number" && NUMBER_FIELD_BOUNDS[field.name])}
-          readOnly={readOnly}
-          value={values[field.name] ?? ""}
-          onChange={(event) => changeField(field.name, event.target.value)}
-        />
+        <div className={field.name === "seed" ? "seed-input" : undefined}>
+          <input
+            id={`field-${field.name}`}
+            disabled={useInheritedDefaults}
+            type={field.control === "number" ? "number" : "text"}
+            {...(field.control === "number" && NUMBER_FIELD_BOUNDS[field.name])}
+            readOnly={readOnly}
+            value={values[field.name] ?? ""}
+            onChange={(event) => changeField(field.name, event.target.value)}
+          />
+          {field.name === "seed" && !extrasHidden && (
+            <SeedButtons
+              lastSeed={lastSeed}
+              disabled={useInheritedDefaults}
+              onChange={(next) => changeField(field.name, next)}
+            />
+          )}
+        </div>
       )}
       {field.name === "hires_scale" && hiresSize && (
         <p className={hiresSize.tooLarge ? "error" : "muted"}>
@@ -975,6 +1008,83 @@ export function GenerationForm({
         </div>
       )}
     </div>
+    );
+  };
+
+  /** 幅と高さを入れ替える。 */
+  const swapDimensions = () => {
+    const width = values.width ?? "";
+    const height = values.height ?? "";
+    changeField("width", height);
+    changeField("height", width);
+  };
+
+  /**
+   * 出力設定を高密度に並べる (#319)。sampler・scheduler、steps・CFG、幅・高さ (入れ替え
+   * ボタン付き)、バッチ数 (バリエーションのdetailsを廃止し`batch_size`と1行にする) を
+   * まとめて1行にし、それ以外は`input_schema`の並び順のまま1項目1行で末尾に出す。
+   */
+  const renderParameterFields = () => {
+    const byName = new Map(parameterFields.map((field) => [field.name, field]));
+    const consumed = new Set<string>();
+    const rows: ReactNode[] = [];
+
+    for (const names of ROW_GROUPS) {
+      const rowFields = names
+        .map((name) => byName.get(name))
+        .filter((field): field is FieldSpec => field !== undefined);
+      if (rowFields.length === 0) continue;
+      rowFields.forEach((field) => consumed.add(field.name));
+      rows.push(
+        <div className="field-row" key={`row-${names.join("-")}`}>
+          {rowFields.map(renderField)}
+        </div>,
+      );
+    }
+
+    const widthField = byName.get("width");
+    const heightField = byName.get("height");
+    if (widthField || heightField) {
+      consumed.add("width");
+      consumed.add("height");
+      rows.push(
+        <div className="field-row" key="row-width-height">
+          {widthField && renderField(widthField)}
+          {widthField && heightField && (
+            <SwapButton disabled={useInheritedDefaults} onClick={swapDimensions} />
+          )}
+          {heightField && renderField(heightField)}
+        </div>,
+      );
+    }
+
+    const batchSizeField = byName.get("batch_size");
+    if (batchSizeField) consumed.add("batch_size");
+    rows.push(
+      <div className="field-row" key="row-batch">
+        <div>
+          <label htmlFor="batch-count">バッチ数</label>
+          <input
+            id="batch-count"
+            type="number"
+            min="1"
+            max="20"
+            disabled={useInheritedDefaults}
+            value={batchCount}
+            onChange={(event) => setBatchCount(event.target.value)}
+          />
+          <p className="muted">バッチサイズ×バッチ数が合計生成枚数です。</p>
+        </div>
+        {batchSizeField && renderField(batchSizeField)}
+      </div>,
+    );
+
+    const rest = parameterFields.filter((field) => !consumed.has(field.name));
+    return (
+      <>
+        {rows}
+        {rest.map(renderField)}
+      </>
     );
   };
 
@@ -1141,7 +1251,7 @@ export function GenerationForm({
               onValidityChange={setModelsValid}
             />
           </div>
-          {parameterFields.map(renderField)}
+          {renderParameterFields()}
           {hiresToggleField && (
             <div className="hires-fix stack">
               {renderField(hiresToggleField)}
@@ -1152,24 +1262,6 @@ export function GenerationForm({
             </div>
           )}
         </fieldset>
-
-        <details className="form-section collapsible" hidden={simple}>
-          <summary>バリエーション</summary>
-          <div className="stack">
-            <div>
-              <label htmlFor="batch-count">バッチ数</label>
-              <input
-                id="batch-count"
-                type="number"
-                min="1"
-                max="20"
-                value={batchCount}
-                onChange={(event) => setBatchCount(event.target.value)}
-              />
-              <p className="muted">バッチサイズ×バッチ数が合計生成枚数です。</p>
-            </div>
-          </div>
-        </details>
 
         <fieldset className="form-section" hidden={simple}>
           <legend>確認と投入</legend>

@@ -2011,3 +2011,47 @@ button.primary:hover:not(:disabled) {
   margin: var(--space-2) auto 0;
   object-fit: contain;
 }
+
+/* 出力設定の高密度表示 (#319) */
+.field-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.field-row > * {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.field-row > .swap-dimensions {
+  flex: 0 0 auto;
+}
+
+.number-slider {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.number-slider input[type="range"] {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+
+.number-slider input[type="number"] {
+  flex: 0 0 5.5rem;
+  width: 5.5rem;
+}
+
+.seed-input {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.seed-input input[type="number"] {
+  flex: 1 1 6rem;
+  min-width: 0;
+}

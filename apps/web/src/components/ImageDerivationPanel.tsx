@@ -18,6 +18,7 @@ import type { PromptDiffField } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
 import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
+import { NumberSlider, SeedButtons, SwapButton, SLIDER_SPECS } from "./OutputControls";
 
 type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet" | "reference";
 
@@ -37,6 +38,8 @@ interface Props {
   onSubmittedJob: (job: GenerationJob) => void;
   /** Recipeが1件も無いとき、登録先のWorkflow管理画面へ移る導線に使う。 */
   onManageWorkflows: () => void;
+  /** 直前に完了したJobのseed。seedの「前回」ボタンに使う。完了Jobが無ければnull (#319)。 */
+  lastSeed?: number | null;
 }
 
 function modeOf(recipe: Recipe | null): DerivationMode | null {
@@ -63,6 +66,7 @@ export function ImageDerivationPanel({
   onSourceArtifactChange,
   onSubmittedJob,
   onManageWorkflows,
+  lastSeed = null,
 }: Props) {
   const [recipeId, setRecipeId] = useState("");
   const [sourceMedia, setSourceMedia] = useState<PickedMedia[]>([]);
@@ -427,13 +431,28 @@ export function ImageDerivationPanel({
           <textarea id="derivation-prompt" value={prompt} readOnly={promptDiff !== null} onChange={(event) => { setPrompt(event.target.value); setTouchedFields((current) => new Set(current).add("positive_prompt")); }} />
           <label htmlFor="derivation-negative">ネガティブプロンプト</label>
           <textarea id="derivation-negative" value={negative} readOnly={promptDiff !== null} onChange={(event) => { setNegative(event.target.value); setTouchedFields((current) => new Set(current).add("negative_prompt")); }} />
-          <div className="row">
+          <div className="field-row">
             {mode === "reference" ? (
               <label>参照強度<input type="number" min="0" max={REFERENCE_STRENGTH_MAX} step="0.05" value={referenceStrength} onChange={(event) => { setReferenceStrength(event.target.value); setTouchedFields((current) => new Set(current).add("reference_strength")); }} /></label>
             ) : (
-              <label>denoise<input type="number" min="0" max="1" step="0.05" value={denoise} onChange={(event) => { setDenoise(event.target.value); setTouchedFields((current) => new Set(current).add("denoise")); }} /></label>
+              <label htmlFor="derivation-denoise">denoise
+                <NumberSlider
+                  id="derivation-denoise"
+                  value={denoise}
+                  spec={SLIDER_SPECS.denoise}
+                  onChange={(next) => { setDenoise(next); setTouchedFields((current) => new Set(current).add("denoise")); }}
+                />
+              </label>
             )}
-            <label>seed<input type="number" value={seed} onChange={(event) => { setSeed(event.target.value); setTouchedFields((current) => new Set(current).add("seed")); }} /></label>
+            <label htmlFor="derivation-seed">seed
+              <div className="seed-input">
+                <input id="derivation-seed" type="number" value={seed} onChange={(event) => { setSeed(event.target.value); setTouchedFields((current) => new Set(current).add("seed")); }} />
+                <SeedButtons
+                  lastSeed={lastSeed}
+                  onChange={(next) => { setSeed(next); setTouchedFields((current) => new Set(current).add("seed")); }}
+                />
+              </div>
+            </label>
           </div>
         </>}
         {mode === "inpaint" && <>
@@ -452,12 +471,37 @@ export function ImageDerivationPanel({
           <label>mask拡張(px)<input type="number" min="0" value={growMaskBy} onChange={(event) => { setGrowMaskBy(event.target.value); setTouchedFields((current) => new Set(current).add("grow_mask_by")); }} /></label>
         </>}
         {mode === "controlnet" && <>
-          <div className="row">
-            <label>幅<input type="number" min={64} max={8192} step={8} value={width} onChange={(event) => { setWidth(event.target.value); setTouchedFields((current) => new Set(current).add("width")); }} /></label>
-            <label>高さ<input type="number" min={64} max={8192} step={8} value={height} onChange={(event) => { setHeight(event.target.value); setTouchedFields((current) => new Set(current).add("height")); }} /></label>
+          <div className="field-row">
+            <label htmlFor="derivation-width">幅
+              <NumberSlider
+                id="derivation-width"
+                value={width}
+                spec={SLIDER_SPECS.width}
+                onChange={(next) => { setWidth(next); setTouchedFields((current) => new Set(current).add("width")); }}
+              />
+            </label>
+            <SwapButton
+              onClick={() => {
+                const nextWidth = height;
+                const nextHeight = width;
+                setWidth(nextWidth);
+                setHeight(nextHeight);
+                setTouchedFields((current) => new Set(current).add("width").add("height"));
+              }}
+            />
+            <label htmlFor="derivation-height">高さ
+              <NumberSlider
+                id="derivation-height"
+                value={height}
+                spec={SLIDER_SPECS.height}
+                onChange={(next) => { setHeight(next); setTouchedFields((current) => new Set(current).add("height")); }}
+              />
+            </label>
+          </div>
+          <div className="field-row">
             <label>制御強度<input type="number" step="0.05" value={controlStrength} onChange={(event) => { setControlStrength(event.target.value); setTouchedFields((current) => new Set(current).add("control_strength")); }} /></label>
           </div>
-          <div className="row">
+          <div className="field-row">
             <label>制御開始<input type="number" min="0" max="1" step="0.05" value={controlStart} onChange={(event) => { setControlStart(event.target.value); setTouchedFields((current) => new Set(current).add("control_start")); }} /></label>
             <label>制御終了<input type="number" min="0" max="1" step="0.05" value={controlEnd} onChange={(event) => { setControlEnd(event.target.value); setTouchedFields((current) => new Set(current).add("control_end")); }} /></label>
           </div>
