@@ -61,3 +61,13 @@ class LoadTagDictionaryErrorTest(unittest.TestCase):
             load_tag_dictionary(Path(directory) / "missing.csv")
 
         self.assertIn("タグ辞書を読めない", str(raised.exception))
+
+    def test_non_utf8_file_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "danbooru.csv"
+            path.write_bytes("笑顔,0,500\n".encode("shift_jis"))
+
+            with self.assertRaises(TagDictionaryError) as raised:
+                load_tag_dictionary(path)
+
+        self.assertIn("タグ辞書を読めない", str(raised.exception))
