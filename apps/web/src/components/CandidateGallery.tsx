@@ -167,6 +167,8 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   const [lineageErrors, setLineageErrors] = useState<Record<string, string>>({});
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  // 「プロンプトのみ」「seedのみ」適用中の候補。連打でjob/manifest取得が二重発行されるのを防ぐ (#320)。
+  const [applyingArtifactId, setApplyingArtifactId] = useState<string | null>(null);
 
   useEffect(() => {
     const ids = new Set(candidates.map(({ artifact }) => artifact.id));
@@ -260,12 +262,15 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
       handler(cached.job, cached.manifest);
       return;
     }
+    setApplyingArtifactId(artifactId);
     try {
       const job = await api.getJob(jobId);
       const manifest = await api.getManifest(job.manifest_id);
       handler(job, manifest);
     } catch (cause) {
       setError(String(cause));
+    } finally {
+      setApplyingArtifactId(null);
     }
   };
 
@@ -521,8 +526,8 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
                 {!simple && <div className="action-group" role="group" aria-label="その他">
                   <IconButton icon={<Icon name="info" />} label="詳細" aria-pressed={artifact.id === detailArtifactId} onClick={() => setDetailArtifactId((current) => current === artifact.id ? null : artifact.id)} />
                   {onDerive && <IconButton icon={<Icon name="branch" />} label="派生生成" onClick={() => onDerive(artifact.id)} />}
-                  {onApplyPromptOnly && <IconButton icon={<Icon name="text" />} label="プロンプトのみ適用" onClick={() => void applyScopedSettings(artifact.id, jobId, onApplyPromptOnly)} />}
-                  {onApplySeedOnly && <IconButton icon={<Icon name="dice" />} label="seedのみ適用" onClick={() => void applyScopedSettings(artifact.id, jobId, onApplySeedOnly)} />}
+                  {onApplyPromptOnly && <IconButton icon={<Icon name="text" />} label="プロンプトのみ適用" disabled={applyingArtifactId === artifact.id} onClick={() => void applyScopedSettings(artifact.id, jobId, onApplyPromptOnly)} />}
+                  {onApplySeedOnly && <IconButton icon={<Icon name="dice" />} label="seedのみ適用" disabled={applyingArtifactId === artifact.id} onClick={() => void applyScopedSettings(artifact.id, jobId, onApplySeedOnly)} />}
                   {onPromoteToPreset && <IconButton icon={<Icon name="bookmark" />} label="Presetにする" onClick={() => onPromoteToPreset(artifact.id)} />}
                 </div>}
                 {onChangeSource && <div className="action-group" role="group" aria-label="変更">
