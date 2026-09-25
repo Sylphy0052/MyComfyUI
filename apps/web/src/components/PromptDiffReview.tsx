@@ -114,6 +114,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
             <ul className="list plain">
               {hunks.map((hunk) => {
                 const id = `${field.key}\u0000${hunk.id}`;
+                // 既定採用の削除hunkにのみ「(既定で選択)」の注記を出す。
                 const isDefaultRemoval = hunk.kind === "remove" && field.acceptRemovals;
                 return (
                   <li key={id} className="row">
