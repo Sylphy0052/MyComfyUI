@@ -198,12 +198,15 @@ interface Props {
    * 生成済み画像の設定をフォームへ戻す。`key`が変わるたびに1回だけ入れる。
    * `recipeLineage`は元のRecipeから後継を辿ったID列 (古い順)。どれも選択肢に無ければ
    * 現在のRecipeへ合う項目だけ入れる。使用者の明示操作なので、`plan`より優先する (#299)。
+   * `scope`省略時は`"all"`(#320)。`"prompt"`はプロンプトだけ、`"seed"`はseedだけを入れ、
+   * Recipe・他の設定は変えない。
    */
   restore?: {
     key: string;
     recipeId: string | null;
     recipeLineage: string[];
     manifest: GenerationManifest;
+    scope?: "all" | "prompt" | "seed";
   } | null;
   /** Projectのローカルキャラクター定義。衣装のpromptをプロンプトへ足すのに使う (#309)。 */
   characters?: ProjectCharacterProfile[];
@@ -379,8 +382,11 @@ export function GenerationForm({
   useEffect(() => {
     if (!restore || recipes.length === 0) return;
     if (appliedRestoreRef.current === restore.key) return;
+    const scope = restore.scope ?? "all";
     const original = findRecipeOrSuccessor(recipes, restore.recipeLineage);
-    const target = original ?? recipe;
+    // プロンプトのみ・seedのみ (#320) は他の設定を変えないため、今選んでいるRecipeへ入れ、
+    // Recipe自体は切り替えない。
+    const target = scope === "all" ? original ?? recipe : recipe;
     // 初回表示でRecipeがまだ選ばれていなければ、選ばれてから入れる。
     if (!target) return;
     appliedRestoreRef.current = restore.key;
@@ -399,16 +405,21 @@ export function GenerationForm({
     const models: Record<string, string> = {};
     for (const spec of toFieldSpecs(target)) {
       if (spec.control === "model") {
+        if (scope !== "all") continue;
         const value = manifestText((manifest.model ?? {})[spec.name]);
         if (value !== null && value !== "") models[spec.name] = value;
         continue;
       }
+      if (scope === "prompt" && !PROMPT_FIELD_NAMES.has(spec.name)) continue;
+      if (scope === "seed" && spec.name !== "seed") continue;
       const value = manifestText(raw[spec.name]);
       if (value !== null && isParsableAs(spec, value)) filled[spec.name] = value;
     }
     // hires fix (#318) より前の画像はオフで生成されている。今の入力のオンを持ち越さない。
+    // プロンプトのみ・seedのみでは他の設定を変えないため対象外 (#320)。
     const targetSpecs = toFieldSpecs(target);
     if (
+      scope === "all" &&
       targetSpecs.some((spec) => spec.name === HIRES_ENABLED_FIELD_NAME) &&
       filled[HIRES_ENABLED_FIELD_NAME] === undefined
     ) {
@@ -417,27 +428,33 @@ export function GenerationForm({
     // オフの画像はhires fixの詳細を記録しない。今の入力を持ち越さず、Recipeの既定値へ戻す。
     const targetDefaults = initialValues(target, targetSpecs);
     const hiresDefaults: Record<string, string> = {};
-    for (const name of HIRES_FIELD_NAMES) {
-      if (filled[name] === undefined && targetDefaults[name] !== undefined) {
-        hiresDefaults[name] = targetDefaults[name];
+    if (scope === "all") {
+      for (const name of HIRES_FIELD_NAMES) {
+        if (filled[name] === undefined && targetDefaults[name] !== undefined) {
+          hiresDefaults[name] = targetDefaults[name];
+        }
       }
     }
-    setUseInheritedDefaults(false);
-    setLookProfileIds([]);
+    if (scope === "all") {
+      setUseInheritedDefaults(false);
+      setLookProfileIds([]);
+    }
     setValues((current) => ({ ...current, ...hiresDefaults, ...filled }));
     setTouchedFields((current) => {
       const next = new Set([...current, ...Object.keys(filled)]);
       for (const name of Object.keys(hiresDefaults)) next.delete(name);
       return next;
     });
-    if (target.id !== recipeId) {
+    if (scope === "all" && target.id !== recipeId) {
       pendingModelValuesRef.current = models;
       setRecipeId(target.id);
-    } else {
+    } else if (scope === "all") {
       setModelValues(models);
     }
     setRestoreNotice(
-      !restore.recipeId
+      scope !== "all"
+        ? null
+        : !restore.recipeId
         ? "元のRecipeが記録されていないため、現在のRecipeへ合う項目だけ入れました。"
         : !original
         ? "元のRecipeが選択肢に無いため、現在のRecipeへ合う項目だけ入れました。"

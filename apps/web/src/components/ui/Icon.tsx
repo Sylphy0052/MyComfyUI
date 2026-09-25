@@ -38,6 +38,19 @@ const PATHS = {
   "arrow-down": <path d="M12 5v14M19 12l-7 7-7-7" />,
   bookmark: <path d="M6 3h12v18l-6-4-6 4z" />,
   expand: <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" />,
+  text: (
+    <>
+      <path d="M4 6h16M4 12h10M4 18h13" />
+    </>
+  ),
+  dice: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

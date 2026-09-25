@@ -154,6 +154,13 @@ const DECISION_NOTICES: Record<ArtifactDecision, string> = {
   undecided: "判定を戻しました",
 };
 
+/** 生成済み画像から生成フォームへ何を戻したか知らせるトーストの文言 (#320)。 */
+const RESTORE_SCOPE_MESSAGES: Record<"all" | "prompt" | "seed", string> = {
+  all: "画像の生成条件を生成フォームへ入れました。",
+  prompt: "画像のプロンプトを生成フォームへ入れました。",
+  seed: "画像のseedを生成フォームへ入れました。",
+};
+
 function nextTabForKey<T extends string>(
   key: string,
   tabs: readonly { value: T }[],
@@ -515,6 +522,7 @@ export function App() {
     recipeId: string | null;
     recipeLineage: string[];
     manifest: GenerationManifest;
+    scope?: "all" | "prompt" | "seed";
   } | null>(null);
   const restoreSequenceRef = useRef(0);
   const [comparisonJobIds, setComparisonJobIds] = useState<string[] | null>(null);
@@ -1296,28 +1304,32 @@ export function App() {
     () => jobs.find((job) => job.state === "running") ?? null,
     [jobs],
   );
-  // seedの「前回」ボタンに使う。直前に完了したJobのmanifestからseedだけ読む (#319)。
-  const [lastSeed, setLastSeed] = useState<number | null>(null);
+  // 直前に完了したJobのmanifest。seedの「前回」ボタン (#319) と、最新画像の表示からの
+  // 設定・プロンプト・seed再利用 (#320) に使う。
+  const [latestManifest, setLatestManifest] = useState<GenerationManifest | null>(null);
   useEffect(() => {
+    // Job切替直後は前Jobのmanifestを即クリアする。残したままだと取得完了までの間、
+    // 表示中の画像(新Job)と異なるJob(旧Job)の設定が「設定を適用」等から適用されてしまう (#320)。
+    setLatestManifest(null);
     if (!latestSucceededJob) {
-      setLastSeed(null);
       return;
     }
     let active = true;
     void api
       .getManifest(latestSucceededJob.manifest_id)
       .then((found) => {
-        if (active) setLastSeed(typeof found.seed === "number" ? found.seed : null);
+        if (active) setLatestManifest(found);
       })
       .catch((cause) => {
         if (!active) return;
-        setLastSeed(null);
-        notify({ tone: "danger", message: `直前のseedを取得できませんでした: ${describe(cause)}` });
+        setLatestManifest(null);
+        notify({ tone: "danger", message: `直前の生成条件を取得できませんでした: ${describe(cause)}` });
       });
     return () => {
       active = false;
     };
   }, [latestSucceededJob]);
+  const lastSeed = typeof latestManifest?.seed === "number" ? latestManifest.seed : null;
   const latestImages = useMemo(
     () =>
       latestSucceededJob
@@ -1559,31 +1571,55 @@ export function App() {
     void refreshJobs().catch((cause) => setError(describe(cause)));
   };
 
-  /** 生成済み画像の生成条件を生成フォームへ入れ、フォームを開く。 */
-  const applyGenerationSettings = (job: GenerationJob, manifest: GenerationManifest) => {
+  /**
+   * 生成済み画像の生成条件を生成フォームへ入れ、フォームを開く。
+   * `scope`省略時は`"all"`。`"prompt"`/`"seed"`はRecipeの系譜解決を省き、対象の値だけ入れる (#320)。
+   */
+  const applyGenerationSettings = (
+    job: GenerationJob,
+    manifest: GenerationManifest,
+    scope: "all" | "prompt" | "seed" = "all",
+  ) => {
     restoreSequenceRef.current += 1;
     const sequence = restoreSequenceRef.current;
     const recipeId = job.recipe_id;
     // 一覧APIは最新版しか返さないため、更新が重なっても後継へ辿れるよう全版から系譜を作る。
-    const lineage = recipeId
-      ? api.listRecipes("image", { latest: false }).then((all) => recipeLineage(all, recipeId))
-      : Promise.resolve<string[]>([]);
+    // プロンプトのみ・seedのみはRecipeを切り替えないため、系譜解決は不要。
+    const lineage =
+      scope === "all" && recipeId
+        ? api.listRecipes("image", { latest: false }).then((all) => recipeLineage(all, recipeId))
+        : Promise.resolve<string[]>([]);
     lineage
       .then((ids) => {
         // 取得を待つ間に別の画像で押し直されたら、古い方は入れない。
         if (sequence !== restoreSequenceRef.current) return;
         setGenerationRestore({
-          key: `${manifest.id}:${sequence}`,
+          key: `${manifest.id}:${sequence}:${scope}`,
           recipeId,
           recipeLineage: ids,
           manifest,
+          scope,
         });
         setGenerationTab("image");
         setImageSubTab("generate");
         setView("generate");
-        notify({ tone: "success", message: "画像の生成条件を生成フォームへ入れました。" });
+        notify({ tone: "success", message: RESTORE_SCOPE_MESSAGES[scope] });
       })
       .catch((cause) => setError(describe(cause)));
+  };
+
+  /** 候補の画像を派生タブへ送る。候補ギャラリーと最新画像の表示 (#320) で共有する。 */
+  const handleDerive = (artifactId: string) => {
+    setDerivationSourceArtifactId(artifactId);
+    setImageSubTab("derive");
+  };
+  /**
+   * 候補の画像を変更元として変更タブへ送る。候補ギャラリーと最新画像の表示 (#320) で共有する。
+   * モードB (作品制作) 専用だったが、#320でラボ (モードA) でも使えるようにした。
+   */
+  const handleChangeSource = (artifactId: string) => {
+    setDerivationSourceArtifactId(artifactId);
+    setImageSubTab("change");
   };
 
   const handleGenerationTabKeyDown = (
@@ -1970,21 +2006,31 @@ export function App() {
                   <LatestImageViewer
                     job={latestSucceededJob}
                     images={latestImages}
+                    manifest={latestManifest}
+                    onApplySettings={applyGenerationSettings}
+                    onApplyPromptOnly={(job, manifest) =>
+                      applyGenerationSettings(job, manifest, "prompt")
+                    }
+                    onApplySeedOnly={(job, manifest) =>
+                      applyGenerationSettings(job, manifest, "seed")
+                    }
+                    onDerive={isProduction ? undefined : handleDerive}
+                    onChangeSource={handleChangeSource}
                   />
                   <CandidateGallery
                     candidates={visibleCandidates}
                     busyArtifactId={busyArtifactId}
                     onDecide={decide}
-                    onDerive={(artifactId) => {
-                      setDerivationSourceArtifactId(artifactId);
-                      setImageSubTab("derive");
-                    }}
-                    onChangeSource={(artifactId) => {
-                      setDerivationSourceArtifactId(artifactId);
-                      setImageSubTab("change");
-                    }}
+                    onDerive={handleDerive}
+                    onChangeSource={handleChangeSource}
                     onPromoteToPreset={setPromotionArtifactId}
                     onApplySettings={applyGenerationSettings}
+                    onApplyPromptOnly={(job, manifest) =>
+                      applyGenerationSettings(job, manifest, "prompt")
+                    }
+                    onApplySeedOnly={(job, manifest) =>
+                      applyGenerationSettings(job, manifest, "seed")
+                    }
                     onRevisedJob={handleRevisedJob}
                     active={shownView === "generate" && shownGenerationTab === "image"}
                     simple={isProduction}

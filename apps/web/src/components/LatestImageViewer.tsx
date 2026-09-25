@@ -1,15 +1,33 @@
 import { useEffect, useState } from "react";
-import type { Artifact, GenerationJob } from "../api/client";
+import type { Artifact, GenerationJob, GenerationManifest } from "../api/client";
 import { ArtifactPreview } from "./ArtifactPreview";
+import { Icon } from "./ui/Icon";
+import { IconButton } from "./ui/IconButton";
 
 type Props = {
   // 成功した Job のうち最新のもの。無ければ null。
   job: GenerationJob | null;
   images: Artifact[];
+  // job に対応する生成条件。取得前/失敗時は null (#320)。
+  manifest: GenerationManifest | null;
+  onApplySettings?: (job: GenerationJob, manifest: GenerationManifest) => void;
+  onApplyPromptOnly?: (job: GenerationJob, manifest: GenerationManifest) => void;
+  onApplySeedOnly?: (job: GenerationJob, manifest: GenerationManifest) => void;
+  onDerive?: (artifactId: string) => void;
+  onChangeSource?: (artifactId: string) => void;
 };
 
 // 最後に成功した Job の画像を1枚ずつ表示する。バッチで複数枚あるときはスライダーで切り替える。
-export function LatestImageViewer({ job, images }: Props) {
+export function LatestImageViewer({
+  job,
+  images,
+  manifest,
+  onApplySettings,
+  onApplyPromptOnly,
+  onApplySeedOnly,
+  onDerive,
+  onChangeSource,
+}: Props) {
   const [index, setIndex] = useState(0);
 
   // 新しい Job に切り替わったら1枚目へ戻す。
@@ -37,6 +55,49 @@ export function LatestImageViewer({ job, images }: Props) {
         <p className="muted">
           {job ? "最新のJobに画像がありません。" : "まだ生成した画像がありません。"}
         </p>
+      )}
+      {job && manifest && current && (
+        <div className="candidate-actions">
+          <div className="action-group" role="group" aria-label="適用">
+            {onApplySettings && (
+              <IconButton
+                icon={<Icon name="undo" />}
+                label="設定を適用"
+                onClick={() => onApplySettings(job, manifest)}
+              />
+            )}
+            {onApplyPromptOnly && (
+              <IconButton
+                icon={<Icon name="text" />}
+                label="プロンプトのみ適用"
+                onClick={() => onApplyPromptOnly(job, manifest)}
+              />
+            )}
+            {onApplySeedOnly && (
+              <IconButton
+                icon={<Icon name="dice" />}
+                label="seedのみ適用"
+                onClick={() => onApplySeedOnly(job, manifest)}
+              />
+            )}
+          </div>
+          <div className="action-group" role="group" aria-label="送る">
+            {onDerive && (
+              <IconButton
+                icon={<Icon name="branch" />}
+                label="派生生成"
+                onClick={() => onDerive(current.id)}
+              />
+            )}
+            {onChangeSource && (
+              <IconButton
+                icon={<Icon name="branch" />}
+                label="この画像を変える"
+                onClick={() => onChangeSource(current.id)}
+              />
+            )}
+          </div>
+        </div>
       )}
       {count > 1 && (
         <div className="row latest-image-slider">
