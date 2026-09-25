@@ -736,19 +736,23 @@ QUALITY_TAG_PATTERN = re.compile(
 REVISION_LOCKED_FIELDS = ("quality_tags", "character_tags", "artist_tags")
 
 
-def _current_tags(current_positive_prompt: str) -> list[str]:
-    """現在のpromptのタグ行からタグを取り出す。
+def _current_tags(current_positive_prompt: str) -> tuple[list[str], list[str]]:
+    """現在のpromptのタグ行から、タグと文の一部とみなした区切りを取り出す。
 
     タグ行と自然文は空行で区切って組み立てる(`compose_positive_prompt`)。先頭の段落
-    だけを読み、単語数が多い区切りは文の一部とみなして落とす。
+    だけを読み、単語数が多い区切りと`.`で終わる区切りは文の一部とみなして分ける。
     """
     tag_line = current_positive_prompt.strip().split("\n\n", 1)[0]
-    tags = [_normalize_tag(value) for value in tag_line.split(",")]
-    return _dedupe(
-        tag
-        for tag in tags
-        if tag and len(tag.split()) <= MAX_CURRENT_TAG_WORDS and not tag.endswith(".")
-    )
+    tags: list[str] = []
+    sentences: list[str] = []
+    for tag in (_normalize_tag(value) for value in tag_line.split(",")):
+        if not tag:
+            continue
+        if len(tag.split()) <= MAX_CURRENT_TAG_WORDS and not tag.endswith("."):
+            tags.append(tag)
+        else:
+            sentences.append(tag)
+    return _dedupe(tags), _dedupe(sentences)
 
 
 def _mentioned(key: str, instruction: str) -> bool:
@@ -780,8 +784,11 @@ def revise_current_prompt(
     - `removed_tags`に挙げずに落とした現在のタグは戻す
     - 品質、キャラクター、絵師のタグは、現在のpromptか指示に綴りが無ければ足さない
     - ratingは指示に綴りが無ければ現在のpromptの値を使い、無ければ`safe`にする
+
+    戻した結果がブロックの件数上限(`MAX_PROMPT_TAGS`)を超えたときは拒否する。文の
+    一部とみなして戻さなかった区切りは、案から消えていればwarningへ残す。
     """
-    current = _current_tags(current_positive_prompt)
+    current, current_sentences = _current_tags(current_positive_prompt)
     current_keys = {_dedupe_key(tag) for tag in current}
     data = dict(output)
     for name in TAG_BLOCK_FIELDS:
@@ -831,13 +838,29 @@ def revise_current_prompt(
         data[_restored_field(tag)].append(tag)
         restored.append(tag)
     data["quality_tags"].append(rating)
+    unrestored = [
+        sentence
+        for sentence in current_sentences
+        if _dedupe_key(sentence) not in output_keys
+        and _dedupe_key(sentence).removesuffix("s") not in removed_keys
+    ]
 
-    if added or restored:
+    if added or restored or unrestored:
         logger.warning(
-            "レビュー案を整えました。足さなかったタグ: %s / 戻したタグ: %s",
+            "レビュー案を整えました。足さなかったタグ: %s / 戻したタグ: %s"
+            " / 文とみなして戻さなかった区切り: %s",
             ", ".join(added) or "なし",
             ", ".join(restored) or "なし",
+            ", ".join(unrestored) or "なし",
         )
+    for name in TAG_BLOCK_FIELDS:
+        if len(data[name]) > MAX_PROMPT_TAGS:
+            restored_here = sum(1 for tag in restored if _restored_field(tag) == name)
+            raise AgentInvalidResponse(
+                f"レビュー案のタグが多すぎます。{name}が{len(data[name])}件になり、"
+                f"上限の{MAX_PROMPT_TAGS}件を超えます (うち現在のpromptから戻したタグ: "
+                f"{restored_here}件)。"
+            )
     final_keys = {_dedupe_key(tag) for name in TAG_BLOCK_FIELDS for tag in data[name]}
     glosses = [
         gloss
