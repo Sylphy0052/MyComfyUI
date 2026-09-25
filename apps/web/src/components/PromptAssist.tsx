@@ -24,8 +24,15 @@ interface Props {
   /**
    * 補完結果の反映。呼び出し元の prompt と negative へ入れる。
    * `notes` は AI の説明とタグ訳で、差分の確認中にも見せられるよう呼び出し元へ渡す (#354)。
+   * `review` は画像を添えずにレビューさせたか。このとき API は、AI が消すと明示しなかった
+   * タグを positive に戻すため、positive から消えたタグは消す意図とみなせる (#356, #357)。
    */
-  onApply: (result: { positive: string; negative: string; notes: AssistResult }) => void;
+  onApply: (result: {
+    positive: string;
+    negative: string;
+    notes: AssistResult;
+    review: boolean;
+  }) => void;
 }
 
 /** 方向を書かずにレビューさせたときに送る指示。 */
@@ -79,7 +86,12 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
           }),
         });
         const notes = { rationale: result.rationale, tagGlosses: result.tag_glosses ?? [] };
-        onApply({ positive: result.positive_prompt, negative: result.negative_prompt, notes });
+        onApply({
+          positive: result.positive_prompt,
+          negative: result.negative_prompt,
+          notes,
+          review: review && !image,
+        });
         return notes;
       }}
     />

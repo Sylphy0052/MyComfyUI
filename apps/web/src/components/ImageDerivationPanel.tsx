@@ -421,6 +421,7 @@ export function ImageDerivationPanel({
                     label: "プロンプト",
                     current: prompt,
                     proposed: result.positive,
+                    acceptRemovals: result.review,
                   },
                   {
                     key: "negative_prompt",

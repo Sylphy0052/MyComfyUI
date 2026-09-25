@@ -323,7 +323,13 @@ export function GenerationSweepPanel({
                 // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
                 setPromptDiffNotes(result.notes);
                 setPromptDiff([
-                  { key: "positive_prompt", label: "基本プロンプト", current: prompt, proposed: result.positive },
+                  {
+                    key: "positive_prompt",
+                    label: "基本プロンプト",
+                    current: prompt,
+                    proposed: result.positive,
+                    acceptRemovals: result.review,
+                  },
                   { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },
                 ]);
               }}
