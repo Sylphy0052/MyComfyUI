@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 
 import { ApiError, api } from "../api/client";
 import type {
+  AgentProvider,
   MediaItem,
   ProjectCharacterOutfit,
   ProjectCharacterProfile,
@@ -13,6 +14,7 @@ import type {
 import type { SceneEnvelope, SceneSummary } from "../api/aimedia";
 import { MediaPicker, readPickedImage, toReferenceImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
+import { PromptAssist } from "./PromptAssist";
 import { ReferenceSetPanel } from "./ReferenceSetPanel";
 import { Button } from "./ui/Button";
 import { EmptyState } from "./ui/EmptyState";
@@ -327,6 +329,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const [impactError, setImpactError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<AgentProvider[]>([]);
 
   useEffect(() => {
     setOverrides(null);
@@ -334,6 +337,11 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     setSelectedId(null);
     setError(null);
   }, [projectId]);
+
+  // AIによるプロンプト補完 (PromptAssist) 向けのプロバイダ一覧。
+  useEffect(() => {
+    void api.listAgentProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
 
   // 一覧だけを取り直す。編集中の下書きは残し、保存時の競合はupdated_atで判定する。
   useEffect(() => {
@@ -721,10 +729,6 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
                   {(profile.tags ?? []).join(", ") || "タグなし"} / 衣装{(profile.outfits ?? []).length}件
                 </span>
               </button>
-              <div className="row structure-actions">
-                <Button disabled={busy} onClick={() => openDraft(profile)}>編集</Button>
-                <Button variant="danger" disabled={busy} onClick={() => void removeCharacter(profile)}>削除</Button>
-              </div>
             </li>
           ))}
         </ul>
@@ -734,7 +738,13 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       <section className="panel stack" style={{ flex: 1 }}>
         {!draft && selectedCharacter && (
           <div className="stack">
-            <h3>{selectedCharacter.name}</h3>
+            <div className="row spread">
+              <h3>{selectedCharacter.name}</h3>
+              <div className="row">
+                <Button disabled={busy} onClick={() => openDraft(selectedCharacter)}>編集</Button>
+                <Button variant="danger" disabled={busy} onClick={() => void removeCharacter(selectedCharacter)}>削除</Button>
+              </div>
+            </div>
             <p className="muted">{(selectedCharacter.tags ?? []).join(", ") || "タグなし"}</p>
             <p>{selectedCharacter.appearance || "外見未設定"}</p>
             <p className="muted">声: {selectedCharacter.voice || "未設定"}</p>
@@ -793,6 +803,18 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
             <label>声<textarea rows={3} maxLength={2000} value={draft.voice} onChange={(event) => setDraft({ ...draft, voice: event.target.value })} /></label>
             <label>プロンプト<textarea rows={3} maxLength={2000} value={draft.prompt} onChange={(event) => setDraft({ ...draft, prompt: event.target.value })} /></label>
             <label>ネガティブプロンプト<textarea rows={3} maxLength={2000} value={draft.negative_prompt} onChange={(event) => setDraft({ ...draft, negative_prompt: event.target.value })} /></label>
+            <PromptAssist
+              providers={providers}
+              idPrefix="character"
+              current={{ positive: draft.prompt, negative: draft.negative_prompt }}
+              projectId={projectId}
+              onApply={(result) =>
+                // 応答待ちの間に他の欄が編集されていても消さないよう、最新のdraftへ反映する。
+                setDraft((current) =>
+                  current && { ...current, prompt: result.positive, negative_prompt: result.negative },
+                )
+              }
+            />
 
             <fieldset className="stack">
               <legend>プロフィール</legend>

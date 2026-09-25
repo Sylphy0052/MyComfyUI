@@ -29,7 +29,6 @@ import {
   parseJobProgress,
   type JobProgress,
 } from "./components/JobProgressPanel";
-import { CharacterManager } from "./components/CharacterManager";
 import type { Candidate } from "./components/CandidateGallery";
 import { ComposePanel } from "./components/ComposePanel";
 import { GenerationForm } from "./components/GenerationForm";
@@ -79,6 +78,7 @@ import type {
   GenerationTab,
   ImageSubTab,
   Mode,
+  ProjectTab,
   UiState,
   View,
 } from "./state/uiState";
@@ -118,7 +118,6 @@ const VIEWS: { value: View; label: string }[] = [
   { value: "projects", label: "Project" },
   { value: "generate", label: "生成" },
   { value: "assets", label: "資産ブラウザ" },
-  { value: "characters", label: "キャラクター" },
 ];
 
 const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
@@ -370,6 +369,9 @@ export function App() {
   );
   const [imageSubTab, setImageSubTab] = useState<ImageSubTab>(
     initialUiState.imageSubTab,
+  );
+  const [projectTab, setProjectTab] = useState<ProjectTab>(
+    initialUiState.projectTab,
   );
 
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -864,6 +866,7 @@ export function App() {
       view,
       generationTab,
       imageSubTab,
+      projectTab,
       projectId,
       sceneId,
       shotId,
@@ -874,7 +877,7 @@ export function App() {
     lastViewRef.current = view;
     lastModeRef.current = mode;
     persistUiState(next, viewChanged ? "push" : "replace");
-  }, [mode, view, generationTab, imageSubTab, projectId, sceneId, shotId]);
+  }, [mode, view, generationTab, imageSubTab, projectTab, projectId, sceneId, shotId]);
 
   useEffect(() => {
     const restore = () => {
@@ -886,6 +889,7 @@ export function App() {
       setView(restored.view);
       setGenerationTab(restored.generationTab);
       setImageSubTab(restored.imageSubTab);
+      setProjectTab(restored.projectTab);
       setProjectId(restored.projectId);
       setSceneId(restored.sceneId);
       setShotId(restored.shotId);
@@ -906,10 +910,6 @@ export function App() {
   const assetsSceneId = useFrozenWhenInactive(sceneId, assetsActive);
   const assetsShots = useFrozenWhenInactive(shots, assetsActive);
   const assetsShotId = useFrozenWhenInactive(shotId, assetsActive);
-
-  const charactersActive = shownView === "characters";
-  const charactersProjectId = useFrozenWhenInactive(projectId, charactersActive);
-  const charactersScenes = useFrozenWhenInactive(scenes, charactersActive);
 
   // 初回取得の往復中に選択が変わることがある。書き戻す前に現在値を見る。
   const projectIdRef = useRef(projectId);
@@ -1681,6 +1681,10 @@ export function App() {
           onSelectProject={useProject}
           onRestoreSelection={setProjectId}
           onActiveProjectsChanged={setProjects}
+          detailTab={projectTab}
+          onDetailTabChange={setProjectTab}
+          onCharactersChanged={() => setCharacterOverridesToken((value) => value + 1)}
+          charactersReloadToken={characterManagerReloadToken}
         />
       )}
 
@@ -1701,7 +1705,10 @@ export function App() {
                 projectId={projectId}
                 onSelectProject={selectProject}
                 onManageProjects={() => setView("projects")}
-                onManageCharacters={() => setView("characters")}
+                onManageCharacters={() => {
+                  setView("projects");
+                  setProjectTab("characters");
+                }}
                 onStructureChanged={() => setStructureToken((value) => value + 1)}
                 scenes={scenes}
                 sceneId={sceneId}
@@ -2105,18 +2112,6 @@ export function App() {
             />
           </div>
         </>
-      )}
-
-      {visitedViews.has("characters") && (
-        <div className="full" hidden={shownView !== "characters"}>
-          <CharacterManager
-            projectId={charactersProjectId}
-            active={charactersActive}
-            scenes={charactersScenes}
-            onChanged={() => setCharacterOverridesToken((value) => value + 1)}
-            reloadToken={characterManagerReloadToken}
-          />
-        </div>
       )}
 
       <WorkflowRegistryDialog
