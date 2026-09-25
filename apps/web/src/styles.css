@@ -889,10 +889,20 @@ details summary {
   align-items: start;
 }
 
+/* 右列(結果パネル)を閉じたら、左の入力カラムを全幅まで広げる。 */
+.image-workspace.result-collapsed:not([hidden]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @container (max-width: 720px) {
   .image-workspace:not([hidden]) {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.image-result-column-toggle-row {
+  justify-content: flex-end;
+  margin-bottom: var(--space-3);
 }
 
 .image-input-column {
