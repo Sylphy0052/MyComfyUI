@@ -571,6 +571,17 @@ def _drop_untranslated_glosses(body: dict[str, Any]) -> None:
     body["tag_glosses"] = kept
 
 
+def _warn_untranslated_rationale(body: dict[str, Any]) -> None:
+    """`rationale`が日本語になっていなければwarningを残す。表示する内容は変えない。
+
+    英語でも変更の理由は伝わるため捨てない。指示では日本語で書かせている (#355)
+    ので、モデルが英語で返すようになったことに運用側で気付けるようにする。
+    """
+    rationale = str(body.get("rationale") or "")
+    if rationale.strip() and not JAPANESE_CHARACTER.search(rationale):
+        logger.warning("prompt案の説明が日本語になっていません。")
+
+
 def _attach_prompt_text(body: dict[str, Any]) -> None:
     """タグ行と連結済みpositive promptを派生項目として足す。
 
@@ -656,6 +667,7 @@ def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
         # 訳の一覧が空になり、補ったratingの訳も足されなくなる。
         _attach_prompt_text(data)
         _drop_untranslated_glosses(data)
+        _warn_untranslated_rationale(data)
     elif kind == "batch_generation_plan":
         original = data.get("items", [])
         items = [
