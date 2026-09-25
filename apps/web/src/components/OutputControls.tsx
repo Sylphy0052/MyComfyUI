@@ -13,8 +13,8 @@ export interface SliderSpec {
  * 幅と高さのスライダーは実用域の2048までで、数値入力は従来どおり8192まで入れられる。
  */
 export const SLIDER_SPECS: Record<string, SliderSpec> = {
-  steps: { min: 1, max: 100, step: 1 },
-  cfg: { min: 0, max: 20, step: 0.5 },
+  steps: { min: 1, max: 100, step: 1, inputMax: 10000 },
+  cfg: { min: 0, max: 20, step: 0.5, inputMax: 100 },
   width: { min: 64, max: 2048, step: 8, inputMax: 8192 },
   height: { min: 64, max: 2048, step: 8, inputMax: 8192 },
   denoise: { min: 0, max: 1, step: 0.01 },

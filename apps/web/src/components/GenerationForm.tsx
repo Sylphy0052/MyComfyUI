@@ -59,7 +59,11 @@ const HIRES_FIELD_NAMES = new Set([
   "hires_steps",
   "hires_denoise",
 ]);
-/** 数値入力のmin・max・step。値の検証はAPIが行い、ここは入力補助だけとする。 */
+/**
+ * 数値入力のmin・max・step。値の検証はAPIが行い、ここは入力補助だけとする。
+ * width/heightは`SLIDER_SPECS`(#319)が先に処理するため実際には参照されないが、
+ * hires_scale等が同じmapを使うため残す。
+ */
 const NUMBER_FIELD_BOUNDS: Record<string, { min: number; max: number; step: number }> = {
   width: { min: IMAGE_DIMENSION_MIN, max: IMAGE_DIMENSION_MAX, step: IMAGE_DIMENSION_STEP },
   height: { min: IMAGE_DIMENSION_MIN, max: IMAGE_DIMENSION_MAX, step: IMAGE_DIMENSION_STEP },

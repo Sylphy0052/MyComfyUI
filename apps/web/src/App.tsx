@@ -1309,8 +1309,10 @@ export function App() {
       .then((found) => {
         if (active) setLastSeed(typeof found.seed === "number" ? found.seed : null);
       })
-      .catch(() => {
-        if (active) setLastSeed(null);
+      .catch((cause) => {
+        if (!active) return;
+        setLastSeed(null);
+        notify({ tone: "danger", message: `直前のseedを取得できませんでした: ${describe(cause)}` });
       });
     return () => {
       active = false;
