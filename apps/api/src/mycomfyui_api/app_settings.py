@@ -7,9 +7,12 @@
 しなくても、次の要求から新しい値が効く。
 """
 
+import asyncio
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, FastAPI, Request
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +22,7 @@ from mycomfyui_api.db import get_session
 from mycomfyui_api.models import AppSetting
 from mycomfyui_api.settings import Settings, get_settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -32,15 +36,33 @@ QWEN_FIELDS = {
 
 
 async def load_overrides(session: AsyncSession) -> dict[str, Any]:
-    """保存値を`Settings`の属性名で返す。UIから変えられない項目のkeyは読まない。"""
+    """保存値を`Settings`の属性名で返す。UIから変えられない項目のkeyは読まない。
+
+    `effective_settings`の`model_copy`は値を検証しないため、読み込む時点で1項目ずつ
+    PUTと同じ規則で検証する。通らない値は捨てて環境変数の値を使い、起動は止めない。
+    """
+    fields = {key: field for field, key in QWEN_FIELDS.items()}
     rows = await session.scalars(
         select(AppSetting).where(AppSetting.key.in_(QWEN_FIELDS.values()))
     )
-    return {row.key: row.value for row in rows}
+    overrides: dict[str, Any] = {}
+    for row in rows:
+        field = fields[row.key]
+        try:
+            checked = schemas.QwenSettingsUpdate.model_validate({field: row.value})
+        except ValidationError:
+            logger.warning(
+                "app_settingの%sが不正なため無視する: %r", row.key, row.value
+            )
+            continue
+        value = getattr(checked, field)
+        if value is not None:
+            overrides[row.key] = value
+    return overrides
 
 
 def effective_settings(overrides: dict[str, Any]) -> Settings:
-    """環境変数の設定に保存値を重ねる。保存値はPUTの時点で検証済みとして扱う。"""
+    """環境変数の設定に保存値を重ねる。保存値はPUTと読み込みの時点で検証済みとする。"""
     if not overrides:
         return get_settings()
     return get_settings().model_copy(update=overrides)
@@ -74,16 +96,33 @@ def _describe_qwen(overrides: dict[str, Any]) -> schemas.QwenSettingsRead:
 async def _replace_qwen_provider(app: FastAPI, settings: Settings) -> None:
     """Qwen Providerを新しい設定で作り直す。
 
-    差し替えてから古いProviderを閉じる。閉じてから作ると、その間に届いた要求が閉じた
-    clientを掴む。
+    古いProviderはすぐには閉じない。実行中の補完要求が古いProviderを掴んだままawait
+    しており、閉じるとその要求の接続が切れる。退役リストへ移し、API終了時に閉じる。
+    保存は手作業で稀なため、残るclientの数は問題にならない。
     """
     providers = getattr(app.state, "agent_providers", None)
     if providers is None:
         return
     previous = providers.get("qwen")
     providers["qwen"] = QwenProvider(settings)
-    if previous is not None:
+    if previous is None:
+        return
+    retired = getattr(app.state, "retired_agent_providers", None)
+    if retired is None:
+        # lifespanを通さないappでは終了時の後始末が無いため、ここで閉じる。
         await previous.aclose()
+        return
+    retired.append(previous)
+
+
+def _settings_lock(app: FastAPI) -> asyncio.Lock:
+    # 同時のPUTでDBの保存値と`app.state`の実効値が食い違わないよう、保存を直列にする。
+    # 取得と設定の間にawaitが無いため、遅延生成でも2つ作られない。
+    lock = getattr(app.state, "settings_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        app.state.settings_lock = lock
+    return lock
 
 
 @router.get("/qwen", response_model=schemas.QwenSettingsRead)
@@ -97,6 +136,13 @@ async def update_qwen_settings(
     payload: schemas.QwenSettingsUpdate, request: Request, session: SessionDep
 ):
     """Qwenの保存値を丸ごと置き換える。nullの項目は保存値を消し、環境変数の値へ戻す。"""
+    async with _settings_lock(request.app):
+        return await _save_qwen_settings(payload, request.app, session)
+
+
+async def _save_qwen_settings(
+    payload: schemas.QwenSettingsUpdate, app: FastAPI, session: AsyncSession
+) -> schemas.QwenSettingsRead:
     saved = {
         QWEN_FIELDS[field]: value
         for field, value in payload.model_dump().items()
@@ -113,10 +159,10 @@ async def update_qwen_settings(
     await session.commit()
     overrides = {
         key: value
-        for key, value in current_overrides(request.app).items()
+        for key, value in current_overrides(app).items()
         if key not in QWEN_FIELDS.values()
     }
     overrides.update(saved)
-    request.app.state.setting_overrides = overrides
-    await _replace_qwen_provider(request.app, effective_settings(overrides))
+    app.state.setting_overrides = overrides
+    await _replace_qwen_provider(app, effective_settings(overrides))
     return _describe_qwen(overrides)

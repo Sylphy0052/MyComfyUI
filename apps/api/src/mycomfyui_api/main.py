@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI):
     app.state.queue_worker = worker
     app.state.reference_source = None
     app.state.agent_providers = {}
+    app.state.retired_agent_providers = []
     # ワーカーを起動した後は、以降どこで失敗しても後始末まで進める。参照Adapterの
     # 生成はfixtureの読み込みで失敗しうるため、tryの外へ出さない。
     try:
@@ -119,6 +120,9 @@ async def lifespan(app: FastAPI):
         if app.state.reference_source is not None:
             await app.state.reference_source.aclose()
         for provider in app.state.agent_providers.values():
+            await provider.aclose()
+        # 設定の保存で差し替えたProvider。実行中の要求が残りうるため終了時に閉じる。
+        for provider in app.state.retired_agent_providers:
             await provider.aclose()
         await dispose_engine()
 
