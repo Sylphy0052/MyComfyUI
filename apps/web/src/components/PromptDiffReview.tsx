@@ -11,6 +11,11 @@ export interface PromptDiffField {
   label: string;
   current: string;
   proposed: string;
+  /**
+   * 削除のhunkも既定で採用するか。提案が現在のプロンプト全体を土台にしていて、提案に無い
+   * 記述を消す意図とみなせる欄だけで立てる (#357)。
+   */
+  acceptRemovals?: boolean;
 }
 
 interface Props {
@@ -29,6 +34,7 @@ interface Props {
  * だけを採用状態にし、削除は未選択にする。提案側はAIの再生成結果や抽出タグだけの
  * ことが多く、提案に無い既存の記述をすべて削除扱いにすると、そのまま反映したとき
  * に既存の記述が消えるため。削除したいhunkは利用者が明示的に選ぶ。
+ * `acceptRemovals`を立てた欄だけは削除も採用状態にする。
  */
 export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props) {
   const diffs = fields.map((field) => ({
@@ -40,7 +46,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
     const initial = new Set<string>();
     diffs.forEach(({ field, hunks }) => {
       hunks
-        .filter((hunk) => hunk.kind !== "remove")
+        .filter((hunk) => field.acceptRemovals || hunk.kind !== "remove")
         .forEach((hunk) => initial.add(`${field.key}\u0000${hunk.id}`));
     });
     return initial;

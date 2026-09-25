@@ -748,7 +748,12 @@ export function GenerationForm({
     onSubmit(recipe, inputs, false, parsedBatchCount, lookProfileIds);
   };
 
-  const applyAssist = (result: { positive: string; negative: string; notes: AssistResult }) => {
+  const applyAssist = (result: {
+    positive: string;
+    negative: string;
+    notes: AssistResult;
+    review: boolean;
+  }) => {
     // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
     setPromptDiffNotes(result.notes);
     setPromptDiff([
@@ -757,6 +762,7 @@ export function GenerationForm({
         label: "プロンプト",
         current: values.positive_prompt ?? "",
         proposed: result.positive,
+        acceptRemovals: result.review,
       },
       {
         key: "negative_prompt",
