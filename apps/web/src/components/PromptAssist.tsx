@@ -62,6 +62,9 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
         if (review && !current.positive.trim()) {
           throw new Error("レビューするプロンプトがありません。先にプロンプトを入力してください。");
         }
+        if (review && instruction.trim().length > MAX_REVIEW_DIRECTION_LENGTH) {
+          throw new Error(`レビューの方向は${MAX_REVIEW_DIRECTION_LENGTH}文字以内にしてください。`);
+        }
         const result = await api.assistImagePrompt({
           ...request,
           instruction: review ? reviewInstruction(instruction) : instruction,
