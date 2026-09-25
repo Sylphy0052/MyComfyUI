@@ -32,6 +32,8 @@ interface FieldSpec {
   label: string;
   control: string;
   help: string | null;
+  /** `control`が`select`のときの選択肢。 */
+  options: string[];
 }
 
 const PROMPT_FIELD_NAMES = new Set(["positive_prompt", "negative_prompt"]);
@@ -40,6 +42,42 @@ const IMAGE_DIMENSION_FIELD_NAMES = new Set(["width", "height"]);
 const IMAGE_DIMENSION_MIN = 64;
 const IMAGE_DIMENSION_MAX = 8192;
 const IMAGE_DIMENSION_STEP = 8;
+/** hires fix (#318) の項目。`hires_enabled`がオンのときだけ残りを表示する。 */
+const HIRES_ENABLED_FIELD_NAME = "hires_enabled";
+const HIRES_FIELD_NAMES = new Set([
+  HIRES_ENABLED_FIELD_NAME,
+  "hires_scale",
+  "hires_upscale_method",
+  "hires_steps",
+  "hires_denoise",
+]);
+/** 数値入力のmin・max・step。値の検証はAPIが行い、ここは入力補助だけとする。 */
+const NUMBER_FIELD_BOUNDS: Record<string, { min: number; max: number; step: number }> = {
+  width: { min: IMAGE_DIMENSION_MIN, max: IMAGE_DIMENSION_MAX, step: IMAGE_DIMENSION_STEP },
+  height: { min: IMAGE_DIMENSION_MIN, max: IMAGE_DIMENSION_MAX, step: IMAGE_DIMENSION_STEP },
+  hires_scale: { min: 1, max: 4, step: 0.05 },
+  hires_steps: { min: 0, max: 1000, step: 1 },
+  hires_denoise: { min: 0, max: 1, step: 0.01 },
+};
+
+/** Pythonの`round`と同じ偶数丸め。ComfyUIの拡大後サイズの計算に合わせる。 */
+function roundHalfEven(value: number): number {
+  const floor = Math.floor(value);
+  const diff = value - floor;
+  if (diff !== 0.5) return Math.round(value);
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
+/**
+ * hires fixで拡大した後のサイズ。ComfyUIの`LatentUpscaleBy`はlatent (8px単位) の
+ * 幅・高さに倍率を掛けて丸めるため、APIの`hires_output_size`と同じ式で求める。
+ */
+function hiresOutputSize(width: number, height: number, scale: number): [number, number] {
+  return [
+    roundHalfEven(Math.floor(width / IMAGE_DIMENSION_STEP) * scale) * IMAGE_DIMENSION_STEP,
+    roundHalfEven(Math.floor(height / IMAGE_DIMENSION_STEP) * scale) * IMAGE_DIMENSION_STEP,
+  ];
+}
 
 function toFieldSpecs(recipe: Recipe): FieldSpec[] {
   return Object.entries(recipe.input_schema).map(([name, raw]) => {
@@ -57,6 +95,9 @@ function toFieldSpecs(recipe: Recipe): FieldSpec[] {
             ? "text"
             : "number",
       help: typeof spec.help === "string" ? spec.help : null,
+      options: Array.isArray(spec.options)
+        ? spec.options.filter((option): option is string => typeof option === "string")
+        : [],
     };
   });
 }
@@ -71,6 +112,9 @@ function isParsableAs(field: FieldSpec, raw: string): boolean {
   }
   if (field.type === "number") {
     return Number.isFinite(Number.parseFloat(raw));
+  }
+  if (field.type === "boolean") {
+    return raw === "true" || raw === "false";
   }
   return true;
 }
@@ -218,7 +262,22 @@ export function GenerationForm({
     [fields],
   );
   const parameterFields = useMemo(
-    () => fields.filter((field) => !PROMPT_FIELD_NAMES.has(field.name)),
+    () =>
+      fields.filter(
+        (field) => !PROMPT_FIELD_NAMES.has(field.name) && !HIRES_FIELD_NAMES.has(field.name),
+      ),
+    [fields],
+  );
+  // hires fixは出力設定の末尾にまとめ、オンのときだけ詳細を出す。
+  const hiresToggleField = useMemo(
+    () => fields.find((field) => field.name === HIRES_ENABLED_FIELD_NAME) ?? null,
+    [fields],
+  );
+  const hiresFields = useMemo(
+    () =>
+      fields.filter(
+        (field) => HIRES_FIELD_NAMES.has(field.name) && field.name !== HIRES_ENABLED_FIELD_NAME,
+      ),
     [fields],
   );
   // Recipe の既定値。現在の入力との差分表示と、既定値への書き戻しに使う。
@@ -332,10 +391,30 @@ export function GenerationForm({
       const value = manifestText(raw[spec.name]);
       if (value !== null && isParsableAs(spec, value)) filled[spec.name] = value;
     }
+    // hires fix (#318) より前の画像はオフで生成されている。今の入力のオンを持ち越さない。
+    const targetSpecs = toFieldSpecs(target);
+    if (
+      targetSpecs.some((spec) => spec.name === HIRES_ENABLED_FIELD_NAME) &&
+      filled[HIRES_ENABLED_FIELD_NAME] === undefined
+    ) {
+      filled[HIRES_ENABLED_FIELD_NAME] = "false";
+    }
+    // オフの画像はhires fixの詳細を記録しない。今の入力を持ち越さず、Recipeの既定値へ戻す。
+    const targetDefaults = initialValues(target, targetSpecs);
+    const hiresDefaults: Record<string, string> = {};
+    for (const name of HIRES_FIELD_NAMES) {
+      if (filled[name] === undefined && targetDefaults[name] !== undefined) {
+        hiresDefaults[name] = targetDefaults[name];
+      }
+    }
     setUseInheritedDefaults(false);
     setLookProfileIds([]);
-    setValues((current) => ({ ...current, ...filled }));
-    setTouchedFields((current) => new Set([...current, ...Object.keys(filled)]));
+    setValues((current) => ({ ...current, ...hiresDefaults, ...filled }));
+    setTouchedFields((current) => {
+      const next = new Set([...current, ...Object.keys(filled)]);
+      for (const name of Object.keys(hiresDefaults)) next.delete(name);
+      return next;
+    });
     if (target.id !== recipeId) {
       pendingModelValuesRef.current = models;
       setRecipeId(target.id);
@@ -453,6 +532,26 @@ export function GenerationForm({
   // タグの整理は Provider を選ばずに走るため、副作用を抽出ボタンのそばへ出す。
   const tagNotice = conflictNotice(providers);
 
+  // 拡大前後のサイズ。未入力の項目はRecipe既定値で計算し、数値にならなければ出さない。
+  const hiresEnabled = hiresToggleField !== null && values[HIRES_ENABLED_FIELD_NAME] === "true";
+  const hiresSize = (() => {
+    const pick = (name: string) => {
+      const raw = values[name] ?? "";
+      return Number(raw.trim() === "" ? (defaultValues[name] ?? "") : raw);
+    };
+    const width = pick("width");
+    const height = pick("height");
+    const scale = pick("hires_scale");
+    if (!Number.isInteger(width) || !Number.isInteger(height) || !Number.isFinite(scale)) {
+      return null;
+    }
+    const [outputWidth, outputHeight] = hiresOutputSize(width, height, scale);
+    return {
+      text: `${width}x${height} → ${outputWidth}x${outputHeight}`,
+      tooLarge: outputWidth > IMAGE_DIMENSION_MAX || outputHeight > IMAGE_DIMENSION_MAX,
+    };
+  })();
+
   /** 入力の検証と`inputs`の組み立て。プレビューと投入で同じ値を使う。 */
   const buildInputs = (): Record<string, unknown> | null => {
     const inputs: Record<string, unknown> = { ...modelValues };
@@ -494,9 +593,17 @@ export function GenerationForm({
           return null;
         }
         inputs[field.name] = parsed;
+      } else if (field.type === "boolean") {
+        inputs[field.name] = raw === "true";
       } else {
         inputs[field.name] = raw;
       }
+    }
+    if (hiresEnabled && hiresSize?.tooLarge) {
+      setInvalid(
+        `hires fixで拡大した後のサイズ (${hiresSize.text}) が上限の${IMAGE_DIMENSION_MAX}pxを超えます。`,
+      );
+      return null;
     }
     setInvalid(null);
     return inputs;
@@ -674,20 +781,47 @@ export function GenerationForm({
           value={values[field.name] ?? ""}
           onChange={(event) => changeField(field.name, event.target.value)}
         />
+      ) : field.control === "checkbox" ? (
+        <input
+          id={`field-${field.name}`}
+          className="field-checkbox"
+          disabled={useInheritedDefaults}
+          type="checkbox"
+          checked={values[field.name] === "true"}
+          onChange={(event) => changeField(field.name, String(event.target.checked))}
+        />
+      ) : field.control === "select" ? (
+        <select
+          id={`field-${field.name}`}
+          disabled={useInheritedDefaults}
+          value={values[field.name] ?? ""}
+          onChange={(event) => changeField(field.name, event.target.value)}
+        >
+          {!field.options.includes(values[field.name] ?? "") && (
+            <option value={values[field.name] ?? ""}>{values[field.name] || "未選択"}</option>
+          )}
+          {field.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
       ) : (
         <input
           id={`field-${field.name}`}
           disabled={useInheritedDefaults}
           type={field.control === "number" ? "number" : "text"}
-          {...(IMAGE_DIMENSION_FIELD_NAMES.has(field.name) && {
-            min: IMAGE_DIMENSION_MIN,
-            max: IMAGE_DIMENSION_MAX,
-            step: IMAGE_DIMENSION_STEP,
-          })}
+          {...(field.control === "number" && NUMBER_FIELD_BOUNDS[field.name])}
           readOnly={readOnly}
           value={values[field.name] ?? ""}
           onChange={(event) => changeField(field.name, event.target.value)}
         />
+      )}
+      {field.name === "hires_scale" && hiresSize && (
+        <p className={hiresSize.tooLarge ? "error" : "muted"}>
+          {hiresSize.text}
+          {hiresSize.tooLarge && ` (上限${IMAGE_DIMENSION_MAX}pxを超えます)`}
+        </p>
       )}
       {field.help && <p className="muted">{field.help}</p>}
       {changed && !extrasHidden && (
@@ -1008,6 +1142,15 @@ export function GenerationForm({
             />
           </div>
           {parameterFields.map(renderField)}
+          {hiresToggleField && (
+            <div className="hires-fix stack">
+              {renderField(hiresToggleField)}
+              {/* オフの間も入力値を保つため、外さずに隠す。 */}
+              <div className="hires-fix-detail stack" hidden={!hiresEnabled}>
+                {hiresFields.map(renderField)}
+              </div>
+            </div>
+          )}
         </fieldset>
 
         <details className="form-section collapsible" hidden={simple}>
