@@ -871,6 +871,24 @@ async def _check_prompt_tags(
     return schemas.PromptTagCheckRead.model_validate(check, from_attributes=True)
 
 
+async def _character_tags() -> frozenset[str]:
+    """タグ辞書のキャラクターのタグ名。辞書が未設定か読めなければ空とする。
+
+    空のときは、消したタグと足したタグがキャラクターかどうかをモデルの申告だけで
+    判定する(#388より前の挙動)。
+    """
+    path = get_settings().tag_dictionary_path
+    if path is None:
+        return frozenset()
+    dictionary = _tag_dictionaries.setdefault(path, tag_preflight.TagDictionary(path))
+    try:
+        # 初回は数MBのCSVを読むため、イベントループを塞がない。
+        return await run_in_threadpool(dictionary.character_tags)
+    except tag_preflight.TagDictionaryError as error:
+        logger.warning("タグ辞書を読めずキャラクターの判定に使わない: %s", error)
+        return frozenset()
+
+
 async def _load_recipe_version(
     session: AsyncSession, recipe: Recipe
 ) -> tuple[Workflow, WorkflowVersion] | None:
@@ -5356,7 +5374,10 @@ async def _assist_image_prompt(
             # 書き方の整形より先に行う。消えたタグを戻す前に、内容のタグが無いとして
             # 弾かないためである。
             output = proposals.revise_current_prompt(
-                output, current_positive_prompt, instruction
+                output,
+                current_positive_prompt,
+                instruction,
+                await _character_tags(),
             )
         output = proposals.apply_prompt_style(
             "image_prompt", output, context["prompt_style"]

@@ -11,11 +11,12 @@ Providerへ流れないようにするためである。
 import json
 import logging
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from mycomfyui_api.adapters import tag_preflight
 from mycomfyui_api.adapters.agent.base import (
     AgentInvalidResponse,
     AgentProposalKind,
@@ -808,27 +809,39 @@ def _restored_field(tag: str) -> str:
     return "general_tags"
 
 
-def _locked_removal_field(key: str, declared_field: Any) -> str | None:
+def _is_character(key: str, character_tags: Collection[str]) -> bool:
+    """タグ辞書でキャラクターと分かるタグか。辞書が無ければ常に偽。"""
+    return tag_preflight.normalize_tag(key) in character_tags
+
+
+def _locked_removal_field(
+    key: str, declared_field: Any, character_tags: Collection[str]
+) -> str | None:
     """消すタグが`REVISION_LOCKED_FIELDS`に属するなら、そのブロックを返す。
 
-    現在のpromptの文字列からはキャラクターのタグを見分けられないため、モデルが申告した
-    ブロックを使う。申告を誤っても素通りしないよう、書き方で品質か絵師と分かるタグは
-    申告によらず対象にする。キャラクターを別のブロックと申告された場合は見分けられない。
-    括弧書き (`saber (fate)`) は一般のタグにも使うため、キャラクターの目印にしない。
-    ratingは別に扱うため対象外とする。
+    申告を誤っても素通りしないよう、書き方で品質か絵師と分かるタグと、タグ辞書で
+    キャラクターと分かるタグは申告によらず対象にする。それ以外はモデルが申告した
+    ブロックを使う。辞書に無いキャラクターを別のブロックと申告された場合は見分けられ
+    ない。括弧書き (`saber (fate)`) は一般のタグにも使うため、キャラクターの目印に
+    しない。ratingは別に扱うため対象外とする。
     """
     if not key or key in RATING_TAGS:
         return None
     inferred = _restored_field(key)
     if inferred in REVISION_LOCKED_FIELDS:
         return inferred
+    if _is_character(key, character_tags):
+        return "character_tags"
     if declared_field in REVISION_LOCKED_FIELDS:
         return str(declared_field)
     return None
 
 
 def revise_current_prompt(
-    output: dict[str, Any], current_positive_prompt: str, instruction: str
+    output: dict[str, Any],
+    current_positive_prompt: str,
+    instruction: str,
+    character_tags: Collection[str] = frozenset(),
 ) -> dict[str, Any]:
     """現在のpromptを直した案を、指示と関係の無いタグが変わらないよう整える (#356)。
 
@@ -838,6 +851,8 @@ def revise_current_prompt(
     - `tag_changes`で消したと挙げずに落とした現在のタグは戻す
     - 品質、キャラクター、絵師のタグは、現在のpromptか指示に綴りが無ければ足さない
     - 同じく、指示に綴りが無ければ`tag_changes`で消したと挙げても戻す (#382)
+    - キャラクターは申告したブロックによらず、`character_tags`(タグ辞書のキャラクター
+      のタグ名)に載るタグも対象にする (#388)
     - `natural_text_change`で消したと挙げずに自然文を空にしたら、現在の自然文を戻す
     - ratingは指示に綴りが無ければ現在のpromptの値を使い、無ければ`safe`にする
 
@@ -866,11 +881,14 @@ def revise_current_prompt(
     ]
 
     added: list[str] = []
-    for name in REVISION_LOCKED_FIELDS:
+    for name in TAG_BLOCK_FIELDS:
         kept = []
         for tag in data[name]:
             key = _dedupe_key(tag)
-            if key in current_keys or _mentioned(key, instruction):
+            locked = name in REVISION_LOCKED_FIELDS or _is_character(
+                key, character_tags
+            )
+            if not locked or key in current_keys or _mentioned(key, instruction):
                 kept.append(tag)
             else:
                 added.append(tag)
@@ -884,7 +902,7 @@ def revise_current_prompt(
         if not isinstance(change, dict) or change.get("change") != "removed":
             continue
         key = _dedupe_key(_normalize_tag(change.get("tag")))
-        locked_field = _locked_removal_field(key, change.get("field"))
+        locked_field = _locked_removal_field(key, change.get("field"), character_tags)
         if locked_field and not _mentioned(key, instruction):
             locked_removals[key.removesuffix("s")] = locked_field
         else:

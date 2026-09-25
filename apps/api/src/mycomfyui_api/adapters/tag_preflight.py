@@ -70,6 +70,8 @@ MULTIPLE_PEOPLE = re.compile(
 WEIGHT_SUFFIX = re.compile(r":\s*-?\d+(?:\.\d+)?\s*$")
 #: 版権名などの末尾の括弧。自然文かどうかの語数に数えない。
 QUALIFIER = re.compile(r"\([^()]*\)$")
+#: 辞書の`category`でキャラクターを表す値。Danbooruのタグ種別に揃える。
+CHARACTER_CATEGORY = "4"
 
 PromptSide = Literal["positive", "negative"]
 TagStatus = Literal["ok", "missing", "unverified"]
@@ -205,14 +207,16 @@ def find_conflicts(
     return conflicts
 
 
-def load_tag_dictionary(path: Path) -> dict[str, int]:
-    """タグ辞書を読み、正規化したタグ名と別名から投稿件数への対応を返す。
+def load_tag_dictionary(path: Path) -> tuple[dict[str, int], frozenset[str]]:
+    """タグ辞書を読み、投稿件数への対応とキャラクターのタグ名を返す。
 
-    別名は正規のタグの件数を引けるようにする。正規のタグ名と別名が衝突したときは
-    正規のタグ名を優先する。
+    どちらも正規化したタグ名と別名で引けるようにする。正規のタグ名と別名が衝突した
+    ときは、件数も種別も正規のタグ名を優先する。
     """
     counts: dict[str, int] = {}
     aliases: dict[str, int] = {}
+    characters: set[str] = set()
+    character_aliases: set[str] = set()
     try:
         with path.open(encoding="utf-8", newline="") as file:
             for line_number, row in enumerate(csv.reader(file), start=1):
@@ -228,14 +232,22 @@ def load_tag_dictionary(path: Path) -> dict[str, int]:
                     raise TagDictionaryError(
                         f"タグ辞書の{line_number}行目の件数が整数でない"
                     ) from error
-                counts[normalize_tag(row[0])] = count
+                name = normalize_tag(row[0])
+                counts[name] = count
+                is_character = row[1].strip() == CHARACTER_CATEGORY
+                if is_character:
+                    characters.add(name)
                 if len(row) >= 4:
                     for alias in row[3].split(","):
                         if alias.strip():
                             aliases.setdefault(normalize_tag(alias), count)
+                            if is_character:
+                                character_aliases.add(normalize_tag(alias))
     except (OSError, UnicodeDecodeError, csv.Error) as error:
         raise TagDictionaryError(f"タグ辞書を読めない: {error}") from error
-    return {**aliases, **counts}
+    # `black_hood`のように、別名が別の種別の正規のタグ名と重なるときは正規の方に従う。
+    characters.update(character_aliases - counts.keys())
+    return {**aliases, **counts}, frozenset(characters)
 
 
 class TagDictionary:
@@ -245,18 +257,27 @@ class TagDictionary:
         self._path = path
         self._stamp: tuple[int, int] | None = None
         self._counts: dict[str, int] = {}
+        self._characters: frozenset[str] = frozenset()
 
     def post_counts(self) -> dict[str, int]:
         """タグ名から投稿件数への対応を返す。読めなければ`TagDictionaryError`。"""
+        self._load()
+        return self._counts
+
+    def character_tags(self) -> frozenset[str]:
+        """キャラクターのタグ名(別名を含む)を返す。読めなければ`TagDictionaryError`。"""
+        self._load()
+        return self._characters
+
+    def _load(self) -> None:
         try:
             stat = self._path.stat()
         except OSError as error:
             raise TagDictionaryError(f"タグ辞書を読めない: {error}") from error
         stamp = (stat.st_mtime_ns, stat.st_size)
         if stamp != self._stamp:
-            self._counts = load_tag_dictionary(self._path)
+            self._counts, self._characters = load_tag_dictionary(self._path)
             self._stamp = stamp
-        return self._counts
 
 
 def check_prompt_tags(
