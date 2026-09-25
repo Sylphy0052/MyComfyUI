@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
 import type { Artifact } from "../api/client";
@@ -162,15 +162,23 @@ function SceneDetails({
   // Shotまで割り当てられていない画像だけをScene直下に出す。
   const looseImages = sceneImages.filter((artifact) => !artifact.assigned_shot_id);
 
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   const load = () => {
     if (shots || loading || scene.shot_count === 0) return;
     setLoading(true);
     setError(null);
     api
       .listShots(projectId, scene.id)
-      .then((list) => setShots(list.items))
-      .catch((cause) => setError(describe(cause)))
-      .finally(() => setLoading(false));
+      .then((list) => mounted.current && setShots(list.items))
+      .catch((cause) => mounted.current && setError(describe(cause)))
+      .finally(() => mounted.current && setLoading(false));
   };
 
   return (
@@ -189,7 +197,14 @@ function SceneDetails({
       <p>{scene.summary}</p>
       <Thumbs artifacts={looseImages} alt={`${label}の生成画像`} />
       {loading && <LoadingPlaceholder label="Shotを読込み中..." lines={2} />}
-      {error && <p className="error">Shot一覧を取得できません。{error}</p>}
+      {error && (
+        <p className="error">
+          Shot一覧を取得できません。{error}{" "}
+          <button type="button" onClick={load} disabled={loading}>
+            再試行
+          </button>
+        </p>
+      )}
       {shots && shots.length > 0 && (
         <ul className="list scene-tab-shots">
           {shots.map((shot) => (
