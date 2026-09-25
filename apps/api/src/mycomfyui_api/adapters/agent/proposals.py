@@ -761,9 +761,6 @@ QUALITY_TAG_PATTERN = re.compile(
     r"^(?:masterpiece|(?:best|high|good|normal|low|worst) quality|absurdres|highres"
     r"|score_\d+(?:_up)?|(?:year )?\d{4}|newest|recent)$"
 )
-#: 作品名などの括弧書きを添えたタグ (`saber (fate)`)。キャラクターの書き方なので、
-#: モデルが別のブロックと申告しても消すタグの検証対象にする (#382)。
-CHARACTER_TAG_PATTERN = re.compile(r"^[^()]+ \([^()]+\)$")
 #: 現在のpromptに無ければ足さないブロック。内容の指示から導けない固有名と品質である。
 REVISION_LOCKED_FIELDS = ("quality_tags", "character_tags", "artist_tags")
 
@@ -815,17 +812,16 @@ def _locked_removal_field(key: str, declared_field: Any) -> str | None:
     """消すタグが`REVISION_LOCKED_FIELDS`に属するなら、そのブロックを返す。
 
     現在のpromptの文字列からはキャラクターのタグを見分けられないため、モデルが申告した
-    ブロックを使う。申告を誤っても素通りしないよう、書き方で品質、絵師、キャラクターと
-    分かるタグは申告によらず対象にする。括弧書きの無いキャラクター名 (`hatsune miku`) を
-    別のブロックと申告された場合は見分けられない。ratingは別に扱うため対象外とする。
+    ブロックを使う。申告を誤っても素通りしないよう、書き方で品質か絵師と分かるタグは
+    申告によらず対象にする。キャラクターを別のブロックと申告された場合は見分けられない。
+    括弧書き (`saber (fate)`) は一般のタグにも使うため、キャラクターの目印にしない。
+    ratingは別に扱うため対象外とする。
     """
     if not key or key in RATING_TAGS:
         return None
     inferred = _restored_field(key)
     if inferred in REVISION_LOCKED_FIELDS:
         return inferred
-    if CHARACTER_TAG_PATTERN.match(key):
-        return "character_tags"
     if declared_field in REVISION_LOCKED_FIELDS:
         return str(declared_field)
     return None
