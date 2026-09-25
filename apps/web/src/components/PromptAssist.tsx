@@ -26,8 +26,15 @@ interface Props {
 }
 
 /** 方向を書かずにレビューさせたときに送る指示。 */
-const DEFAULT_REVIEW_INSTRUCTION =
-  "現在のプロンプトをレビューし、重複・矛盾・不要なタグを整理する。";
+const DEFAULT_REVIEW_DIRECTION = "重複・矛盾・不要なタグを整理する。";
+
+/** レビューの方向を、現在の prompt を土台に直させる指示へ組み立てる。 */
+function reviewInstruction(direction: string): string {
+  return (
+    "現在のプロンプトをレビューして直す。指示の点だけを直し、関係の無いタグや文は残す。\n" +
+    `指示: ${direction.trim() || DEFAULT_REVIEW_DIRECTION}`
+  );
+}
 
 /**
  * 日本語の説明から positive prompt と negative prompt を AI に補完させる入力欄。
@@ -49,7 +56,7 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
         }
         const result = await api.assistImagePrompt({
           ...request,
-          instruction: review && !instruction.trim() ? DEFAULT_REVIEW_INSTRUCTION : instruction,
+          instruction: review ? reviewInstruction(instruction) : instruction,
           recipe_id: recipeId || null,
           ...(image && { image }),
           ...((image || review) && {
@@ -171,6 +178,7 @@ export function PromptAssistField({
             onChange={(event) => {
               setReviewing(event.target.checked);
               setError(null);
+              setResult(null);
             }}
           />
           現在のプロンプトをレビューして直す

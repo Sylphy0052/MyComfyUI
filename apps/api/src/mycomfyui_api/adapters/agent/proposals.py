@@ -317,8 +317,6 @@ TAGS_STYLE_DIRECTIVE = (
 KIND_DIRECTIVES: dict[ProposalKind, str] = {
     "image_prompt": (
         "与えたShotまたは利用者説明に沿う画像生成promptを1件提案する。\n"
-        "current_positive_promptが与えられたときは、それを土台に利用者の指示の点だけを"
-        "直し、指示と関係の無いタグや文は残す。\n"
         + PROMPT_DIRECTIVE
         + "\ntag_glossesには、タグ配列に入れた全てのタグについて、tagにタグをそのまま、"
         "jaにその意味を短い日本語で書く。"
