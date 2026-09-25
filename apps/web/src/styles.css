@@ -1760,6 +1760,18 @@ button.primary:hover:not(:disabled) {
   background: rgb(0 0 0 / 50%);
 }
 
+.settings-dialog {
+  width: min(36rem, 100% - 2 * var(--space-5));
+}
+
+.settings-dialog::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+.settings-dialog-button {
+  white-space: nowrap;
+}
+
 .shortcut-help-button {
   white-space: nowrap;
 }

@@ -54,6 +54,7 @@ import { ignoresShortcut } from "./components/ui/shortcuts";
 import { VideoPanel, MAX_REFERENCES } from "./components/VideoPanel";
 import { VoicePanel } from "./components/VoicePanel";
 import { WorkflowRegistryDialog } from "./components/WorkflowRegistryDialog";
+import { QwenSettingsDialog } from "./components/QwenSettingsDialog";
 import { tagCheckWarnings } from "./prompt/tagCheck";
 import { PIPELINE_STEPS, persistPipelineStep, readPipelineStep } from "./state/pipelineState";
 import type { PipelineStepId } from "./state/pipelineState";
@@ -358,6 +359,7 @@ export function App() {
   const [mode, setMode] = useState<Mode>(initialUiState.mode);
   const [view, setView] = useState<View>(initialUiState.view);
   const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [visitedViews, setVisitedViews] = useState<ReadonlySet<View>>(
     () =>
       new Set([
@@ -429,7 +431,8 @@ export function App() {
   const [comparisonDialogEl, setComparisonDialogEl] = useState<HTMLDialogElement | null>(null);
   const [workflowDialogEl, setWorkflowDialogEl] = useState<HTMLDialogElement | null>(null);
   // 2つのdialogはどちらもモーダルで、同時には開かない。
-  const toastDialogEl = comparisonDialogEl ?? workflowDialogEl;
+  const [settingsDialogEl, setSettingsDialogEl] = useState<HTMLDialogElement | null>(null);
+  const toastDialogEl = comparisonDialogEl ?? workflowDialogEl ?? settingsDialogEl;
   // 探索スイープの実験一覧は結果カラム側へportalで出す (#317)。GenerationSweepPanel自体は
   // 入力カラムに留めたまま、一覧部分だけこのDOMノードへ描画する。
   const [sweepResultSlot, setSweepResultSlot] = useState<HTMLDivElement | null>(null);
@@ -1638,6 +1641,14 @@ export function App() {
         >
           使い方
         </a>
+        <button
+          type="button"
+          className="settings-dialog-button"
+          aria-haspopup="dialog"
+          onClick={() => setSettingsDialogOpen(true)}
+        >
+          設定
+        </button>
         {!isProduction && (
           <nav className="row" aria-label="ラボの画面">
             {VIEWS.map((item) => (
@@ -2120,6 +2131,12 @@ export function App() {
         sceneId={sceneId}
         shotId={shotId}
         onDialogOpenChange={setWorkflowDialogEl}
+      />
+
+      <QwenSettingsDialog
+        open={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
+        onDialogOpenChange={setSettingsDialogEl}
       />
 
       <ToastHost
