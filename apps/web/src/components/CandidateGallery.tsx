@@ -37,6 +37,10 @@ interface Props {
   onPromoteToPreset?: (artifactId: string) => void;
   /** 詳細に出した候補の生成条件を生成フォームへ戻す。 */
   onApplySettings?: (job: GenerationJob, manifest: GenerationManifest) => void;
+  /** 候補のプロンプトだけを生成フォームへ戻す (#320)。 */
+  onApplyPromptOnly?: (job: GenerationJob, manifest: GenerationManifest) => void;
+  /** 候補のseedだけを生成フォームへ戻す (#320)。 */
+  onApplySeedOnly?: (job: GenerationJob, manifest: GenerationManifest) => void;
   /** 渡されたときだけ、詳細に画像を見て指示でプロンプトを直す欄を出す (#303)。 */
   onRevisedJob?: (job: GenerationJob) => void;
   active?: boolean;
@@ -144,7 +148,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onRevisedJob, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, onRevisedJob, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
   const [storedDensity, setDensity] = useListDensity("candidates");
   // モードBは切替を出さないため、ラボで選んだ形式を持ち込まず従来の中サイズに固定する。
   const effectiveDensity = simple ? "m" : storedDensity;
@@ -240,6 +244,30 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
     });
     return () => { active = false; };
   }, [detailArtifactId, lineageErrors, details]);
+
+  /**
+   * 「プロンプトのみ」「seedのみ」用に、候補のjob/manifestを取ってから渡す (#320)。
+   * 詳細表示で既に取得済みなら取り直さない。
+   */
+  const applyScopedSettings = async (
+    artifactId: string,
+    jobId: string,
+    handler?: (job: GenerationJob, manifest: GenerationManifest) => void,
+  ) => {
+    if (!handler) return;
+    const cached = details[artifactId];
+    if (cached) {
+      handler(cached.job, cached.manifest);
+      return;
+    }
+    try {
+      const job = await api.getJob(jobId);
+      const manifest = await api.getManifest(job.manifest_id);
+      handler(job, manifest);
+    } catch (cause) {
+      setError(String(cause));
+    }
+  };
 
   const updateTransform = (side: "A" | "B", next: ViewTransform) => {
     if (syncTransform) { setLeftTransform(next); setRightTransform(next); }
@@ -469,7 +497,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
           <LoadingPlaceholder label="lineageを取得中です。" lines={2} />
         )}
         <div className={`gallery gallery-${effectiveDensity}`}>
-          {candidates.map(({ artifact }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}${simple && artifact.id === activeId ? " selected" : ""}`}>
+          {candidates.map(({ artifact, jobId }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}${simple && artifact.id === activeId ? " selected" : ""}`}>
             <Badge tone={`decision decision-${artifact.decision}`}>
               {DECISION_LABEL[artifact.decision] ?? artifact.decision}
             </Badge>
@@ -493,9 +521,11 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
                 {!simple && <div className="action-group" role="group" aria-label="その他">
                   <IconButton icon={<Icon name="info" />} label="詳細" aria-pressed={artifact.id === detailArtifactId} onClick={() => setDetailArtifactId((current) => current === artifact.id ? null : artifact.id)} />
                   {onDerive && <IconButton icon={<Icon name="branch" />} label="派生生成" onClick={() => onDerive(artifact.id)} />}
+                  {onApplyPromptOnly && <IconButton icon={<Icon name="text" />} label="プロンプトのみ適用" onClick={() => void applyScopedSettings(artifact.id, jobId, onApplyPromptOnly)} />}
+                  {onApplySeedOnly && <IconButton icon={<Icon name="dice" />} label="seedのみ適用" onClick={() => void applyScopedSettings(artifact.id, jobId, onApplySeedOnly)} />}
                   {onPromoteToPreset && <IconButton icon={<Icon name="bookmark" />} label="Presetにする" onClick={() => onPromoteToPreset(artifact.id)} />}
                 </div>}
-                {simple && onChangeSource && <div className="action-group" role="group" aria-label="変更">
+                {onChangeSource && <div className="action-group" role="group" aria-label="変更">
                   <IconButton icon={<Icon name="branch" />} label="この画像を変える" onClick={() => onChangeSource(artifact.id)} />
                 </div>}
               </div>
