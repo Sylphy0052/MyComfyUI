@@ -761,6 +761,9 @@ QUALITY_TAG_PATTERN = re.compile(
     r"^(?:masterpiece|(?:best|high|good|normal|low|worst) quality|absurdres|highres"
     r"|score_\d+(?:_up)?|(?:year )?\d{4}|newest|recent)$"
 )
+#: 作品名などの括弧書きを添えたタグ (`saber (fate)`)。キャラクターの書き方なので、
+#: モデルが別のブロックと申告しても消すタグの検証対象にする (#382)。
+CHARACTER_TAG_PATTERN = re.compile(r"^[^()]+ \([^()]+\)$")
 #: 現在のpromptに無ければ足さないブロック。内容の指示から導けない固有名と品質である。
 REVISION_LOCKED_FIELDS = ("quality_tags", "character_tags", "artist_tags")
 
@@ -812,14 +815,17 @@ def _locked_removal_field(key: str, declared_field: Any) -> str | None:
     """消すタグが`REVISION_LOCKED_FIELDS`に属するなら、そのブロックを返す。
 
     現在のpromptの文字列からはキャラクターのタグを見分けられないため、モデルが申告した
-    ブロックを使う。申告を誤っても素通りしないよう、書き方で品質か絵師と分かるタグは
-    申告によらず対象にする。ratingは別に扱うため対象外とする。
+    ブロックを使う。申告を誤っても素通りしないよう、書き方で品質、絵師、キャラクターと
+    分かるタグは申告によらず対象にする。括弧書きの無いキャラクター名 (`hatsune miku`) を
+    別のブロックと申告された場合は見分けられない。ratingは別に扱うため対象外とする。
     """
     if not key or key in RATING_TAGS:
         return None
     inferred = _restored_field(key)
     if inferred in REVISION_LOCKED_FIELDS:
         return inferred
+    if CHARACTER_TAG_PATTERN.match(key):
+        return "character_tags"
     if declared_field in REVISION_LOCKED_FIELDS:
         return str(declared_field)
     return None
@@ -915,21 +921,24 @@ def revise_current_prompt(
     dropped = [tag for tag, _ in restored if tag not in unremoved]
 
     # 自然文は綴りで指示との関係を判定できない。理由を添えずに消したときだけ戻す。
+    # 上限を超える自然文は案へ入れられないため戻さず、warningで知らせる。
     current_natural_text = _current_natural_text(current_positive_prompt)
     natural_text_change = data.get("natural_text_change")
-    restored_natural_text = bool(
+    dropped_natural_text = bool(
         current_natural_text
-        and len(current_natural_text) <= MAX_NATURAL_TEXT_LENGTH
         and not str(data.get("natural_text") or "").strip()
         and not (
             isinstance(natural_text_change, dict)
             and natural_text_change.get("change") == "removed"
         )
     )
+    restored_natural_text = (
+        dropped_natural_text and len(current_natural_text) <= MAX_NATURAL_TEXT_LENGTH
+    )
     if restored_natural_text:
         data["natural_text"] = current_natural_text
 
-    if added or restored or unrestored or restored_natural_text:
+    if added or restored or unrestored or dropped_natural_text:
         logger.warning(
             "レビュー案を整えました。足さなかったタグ: %s / 戻したタグ: %s"
             " / 指示に綴りが無く消さなかったタグ: %s"
@@ -938,7 +947,11 @@ def revise_current_prompt(
             ", ".join(dropped) or "なし",
             ", ".join(unremoved) or "なし",
             ", ".join(unrestored) or "なし",
-            "はい" if restored_natural_text else "いいえ",
+            "はい"
+            if restored_natural_text
+            else "上限を超えるため戻せず"
+            if dropped_natural_text
+            else "いいえ",
         )
     # 上限を超えたブロックはすべて報告する。1つずつ直して再実行させないため (#378)。
     over_limit = [
