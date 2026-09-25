@@ -28,7 +28,7 @@ import { AssistNotes, PromptAssist } from "./PromptAssist";
 import type { AssistResult } from "./PromptAssist";
 import { PlanPresetNote } from "./ProductionPlanPanel";
 import { PromptDiffReview } from "./PromptDiffReview";
-import type { PromptDiffField } from "./PromptDiffReview";
+import type { PromptDiffState } from "./PromptDiffReview";
 import { conflictNotice } from "./BackendNotice";
 import { MediaPicker, readPickedImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
@@ -373,9 +373,7 @@ export function GenerationForm({
   const outfitPromptTouchedRef = useRef(false);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [batchCount, setBatchCount] = useState(() => draftString(draft?.batchCount) ?? "1");
-  const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
-  // 補完から開いた差分に添える AI の説明とタグ訳。補完以外から開いた差分では null (#354)。
-  const [promptDiffNotes, setPromptDiffNotes] = useState<AssistResult | null>(null);
+  const [promptDiff, setPromptDiff] = useState<PromptDiffState | null>(null);
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
   // Recipeを切り替えて復元するとき、ModelSelectorが切替時に選択を空にするので、
   // 切替後のRecipe変更の効果で入れ直すまでモデルの選択値をここに置く。
@@ -755,22 +753,24 @@ export function GenerationForm({
     review: boolean;
   }) => {
     // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
-    setPromptDiffNotes(result.notes);
-    setPromptDiff([
-      {
-        key: "positive_prompt",
-        label: "プロンプト",
-        current: values.positive_prompt ?? "",
-        proposed: result.positive,
-        acceptRemovals: result.review,
-      },
-      {
-        key: "negative_prompt",
-        label: "ネガティブプロンプト",
-        current: values.negative_prompt ?? "",
-        proposed: result.negative,
-      },
-    ]);
+    setPromptDiff({
+      notes: result.notes,
+      fields: [
+        {
+          key: "positive_prompt",
+          label: "プロンプト",
+          current: values.positive_prompt ?? "",
+          proposed: result.positive,
+          acceptRemovals: result.review,
+        },
+        {
+          key: "negative_prompt",
+          label: "ネガティブプロンプト",
+          current: values.negative_prompt ?? "",
+          proposed: result.negative,
+        },
+      ],
+    });
   };
 
   const applyPromptDiffResult = (result: Record<string, string>) => {
@@ -822,15 +822,17 @@ export function GenerationForm({
     const merged = mergePrompt(values.positive_prompt ?? "", extractedTags.join(", "));
     if (merged.added === 0) return;
     // 既存のタグは残したまま、抽出したタグとの差分レビューを開いて採否を選ばせる。
-    setPromptDiffNotes(null);
-    setPromptDiff([
-      {
-        key: "positive_prompt",
-        label: "プロンプト",
-        current: values.positive_prompt ?? "",
-        proposed: extractedTags.join(", "),
-      },
-    ]);
+    setPromptDiff({
+      notes: null,
+      fields: [
+        {
+          key: "positive_prompt",
+          label: "プロンプト",
+          current: values.positive_prompt ?? "",
+          proposed: extractedTags.join(", "),
+        },
+      ],
+    });
   };
 
   // キャラクターを選び、検索で候補を絞る (#316)。候補をクリックすると差分プレビューを開く。
@@ -850,15 +852,17 @@ export function GenerationForm({
   const selectOutfitCandidate = (outfit: ProjectCharacterOutfit) => {
     const merged = mergePrompt(values.positive_prompt ?? "", outfit.prompt);
     if (merged.added === 0) return;
-    setPromptDiffNotes(null);
-    setPromptDiff([
-      {
-        key: "positive_prompt",
-        label: "プロンプト",
-        current: values.positive_prompt ?? "",
-        proposed: outfit.prompt,
-      },
-    ]);
+    setPromptDiff({
+      notes: null,
+      fields: [
+        {
+          key: "positive_prompt",
+          label: "プロンプト",
+          current: values.positive_prompt ?? "",
+          proposed: outfit.prompt,
+        },
+      ],
+    });
   };
 
   /** 衣装をその場で登録する (#316)。保存は`onRegisterOutfit`に委ね、失敗はここで表示する。 */
@@ -1251,11 +1255,11 @@ export function GenerationForm({
           <div hidden={simple}>
             {promptDiff && (
               <PromptDiffReview
-                fields={promptDiff}
+                fields={promptDiff.fields}
                 onCancel={() => setPromptDiff(null)}
                 onAccept={applyPromptDiffResult}
               >
-                {promptDiffNotes && <AssistNotes result={promptDiffNotes} />}
+                {promptDiff.notes && <AssistNotes result={promptDiff.notes} />}
               </PromptDiffReview>
             )}
             {/* 候補の確認中も外さずに隠す。外すと入力中の説明文が捨てられる。 */}
