@@ -12,7 +12,7 @@ from starlette import status
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from mycomfyui_api import user_scripts
+from mycomfyui_api import app_settings, user_scripts
 from mycomfyui_api.adapters.agent import create_agent_providers
 from mycomfyui_api.adapters.aimedia.client import create_reference_source
 from mycomfyui_api.bootstrap import (
@@ -84,6 +84,8 @@ async def lifespan(app: FastAPI):
         await ensure_default_recipes(session, versions)
         await ensure_voice_recipes(session, versions)
         await ensure_media_recipes(session, versions)
+        # UIから保存した設定を環境変数の値へ重ねる(#337)。Providerを作る前に読む。
+        app.state.setting_overrides = await app_settings.load_overrides(session)
     # Executorはengineごとにレジストリから引く。キューは全Jobで1本のまま、
     # 画像Jobと音声Jobが同じGPU直列キューへ積まれる。
     worker = JobQueueWorker(session_factory, ExecutorRegistry(session_factory))
@@ -105,7 +107,9 @@ async def lifespan(app: FastAPI):
         )
         # 提案Providerは接続を張らない。CLIが無い環境でも起動を止めず、提案を
         # 要求したときに初めて失敗する。
-        app.state.agent_providers = create_agent_providers(settings)
+        app.state.agent_providers = create_agent_providers(
+            app_settings.effective_settings(app.state.setting_overrides)
+        )
         # 承認鍵を用意できなくても起動は止めない。承認と実行が拒否されるだけにする。
         user_scripts.prepare_approval_key(settings)
         yield
@@ -178,6 +182,7 @@ def create_app() -> FastAPI:
     app.include_router(reference_router)
     app.include_router(event_router)
     app.include_router(user_scripts.router)
+    app.include_router(app_settings.router)
     # 実際に届いたバイト数を数えて打ち切る。`Content-Length`を送らない要求
     # (chunked)はheaderだけでは測れず、次のミドルウェアを素通りするため、
     # ASGIの受信側にも関所を置く。

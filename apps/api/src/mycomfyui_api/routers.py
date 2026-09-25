@@ -55,6 +55,7 @@ from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
 from mycomfyui_api.adapters.comfyui.factory import create_comfyui_client
 from mycomfyui_api.adapters.comfyui.tagger import ComfyUITagger
 from mycomfyui_api.adapters.image_tagger import ImageTaggerError, QwenTagRefiner
+from mycomfyui_api.app_settings import get_effective_settings
 from mycomfyui_api.adapters.voice import audio as voice_audio
 from mycomfyui_api.adapters.voice.base import VoiceError
 from mycomfyui_api.adapters.voice.factory import create_voice_backend
@@ -4271,7 +4272,7 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
 
 
 @router.post("/image-tags", response_model=schemas.ImageTagExtractRead)
-async def extract_image_tags(payload: schemas.ImageTagExtractRequest):
+async def extract_image_tags(payload: schemas.ImageTagExtractRequest, request: Request):
     """画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。"""
     settings = get_settings()
     encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
@@ -4300,7 +4301,7 @@ async def extract_image_tags(payload: schemas.ImageTagExtractRequest):
         ) from error
     if settings.image_tagger_refine:
         try:
-            tags = await QwenTagRefiner(settings).refine(tags)
+            tags = await QwenTagRefiner(get_effective_settings(request)).refine(tags)
         except ImageTaggerError as error:
             # 整理は付加価値であり、抽出そのものは成功している。Remote GPU Hostでは
             # ComfyUIの生成中に推論サーバーへ接続できないため、この失敗は通常運用でも
