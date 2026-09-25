@@ -580,19 +580,23 @@ positive の rating より上の段階を negative へ足す。段階は `safe` 
 指示文や後処理を変えたときに良くなったか悪くなったかを数字で比べるため、評価セットと採点を入れた。
 
 - 評価セット: `apps/api/scripts/prompt_eval/cases.json` の 10 ケース。1 人、2 人、3 人、作品名付きのキャラクター、rating、人物なしの背景、画像内の文字、タグで表しにくい動作、`prompt_style=tags`、2 Shot のバッチ計画を含む。各ケースの `expect` に人数・必須タグ・rating の下限・バッチの件数を書く
-- 採点: `prompt_checks.check_output` が規則ごとの違反を返す。規則は `rating`, `subject_mix`, `identity_leak`, `natural_length`, `weight_syntax`, `underscore`, `conflict`, `unknown_tag` の 8 つで、評価スクリプトはこれに `expect` の照合を足す。`unknown_tag` はタグ辞書 (`MYCOMFYUI_TAG_DICTIONARY_PATH`) に無いタグの割合で、参考値として数え、合否には使わない
+- 採点: `prompt_checks.check_output` が規則ごとの違反を返す。規則は `rating`, `subject_mix`, `identity_leak`, `natural_length`, `weight_syntax`, `underscore`, `conflict`, `unknown_tag` の 8 つで、評価スクリプトはこれに `expect` の照合を足す。`unknown_tag` はタグ辞書 (`MYCOMFYUI_TAG_DICTIONARY_PATH`) に無いタグを 1 件以上含む試行を数え、その割合を detail に出す。参考値であり合否には使わない
 - 実行: `apps/api/scripts/prompt_eval.py` が routers と同じ組み立てと後処理を通した出力を採点し、違反率と平均所要時間を JSON へ書き出す。`--compare base.json head.json` で 2 つの結果を並べる
 
-### 14.1 基準値 (2026-09-25、部分値)
+### 14.1 基準値 (2026-09-25)
 
-12 節と同じ接続先・モデルで `--repeat 3` を回したが、推論サーバーが 5 試行目のあとに落ち、2 ケース 5 試行で打ち切られた。
+ローカルの Ollama (`http://127.0.0.1:11434/v1`、`huihui_ai/qwen3-abliterated:4b-instruct-2507-q4_K_M`) で `--repeat 3` を回した。12 節の 27B とは別のモデルなので、12 節の結果とは直接比べない。
 
-- 対象: `solo_character` 3 試行、`two_person` 2 試行
-- 平均所要時間: 19.8 秒
-- `natural_length`: 1/5。`two_person` で自然文が 5 文になった
-- `unknown_tag`: 5/5。`high school uniform`, `warm lighting`, `calm expression`, `cinematic lighting` など、Danbooru に無い言い回しのタグが毎回 1〜9 個混ざる
-- 残りの規則と `expect`: 0/5
+- 対象: 10 ケース 30 試行。全試行で出力を得た
+- 平均所要時間: 29.4 秒
+- `natural_length`: 16/30。16 件とも自然文が 4 文で、語数は 55〜82 語。上限の 3 文を 1 文超える形がそろっている
+- `underscore`: 19/30。ほぼすべてが `@kana_komatsu` のような画家タグで、実在しない画家名を作ってアンダースコア付きで入れている
+- `expect`: 6/30。`named_character_with_work_title` で `gotoh hitori` と作品名が欠ける (3/3)、`in_image_text` で人物なしの指示に `1girl` が入る (3/3)
+- `unknown_tag` (参考値): 20/30 の試行で辞書に無いタグが 1 件以上混ざる。全試行の平均では、タグの 37% が辞書に無い
+- `rating`, `subject_mix`, `identity_leak`, `weight_syntax`, `conflict`: 0/30
 
-サーバーが落ちる原因は要求の大きさではない。prompt は約 1,040 token で n_ctx 4096 に収まり、同じ本文を直接投げても 3 件が 200 を返したあと、4 件目の応答途中で接続が切れ、以降は 500 か接続拒否になった。全ケースの基準値は、サーバーが安定してから #396 に着手する前に取り直す。
+`tags_style` (`prompt_style=tags`) だけは参考値以外の違反が出ていない。自然文を書かない経路では `natural_length` が起きず、画家タグも付かなかった。
 
-`unknown_tag` が毎回出るのは、#395 (タグ辞書による正規化) で扱う問題がそのまま数字に出たものである。
+`unknown_tag` の多さは #395 (タグ辞書による正規化) で、`natural_length` と `underscore` と `expect` は #396 (違反の検査と 1 回だけの再生成) で扱う。
+
+192.168.1.2 の 27B でも同じ設定で回したが、推論サーバーが 2 ケース 5 試行で落ちたため基準値にしていない。prompt は約 1,040 token で n_ctx 4096 に収まっており、同じ本文を直接投げても 3 件が 200 を返したあと 4 件目の応答途中で接続が切れた。要求の大きさではなくサーバー側の問題である。
