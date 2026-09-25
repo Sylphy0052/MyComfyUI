@@ -294,7 +294,7 @@ export function GenerationSweepPanel({
         <div className="stack">
           {error && <p className="error">{error}</p>}
           <label>実験名<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-          <label>ベース (Recipe)<select value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label>ベース (Recipe)<select value={recipeId} onChange={(event) => { setRecipeId(event.target.value); setPromptDiff(null); }}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label>展開方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="cartesian">直積</option><option value="zip">zip</option></select></label>
           {promptDiff ? (
             <PromptDiffReview

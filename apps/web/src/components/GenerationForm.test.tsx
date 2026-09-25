@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { GenerationManifest, ProjectCharacterProfile, Recipe } from "../api/client";
-import { api } from "../api/client";
 import { GenerationForm } from "./GenerationForm";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -38,14 +38,7 @@ vi.mock("./PromptAssist", async (importOriginal) => {
     ...actual,
     PromptAssist: ({
       onApply,
-    }: {
-      onApply: (result: {
-        positive: string;
-        negative: string;
-        notes: { rationale: string };
-        review: boolean;
-      }) => void;
-    }) => (
+    }: Pick<ComponentProps<typeof actual.PromptAssist>, "onApply">) => (
       <button
         type="button"
         onClick={() =>
@@ -91,6 +84,24 @@ function character(overrides: Partial<ProjectCharacterProfile> = {}): ProjectCha
   };
 }
 
+function manifest(overrides: Partial<GenerationManifest> = {}): GenerationManifest {
+  return {
+    created_at: "2024-01-01T00:00:00Z",
+    engine: "comfyui",
+    engine_version: null,
+    id: "manifest-1",
+    input_refs: [],
+    job_id: "job-1",
+    model: {},
+    parameters: {},
+    replay_of_manifest_id: null,
+    resolved_prompt: "restored prompt",
+    seed: 1,
+    workflow_artifact_id: "wf-1",
+    ...overrides,
+  };
+}
+
 function baseProps(overrides: Partial<Parameters<typeof GenerationForm>[0]> = {}) {
   return {
     projectId: "project-1",
@@ -120,24 +131,6 @@ async function reopenViaExtractedTags() {
   fireEvent.click(screen.getByRole("button", { name: "画像を選ぶ" }));
   fireEvent.click(await screen.findByRole("button", { name: "タグを抽出" }));
   fireEvent.click(await screen.findByRole("button", { name: "プロンプトへ追加" }));
-}
-
-function manifest(overrides: Partial<GenerationManifest> = {}): GenerationManifest {
-  return {
-    created_at: "2024-01-01T00:00:00Z",
-    engine: "comfyui",
-    engine_version: null,
-    id: "manifest-1",
-    input_refs: [],
-    job_id: "job-1",
-    model: {},
-    parameters: {},
-    replay_of_manifest_id: null,
-    resolved_prompt: "restored prompt",
-    seed: 1,
-    workflow_artifact_id: "wf-1",
-    ...overrides,
-  };
 }
 
 async function reopenViaOutfitCandidate() {

@@ -359,7 +359,15 @@ export function ImageDerivationPanel({
       </div>
       <div className="stack">
         <label htmlFor="derivation-recipe">ベース (Recipe)</label>
-        <select id="derivation-recipe" value={recipeId} onChange={(event) => setRecipeId(event.target.value)}>
+        <select
+          id="derivation-recipe"
+          value={recipeId}
+          onChange={(event) => {
+            setRecipeId(event.target.value);
+            // AIの案は切替前のRecipe向けに作られているので、開いている差分レビューを閉じる。
+            setPromptDiff(null);
+          }}
+        >
           {recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
         <MediaPicker

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Recipe } from "../api/client";
@@ -20,9 +21,7 @@ vi.mock("./MediaPicker", () => ({
 }));
 
 // この画面には「前回の説明を残したまま開き直す」専用の経路 (notes: null のリテラル) が無く、
-// 唯一の開き直し手段は PromptAssist の再呼び出しなので、呼ぶたびに異なる notes を返すよう
-// 呼び出し回数で説明文を変える。実装 (onApply({positive, negative, notes, review})) の形は
-// PromptAssist.tsx の型に合わせた最小stub。
+// 唯一の開き直し手段は PromptAssist の再呼び出しなので、呼び出し回数で説明文を変える。
 let assistCallCount = 0;
 vi.mock("./PromptAssist", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./PromptAssist")>();
@@ -30,14 +29,7 @@ vi.mock("./PromptAssist", async (importOriginal) => {
     ...actual,
     PromptAssist: ({
       onApply,
-    }: {
-      onApply: (result: {
-        positive: string;
-        negative: string;
-        notes: { rationale: string };
-        review: boolean;
-      }) => void;
-    }) => (
+    }: Pick<ComponentProps<typeof actual.PromptAssist>, "onApply">) => (
       <button
         type="button"
         onClick={() => {
@@ -56,7 +48,7 @@ vi.mock("./PromptAssist", async (importOriginal) => {
   };
 });
 
-function recipe(): Recipe {
+function recipe(overrides: Partial<Recipe> = {}): Recipe {
   return {
     id: "recipe-1",
     name: "Recipe 1",
@@ -69,6 +61,7 @@ function recipe(): Recipe {
     workflow_version_id: null,
     supersedes_recipe_id: null,
     created_at: "2024-01-01T00:00:00Z",
+    ...overrides,
   };
 }
 
@@ -77,7 +70,7 @@ function baseProps() {
     projectId: "project-1",
     sceneId: "scene-1",
     shotId: "shot-1",
-    recipes: [recipe()],
+    recipes: [recipe(), recipe({ id: "recipe-2", name: "Recipe 2" })],
     recipesLoading: false,
     recipesError: null,
     onRetryRecipes: vi.fn(),
@@ -100,6 +93,20 @@ async function openViaAssist() {
 }
 
 describe("ImageDerivationPanelのpromptDiff開閉 (#374)", () => {
+  it("Recipe切替で閉じたあと、補完から開き直すと前回の説明が出ない", async () => {
+    render(<ImageDerivationPanel {...baseProps()} />);
+    await openViaAssist();
+
+    fireEvent.change(screen.getByLabelText("ベース (Recipe)"), {
+      target: { value: "recipe-2" },
+    });
+    expect(screen.queryByText(/前回の説明/)).toBeNull();
+
+    fireEvent.click(await screen.findByRole("button", { name: "補完" }));
+    await screen.findByText("AIの説明: 今回の説明");
+    expect(screen.queryByText(/前回の説明/)).toBeNull();
+  });
+
   it("反映で閉じたあと、補完から開き直すと前回の説明が出ない", async () => {
     render(<ImageDerivationPanel {...baseProps()} />);
     await openViaAssist();
