@@ -155,7 +155,8 @@ export function ProjectWorkspace({
   const [homeError, setHomeError] = useState<string | null>(null);
   // キャラクタータブ・シーンタブで共用する場面一覧。
   const [projectScenes, setProjectScenes] = useState<SceneSummary[]>([]);
-  const [scenesLoading, setScenesLoading] = useState(false);
+  // 場面一覧の取得を終えたProject。取得前に「Sceneなし」と判定しないために持つ。
+  const [scenesLoadedFor, setScenesLoadedFor] = useState<string | null>(null);
   const [scenesError, setScenesError] = useState<string | null>(null);
 
   const selected = useMemo(
@@ -258,7 +259,9 @@ export function ProjectWorkspace({
       return;
     }
     let active = true;
-    setScenesLoading(true);
+    // 前のProjectの場面一覧を新しいProjectのものとして渡さないよう、先に空にする。
+    setProjectScenes([]);
+    setScenesLoadedFor(null);
     setScenesError(null);
     api
       .listScenes(selected.id)
@@ -269,19 +272,26 @@ export function ProjectWorkspace({
         if (active) setScenesError(describe(cause));
       })
       .finally(() => {
-        if (active) setScenesLoading(false);
+        if (!active) return;
+        setScenesLoadedFor(selected.id);
       });
     return () => {
       active = false;
     };
   }, [selected, refreshToken]);
 
-  // シーンタブを選んでいる間にSceneが無くなったら (別Projectへ切替含む)、概要へ戻す。
+  // 選んだProjectにSceneが無いと分かったら (別Projectへ切替含む)、シーンタブから概要へ戻す。
+  // 取得を終える前に戻すと、URLや保存状態で復元したシーンタブが開いた直後に捨てられる。
   useEffect(() => {
-    if (detailTab === "scenes" && !scenesLoading && projectScenes.length === 0) {
+    if (
+      detailTab === "scenes" &&
+      selected &&
+      scenesLoadedFor === selected.id &&
+      projectScenes.length === 0
+    ) {
       onDetailTabChange("overview");
     }
-  }, [detailTab, scenesLoading, projectScenes, onDetailTabChange]);
+  }, [detailTab, selected, scenesLoadedFor, projectScenes, onDetailTabChange]);
 
   const refresh = async () => {
     setRefreshToken((value) => value + 1);
@@ -585,6 +595,11 @@ export function ProjectWorkspace({
                 </div>
               )}
 
+              {scenesError && (
+                <p className="error">
+                  Scene一覧を取得できません。キャラクターの登場場面とシーンタブは表示されません。{scenesError}
+                </p>
+              )}
               <nav className="generation-tabs project-detail-tabs" role="tablist" aria-label="Project詳細">
                 {visibleProjectTabs.map((item) => (
                   <button
@@ -713,7 +728,6 @@ export function ProjectWorkspace({
                   aria-labelledby="project-detail-tab-scenes"
                   hidden={detailTab !== "scenes"}
                 >
-                  {scenesError && <p className="error">Scene一覧を取得できません。{scenesError}</p>}
                   <ProjectScenesTab projectId={selected.id} scenes={projectScenes} />
                 </div>
               )}

@@ -16,6 +16,8 @@ const IMAGE_LIMIT = 200;
 const THUMBS_PER_GROUP = 8;
 
 interface ImageIndex {
+  /** 取得できた画像の枚数。 */
+  total: number;
   /** Sceneに割り当てられた画像。Shotまで割り当てられた画像も含む。 */
   byScene: Map<string, Artifact[]>;
   /** Shotに割り当てられた画像。キーは`sceneId/shotId`。 */
@@ -34,7 +36,7 @@ function indexImages(artifacts: Artifact[]): ImageIndex {
       byShot.set(key, [...(byShot.get(key) ?? []), artifact]);
     }
   }
-  return { byScene, byShot };
+  return { total: artifacts.length, byScene, byShot };
 }
 
 /** Scene IDからProject IDの接頭辞を外した短い表示名。 */
@@ -52,6 +54,8 @@ export function ProjectScenesTab({ projectId, scenes }: { projectId: string; sce
   const [error, setError] = useState<string | null>(null);
   const [onlyWithImages, setOnlyWithImages] = useState(true);
 
+  const [reloadToken, setReloadToken] = useState(0);
+
   useEffect(() => {
     let active = true;
     setImages(null);
@@ -67,27 +71,39 @@ export function ProjectScenesTab({ projectId, scenes }: { projectId: string; sce
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   const hasImages = (images?.byScene.size ?? 0) > 0;
-  const filtering = hasImages && onlyWithImages;
+  // 上限に達したときは古い画像が取れていないため、画像なしと見えるSceneを隠さない。
+  const truncated = (images?.total ?? 0) >= IMAGE_LIMIT;
+  const filtering = hasImages && onlyWithImages && !truncated;
   const shown = useMemo(
     () => (filtering && images ? scenes.filter((scene) => images.byScene.has(scene.id)) : scenes),
     [filtering, images, scenes],
   );
 
-  if (error) return <p className="error">生成画像を取得できません。{error}</p>;
-  if (!images) return <LoadingPlaceholder label="Sceneを読込み中..." lines={3} />;
+  if (!images && !error) return <LoadingPlaceholder label="Sceneを読込み中..." lines={3} />;
+  // 画像の取得に失敗しても、Scene一覧は画像なしで出す。
+  const index = images ?? indexImages([]);
 
   return (
     <div className="stack project-scene-tab">
+      {error && (
+        <div className="row">
+          <p className="error">生成画像を取得できません。{error}</p>
+          <button type="button" onClick={() => setReloadToken((token) => token + 1)}>
+            再読込
+          </button>
+        </div>
+      )}
       <div className="row spread">
         <p className="muted">
           {hasImages
-            ? `${scenes.length}件のSceneのうち${images.byScene.size}件に生成画像があります。`
-            : `${scenes.length}件のScene。生成画像はまだありません。`}
+            ? `${scenes.length}件のSceneのうち${index.byScene.size}件に生成画像があります。`
+            : `${scenes.length}件のScene。${error ? "" : "生成画像はまだありません。"}`}
+          {truncated && `新しい${IMAGE_LIMIT}枚だけを表示しています。`}
         </p>
-        {hasImages && (
+        {hasImages && !truncated && (
           <label className="checkbox-field">
             <input
               type="checkbox"
@@ -104,7 +120,7 @@ export function ProjectScenesTab({ projectId, scenes }: { projectId: string; sce
           projectId={projectId}
           scene={scene}
           label={sceneLabel(projectId, scene)}
-          images={images}
+          images={index}
         />
       ))}
     </div>

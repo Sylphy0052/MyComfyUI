@@ -19,7 +19,6 @@ export function ExternalProjectImporter({
   const [candidates, setCandidates] = useState<ExternalProjectCandidate[]>([]);
   const [externalId, setExternalId] = useState("");
   const [projectId, setProjectId] = useState("");
-  const [autoSync, setAutoSync] = useState(true);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +43,8 @@ export function ExternalProjectImporter({
       const saved = await api.importExternalProject({
         external_id: externalId,
         project_id: projectId || null,
-        auto_sync: autoSync,
+        // 同期操作の画面を外したため、取り込みは一度きりとし自動同期は付けない。
+        auto_sync: false,
       });
       await onImported(saved);
     } catch (cause) {
@@ -72,10 +72,6 @@ export function ExternalProjectImporter({
         <label>
           Project ID（省略時は参照元ID）
           <input value={projectId} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,127}" onChange={(event) => setProjectId(event.target.value)} />
-        </label>
-        <label className="checkbox-field">
-          <input type="checkbox" checked={autoSync} onChange={(event) => setAutoSync(event.target.checked)} />
-          自動同期を有効にする
         </label>
         {error && <p className="error">{error}</p>}
         <div className="row">
