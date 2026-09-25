@@ -164,5 +164,8 @@ async def _save_qwen_settings(
     }
     overrides.update(saved)
     app.state.setting_overrides = overrides
+    # Providerはcommitの後で作る。今のコンストラクタは接続しないため失敗しない。接続の
+    # 検証を足すときは、失敗で保存値と動いているProviderが食い違わないよう、commitより
+    # 前に作って失敗したら保存しない順序へ変える。
     await _replace_qwen_provider(app, effective_settings(overrides))
     return _describe_qwen(overrides)

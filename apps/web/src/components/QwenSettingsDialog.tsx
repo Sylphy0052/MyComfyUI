@@ -56,7 +56,10 @@ interface FormValues {
   base_url: string;
   model: string;
   status_url: string;
-  /** 空文字は保存しない (環境変数の値を使う)。 */
+  /**
+   * selectのvalueは文字列しか持てないため、真偽値も文字列で持ち、送信時に
+   * booleanへ戻す。空文字は保存しない (環境変数の値を使う)。
+   */
   supports_images: "" | "true" | "false";
 }
 

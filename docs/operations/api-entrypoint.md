@@ -23,7 +23,7 @@ npm run api:serve -- --port 0
 
 引数は`MYCOMFYUI_`接頭辞の環境変数へ移してから読む。設定の読み取り口を2つに増やさないため、引数で渡した値も必ず環境変数を経由する。渡さなかった項目は環境変数と既定値をそのまま使う。
 
-- `--host` / `MYCOMFYUI_API_HOST`: bindするhost。既定は`127.0.0.1`。APIは認証を持たないため、loopback以外へ広げると同一LANの別端末から操作できてしまう。既定値は変えない。
+- `--host` / `MYCOMFYUI_API_HOST`: bindするhost。既定は`127.0.0.1`。APIは認証を持たないため、loopback以外へ広げると同一LANの別端末から操作できてしまう。既定値は変えない。loopback以外で待ち受ける必要が出たら、先に認証、書き込み系APIのCSRF対策、Qwenなど設定画面から変えられる接続先URLの宛先制限 (SSRF対策) を入れる。接続先は同一LANのGPUホストを指すことがあるため、プライベートIPを一律に拒否するのではなく、許可する宛先を明示する形にする。
 - `--port` / `MYCOMFYUI_API_PORT`: bindするport。既定は`8000`。`0`を渡すとOSが空きportを選ぶ。
 - `--data-root` / `MYCOMFYUI_DATA_ROOT`: DBと資産の保存先。空のディレクトリを渡すと起動時にDBを作る。
 - `--allow-origin` / `MYCOMFYUI_ALLOWED_ORIGINS`: ブラウザからの呼び出しを許すorigin。引数は複数回指定でき、環境変数はカンマ区切りで並べる。
