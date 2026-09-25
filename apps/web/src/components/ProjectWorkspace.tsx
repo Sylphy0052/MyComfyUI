@@ -8,14 +8,45 @@ import type {
   ProjectDeletionImpact,
   ProjectProgress,
   ProjectRecord,
-  ProjectStatistics,
 } from "../api/client";
+import type { SceneSummary } from "../api/aimedia";
+import type { ProjectTab } from "../state/uiState";
+import { CharacterManager } from "./CharacterManager";
 import { ProjectGenerationDefaultsEditor } from "./ProjectGenerationDefaultsEditor";
-import { ProjectOperations } from "./ProjectOperations";
+import { ProjectScenesTab } from "./ProjectScenesTab";
 import { ProjectPackageDialog, ProjectPortabilityPanel } from "./ProjectPortability";
-import { ExternalProjectImporter, ProjectSyncPanel } from "./ProjectSyncPanel";
+import { ExternalProjectImporter } from "./ProjectSyncPanel";
 import { LoadingPlaceholder } from "./LoadingPlaceholder";
 import { useNotify } from "./ui/notify";
+
+const PROJECT_TABS: { value: ProjectTab; label: string }[] = [
+  { value: "overview", label: "概要" },
+  { value: "characters", label: "キャラクター" },
+  { value: "scenes", label: "シーン" },
+];
+
+/** タブのキーボード操作 (左右/Home/End)。GENERATION_TABS等と同じ挙動。 */
+function nextTabForKey<T extends string>(
+  key: string,
+  tabs: readonly { value: T }[],
+  currentTab: T,
+): T | null {
+  const currentIndex = tabs.findIndex((item) => item.value === currentTab);
+  if (currentIndex < 0) return null;
+
+  let nextIndex: number | null = null;
+  if (key === "ArrowRight") {
+    nextIndex = (currentIndex + 1) % tabs.length;
+  } else if (key === "ArrowLeft") {
+    nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  } else if (key === "Home") {
+    nextIndex = 0;
+  } else if (key === "End") {
+    nextIndex = tabs.length - 1;
+  }
+
+  return nextIndex === null ? null : tabs[nextIndex].value;
+}
 
 type Lifecycle = ProjectRecord["lifecycle"];
 type ProjectStatus = ProjectRecord["status"];
@@ -28,6 +59,13 @@ interface Props {
   /** 取り消しで選択を戻す。onSelectProject と違い、生成画面へは移らない。 */
   onRestoreSelection: (projectId: string) => void;
   onActiveProjectsChanged: (projects: ProjectRecord[]) => void;
+  /** Project詳細のタブ。App側のURL/保存状態と紐付けて制御する。 */
+  detailTab: ProjectTab;
+  onDetailTabChange: (tab: ProjectTab) => void;
+  /** キャラクター定義・scene_outfitsを保存したら呼ぶ。他画面 (制作計画等) の再取得を促す。 */
+  onCharactersChanged: () => void;
+  /** 他画面 (生成フォーム等) でキャラクター定義を保存したら増やす。一覧を取り直す。 */
+  charactersReloadToken: number;
 }
 
 interface ProjectHome {
@@ -35,7 +73,6 @@ interface ProjectHome {
   jobs: GenerationJob[];
   artifacts: Artifact[];
   progress: ProjectProgress;
-  statistics: ProjectStatistics | null;
 }
 
 interface PendingAction {
@@ -91,6 +128,10 @@ export function ProjectWorkspace({
   onSelectProject,
   onRestoreSelection,
   onActiveProjectsChanged,
+  detailTab,
+  onDetailTabChange,
+  onCharactersChanged,
+  charactersReloadToken,
 }: Props) {
   const [lifecycle, setLifecycle] = useState<Lifecycle>("active");
   const notify = useNotify();
@@ -112,10 +153,21 @@ export function ProjectWorkspace({
   const [home, setHome] = useState<ProjectHome | null>(null);
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeError, setHomeError] = useState<string | null>(null);
+  // キャラクタータブ・シーンタブで共用する場面一覧。
+  const [projectScenes, setProjectScenes] = useState<SceneSummary[]>([]);
+  // 場面一覧の取得を終えたProject。取得前に「Sceneなし」と判定しないために持つ。
+  const [scenesLoadedFor, setScenesLoadedFor] = useState<string | null>(null);
+  const [scenesError, setScenesError] = useState<string | null>(null);
 
   const selected = useMemo(
     () => projects.find((project) => project.id === focusedId) ?? null,
     [focusedId, projects],
+  );
+
+  // Sceneが1件も無ければシーンタブ自体を出さない。
+  const visibleProjectTabs = useMemo(
+    () => PROJECT_TABS.filter((item) => item.value !== "scenes" || projectScenes.length > 0),
+    [projectScenes],
   );
 
   const syncActiveProjects = useCallback(async () => {
@@ -181,16 +233,13 @@ export function ProjectWorkspace({
     setHomeError(null);
     (async () => {
       try {
-        const [impact, jobs, artifacts, progress, statistics] = await Promise.all([
+        const [impact, jobs, artifacts, progress] = await Promise.all([
           api.getProjectDeletionImpact(selected.id),
           api.listJobs({ projectId: selected.id }),
           api.listArtifacts({ projectId: selected.id, limit: 6 }),
           api.getProjectProgress(selected.id),
-          selected.lifecycle === "trashed"
-            ? Promise.resolve(null)
-            : api.getProjectStatistics(selected.id),
         ]);
-        if (active) setHome({ impact, jobs, artifacts, progress, statistics });
+        if (active) setHome({ impact, jobs, artifacts, progress });
       } catch (cause) {
         if (active) setHomeError(describe(cause));
       } finally {
@@ -201,6 +250,48 @@ export function ProjectWorkspace({
       active = false;
     };
   }, [selected, refreshToken]);
+
+  // キャラクタータブ・シーンタブが場面一覧を共用する。選んだProjectが変わるたびに取り直す。
+  useEffect(() => {
+    if (!selected) {
+      setProjectScenes([]);
+      setScenesError(null);
+      return;
+    }
+    let active = true;
+    // 前のProjectの場面一覧を新しいProjectのものとして渡さないよう、先に空にする。
+    setProjectScenes([]);
+    setScenesLoadedFor(null);
+    setScenesError(null);
+    api
+      .listScenes(selected.id)
+      .then((result) => {
+        if (active) setProjectScenes(result.items);
+      })
+      .catch((cause) => {
+        if (active) setScenesError(describe(cause));
+      })
+      .finally(() => {
+        if (!active) return;
+        setScenesLoadedFor(selected.id);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selected, refreshToken]);
+
+  // 選んだProjectにSceneが無いと分かったら (別Projectへ切替含む)、シーンタブから概要へ戻す。
+  // 取得を終える前に戻すと、URLや保存状態で復元したシーンタブが開いた直後に捨てられる。
+  useEffect(() => {
+    if (
+      detailTab === "scenes" &&
+      selected &&
+      scenesLoadedFor === selected.id &&
+      projectScenes.length === 0
+    ) {
+      onDetailTabChange("overview");
+    }
+  }, [detailTab, selected, scenesLoadedFor, projectScenes, onDetailTabChange]);
 
   const refresh = async () => {
     setRefreshToken((value) => value + 1);
@@ -504,94 +595,142 @@ export function ProjectWorkspace({
                 </div>
               )}
 
-              {homeLoading && <LoadingPlaceholder label="Projectホームを読込み中..." lines={4} />}
-              {homeError && <p className="error">Projectホームを取得できません。{homeError}</p>}
-              {home && (
-                <>
-                  <div className="project-metrics">
-                    <Metric label="Scene" value={selected.scene_count} />
-                    <Metric label="Shot" value={selected.shot_count} />
-                    <Metric label="Artifact" value={home.impact.artifact_count} />
-                    <Metric label="実行中Job" value={home.impact.active_job_count} />
-                    <Metric label="失敗Job" value={failedJobs} tone={failedJobs ? "danger" : undefined} />
-                    {home.statistics && <Metric label="生成合計" value={home.statistics.jobs} />}
-                    {home.statistics && <Metric label="生成成功" value={home.statistics.succeeded} />}
-                    {home.statistics && <Metric label="処理時間(秒)" value={Math.round(home.statistics.processing_seconds)} />}
-                  </div>
-                  <h3>制作進捗</h3>
-                  <div className="progress-grid">
-                    {[
-                      ["未着手", "not_started"],
-                      ["制作中", "in_progress"],
-                      ["候補あり", "has_candidates"],
-                      ["採用済み", "accepted"],
-                      ["完了", "completed"],
-                    ].map(([label, key]) => (
-                      <div key={key} className="metric">
-                        <span>{label}</span>
-                        <strong>{home.progress.scenes[key] ?? 0}/{home.progress.shots[key] ?? 0}</strong>
-                        <span>Scene / Shot</span>
-                      </div>
-                    ))}
-                  </div>
-                  <h3>最近の生成物</h3>
-                  {home.artifacts.length === 0 ? (
-                    <p className="muted">このProjectの生成物はまだありません。</p>
-                  ) : (
-                    <ul className="recent-artifacts">
-                      {home.artifacts.map((artifact) => (
-                        <li key={artifact.id}>
-                          <span className="badge">{artifact.kind}</span>
-                          <span>{formatDate(artifact.created_at)}</span>
-                          <a href={api.artifactContentUrl(artifact.id)} target="_blank" rel="noreferrer">
-                            開く
-                          </a>
-                        </li>
+              {scenesError && (
+                <p className="error">
+                  Scene一覧を取得できません。キャラクターの登場場面とシーンタブは表示されません。{scenesError}
+                </p>
+              )}
+              <nav className="generation-tabs project-detail-tabs" role="tablist" aria-label="Project詳細">
+                {visibleProjectTabs.map((item) => (
+                  <button
+                    key={item.value}
+                    id={`project-detail-tab-${item.value}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={detailTab === item.value}
+                    aria-controls={`project-detail-panel-${item.value}`}
+                    tabIndex={detailTab === item.value ? 0 : -1}
+                    className={detailTab === item.value ? "primary" : undefined}
+                    onClick={() => onDetailTabChange(item.value)}
+                    onKeyDown={(event) => {
+                      const nextTab = nextTabForKey(event.key, visibleProjectTabs, item.value);
+                      if (!nextTab) return;
+                      event.preventDefault();
+                      onDetailTabChange(nextTab);
+                      document.getElementById(`project-detail-tab-${nextTab}`)?.focus();
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+
+              <div
+                id="project-detail-panel-overview"
+                role="tabpanel"
+                aria-labelledby="project-detail-tab-overview"
+                hidden={detailTab !== "overview"}
+              >
+                {homeLoading && <LoadingPlaceholder label="Projectホームを読込み中..." lines={4} />}
+                {homeError && <p className="error">Projectホームを取得できません。{homeError}</p>}
+                {home && (
+                  <>
+                    <div className="project-metrics">
+                      <Metric label="Scene" value={selected.scene_count} />
+                      <Metric label="Shot" value={selected.shot_count} />
+                      <Metric label="Artifact" value={home.impact.artifact_count} />
+                      <Metric label="実行中Job" value={home.impact.active_job_count} />
+                      <Metric label="失敗Job" value={failedJobs} tone={failedJobs ? "danger" : undefined} />
+                    </div>
+                    <h3>制作進捗</h3>
+                    <div className="progress-grid">
+                      {[
+                        ["未着手", "not_started"],
+                        ["制作中", "in_progress"],
+                        ["候補あり", "has_candidates"],
+                        ["採用済み", "accepted"],
+                        ["完了", "completed"],
+                      ].map(([label, key]) => (
+                        <div key={key} className="metric">
+                          <span>{label}</span>
+                          <strong>{home.progress.scenes[key] ?? 0}/{home.progress.shots[key] ?? 0}</strong>
+                          <span>Scene / Shot</span>
+                        </div>
                       ))}
-                    </ul>
-                  )}
-                </>
-              )}
-
-              {selected.lifecycle !== "trashed" && (
-                <ProjectOperations key={`operations-${selected.id}`} project={selected} />
-              )}
-
-              {selected.source_type === "external" && (
-                <ProjectSyncPanel
-                  key={`sync-${selected.id}`}
-                  project={selected}
-                  onChanged={async (project) => {
-                    setFocusedId(project.id);
-                    await refresh();
-                  }}
-                />
-              )}
-
-              {selected.lifecycle !== "trashed" && (
-                <ProjectPortabilityPanel
-                  project={selected}
-                  onCreated={async (project) => {
-                    setLifecycle("active");
-                    setFocusedId(project.id);
-                    await refresh();
-                  }}
-                />
-              )}
-
-              <dl className="kv project-metadata">
-                <dt>ID</dt>
-                <dd className="mono">{selected.id}</dd>
-                <dt>source</dt>
-                <dd>{selected.source_type}</dd>
-                {selected.external_id && (
-                  <><dt>外部ID</dt><dd className="mono">{selected.external_id}</dd></>
+                    </div>
+                    <h3>最近の生成物</h3>
+                    {home.artifacts.length === 0 ? (
+                      <p className="muted">このProjectの生成物はまだありません。</p>
+                    ) : (
+                      <ul className="recent-artifacts">
+                        {home.artifacts.map((artifact) => (
+                          <li key={artifact.id}>
+                            <span className="badge">{artifact.kind}</span>
+                            <span>{formatDate(artifact.created_at)}</span>
+                            <a href={api.artifactContentUrl(artifact.id)} target="_blank" rel="noreferrer">
+                              開く
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
                 )}
-                <dt>作成</dt>
-                <dd>{formatDate(selected.created_at)}</dd>
-                <dt>更新</dt>
-                <dd>{formatDate(selected.updated_at)}</dd>
-              </dl>
+
+                {selected.lifecycle !== "trashed" && (
+                  <ProjectPortabilityPanel
+                    project={selected}
+                    onCreated={async (project) => {
+                      setLifecycle("active");
+                      setFocusedId(project.id);
+                      await refresh();
+                    }}
+                  />
+                )}
+
+                <details className="project-metadata">
+                  <summary>詳細情報</summary>
+                  <dl className="kv">
+                    <dt>ID</dt>
+                    <dd className="mono">{selected.id}</dd>
+                    <dt>source</dt>
+                    <dd>{selected.source_type}</dd>
+                    {selected.external_id && (
+                      <><dt>外部ID</dt><dd className="mono">{selected.external_id}</dd></>
+                    )}
+                    <dt>作成</dt>
+                    <dd>{formatDate(selected.created_at)}</dd>
+                    <dt>更新</dt>
+                    <dd>{formatDate(selected.updated_at)}</dd>
+                  </dl>
+                </details>
+              </div>
+
+              <div
+                id="project-detail-panel-characters"
+                role="tabpanel"
+                aria-labelledby="project-detail-tab-characters"
+                hidden={detailTab !== "characters"}
+              >
+                <CharacterManager
+                  projectId={selected.id}
+                  active={!hidden && detailTab === "characters"}
+                  scenes={projectScenes}
+                  onChanged={onCharactersChanged}
+                  reloadToken={charactersReloadToken}
+                />
+              </div>
+
+              {projectScenes.length > 0 && (
+                <div
+                  id="project-detail-panel-scenes"
+                  role="tabpanel"
+                  aria-labelledby="project-detail-tab-scenes"
+                  hidden={detailTab !== "scenes"}
+                >
+                  <ProjectScenesTab projectId={selected.id} scenes={projectScenes} />
+                </div>
+              )}
             </>
           )}
         </section>

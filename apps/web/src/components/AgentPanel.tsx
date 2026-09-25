@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, api } from "../api/client";
+import { ApiError, api, subscribeAgentProvidersChanged } from "../api/client";
 import type {
   AgentDecision,
   AgentProposal,
@@ -106,6 +106,13 @@ export function AgentPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // 接続設定を保存したら取り直し、到達性の表示を新しい接続先に合わせる (#337)。
+  const [providersVersion, setProvidersVersion] = useState(0);
+  useEffect(
+    () => subscribeAgentProvidersChanged(() => setProvidersVersion((current) => current + 1)),
+    [],
+  );
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -120,7 +127,7 @@ export function AgentPanel({
     return () => {
       active = false;
     };
-  }, []);
+  }, [providersVersion]);
 
   useEffect(() => {
     if (recipeId === "" && recipes.length > 0) setRecipeId(recipes[0].id);

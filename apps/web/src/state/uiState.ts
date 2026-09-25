@@ -12,8 +12,9 @@ export const VIEW_VALUES = [
   "projects",
   "generate",
   "assets",
-  "characters",
 ] as const;
+/** Project詳細のタブ。旧`view=characters`はここへ移す。 */
+export const PROJECT_TAB_VALUES = ["overview", "characters", "scenes"] as const;
 export const GENERATION_TAB_VALUES = [
   "image",
   "video",
@@ -27,12 +28,14 @@ export type Mode = (typeof MODE_VALUES)[number];
 export type View = (typeof VIEW_VALUES)[number];
 export type GenerationTab = (typeof GENERATION_TAB_VALUES)[number];
 export type ImageSubTab = (typeof IMAGE_SUBTAB_VALUES)[number];
+export type ProjectTab = (typeof PROJECT_TAB_VALUES)[number];
 
 export type UiState = {
   mode: Mode;
   view: View;
   generationTab: GenerationTab;
   imageSubTab: ImageSubTab;
+  projectTab: ProjectTab;
   projectId: string | null;
   sceneId: string | null;
   shotId: string | null;
@@ -43,6 +46,7 @@ export const DEFAULT_UI_STATE: UiState = {
   view: "generate",
   generationTab: "image",
   imageSubTab: "generate",
+  projectTab: "overview",
   projectId: null,
   sceneId: null,
   shotId: null,
@@ -58,6 +62,7 @@ const PARAM_NAMES = {
   view: "view",
   generationTab: "tab",
   imageSubTab: "sub",
+  projectTab: "ptab",
   projectId: "project",
   sceneId: "scene",
   shotId: "shot",
@@ -94,8 +99,16 @@ export function readUrlUiState(search: string): Partial<UiState> {
   const params = new URLSearchParams(search);
   const partial: Partial<UiState> = {};
 
-  const view = pickEnum(VIEW_VALUES, params.get(PARAM_NAMES.view));
+  const rawView = params.get(PARAM_NAMES.view);
+  const view = pickEnum(VIEW_VALUES, rawView);
   if (view) partial.view = view;
+  const projectTab = pickEnum(PROJECT_TAB_VALUES, params.get(PARAM_NAMES.projectTab));
+  if (projectTab) partial.projectTab = projectTab;
+  if (!view && rawView === "characters") {
+    // 旧「キャラクター」画面はProject詳細のキャラクタータブへ移した。旧リンクの意味をptabより優先する。
+    partial.view = "projects";
+    partial.projectTab = "characters";
+  }
   const generationTab = pickEnum(
     GENERATION_TAB_VALUES,
     params.get(PARAM_NAMES.generationTab),
@@ -118,7 +131,8 @@ export function readUrlUiState(search: string): Partial<UiState> {
   // modeが無ければラボで開く。modeが明示されていればそちらを優先する。
   const mode = pickEnum(MODE_VALUES, params.get(PARAM_NAMES.mode));
   if (mode) partial.mode = mode;
-  else if (view || generationTab || imageSubTab) partial.mode = "lab";
+  else if (view || rawView === "characters" || projectTab || generationTab || imageSubTab)
+    partial.mode = "lab";
 
   return partial;
 }
@@ -148,11 +162,18 @@ export function readStoredUiState(): Partial<UiState> {
     typeof source.mode === "string" ? source.mode : null,
   );
   if (mode) partial.mode = mode;
-  const view = pickEnum(
-    VIEW_VALUES,
-    typeof source.view === "string" ? source.view : null,
-  );
+  const rawView = typeof source.view === "string" ? source.view : null;
+  const view = pickEnum(VIEW_VALUES, rawView);
   if (view) partial.view = view;
+  const projectTab = pickEnum(
+    PROJECT_TAB_VALUES,
+    typeof source.projectTab === "string" ? source.projectTab : null,
+  );
+  if (projectTab) partial.projectTab = projectTab;
+  if (!view && rawView === "characters") {
+    partial.view = "projects";
+    partial.projectTab = "characters";
+  }
   const generationTab = pickEnum(
     GENERATION_TAB_VALUES,
     typeof source.generationTab === "string" ? source.generationTab : null,
@@ -216,6 +237,7 @@ export function toSearchString(state: UiState): string {
   // modeの無いview/tab付きURLはラボとして読むため、view/tabを書くときはmodeも明示する。
   const hasLabPosition =
     state.view !== DEFAULT_UI_STATE.view ||
+    state.projectTab !== DEFAULT_UI_STATE.projectTab ||
     state.generationTab !== DEFAULT_UI_STATE.generationTab ||
     state.imageSubTab !== DEFAULT_UI_STATE.imageSubTab;
   if (state.mode !== DEFAULT_UI_STATE.mode || hasLabPosition) {
@@ -223,6 +245,9 @@ export function toSearchString(state: UiState): string {
   }
   if (state.view !== DEFAULT_UI_STATE.view) {
     params.set(PARAM_NAMES.view, state.view);
+  }
+  if (state.projectTab !== DEFAULT_UI_STATE.projectTab) {
+    params.set(PARAM_NAMES.projectTab, state.projectTab);
   }
   if (state.generationTab !== DEFAULT_UI_STATE.generationTab) {
     params.set(PARAM_NAMES.generationTab, state.generationTab);

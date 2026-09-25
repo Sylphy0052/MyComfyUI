@@ -29,7 +29,6 @@ import {
   parseJobProgress,
   type JobProgress,
 } from "./components/JobProgressPanel";
-import { CharacterManager } from "./components/CharacterManager";
 import type { Candidate } from "./components/CandidateGallery";
 import { ComposePanel } from "./components/ComposePanel";
 import { GenerationForm } from "./components/GenerationForm";
@@ -44,6 +43,7 @@ import { PresetPromotionPanel } from "./components/PresetPromotionPanel";
 import { ProductionPlanPanel } from "./components/ProductionPlanPanel";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { PipelineStepper, usePipelineReadiness } from "./components/PipelineStepper";
+import { QwenSettingsDialog } from "./components/QwenSettingsDialog";
 import { SceneBrowser } from "./components/SceneBrowser";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { ResizablePane } from "./components/ui/ResizablePane";
@@ -79,6 +79,7 @@ import type {
   GenerationTab,
   ImageSubTab,
   Mode,
+  ProjectTab,
   UiState,
   View,
 } from "./state/uiState";
@@ -118,7 +119,6 @@ const VIEWS: { value: View; label: string }[] = [
   { value: "projects", label: "Project" },
   { value: "generate", label: "生成" },
   { value: "assets", label: "資産ブラウザ" },
-  { value: "characters", label: "キャラクター" },
 ];
 
 const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
@@ -359,6 +359,7 @@ export function App() {
   const [mode, setMode] = useState<Mode>(initialUiState.mode);
   const [view, setView] = useState<View>(initialUiState.view);
   const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [visitedViews, setVisitedViews] = useState<ReadonlySet<View>>(
     () =>
       new Set([
@@ -370,6 +371,9 @@ export function App() {
   );
   const [imageSubTab, setImageSubTab] = useState<ImageSubTab>(
     initialUiState.imageSubTab,
+  );
+  const [projectTab, setProjectTab] = useState<ProjectTab>(
+    initialUiState.projectTab,
   );
 
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -427,7 +431,8 @@ export function App() {
   const [comparisonDialogEl, setComparisonDialogEl] = useState<HTMLDialogElement | null>(null);
   const [workflowDialogEl, setWorkflowDialogEl] = useState<HTMLDialogElement | null>(null);
   // 2つのdialogはどちらもモーダルで、同時には開かない。
-  const toastDialogEl = comparisonDialogEl ?? workflowDialogEl;
+  const [settingsDialogEl, setSettingsDialogEl] = useState<HTMLDialogElement | null>(null);
+  const toastDialogEl = comparisonDialogEl ?? workflowDialogEl ?? settingsDialogEl;
   // 探索スイープの実験一覧は結果カラム側へportalで出す (#317)。GenerationSweepPanel自体は
   // 入力カラムに留めたまま、一覧部分だけこのDOMノードへ描画する。
   const [sweepResultSlot, setSweepResultSlot] = useState<HTMLDivElement | null>(null);
@@ -864,6 +869,7 @@ export function App() {
       view,
       generationTab,
       imageSubTab,
+      projectTab,
       projectId,
       sceneId,
       shotId,
@@ -874,7 +880,7 @@ export function App() {
     lastViewRef.current = view;
     lastModeRef.current = mode;
     persistUiState(next, viewChanged ? "push" : "replace");
-  }, [mode, view, generationTab, imageSubTab, projectId, sceneId, shotId]);
+  }, [mode, view, generationTab, imageSubTab, projectTab, projectId, sceneId, shotId]);
 
   useEffect(() => {
     const restore = () => {
@@ -886,6 +892,7 @@ export function App() {
       setView(restored.view);
       setGenerationTab(restored.generationTab);
       setImageSubTab(restored.imageSubTab);
+      setProjectTab(restored.projectTab);
       setProjectId(restored.projectId);
       setSceneId(restored.sceneId);
       setShotId(restored.shotId);
@@ -906,10 +913,6 @@ export function App() {
   const assetsSceneId = useFrozenWhenInactive(sceneId, assetsActive);
   const assetsShots = useFrozenWhenInactive(shots, assetsActive);
   const assetsShotId = useFrozenWhenInactive(shotId, assetsActive);
-
-  const charactersActive = shownView === "characters";
-  const charactersProjectId = useFrozenWhenInactive(projectId, charactersActive);
-  const charactersScenes = useFrozenWhenInactive(scenes, charactersActive);
 
   // 初回取得の往復中に選択が変わることがある。書き戻す前に現在値を見る。
   const projectIdRef = useRef(projectId);
@@ -1638,6 +1641,14 @@ export function App() {
         >
           使い方
         </a>
+        <button
+          type="button"
+          className="settings-dialog-button"
+          aria-haspopup="dialog"
+          onClick={() => setSettingsDialogOpen(true)}
+        >
+          設定
+        </button>
         {!isProduction && (
           <nav className="row" aria-label="ラボの画面">
             {VIEWS.map((item) => (
@@ -1681,6 +1692,10 @@ export function App() {
           onSelectProject={useProject}
           onRestoreSelection={setProjectId}
           onActiveProjectsChanged={setProjects}
+          detailTab={projectTab}
+          onDetailTabChange={setProjectTab}
+          onCharactersChanged={() => setCharacterOverridesToken((value) => value + 1)}
+          charactersReloadToken={characterManagerReloadToken}
         />
       )}
 
@@ -1701,7 +1716,10 @@ export function App() {
                 projectId={projectId}
                 onSelectProject={selectProject}
                 onManageProjects={() => setView("projects")}
-                onManageCharacters={() => setView("characters")}
+                onManageCharacters={() => {
+                  setView("projects");
+                  setProjectTab("characters");
+                }}
                 onStructureChanged={() => setStructureToken((value) => value + 1)}
                 scenes={scenes}
                 sceneId={sceneId}
@@ -2107,24 +2125,18 @@ export function App() {
         </>
       )}
 
-      {visitedViews.has("characters") && (
-        <div className="full" hidden={shownView !== "characters"}>
-          <CharacterManager
-            projectId={charactersProjectId}
-            active={charactersActive}
-            scenes={charactersScenes}
-            onChanged={() => setCharacterOverridesToken((value) => value + 1)}
-            reloadToken={characterManagerReloadToken}
-          />
-        </div>
-      )}
-
       <WorkflowRegistryDialog
         open={workflowDialogOpen}
         onClose={() => setWorkflowDialogOpen(false)}
         sceneId={sceneId}
         shotId={shotId}
         onDialogOpenChange={setWorkflowDialogEl}
+      />
+
+      <QwenSettingsDialog
+        open={settingsDialogOpen}
+        onClose={() => setSettingsDialogOpen(false)}
+        onDialogOpenChange={setSettingsDialogEl}
       />
 
       <ToastHost
