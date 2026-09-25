@@ -1274,7 +1274,6 @@ export function GenerationForm({
                   positive: values.positive_prompt ?? "",
                   negative: values.negative_prompt ?? "",
                 }}
-                projectId={projectId}
                 placeholder="例: 雨上がりの東京の路地を歩く黒い猫。ネオンの反射、映画的な光。"
                 onApply={applyAssist}
               />

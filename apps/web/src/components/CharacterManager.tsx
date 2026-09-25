@@ -807,7 +807,6 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
               providers={providers}
               idPrefix="character"
               current={{ positive: draft.prompt, negative: draft.negative_prompt }}
-              projectId={projectId}
               onApply={(result) =>
                 // 応答待ちの間に他の欄が編集されていても消さないよう、最新のdraftへ反映する。
                 setDraft((current) =>

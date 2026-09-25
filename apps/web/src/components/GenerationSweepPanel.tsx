@@ -314,7 +314,6 @@ export function GenerationSweepPanel({
               idPrefix="sweep"
               recipeId={recipeId}
               current={{ positive: prompt, negative }}
-              projectId={projectId}
               placeholder="例: 夕暮れの海辺に立つ少女。構図は引きで。"
               onApply={(result) => {
                 // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。

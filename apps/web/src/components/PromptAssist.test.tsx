@@ -9,15 +9,6 @@ vi.mock("../api/client", () => ({
   api: { assistImagePrompt: vi.fn() },
 }));
 
-vi.mock("./MediaPicker", () => ({
-  MediaPicker: ({ onChange }: { onChange: (value: { id: string }[]) => void }) => (
-    <button type="button" onClick={() => onChange([{ id: "picked" }])}>
-      画像を選ぶ
-    </button>
-  ),
-  readPickedImage: vi.fn(async () => ({ base64: "YWJj", mediaType: "image/png" })),
-}));
-
 const PROVIDERS: AgentProvider[] = [
   {
     id: "openai" as AgentProvider["id"],
@@ -51,7 +42,7 @@ afterEach(() => {
 });
 
 describe("PromptAssist の review 分岐 (#366)", () => {
-  it("画像を添えなければ、補完のみでは review が偽で伝わる", async () => {
+  it("補完のみでは review が偽で伝わる", async () => {
     assistImagePromptMock().mockResolvedValue(ASSIST_RESULT);
     const onApply = vi.fn();
     render(
@@ -67,7 +58,7 @@ describe("PromptAssist の review 分岐 (#366)", () => {
     );
   });
 
-  it("画像を添えずレビューを選ぶと、review が真で伝わる", async () => {
+  it("レビューを選ぶと、review が真で伝わる", async () => {
     assistImagePromptMock().mockResolvedValue(ASSIST_RESULT);
     const onApply = vi.fn();
     render(
@@ -80,28 +71,6 @@ describe("PromptAssist の review 分岐 (#366)", () => {
     await screen.findByRole("button", { name: "レビューして直す" });
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({ review: true }),
-    );
-  });
-
-  it("画像を添えると、レビューを選んでいても review は偽で伝わる", async () => {
-    assistImagePromptMock().mockResolvedValue(ASSIST_RESULT);
-    const onApply = vi.fn();
-    render(
-      <PromptAssist providers={PROVIDERS} idPrefix="t" current={CURRENT} onApply={onApply} />,
-    );
-
-    fireEvent.click(screen.getByLabelText("現在のプロンプトをレビューして直す"));
-    fireEvent.click(screen.getByRole("button", { name: "画像を選ぶ" }));
-    fireEvent.click(screen.getByRole("button", { name: "画像を見て直す" }));
-
-    await screen.findByRole("button", { name: "画像を見て直す" });
-    expect(onApply).toHaveBeenCalledWith(
-      expect.objectContaining({ review: false }),
-    );
-    expect(assistImagePromptMock()).toHaveBeenCalledWith(
-      expect.objectContaining({
-        image: { content_base64: "YWJj", media_type: "image/png" },
-      }),
     );
   });
 
