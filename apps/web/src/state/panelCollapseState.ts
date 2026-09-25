@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
  * 生成画面右列のパネルの開閉をパネルごとにlocalStorageへ保存する (#402)。
  * 保存値が無い・壊れている場合は開いた状態として扱う。
  */
-export type CollapsiblePanelId = "latestImage" | "candidates";
+export type CollapsiblePanelId = "latestImage" | "candidates" | "resultColumn";
 
 const STORAGE_KEY = "mycomfyui.panelCollapsed.v1";
 
