@@ -10,7 +10,8 @@ import type {
   Recipe,
 } from "../api/client";
 import { LookProfileManager } from "./LookProfileManager";
-import { PromptAssist } from "./PromptAssist";
+import { AssistNotes, PromptAssist } from "./PromptAssist";
+import type { AssistResult } from "./PromptAssist";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffField } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
@@ -66,6 +67,8 @@ export function GenerationSweepPanel({
   const [negative, setNegative] = useState("");
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
+  // 補完から開いた差分に添える AI の説明とタグ訳。補完以外から開いた差分では null (#354)。
+  const [promptDiffNotes, setPromptDiffNotes] = useState<AssistResult | null>(null);
   const [seedAxis, setSeedAxis] = useState("-1");
   const [cfgAxis, setCfgAxis] = useState("4,5");
   const [stepsAxis, setStepsAxis] = useState("20,30");
@@ -305,7 +308,9 @@ export function GenerationSweepPanel({
                 if ("negative_prompt" in result) setNegative(result.negative_prompt);
                 setPromptDiff(null);
               }}
-            />
+            >
+              {promptDiffNotes && <AssistNotes result={promptDiffNotes} />}
+            </PromptDiffReview>
           ) : (
             <PromptAssist
               providers={providers}
@@ -316,6 +321,7 @@ export function GenerationSweepPanel({
               placeholder="例: 夕暮れの海辺に立つ少女。構図は引きで。"
               onApply={(result) => {
                 // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+                setPromptDiffNotes(result.notes);
                 setPromptDiff([
                   { key: "positive_prompt", label: "基本プロンプト", current: prompt, proposed: result.positive },
                   { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },

@@ -12,7 +12,8 @@ import type {
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
-import { PromptAssist } from "./PromptAssist";
+import { AssistNotes, PromptAssist } from "./PromptAssist";
+import type { AssistResult } from "./PromptAssist";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffField } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
@@ -92,6 +93,8 @@ export function ImageDerivationPanel({
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
+  // 補完から開いた差分に添える AI の説明とタグ訳。補完以外から開いた差分では null (#354)。
+  const [promptDiffNotes, setPromptDiffNotes] = useState<AssistResult | null>(null);
   const sourceArtifactIdRef = useRef(sourceArtifactId);
   sourceArtifactIdRef.current = sourceArtifactId;
 
@@ -398,7 +401,9 @@ export function ImageDerivationPanel({
                 });
                 setPromptDiff(null);
               }}
-            />
+            >
+              {promptDiffNotes && <AssistNotes result={promptDiffNotes} />}
+            </PromptDiffReview>
           ) : (
             <PromptAssist
               providers={providers}
@@ -409,6 +414,7 @@ export function ImageDerivationPanel({
               placeholder="例: 元画像の構図を保ったまま、夕暮れの海辺に置き換える。"
               onApply={(result) => {
                 // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+                setPromptDiffNotes(result.notes);
                 setPromptDiff([
                   {
                     key: "positive_prompt",
