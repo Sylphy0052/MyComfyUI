@@ -1,10 +1,10 @@
 """prompt案の出力を、複数の入力Caseに対してProviderへ実際に問い合わせて採点する。
 
 `routers.py`のprompt案系Endpoint (`image_prompt`、`batch_generation_plan`) と同じ
-組み立て・後処理 (`ProposalRequest`の構築 → `provider.propose` → `apply_prompt_style`
-→ `restrict_output`) を経た出力を`prompt_checks.check_output`へ渡し、規則ごとの
-違反率を集計する。DBもFastAPI appも起こさず、Case定義
-(`apps/api/scripts/prompt_eval/cases.json`)だけで動く。
+組み立て・後処理 (`ProposalRequest`の構築 → `provider.propose` →
+`normalize_prompt_tags` → `apply_prompt_style` → `restrict_output`) を経た出力を
+`prompt_checks.check_output`へ渡し、規則ごとの違反率を集計する。DBもFastAPI appも
+起こさず、Case定義 (`apps/api/scripts/prompt_eval/cases.json`)だけで動く。
 
     uv run --project apps/api python apps/api/scripts/prompt_eval.py \\
         --provider stub --repeat 1 --out stub.json
@@ -176,8 +176,14 @@ async def run_attempt(
             "exception": {"type": type(error).__name__, "message": str(error)},
             "duration_sec": round(time.monotonic() - started, 3),
         }
+    output = proposals.normalize_prompt_tags(
+        case["kind"],
+        result.output,
+        await routers._canonical_tag_names(),
+        context.get("prompt_style"),
+    )
     output = proposals.apply_prompt_style(
-        case["kind"], result.output, context.get("prompt_style")
+        case["kind"], output, context.get("prompt_style")
     )
     output = proposals.restrict_output(
         case["kind"],

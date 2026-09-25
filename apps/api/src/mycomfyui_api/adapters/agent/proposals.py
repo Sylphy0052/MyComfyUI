@@ -730,8 +730,14 @@ def _record_dropped_items(data: dict[str, Any], dropped: int, reason: str) -> No
     if dropped <= 0:
         return
     logger.warning("提案のstepを除外しました。件数=%s 理由=%s", dropped, reason)
-    note = f"{dropped}件は{reason}ため計画から外した。"
+    _append_rationale_note(data, f"{dropped}件は{reason}ため計画から外した。")
+
+
+def _append_rationale_note(data: dict[str, Any], note: str) -> None:
+    """実装側で案を変えたことを`rationale`の末尾へ注記する。"""
     rationale = data.get("rationale") or ""
+    # タグの一覧を並べた注記は、それだけで上限を超えうる。
+    note = note[:MAX_RATIONALE_LENGTH]
     # 注記は必ず残す。末尾から切ると、説明が上限まで書かれているときに注記だけ消える。
     room = MAX_RATIONALE_LENGTH - len(note) - 1
     body = rationale[:room].rstrip() if room > 0 else ""
@@ -779,6 +785,162 @@ def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
     return data
 
 
+#: タグ辞書で別名を直すブロック。`quality_tags`は辞書に載らない品質・年代のタグを持ち、
+#: `artist_tags`は辞書が古いと新しい絵師が載らないため、どちらも触らない。
+CANONICAL_TAG_FIELDS = ("subject_tags", "character_tags", "general_tags")
+#: 辞書に無ければタグ行から外すブロック。キャラクターは辞書が古いと載っていないため残す。
+DROP_UNKNOWN_TAG_FIELDS = frozenset({"general_tags"})
+
+
+def normalize_prompt_tags(
+    kind: ProposalKind,
+    output: dict[str, Any],
+    canonical_names: Mapping[str, str] | None,
+    style: str | None,
+) -> dict[str, Any]:
+    """prompt案のタグをタグ辞書で正規化し、positive promptを組み直す。
+
+    別名は正規のタグ名へ直す。辞書に無い`general_tags`はタグ行から外し、自然文の末尾へ
+    英語の句として足す。`style`が`tags`なら自然文を使わないため外すだけにする。
+    直したタグと外したタグは`rationale`へ注記する。辞書が無ければ何もしない。
+    """
+    if not canonical_names or kind not in PROMPT_STYLE_KINDS:
+        return output
+    data = dict(output)
+    renamed: list[str] = []
+    moved: list[str] = []
+    removed: list[str] = []
+    bodies = [data] if kind == "image_prompt" else list(data.get("items", []))
+    normalized_bodies: list[dict[str, Any]] = []
+    for body in bodies:
+        if not isinstance(body, dict):
+            normalized_bodies.append(body)
+            continue
+        normalized, (body_renamed, body_moved, body_removed) = _canonicalize_body_tags(
+            body, canonical_names, style
+        )
+        if (body_renamed or body_moved or body_removed) and not _try_attach_prompt_text(
+            normalized
+        ):
+            # 移した句で上限を超えたり、タグが全て外れたりした案は組み立てられない。
+            # 検証済みの元の案は使えるため、正規化だけを諦めて残す。
+            logger.warning("タグの正規化で案を組み立てられないため、元の案を残しました。")
+            normalized_bodies.append(body)
+            continue
+        normalized_bodies.append(normalized)
+        renamed.extend(body_renamed)
+        moved.extend(body_moved)
+        removed.extend(body_removed)
+    if kind == "image_prompt":
+        data = normalized_bodies[0]
+    else:
+        data["items"] = normalized_bodies
+    notes = [
+        f"{label}: {', '.join(dict.fromkeys(tags))}。"
+        for label, tags in (
+            ("タグ辞書の別名を正規のタグ名へ直した", renamed),
+            ("タグ辞書に無いタグを自然文へ移した", moved),
+            ("タグ辞書に無いタグを外した", removed),
+        )
+        if tags
+    ]
+    if notes:
+        # 1件ずつ足すと、後の注記の分だけ先の注記が切られる。まとめて1回で足す。
+        _append_rationale_note(data, "\n".join(notes))
+    return data
+
+
+def _canonicalize_body_tags(
+    body: dict[str, Any], canonical_names: Mapping[str, str], style: str | None
+) -> tuple[dict[str, Any], tuple[list[str], list[str], list[str]]]:
+    """prompt案1件のタグを正規化する。直したタグ、自然文へ移したタグ、外したタグを返す。"""
+    result = dict(body)
+    renamed: dict[str, str] = {}
+    unknown: list[str] = []
+    for field_name in CANONICAL_TAG_FIELDS:
+        values = body.get(field_name)
+        if not isinstance(values, list):
+            continue
+        kept: list[str] = []
+        for value in values:
+            key = tag_preflight.normalize_tag(value) if isinstance(value, str) else ""
+            # 強調・重みの括弧付きと、実在確認の対象外のタグ(`@`や自然文)は触らない。
+            if (
+                not key
+                or value.strip().startswith("(")
+                or tag_preflight.is_excluded(key)
+            ):
+                kept.append(value)
+                continue
+            canonical = canonical_names.get(key)
+            if canonical is None:
+                if field_name in DROP_UNKNOWN_TAG_FIELDS:
+                    unknown.append(key)
+                else:
+                    kept.append(value)
+            elif canonical != key:
+                renamed[key] = canonical
+                kept.append(_spell_like(value, canonical))
+            else:
+                kept.append(value)
+        result[field_name] = _dedupe(kept)
+    moved: list[str] = []
+    removed: list[str] = []
+    if unknown:
+        natural_text = _append_phrase(
+            str(body.get("natural_text") or "").strip(), ", ".join(unknown)
+        )
+        if style != "tags" and len(natural_text) <= MAX_NATURAL_TEXT_LENGTH:
+            result["natural_text"] = natural_text
+            moved = unknown
+        else:
+            removed = unknown
+    if isinstance(body.get("tag_glosses"), list) and (renamed or unknown):
+        result["tag_glosses"] = _rename_glosses(
+            body["tag_glosses"], renamed, set(unknown)
+        )
+    changes = [f"{old} → {new}" for old, new in renamed.items()]
+    return result, (changes, moved, removed)
+
+
+def _spell_like(original: str, canonical: str) -> str:
+    """正規のタグ名を、元のタグと同じ括弧の書き方へ揃える。"""
+    if "\\(" in original:
+        return canonical.replace("(", "\\(").replace(")", "\\)")
+    return canonical
+
+
+def _append_phrase(natural_text: str, phrase: str) -> str:
+    """自然文の最後の文へ句を足す。文の数を増やさないよう、終止符の前へカンマで繋ぐ。"""
+    if not natural_text:
+        return f"{phrase}."
+    if natural_text[-1] in ".!?":
+        return f"{natural_text[:-1]}, {phrase}{natural_text[-1]}"
+    return f"{natural_text}, {phrase}"
+
+
+def _rename_glosses(
+    glosses: list[Any], renamed: Mapping[str, str], dropped: set[str]
+) -> list[Any]:
+    """タグ訳のタグ名を正規のタグ名へ直し、タグ行から外したタグの訳を除く。
+
+    別名と正規のタグ名の両方に訳があれば、先に現れた方だけを残す。
+    """
+    result: list[Any] = []
+    seen: set[str] = set()
+    for gloss in glosses:
+        if not isinstance(gloss, dict) or not isinstance(gloss.get("tag"), str):
+            result.append(gloss)
+            continue
+        key = tag_preflight.normalize_tag(gloss["tag"])
+        canonical = renamed.get(key, key)
+        if key in dropped or canonical in seen:
+            continue
+        seen.add(canonical)
+        result.append({**gloss, "tag": canonical} if key in renamed else gloss)
+    return result
+
+
 def apply_prompt_style(
     kind: ProposalKind, output: dict[str, Any], style: str | None
 ) -> dict[str, Any]:
@@ -808,9 +970,7 @@ def apply_prompt_style(
     if not items:
         raise AgentInvalidResponse("バッチ生成計画に使えるprompt案がありません。")
     data["items"] = items
-    _record_dropped_items(
-        data, len(original) - len(items), "内容を表すタグが無かった"
-    )
+    _record_dropped_items(data, len(original) - len(items), "内容を表すタグが無かった")
     return data
 
 
