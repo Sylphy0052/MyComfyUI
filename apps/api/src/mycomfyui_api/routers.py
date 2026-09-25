@@ -5349,9 +5349,17 @@ async def _assist_image_prompt(
     result = await _propose_assist(provider, request)
     # Providerは検証とtag_line、positive_promptの組み立てを済ませて返す。ここで検証し
     # 直すと、組み立てた派生項目が余計なキーとして拒否される。
+    output = result.output
     try:
+        if current_positive_prompt.strip() and not images:
+            # 画像を添えたときは画像から直す点を探すため、タグの増減を画像に任せる。
+            # 書き方の整形より先に行う。消えたタグを戻す前に、内容のタグが無いとして
+            # 弾かないためである。
+            output = proposals.revise_current_prompt(
+                output, current_positive_prompt, instruction
+            )
         output = proposals.apply_prompt_style(
-            "image_prompt", result.output, context["prompt_style"]
+            "image_prompt", output, context["prompt_style"]
         )
     except agent_base.AgentError as error:
         raise _agent_error(error) from error
