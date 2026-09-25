@@ -28,12 +28,19 @@ interface Props {
 /** 方向を書かずにレビューさせたときに送る指示。 */
 const DEFAULT_REVIEW_DIRECTION = "重複・矛盾・不要なタグを整理する。";
 
+/** レビューの方向の前に付ける固定文。 */
+const REVIEW_INSTRUCTION_PREFIX =
+  "現在のプロンプトをレビューして直す。指示の点だけを直し、関係の無いタグや文は残す。\n指示: ";
+
+/** API の `instruction` の上限。 */
+const MAX_INSTRUCTION_LENGTH = 2000;
+
+/** 固定文を付けても API の上限を超えない、レビューの方向の上限。 */
+const MAX_REVIEW_DIRECTION_LENGTH = MAX_INSTRUCTION_LENGTH - REVIEW_INSTRUCTION_PREFIX.length;
+
 /** レビューの方向を、現在の prompt を土台に直させる指示へ組み立てる。 */
 function reviewInstruction(direction: string): string {
-  return (
-    "現在のプロンプトをレビューして直す。指示の点だけを直し、関係の無いタグや文は残す。\n" +
-    `指示: ${direction.trim() || DEFAULT_REVIEW_DIRECTION}`
-  );
+  return REVIEW_INSTRUCTION_PREFIX + (direction.trim() || DEFAULT_REVIEW_DIRECTION);
 }
 
 /**
@@ -50,9 +57,13 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
       submitLabel="プロンプトを補完"
       allowImage
       allowReview
+      reviewMaxLength={MAX_REVIEW_DIRECTION_LENGTH}
       onAssist={async ({ image, review, instruction, ...request }) => {
         if (review && !current.positive.trim()) {
           throw new Error("レビューするプロンプトがありません。先にプロンプトを入力してください。");
+        }
+        if (review && instruction.trim().length > MAX_REVIEW_DIRECTION_LENGTH) {
+          throw new Error(`レビューの方向は${MAX_REVIEW_DIRECTION_LENGTH}文字以内にしてください。`);
         }
         const result = await api.assistImagePrompt({
           ...request,
@@ -99,6 +110,8 @@ interface FieldProps {
   allowImage?: boolean;
   /** 現在の prompt をレビューして直すモードを出すか。 */
   allowReview?: boolean;
+  /** レビューの方向の文字数上限。呼び出し元が付ける固定文の分を差し引いた値。 */
+  reviewMaxLength?: number;
   projectId?: string | null;
   /** 指定すると説明文を下書きとして保存し、作り直しや再読み込みの後も残す (#327)。 */
   draftKey?: string;
@@ -116,6 +129,7 @@ export function PromptAssistField({
   submitLabel,
   allowImage = false,
   allowReview = false,
+  reviewMaxLength,
   projectId,
   draftKey,
   onAssist,
@@ -191,6 +205,7 @@ export function PromptAssistField({
         <textarea
           id={`${idPrefix}-description`}
           value={description}
+          maxLength={review ? reviewMaxLength : undefined}
           onChange={(event) => setDescription(event.target.value)}
           placeholder={
             review
