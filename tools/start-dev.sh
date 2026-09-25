@@ -67,7 +67,11 @@ if [ "$START_OLLAMA" != "0" ]; then
   OLLAMA_BIN="${OLLAMA_BIN:-$(command -v ollama || true)}"
   [ -n "$OLLAMA_BIN" ] || OLLAMA_BIN="$HOME/.local/ollama/bin/ollama"
   if [ -x "$OLLAMA_BIN" ]; then
-    free_port "${OLLAMA_HOST##*:}"
+    # OLLAMA_HOST はポート省略時に 11434 を使う (scheme 付きの指定も許す)。
+    ollama_port="${OLLAMA_HOST#*://}"
+    ollama_port="${ollama_port##*:}"
+    [[ "$ollama_port" =~ ^[0-9]+$ ]] || ollama_port=11434
+    free_port "$ollama_port"
     # 他のジョブと同じく cleanup がプロセスグループごと停止する。
     "$OLLAMA_BIN" serve &
   else
