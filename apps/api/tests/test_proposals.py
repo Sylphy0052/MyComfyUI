@@ -104,15 +104,13 @@ class ReviseCurrentPromptTest(unittest.TestCase):
         ):
             revise_current_prompt(output, current, "")
 
-        message = str(raised.exception)
-        self.assertIn(
+        # ブロックは`TAG_BLOCK_FIELDS`の順に並ぶ。並び順も含めて全文で比べる。
+        self.assertEqual(
+            str(raised.exception),
+            f"レビュー案のタグが多すぎます。上限の{MAX_PROMPT_TAGS}件を超えるブロック: "
             f"artist_tagsが{MAX_PROMPT_TAGS + 1}件 (うち現在のpromptから戻したタグ: "
-            f"{MAX_PROMPT_TAGS + 1}件)",
-            message,
-        )
-        self.assertIn(
-            f"general_tagsが{MAX_PROMPT_TAGS + 2}件 (うち現在のpromptから戻したタグ: 0件)",
-            message,
+            f"{MAX_PROMPT_TAGS + 1}件)、"
+            f"general_tagsが{MAX_PROMPT_TAGS + 2}件 (うち現在のpromptから戻したタグ: 0件)。",
         )
 
     def test_restored_tags_at_limit_are_kept(self) -> None:
