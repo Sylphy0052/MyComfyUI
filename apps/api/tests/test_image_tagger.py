@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from fastapi import FastAPI, Request
 from mycomfyui_api import routers, schemas
 from mycomfyui_api.adapters.comfyui.tagger import ComfyUITagger
 from mycomfyui_api.adapters.image_tagger import (
@@ -42,6 +43,11 @@ def _comfyui_transport(
         raise AssertionError(f"想定外の経路: {request.url.path}")
 
     return httpx.MockTransport(handler)
+
+
+def _request() -> Request:
+    """保存済みの設定を持たないappのRequestを返す。"""
+    return Request({"type": "http", "app": FastAPI()})
 
 
 class ComfyUITaggerTest(unittest.IsolatedAsyncioTestCase):
@@ -139,7 +145,8 @@ class ImageTagEndpointTest(unittest.IsolatedAsyncioTestCase):
             await routers.extract_image_tags(
                 schemas.ImageTagExtractRequest(
                     content_base64="not base64", media_type="image/png"
-                )
+                ),
+                _request(),
             )
         self.assertEqual(raised.exception.code, "VALIDATION_ERROR")
         self.assertEqual(raised.exception.status_code, 422)
@@ -154,7 +161,8 @@ class ImageTagEndpointTest(unittest.IsolatedAsyncioTestCase):
             await routers.extract_image_tags(
                 schemas.ImageTagExtractRequest(
                     content_base64="aGk=", media_type="image/png"
-                )
+                ),
+                _request(),
             )
         self.assertEqual(raised.exception.code, "VALIDATION_ERROR")
         self.assertEqual(raised.exception.status_code, 422)
@@ -169,7 +177,8 @@ class ImageTagEndpointTest(unittest.IsolatedAsyncioTestCase):
             await routers.extract_image_tags(
                 schemas.ImageTagExtractRequest(
                     content_base64="aA==", media_type="image/png"
-                )
+                ),
+                _request(),
             )
         self.assertEqual(raised.exception.code, "IMAGE_TAGGER_ERROR")
         self.assertEqual(raised.exception.status_code, 503)
@@ -188,6 +197,7 @@ class ImageTagEndpointTest(unittest.IsolatedAsyncioTestCase):
             result = await routers.extract_image_tags(
                 schemas.ImageTagExtractRequest(
                     content_base64="aA==", media_type="image/png"
-                )
+                ),
+                _request(),
             )
         self.assertEqual(result.tags, ["cat", "sitting"])
