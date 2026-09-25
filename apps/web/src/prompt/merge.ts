@@ -159,6 +159,34 @@ function toSegment(text: string, paragraph = false): PromptSegment {
 }
 
 /**
+ * プロンプトを空行で段落へ分ける。`splitPrompt`と同じく、エスケープ済みの括弧と
+ * 重み付けの括弧の内側にある空行では区切らない。
+ */
+function splitParagraphs(prompt: string): string[] {
+  const paragraphs: string[] = [];
+  let start = 0;
+  let depth = 0;
+  for (let index = 0; index < prompt.length; index += 1) {
+    const char = prompt[index];
+    if (char === "\\") {
+      index += 1;
+    } else if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth = Math.max(0, depth - 1);
+    } else if (char === "\n" && depth === 0) {
+      const blank = /^\n[^\S\n]*\n/.exec(prompt.slice(index));
+      if (!blank) continue;
+      paragraphs.push(prompt.slice(start, index));
+      index += blank[0].length - 1;
+      start = index + 1;
+    }
+  }
+  paragraphs.push(prompt.slice(start));
+  return paragraphs;
+}
+
+/**
  * プロンプト文字列をセグメントの列へ変換する。
  *
  * タグ行と自然文は空行で区切って組み立てる (API の`compose_positive_prompt`)。空行で
@@ -169,7 +197,7 @@ function toSegment(text: string, paragraph = false): PromptSegment {
  */
 export function parsePrompt(prompt: string): PromptSegment[] {
   if (!prompt) return [];
-  return prompt.split(/\n[^\S\n]*\n/).flatMap((paragraph, index) => {
+  return splitParagraphs(prompt).flatMap((paragraph, index) => {
     const parts = splitPrompt(paragraph);
     if (index > 0 && parts.some(isSentence)) return [toSegment(paragraph, true)];
     return parts.map((part) => toSegment(part));
