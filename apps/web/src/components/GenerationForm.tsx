@@ -155,6 +155,9 @@ function splitOutfitTags(text: string): string[] {
 /** 衣装候補一覧の表示上限 (#316)。超えた分は検索で絞り込ませる。 */
 const OUTFIT_CANDIDATE_LIMIT = 20;
 
+/** 生成済み画像の設定をフォームへ戻す範囲 (#320)。 */
+export type RestoreScope = "all" | "prompt" | "seed";
+
 interface Props {
   projectId: string | null;
   recipes: Recipe[];
@@ -206,8 +209,13 @@ interface Props {
     recipeId: string | null;
     recipeLineage: string[];
     manifest: GenerationManifest;
-    scope?: "all" | "prompt" | "seed";
+    scope?: RestoreScope;
   } | null;
+  /**
+   * `restore`を入れ終えたときに呼ぶ。`applied`は1項目以上入れたか。プロンプトのみ・seedのみで
+   * 選択中のRecipeに対象の入力欄が無いか、画像に値の記録が無いと`false`になる (#345)。
+   */
+  onRestoreApplied?: (scope: RestoreScope, applied: boolean) => void;
   /** Projectのローカルキャラクター定義。衣装のpromptをプロンプトへ足すのに使う (#309)。 */
   characters?: ProjectCharacterProfile[];
   /** 直前に完了したJobのseed。seedの「前回」ボタンに使う。完了Jobが無ければnull (#319)。 */
@@ -259,6 +267,7 @@ export function GenerationForm({
   shortcutActive = false,
   plan = null,
   restore = null,
+  onRestoreApplied,
   characters = [],
   onRegisterOutfit,
   lastSeed = null,
@@ -404,14 +413,13 @@ export function GenerationForm({
     const filled: Record<string, string> = {};
     const models: Record<string, string> = {};
     for (const spec of toFieldSpecs(target)) {
+      if (scope === "prompt" && !PROMPT_FIELD_NAMES.has(spec.name)) continue;
+      if (scope === "seed" && spec.name !== "seed") continue;
       if (spec.control === "model") {
-        if (scope !== "all") continue;
         const value = manifestText((manifest.model ?? {})[spec.name]);
         if (value !== null && value !== "") models[spec.name] = value;
         continue;
       }
-      if (scope === "prompt" && !PROMPT_FIELD_NAMES.has(spec.name)) continue;
-      if (scope === "seed" && spec.name !== "seed") continue;
       const value = manifestText(raw[spec.name]);
       if (value !== null && isParsableAs(spec, value)) filled[spec.name] = value;
     }
@@ -445,6 +453,8 @@ export function GenerationForm({
       for (const name of Object.keys(hiresDefaults)) next.delete(name);
       return next;
     });
+    // 開いている差分レビューは入れる前のプロンプトを比べているので閉じる (#345)。
+    if (scope !== "seed") setPromptDiff(null);
     if (scope === "all" && target.id !== recipeId) {
       pendingModelValuesRef.current = models;
       setRecipeId(target.id);
@@ -462,7 +472,8 @@ export function GenerationForm({
           ? `元のRecipeは更新されているため、後継の「${original.name}」へ合う項目だけ入れました。`
           : null,
     );
-  }, [restore, recipes, recipe, recipeId, plan]);
+    onRestoreApplied?.(scope, scope === "all" || Object.keys(filled).length > 0);
+  }, [restore, recipes, recipe, recipeId, plan, onRestoreApplied]);
 
   // 計画のPresetとプロンプトを入れる。値は触った印を付け、上のRecipe変更の効果で持ち越させる。
   useEffect(() => {
