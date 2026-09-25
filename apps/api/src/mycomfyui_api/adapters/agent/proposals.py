@@ -817,8 +817,14 @@ def normalize_prompt_tags(
         normalized, (body_renamed, body_moved, body_removed) = _canonicalize_body_tags(
             body, canonical_names, style
         )
-        if body_renamed or body_moved or body_removed:
-            _attach_prompt_text(normalized)
+        if (body_renamed or body_moved or body_removed) and not _try_attach_prompt_text(
+            normalized
+        ):
+            # 移した句で上限を超えたり、タグが全て外れたりした案は組み立てられない。
+            # 検証済みの元の案は使えるため、正規化だけを諦めて残す。
+            logger.warning("タグの正規化で案を組み立てられないため、元の案を残しました。")
+            normalized_bodies.append(body)
+            continue
         normalized_bodies.append(normalized)
         renamed.extend(body_renamed)
         moved.extend(body_moved)
@@ -827,18 +833,18 @@ def normalize_prompt_tags(
         data = normalized_bodies[0]
     else:
         data["items"] = normalized_bodies
-    if renamed:
-        _append_rationale_note(
-            data, f"タグ辞書の別名を正規のタグ名へ直した: {', '.join(dict.fromkeys(renamed))}。"
+    notes = [
+        f"{label}: {', '.join(dict.fromkeys(tags))}。"
+        for label, tags in (
+            ("タグ辞書の別名を正規のタグ名へ直した", renamed),
+            ("タグ辞書に無いタグを自然文へ移した", moved),
+            ("タグ辞書に無いタグを外した", removed),
         )
-    if moved:
-        _append_rationale_note(
-            data, f"タグ辞書に無いタグを自然文へ移した: {', '.join(dict.fromkeys(moved))}。"
-        )
-    if removed:
-        _append_rationale_note(
-            data, f"タグ辞書に無いタグを外した: {', '.join(dict.fromkeys(removed))}。"
-        )
+        if tags
+    ]
+    if notes:
+        # 1件ずつ足すと、後の注記の分だけ先の注記が切られる。まとめて1回で足す。
+        _append_rationale_note(data, "\n".join(notes))
     return data
 
 
