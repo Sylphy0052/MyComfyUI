@@ -413,6 +413,7 @@ export function GenerationForm({
     const filled: Record<string, string> = {};
     const models: Record<string, string> = {};
     for (const spec of toFieldSpecs(target)) {
+      // 範囲外の項目はmodelを含めてここで除く。
       if (scope === "prompt" && !PROMPT_FIELD_NAMES.has(spec.name)) continue;
       if (scope === "seed" && spec.name !== "seed") continue;
       if (spec.control === "model") {
@@ -453,8 +454,8 @@ export function GenerationForm({
       for (const name of Object.keys(hiresDefaults)) next.delete(name);
       return next;
     });
-    // 開いている差分レビューは入れる前のプロンプトを比べているので閉じる (#345)。
-    if (scope !== "seed") setPromptDiff(null);
+    // 開いている差分レビューは入れる前のプロンプトを比べているので、プロンプトを入れたときだけ閉じる (#345)。
+    if (Object.keys(filled).some((name) => PROMPT_FIELD_NAMES.has(name))) setPromptDiff(null);
     if (scope === "all" && target.id !== recipeId) {
       pendingModelValuesRef.current = models;
       setRecipeId(target.id);

@@ -1585,6 +1585,11 @@ export function App() {
     manifest: GenerationManifest,
     scope: RestoreScope = "all",
   ) => {
+    // 生成フォームは選べるRecipeが無いと入れ終えた通知を出さず、押しても無反応に見える (#345)。
+    if (txt2imgRecipes.length === 0) {
+      notify({ tone: "info", message: "生成フォームで選べるRecipeが無いため、設定を入れられません。" });
+      return;
+    }
     restoreSequenceRef.current += 1;
     const sequence = restoreSequenceRef.current;
     const recipeId = job.recipe_id;
@@ -1616,13 +1621,17 @@ export function App() {
   const applySeedOnly = (job: GenerationJob, manifest: GenerationManifest) =>
     applyGenerationSettings(job, manifest, "seed");
   /** 生成フォームが入れ終えてから結果を知らせる。何も入らなかったときに成功と出さない (#345)。 */
-  const handleRestoreApplied = (scope: RestoreScope, applied: boolean) => {
-    notify(
-      applied || scope === "all"
-        ? { tone: "success", message: RESTORE_SCOPE_MESSAGES[scope] }
-        : { tone: "info", message: RESTORE_SKIPPED_MESSAGES[scope] },
-    );
-  };
+  // 生成フォームの復元effectの依存に入るため、参照を固定する。
+  const handleRestoreApplied = useCallback(
+    (scope: RestoreScope, applied: boolean) => {
+      notify(
+        applied || scope === "all"
+          ? { tone: "success", message: RESTORE_SCOPE_MESSAGES[scope] }
+          : { tone: "info", message: RESTORE_SKIPPED_MESSAGES[scope] },
+      );
+    },
+    [notify],
+  );
 
   /** 候補の画像を派生タブへ送る。候補ギャラリーと最新画像の表示 (#320) で共有する。 */
   const handleDerive = (artifactId: string) => {
