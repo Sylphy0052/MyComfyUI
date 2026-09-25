@@ -101,6 +101,9 @@ PromptTag = Annotated[str, StringConstraints(max_length=MAX_PROMPT_TAG_LENGTH)]
 #: Providerやモデルを替えたときに抜け落ちても気付けない。ここで検査し、無ければ
 #: 安全側の既定値(`safe`)を実装側で補う。
 RATING_TAGS = frozenset({"safe", "sensitive", "nsfw", "explicit"})
+#: ratingが落ちていたときに実装側で補うタグと、その日本語訳。
+FALLBACK_RATING_TAG = "safe"
+FALLBACK_RATING_GLOSS = "全年齢向け"
 
 
 class ProposalOutput(BaseModel):
@@ -513,7 +516,25 @@ def _ensure_rating_tag(quality_tags: list[Any]) -> list[Any]:
     if has_rating:
         return quality_tags
     logger.warning("prompt案にratingタグが無かったためsafeを補いました。")
-    return [*quality_tags, "safe"]
+    return [*quality_tags, FALLBACK_RATING_TAG]
+
+
+def _gloss_fallback_rating(body: dict[str, Any]) -> None:
+    """実装側で補ったratingタグの訳を`tag_glosses`へ足す。
+
+    `tag_glosses`はProviderが書いた分だけのため、補ったタグには訳が無く、
+    表示するタグ訳とpromptが食い違う。Providerが`tag_glosses`を返していない
+    (空を含む) ときは訳の一覧自体を出さないため、足さない。
+    """
+    glosses = body.get("tag_glosses")
+    if not isinstance(glosses, list) or not glosses:
+        return
+    if any(
+        isinstance(gloss, dict) and gloss.get("tag") == FALLBACK_RATING_TAG
+        for gloss in glosses
+    ):
+        return
+    glosses.append({"tag": FALLBACK_RATING_TAG, "ja": FALLBACK_RATING_GLOSS})
 
 
 def _attach_prompt_text(body: dict[str, Any]) -> None:
@@ -523,7 +544,10 @@ def _attach_prompt_text(body: dict[str, Any]) -> None:
     """
     quality_tags = body.get("quality_tags")
     if isinstance(quality_tags, list):
-        body["quality_tags"] = _ensure_rating_tag(quality_tags)
+        ensured = _ensure_rating_tag(quality_tags)
+        if ensured is not quality_tags:
+            _gloss_fallback_rating(body)
+        body["quality_tags"] = ensured
     tag_line = compose_tag_line(body)
     natural_text = str(body.get("natural_text") or "").strip()
     positive_prompt = compose_positive_prompt(tag_line, natural_text)
