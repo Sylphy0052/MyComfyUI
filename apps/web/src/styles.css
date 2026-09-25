@@ -932,10 +932,11 @@ details summary {
   padding: var(--space-5) var(--space-6) var(--space-6);
 }
 
-/* displayを指定しているため、hidden属性だけでは消えない。モードBで隠す節とタブに使う。 */
+/* displayを指定しているため、hidden属性だけでは消えない。モードBで隠す節とタブ、オフのhires fixの詳細に使う。 */
 .form-section[hidden],
 .generation-tabs[hidden],
-.image-subtabs[hidden] {
+.image-subtabs[hidden],
+.hires-fix-detail[hidden] {
   display: none;
 }
 
@@ -1088,6 +1089,11 @@ button[aria-pressed="true"] {
 .checkbox-field input {
   width: auto;
   margin: 0;
+}
+
+.field-checkbox {
+  width: auto;
+  justify-self: start;
 }
 
 .project-workspace {
@@ -1758,6 +1764,18 @@ button.primary:hover:not(:disabled) {
 
 .workflow-registry-dialog::backdrop {
   background: rgb(0 0 0 / 50%);
+}
+
+.settings-dialog {
+  width: min(36rem, 100% - 2 * var(--space-5));
+}
+
+.settings-dialog::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+.settings-dialog-button {
+  white-space: nowrap;
 }
 
 .shortcut-help-button {

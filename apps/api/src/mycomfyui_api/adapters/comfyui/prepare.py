@@ -53,6 +53,19 @@ KIND_VIDEO = "video"
 KIND_MUSIC = "music"
 KIND_IMAGE = "image"
 
+#: hires fix (Issue #318) を持つテンプレート。
+TXT2IMG_TEMPLATE = "anima_txt2img"
+#: hires fixの2段目の変数。オフのときは2段目ごと外すため、テンプレートへ渡さない。
+HIRES_VARIABLES = (
+    "hires_scale",
+    "hires_upscale_method",
+    "hires_steps",
+    "hires_denoise",
+)
+HIRES_ROLES = frozenset({"hires_upscale", "hires_ksampler"})
+#: テンプレート変数ではないがtxt2imgのJobが受け取れる入力。
+TXT2IMG_EXTRA_INPUTS = frozenset({"hires_enabled"})
+
 IMG2IMG_TEMPLATE = "anima_img2img"
 INPAINT_TEMPLATE = "anima_inpaint"
 CONTROLNET_TEMPLATE = "sd15_controlnet"
@@ -91,6 +104,8 @@ async def _image_plan(
     template_name: str, values: dict[str, Any], context: PreparationContext
 ) -> _MediaPlan:
     """画像派生の主入力とmaskを解決し、Artifact lineageを固定する。"""
+    if template_name == TXT2IMG_TEMPLATE:
+        return _hires_plan(template_name, values)
     if template_name not in DERIVATION_TEMPLATES:
         return _MediaPlan(values=dict(values))
     remaining = dict(values)
@@ -193,6 +208,8 @@ def accepted_input_names(recipe: Recipe, template_name: str) -> frozenset[str]:
     names = workflow_module.variable_names(template_name)
     if recipe.kind == KIND_VIDEO:
         return names | VIDEO_EXTRA_INPUTS
+    if template_name == TXT2IMG_TEMPLATE:
+        return names | TXT2IMG_EXTRA_INPUTS
     return names
 
 
@@ -276,6 +293,62 @@ def validate_frame_count(value: Any) -> int:
             {"length": value, "min": MIN_FRAMES, "max": MAX_FRAMES},
         )
     return value
+
+
+def _hires_plan(template_name: str, values: dict[str, Any]) -> _MediaPlan:
+    """hires fixのオン/オフで2段目を残すか外すかを決め、2段目のstepsを確定する。"""
+    remaining = dict(values)
+    enabled = remaining.pop("hires_enabled", False)
+    if not isinstance(enabled, bool):
+        raise PreparationError("hires_enabledは真偽値で指定します。")
+    extras = {"hires_enabled": enabled}
+    if not enabled:
+        # Recipeの既定値にもhires_*が入っている。外したノードへの指定として
+        # 拒否されないよう、2段目の変数ごと落とす。
+        for name in HIRES_VARIABLES:
+            remaining.pop(name, None)
+        return _MediaPlan(
+            values=remaining,
+            drop_roles=HIRES_ROLES,
+            parameters=dict(extras),
+            resolved_extras=dict(extras),
+        )
+
+    defaults = workflow_module.template_defaults(template_name)
+    hires_steps = remaining.get("hires_steps", 0)
+    if type(hires_steps) is int and hires_steps == 0:
+        # 0は1段目と同じsteps。実際に使った値をManifestへ残す。
+        remaining["hires_steps"] = remaining.get("steps", defaults["steps"])
+    for name in HIRES_VARIABLES:
+        remaining.setdefault(name, defaults[name])
+    return _MediaPlan(
+        values=remaining, parameters=dict(extras), resolved_extras=dict(extras)
+    )
+
+
+def _validate_hires_size(template_name: str, resolved: dict[str, Any]) -> None:
+    """hires fixで拡大した後のサイズが、ComfyUIが扱える上限を超えないか確かめる。"""
+    defaults = workflow_module.template_defaults(template_name)
+    width = resolved.get("width", defaults["width"])
+    height = resolved.get("height", defaults["height"])
+    scale = resolved["hires_scale"]
+    output_width, output_height = workflow_module.hires_output_size(
+        width, height, scale
+    )
+    limit = workflow_module.IMAGE_DIMENSION_MAX
+    if output_width > limit or output_height > limit:
+        raise PreparationError(
+            f"hires fixで拡大した後のサイズ({output_width}x{output_height})が"
+            f"上限の{limit}pxを超えます。倍率か幅・高さを下げてください。",
+            {
+                "width": width,
+                "height": height,
+                "hires_scale": scale,
+                "output_width": output_width,
+                "output_height": output_height,
+                "max": limit,
+            },
+        )
 
 
 def nearest_frame_count(value: int) -> int:
@@ -438,6 +511,8 @@ async def prepare(
         )
     except workflow_module.WorkflowError as error:
         raise PreparationError(str(error), {"template": template_name}) from error
+    if plan.resolved_extras.get("hires_enabled") is True:
+        _validate_hires_size(template_name, prepared.resolved_values)
     return PreparedExecution(
         snapshot=prepared.workflow,
         seed=prepared.seed,
