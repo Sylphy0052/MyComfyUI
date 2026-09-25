@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { applyPromptDiff, diffPrompt } from "../prompt/merge";
 import type { DiffHunk } from "../prompt/merge";
@@ -17,6 +18,8 @@ interface Props {
   onCancel: () => void;
   /** 選んだhunkだけを反映した結果。キーは`fields`の`key`と一致する。 */
   onAccept: (result: Record<string, string>) => void;
+  /** 差分の上に出す補足。補完から開いたときの AI の説明やタグ訳など (#354)。 */
+  children?: ReactNode;
 }
 
 /**
@@ -27,7 +30,7 @@ interface Props {
  * ことが多く、提案に無い既存の記述をすべて削除扱いにすると、そのまま反映したとき
  * に既存の記述が消えるため。削除したいhunkは利用者が明示的に選ぶ。
  */
-export function PromptDiffReview({ fields, onCancel, onAccept }: Props) {
+export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props) {
   const diffs = fields.map((field) => ({
     field,
     hunks: diffPrompt(field.current, field.proposed),
@@ -73,6 +76,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept }: Props) {
   if (!hasChanges) {
     return (
       <div className="stack">
+        {children}
         <p className="muted">既存のプロンプトとの差分はありません。</p>
         <button type="button" onClick={onCancel}>
           閉じる
@@ -83,6 +87,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept }: Props) {
 
   return (
     <div className="stack">
+      {children}
       {diffs.map(({ field, hunks }) => {
         if (hunks.length === 0) return null;
         return (

@@ -21,8 +21,11 @@ interface Props {
   recipeId?: string | null;
   /** 指定すると説明文を下書きとして保存し、作り直しや再読み込みの後も残す (#327)。 */
   draftKey?: string;
-  /** 補完結果の反映。呼び出し元の prompt と negative へ入れる。 */
-  onApply: (result: { positive: string; negative: string }) => void;
+  /**
+   * 補完結果の反映。呼び出し元の prompt と negative へ入れる。
+   * `notes` は AI の説明とタグ訳で、差分の確認中にも見せられるよう呼び出し元へ渡す (#354)。
+   */
+  onApply: (result: { positive: string; negative: string; notes: AssistResult }) => void;
 }
 
 /** 方向を書かずにレビューさせたときに送る指示。 */
@@ -75,8 +78,9 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
             current_negative_prompt: current.negative,
           }),
         });
-        onApply({ positive: result.positive_prompt, negative: result.negative_prompt });
-        return { rationale: result.rationale, tagGlosses: result.tag_glosses ?? [] };
+        const notes = { rationale: result.rationale, tagGlosses: result.tag_glosses ?? [] };
+        onApply({ positive: result.positive_prompt, negative: result.negative_prompt, notes });
+        return notes;
       }}
     />
   );
@@ -281,8 +285,17 @@ export function PromptAssistField({
         </p>
       )}
       {error && <p className="error">{error}</p>}
-      {result?.rationale && <p className="muted">AIの説明: {result.rationale}</p>}
-      {result?.tagGlosses && result.tagGlosses.length > 0 && (
+      {result && <AssistNotes result={result} />}
+    </>
+  );
+}
+
+/** AI の説明とタグの日本語訳。補完欄の下と、補完から開いた差分レビューの上に出す。 */
+export function AssistNotes({ result }: { result: AssistResult }) {
+  return (
+    <>
+      {result.rationale && <p className="muted">AIの説明: {result.rationale}</p>}
+      {result.tagGlosses && result.tagGlosses.length > 0 && (
         <details className="tag-glosses" open>
           <summary>タグの日本語訳 ({result.tagGlosses.length})</summary>
           <dl>

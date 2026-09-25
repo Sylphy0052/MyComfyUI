@@ -24,7 +24,8 @@ import type {
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
-import { PromptAssist } from "./PromptAssist";
+import { AssistNotes, PromptAssist } from "./PromptAssist";
+import type { AssistResult } from "./PromptAssist";
 import { PlanPresetNote } from "./ProductionPlanPanel";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffField } from "./PromptDiffReview";
@@ -373,6 +374,8 @@ export function GenerationForm({
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [batchCount, setBatchCount] = useState(() => draftString(draft?.batchCount) ?? "1");
   const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
+  // 補完から開いた差分に添える AI の説明とタグ訳。補完以外から開いた差分では null (#354)。
+  const [promptDiffNotes, setPromptDiffNotes] = useState<AssistResult | null>(null);
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
   // Recipeを切り替えて復元するとき、ModelSelectorが切替時に選択を空にするので、
   // 切替後のRecipe変更の効果で入れ直すまでモデルの選択値をここに置く。
@@ -745,8 +748,9 @@ export function GenerationForm({
     onSubmit(recipe, inputs, false, parsedBatchCount, lookProfileIds);
   };
 
-  const applyAssist = (result: { positive: string; negative: string }) => {
+  const applyAssist = (result: { positive: string; negative: string; notes: AssistResult }) => {
     // 既存のプロンプトをすぐ上書きせず、差分レビューを開いて採否を選ばせる。
+    setPromptDiffNotes(result.notes);
     setPromptDiff([
       {
         key: "positive_prompt",
@@ -812,6 +816,7 @@ export function GenerationForm({
     const merged = mergePrompt(values.positive_prompt ?? "", extractedTags.join(", "));
     if (merged.added === 0) return;
     // 既存のタグは残したまま、抽出したタグとの差分レビューを開いて採否を選ばせる。
+    setPromptDiffNotes(null);
     setPromptDiff([
       {
         key: "positive_prompt",
@@ -839,6 +844,7 @@ export function GenerationForm({
   const selectOutfitCandidate = (outfit: ProjectCharacterOutfit) => {
     const merged = mergePrompt(values.positive_prompt ?? "", outfit.prompt);
     if (merged.added === 0) return;
+    setPromptDiffNotes(null);
     setPromptDiff([
       {
         key: "positive_prompt",
@@ -1242,7 +1248,9 @@ export function GenerationForm({
                 fields={promptDiff}
                 onCancel={() => setPromptDiff(null)}
                 onAccept={applyPromptDiffResult}
-              />
+              >
+                {promptDiffNotes && <AssistNotes result={promptDiffNotes} />}
+              </PromptDiffReview>
             )}
             {/* 候補の確認中も外さずに隠す。外すと入力中の説明文が捨てられる。 */}
             <div hidden={promptDiff !== null}>
