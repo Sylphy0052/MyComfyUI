@@ -2,9 +2,9 @@
 
 `routers.py`のprompt案系Endpoint (`image_prompt`、`batch_generation_plan`) と同じ
 組み立て・後処理 (`ProposalRequest`の構築 → `provider.propose` →
-`normalize_prompt_tags` → `apply_prompt_style` → `restrict_output`) を経た出力を`prompt_checks.check_output`へ渡し、規則ごとの
-違反率を集計する。DBもFastAPI appも起こさず、Case定義
-(`apps/api/scripts/prompt_eval/cases.json`)だけで動く。
+`normalize_prompt_tags` → `apply_prompt_style` → `restrict_output`) を経た出力を
+`prompt_checks.check_output`へ渡し、規則ごとの違反率を集計する。DBもFastAPI appも
+起こさず、Case定義 (`apps/api/scripts/prompt_eval/cases.json`)だけで動く。
 
     uv run --project apps/api python apps/api/scripts/prompt_eval.py \\
         --provider stub --repeat 1 --out stub.json

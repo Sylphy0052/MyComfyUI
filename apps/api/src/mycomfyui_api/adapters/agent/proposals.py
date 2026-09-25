@@ -787,7 +787,7 @@ def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
 #: `artist_tags`は辞書が古いと新しい絵師が載らないため、どちらも触らない。
 CANONICAL_TAG_FIELDS = ("subject_tags", "character_tags", "general_tags")
 #: 辞書に無ければタグ行から外すブロック。キャラクターは辞書が古いと載っていないため残す。
-UNKNOWN_TAG_DROP_FIELDS = frozenset({"general_tags"})
+DROP_UNKNOWN_TAG_FIELDS = frozenset({"general_tags"})
 
 
 def normalize_prompt_tags(
@@ -814,13 +814,15 @@ def normalize_prompt_tags(
         if not isinstance(body, dict):
             normalized_bodies.append(body)
             continue
-        normalized, changes = _canonicalize_body_tags(body, canonical_names, style)
-        if any(changes):
+        normalized, (body_renamed, body_moved, body_removed) = _canonicalize_body_tags(
+            body, canonical_names, style
+        )
+        if body_renamed or body_moved or body_removed:
             _attach_prompt_text(normalized)
         normalized_bodies.append(normalized)
-        renamed.extend(changes[0])
-        moved.extend(changes[1])
-        removed.extend(changes[2])
+        renamed.extend(body_renamed)
+        moved.extend(body_moved)
+        removed.extend(body_removed)
     if kind == "image_prompt":
         data = normalized_bodies[0]
     else:
@@ -864,7 +866,7 @@ def _canonicalize_body_tags(
                 continue
             canonical = canonical_names.get(key)
             if canonical is None:
-                if field_name in UNKNOWN_TAG_DROP_FIELDS:
+                if field_name in DROP_UNKNOWN_TAG_FIELDS:
                     unknown.append(key)
                 else:
                     kept.append(value)
