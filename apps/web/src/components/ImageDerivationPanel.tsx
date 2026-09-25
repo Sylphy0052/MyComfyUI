@@ -18,7 +18,7 @@ import type { PromptDiffField } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
 import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
-import { NumberSlider, SeedButtons, SwapButton, SLIDER_SPECS } from "./OutputControls";
+import { NumberSlider, SEED_FIELD_NAME, SeedButtons, SwapButton, SLIDER_SPECS } from "./OutputControls";
 
 type DerivationMode = "img2img" | "inpaint" | "upscale" | "controlnet" | "reference";
 
@@ -237,7 +237,7 @@ export function ImageDerivationPanel({
       }
       if (include("denoise")) inputs.denoise = denoiseValue;
     }
-    if (include("seed")) inputs.seed = seedValue;
+    if (include(SEED_FIELD_NAME)) inputs.seed = seedValue;
     if (mode === "inpaint") {
       const grow = Number(growMaskBy);
       const maskItem = maskMedia[0];
@@ -446,10 +446,10 @@ export function ImageDerivationPanel({
             )}
             <label htmlFor="derivation-seed">seed
               <div className="seed-input">
-                <input id="derivation-seed" type="number" value={seed} onChange={(event) => { setSeed(event.target.value); setTouchedFields((current) => new Set(current).add("seed")); }} />
+                <input id="derivation-seed" type="number" value={seed} onChange={(event) => { setSeed(event.target.value); setTouchedFields((current) => new Set(current).add(SEED_FIELD_NAME)); }} />
                 <SeedButtons
                   lastSeed={lastSeed}
-                  onChange={(next) => { setSeed(next); setTouchedFields((current) => new Set(current).add("seed")); }}
+                  onChange={(next) => { setSeed(next); setTouchedFields((current) => new Set(current).add(SEED_FIELD_NAME)); }}
                 />
               </div>
             </label>
@@ -480,12 +480,13 @@ export function ImageDerivationPanel({
                 onChange={(next) => { setWidth(next); setTouchedFields((current) => new Set(current).add("width")); }}
               />
             </label>
+            {/* 幅・高さの入力は派生中も編集できるため、入れ替えも同じく無効化しない (#343)。 */}
             <SwapButton
-              onClick={() => {
-                const nextWidth = height;
-                const nextHeight = width;
-                setWidth(nextWidth);
-                setHeight(nextHeight);
+              width={width}
+              height={height}
+              onSwap={(next) => {
+                setWidth(next.width);
+                setHeight(next.height);
                 setTouchedFields((current) => new Set(current).add("width").add("height"));
               }}
             />

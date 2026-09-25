@@ -1312,16 +1312,19 @@ export function App() {
   // 直前に完了したJobのmanifest。seedの「前回」ボタン (#319) と、最新画像の表示からの
   // 設定・プロンプト・seed再利用 (#320) に使う。
   const [latestManifest, setLatestManifest] = useState<GenerationManifest | null>(null);
+  // `jobs`の再取得で同じJobでも別objectになるため、manifestの取得はmanifest_idの変化だけで
+  // やり直す (#343)。Jobのobjectで判定すると、取得のたびにmanifestを捨てて取り直してしまう。
+  const latestManifestId = latestSucceededJob?.manifest_id ?? null;
   useEffect(() => {
     // Job切替直後は前Jobのmanifestを即クリアする。残したままだと取得完了までの間、
     // 表示中の画像(新Job)と異なるJob(旧Job)の設定が「設定を適用」等から適用されてしまう (#320)。
     setLatestManifest(null);
-    if (!latestSucceededJob) {
+    if (!latestManifestId) {
       return;
     }
     let active = true;
     void api
-      .getManifest(latestSucceededJob.manifest_id)
+      .getManifest(latestManifestId)
       .then((found) => {
         if (active) setLatestManifest(found);
       })
@@ -1333,7 +1336,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [latestSucceededJob]);
+  }, [latestManifestId]);
   const lastSeed = typeof latestManifest?.seed === "number" ? latestManifest.seed : null;
   const latestImages = useMemo(
     () =>

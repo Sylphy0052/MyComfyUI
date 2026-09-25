@@ -31,7 +31,7 @@ import type { PromptDiffField } from "./PromptDiffReview";
 import { conflictNotice } from "./BackendNotice";
 import { MediaPicker, readPickedImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
-import { NumberSlider, SeedButtons, SwapButton, SLIDER_SPECS } from "./OutputControls";
+import { NumberSlider, SEED_FIELD_NAME, SeedButtons, SwapButton, sliderSpecOf } from "./OutputControls";
 
 /** 出力設定で1行にまとめる項目名。存在する項目だけ1行へ並ぶ (#319)。 */
 const ROW_GROUPS: readonly (readonly string[])[] = [
@@ -71,13 +71,20 @@ const HIRES_FIELD_NAMES = new Set([
  * width/heightは`SLIDER_SPECS`(#319)が先に処理するため実際には参照されないが、
  * hires_scale等が同じmapを使うため残す。
  */
-const NUMBER_FIELD_BOUNDS: Record<string, { min: number; max: number; step: number }> = {
+const NUMBER_FIELD_BOUNDS = {
   width: { min: IMAGE_DIMENSION_MIN, max: IMAGE_DIMENSION_MAX, step: IMAGE_DIMENSION_STEP },
   height: { min: IMAGE_DIMENSION_MIN, max: IMAGE_DIMENSION_MAX, step: IMAGE_DIMENSION_STEP },
   hires_scale: { min: 1, max: 4, step: 0.05 },
   hires_steps: { min: 0, max: 1000, step: 1 },
   hires_denoise: { min: 0, max: 1, step: 0.01 },
-};
+} satisfies Record<string, { min: number; max: number; step: number }>;
+
+/** 項目名に対応する数値入力のmin・max・step。`sliderSpecOf`と同じくprototype上の名前は拾わない。 */
+function numberFieldBoundsOf(name: string) {
+  return Object.hasOwn(NUMBER_FIELD_BOUNDS, name)
+    ? NUMBER_FIELD_BOUNDS[name as keyof typeof NUMBER_FIELD_BOUNDS]
+    : undefined;
+}
 
 /** Pythonの`round`と同じ偶数丸め。ComfyUIの拡大後サイズの計算に合わせる。 */
 function roundHalfEven(value: number): number {
@@ -454,7 +461,7 @@ export function GenerationForm({
     for (const spec of toFieldSpecs(target)) {
       // 範囲外の項目はmodelを含めてここで除く。
       if (scope === "prompt" && !PROMPT_FIELD_NAMES.has(spec.name)) continue;
-      if (scope === "seed" && spec.name !== "seed") continue;
+      if (scope === "seed" && spec.name !== SEED_FIELD_NAME) continue;
       if (spec.control === "model") {
         const value = manifestText((manifest.model ?? {})[spec.name]);
         if (value !== null && value !== "") models[spec.name] = value;
@@ -869,6 +876,7 @@ export function GenerationForm({
   };
 
   const renderField = (field: FieldSpec) => {
+    const sliderSpec = field.control === "number" ? sliderSpecOf(field.name) : undefined;
     const changed = isFieldChanged(field.name);
     // モードBではネガティブや出力設定はPresetの固定部分として扱い、画面に出さない。
     const fieldHidden = simple && field.name !== "positive_prompt";
@@ -890,11 +898,11 @@ export function GenerationForm({
           value={values[field.name] ?? ""}
           onChange={(event) => changeField(field.name, event.target.value)}
         />
-      ) : field.control === "number" && SLIDER_SPECS[field.name] ? (
+      ) : sliderSpec ? (
         <NumberSlider
           id={`field-${field.name}`}
           value={values[field.name] ?? ""}
-          spec={SLIDER_SPECS[field.name]}
+          spec={sliderSpec}
           disabled={useInheritedDefaults}
           readOnly={readOnly}
           onChange={(next) => changeField(field.name, next)}
@@ -925,17 +933,17 @@ export function GenerationForm({
           ))}
         </select>
       ) : (
-        <div className={field.name === "seed" ? "seed-input" : undefined}>
+        <div className={field.name === SEED_FIELD_NAME ? "seed-input" : undefined}>
           <input
             id={`field-${field.name}`}
             disabled={useInheritedDefaults}
             type={field.control === "number" ? "number" : "text"}
-            {...(field.control === "number" && NUMBER_FIELD_BOUNDS[field.name])}
+            {...(field.control === "number" && numberFieldBoundsOf(field.name))}
             readOnly={readOnly}
             value={values[field.name] ?? ""}
             onChange={(event) => changeField(field.name, event.target.value)}
           />
-          {field.name === "seed" && !extrasHidden && (
+          {field.name === SEED_FIELD_NAME && !extrasHidden && (
             <SeedButtons
               lastSeed={lastSeed}
               disabled={useInheritedDefaults}
@@ -1105,14 +1113,6 @@ export function GenerationForm({
     );
   };
 
-  /** 幅と高さを入れ替える。 */
-  const swapDimensions = () => {
-    const width = values.width ?? "";
-    const height = values.height ?? "";
-    changeField("width", height);
-    changeField("height", width);
-  };
-
   /**
    * 出力設定を高密度に並べる (#319)。sampler・scheduler、steps・CFG、幅・高さ (入れ替え
    * ボタン付き)、バッチ数 (バリエーションのdetailsを廃止し`batch_size`と1行にする) を
@@ -1145,7 +1145,15 @@ export function GenerationForm({
         <div className="field-row" key="row-width-height">
           {widthField && renderField(widthField)}
           {widthField && heightField && (
-            <SwapButton disabled={useInheritedDefaults} onClick={swapDimensions} />
+            <SwapButton
+              width={values.width ?? ""}
+              height={values.height ?? ""}
+              disabled={useInheritedDefaults}
+              onSwap={(next) => {
+                changeField("width", next.width);
+                changeField("height", next.height);
+              }}
+            />
           )}
           {heightField && renderField(heightField)}
         </div>,
