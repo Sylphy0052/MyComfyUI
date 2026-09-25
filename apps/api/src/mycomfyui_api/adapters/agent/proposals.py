@@ -322,7 +322,10 @@ KIND_DIRECTIVES: dict[ProposalKind, str] = {
         "与えたShotまたは利用者説明に沿う画像生成promptを1件提案する。\n"
         + PROMPT_DIRECTIVE
         + "\ntag_glossesには、タグ配列に入れた全てのタグについて、tagにタグをそのまま、"
-        "jaにその意味を短い日本語で書く。"
+        "jaにその意味を短い日本語で書く。jaへタグの英語をそのまま写さない。"
+        '例: {"tag": "school uniform", "ja": "制服"}、'
+        '{"tag": "holding umbrella", "ja": "傘を持つ"}。\n'
+        "rationaleは日本語で書く。"
     ),
     "shot_breakdown": (
         "与えたSceneをShotへ分割する案を出す。各Shotの内容、カメラ、登場人物、"
@@ -537,6 +540,27 @@ def _gloss_fallback_rating(body: dict[str, Any]) -> None:
     glosses.append({"tag": FALLBACK_RATING_TAG, "ja": FALLBACK_RATING_GLOSS})
 
 
+#: 日本語の訳とみなす文字。仮名と漢字を1字も含まない訳は、タグの英語を写したものとして扱う。
+JAPANESE_CHARACTER = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
+
+
+def _drop_untranslated_glosses(body: dict[str, Any]) -> None:
+    """`ja`が日本語になっていないタグ訳を捨てる。
+
+    小さいモデルは`ja`へタグの英語をそのまま写すことがある (#355)。写しを訳として
+    出すと、利用者はタグの意味を確かめられないまま訳があると受け取るため、表示しない。
+    """
+    glosses = body.get("tag_glosses")
+    if not isinstance(glosses, list):
+        return
+    body["tag_glosses"] = [
+        gloss
+        for gloss in glosses
+        if isinstance(gloss, dict)
+        and JAPANESE_CHARACTER.search(str(gloss.get("ja") or ""))
+    ]
+
+
 def _attach_prompt_text(body: dict[str, Any]) -> None:
     """タグ行と連結済みpositive promptを派生項目として足す。
 
@@ -618,6 +642,7 @@ def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
         raise AgentInvalidResponse(f"提案の形が期待と異なります: {error}") from error
     data = validated.model_dump()
     if kind == "image_prompt":
+        _drop_untranslated_glosses(data)
         _attach_prompt_text(data)
     elif kind == "batch_generation_plan":
         original = data.get("items", [])
