@@ -3,6 +3,13 @@ import type { ReactNode } from "react";
 
 import { api, subscribeAgentProvidersChanged } from "../api/client";
 import { mergePrompt } from "../prompt/merge";
+import {
+  draftString,
+  draftStringArray,
+  draftStringRecord,
+  readFormDraft,
+  writeFormDraft,
+} from "../state/formDraft";
 import { planPresetBlocker, type PlanPreset } from "../state/productionPlan";
 import { ignoresShortcut } from "./ui/shortcuts";
 import type {
@@ -261,6 +268,15 @@ function findRecipeOrSuccessor(recipes: Recipe[], lineage: string[]): Recipe | n
   return null;
 }
 
+const DRAFT_KEY = "generation-form";
+
+/** 下書きに残したnegative_promptの合成記録。形が崩れていれば記録なしとして扱う。 */
+function draftPlanNegative(value: unknown): { merged: string; source: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const { merged, source } = value as Record<string, unknown>;
+  return typeof merged === "string" && typeof source === "string" ? { merged, source } : null;
+}
+
 export function GenerationForm({
   projectId,
   recipes,
@@ -279,7 +295,12 @@ export function GenerationForm({
   onRegisterOutfit,
   lastSeed = null,
 }: Props) {
-  const [recipeId, setRecipeId] = useState<string>("");
+  // 未投入の入力の下書き (#327)。開発サーバの作り直しや再読み込みの後、初期値の代わりに使う。
+  // フォームは画面に1つだけで、Projectやモードを切り替えても作り直さず入力を持ち越すため、
+  // キーを分けずに今のstateをそのまま写す。分けると切替時に前の入力が別のキーへ書き込まれる。
+  const draftKey = DRAFT_KEY;
+  const [draft] = useState(() => readFormDraft(draftKey));
+  const [recipeId, setRecipeId] = useState<string>(() => draftString(draft?.recipeId) ?? "");
   const recipe = useMemo(
     () => recipes.find((item) => item.id === recipeId) ?? null,
     [recipes, recipeId],
@@ -319,13 +340,23 @@ export function GenerationForm({
     () => (recipe ? initialValues(recipe, allFields) : {}),
     [recipe, allFields],
   );
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [modelValues, setModelValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(
+    () => draftStringRecord(draft?.values) ?? {},
+  );
+  const [modelValues, setModelValues] = useState<Record<string, string>>(
+    () => draftStringRecord(draft?.modelValues) ?? {},
+  );
   const [modelsValid, setModelsValid] = useState(false);
   const [invalid, setInvalid] = useState<string | null>(null);
-  const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
-  const [lookProfileIds, setLookProfileIds] = useState<string[]>([]);
-  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
+  const [useInheritedDefaults, setUseInheritedDefaults] = useState(
+    () => draft?.useInheritedDefaults === true,
+  );
+  const [lookProfileIds, setLookProfileIds] = useState<string[]>(
+    () => draftStringArray(draft?.lookProfileIds) ?? [],
+  );
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(
+    () => new Set(draftStringArray(draft?.touchedFields) ?? []),
+  );
   const [tagMedia, setTagMedia] = useState<PickedMedia[]>([]);
   const [extractingTags, setExtractingTags] = useState(false);
   const [tagError, setTagError] = useState<string | null>(null);
@@ -340,15 +371,19 @@ export function GenerationForm({
   // ユーザーがプロンプト欄を触ったら、抽出タグでの自動反映をやめる (#316)。
   const outfitPromptTouchedRef = useRef(false);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
-  const [batchCount, setBatchCount] = useState("1");
+  const [batchCount, setBatchCount] = useState(() => draftString(draft?.batchCount) ?? "1");
   const [promptDiff, setPromptDiff] = useState<PromptDiffField[] | null>(null);
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
   // Recipeを切り替えて復元するとき、ModelSelectorが切替時に選択を空にするので、
   // 切替後のRecipe変更の効果で入れ直すまでモデルの選択値をここに置く。
-  const pendingModelValuesRef = useRef<Record<string, string> | null>(null);
+  // 下書きから戻したモデルの選択値も、同じ理由でRecipe変更の効果が入れ直す。
+  const pendingModelValuesRef = useRef<Record<string, string> | null>(
+    draftStringRecord(draft?.modelValues),
+  );
 
   useEffect(() => {
-    if (!recipeId && recipes.length > 0) {
+    // 下書きのRecipeが一覧から外れていれば、先頭のRecipeへ戻す。
+    if (recipes.length > 0 && !recipes.some((item) => item.id === recipeId)) {
       setRecipeId(recipes[0].id);
     }
   }, [recipes, recipeId]);
@@ -388,13 +423,17 @@ export function GenerationForm({
     }
   }, [recipe, allFields, defaultValues]);
 
-  const appliedPlanRef = useRef<string | null>(null);
+  // 計画・復元を入れた印も下書きから戻す。戻さないと作り直した後に同じ計画・復元を入れ直し、
+  // その後に使用者が書き換えた値を上書きする。
+  const appliedPlanRef = useRef<string | null>(draftString(draft?.appliedPlanKey));
   // 計画が最後に入れたプロンプト。使用者が書き換えていなければ、工程を移ったときに入れ替える。
-  const planPromptRef = useRef<string | null>(null);
+  const planPromptRef = useRef<string | null>(draftString(draft?.planPrompt));
   // 直前にキャラのnegative_promptを合成した結果と、合成したキャラ側の値 (#287)。
-  const planNegativeRef = useRef<{ merged: string; source: string } | null>(null);
+  const planNegativeRef = useRef<{ merged: string; source: string } | null>(
+    draftPlanNegative(draft?.planNegative),
+  );
   // 生成済み画像の設定を入れる。値は触った印を付け、Recipeを切り替える場合は上の効果で持ち越させる。
-  const appliedRestoreRef = useRef<string | null>(null);
+  const appliedRestoreRef = useRef<string | null>(draftString(draft?.appliedRestoreKey));
   useEffect(() => {
     if (!restore || recipes.length === 0) return;
     if (appliedRestoreRef.current === restore.key) return;
@@ -542,6 +581,32 @@ export function GenerationForm({
     if (extractedTags.length === 0 || outfitPromptTouchedRef.current) return;
     setOutfitRegisterPrompt(extractedTags.join(", "));
   }, [extractedTags]);
+
+  // 入力が変わるたびに下書きへ書き出す。計画・復元の印は上の効果が値と同じ描画で更新する。
+  useEffect(() => {
+    writeFormDraft(draftKey, {
+      recipeId,
+      values,
+      modelValues,
+      touchedFields: [...touchedFields],
+      useInheritedDefaults,
+      lookProfileIds,
+      batchCount,
+      appliedPlanKey: appliedPlanRef.current,
+      planPrompt: planPromptRef.current,
+      planNegative: planNegativeRef.current,
+      appliedRestoreKey: appliedRestoreRef.current,
+    });
+  }, [
+    draftKey,
+    recipeId,
+    values,
+    modelValues,
+    touchedFields,
+    useInheritedDefaults,
+    lookProfileIds,
+    batchCount,
+  ]);
 
   /** 入力がRecipe既定値と異なるか。バッジと差分一覧で同じ判定を使う。 */
   const isFieldChanged = (name: string) =>
@@ -1183,6 +1248,7 @@ export function GenerationForm({
               <PromptAssist
                 providers={providers}
                 idPrefix="image"
+                draftKey={`${draftKey}.prompt-assist`}
                 recipeId={recipeId}
                 current={{
                   positive: values.positive_prompt ?? "",
