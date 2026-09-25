@@ -118,6 +118,7 @@ const THEME_PREFERENCES: { value: ThemePreference; label: string }[] = [
 const VIEWS: { value: View; label: string }[] = [
   { value: "projects", label: "Project" },
   { value: "generate", label: "生成" },
+  { value: "compare", label: "画像比較" },
   { value: "assets", label: "資産ブラウザ" },
 ];
 
@@ -1370,6 +1371,13 @@ export function App() {
     setComparisonExperimentId(null);
   }, [projectId]);
 
+  const clearComparison = () => {
+    comparisonRequestSequence.current += 1;
+    setComparisonJobIds(null);
+    setComparisonArtifactsByJob({});
+    setComparisonExperimentId(null);
+  };
+
   const compareExperiment = useCallback(async (experimentId: string, jobIds: string[]) => {
     const sequence = ++comparisonRequestSequence.current;
     setError(null);
@@ -1381,6 +1389,8 @@ export function App() {
       setComparisonArtifactsByJob(Object.fromEntries(entries));
       setComparisonJobIds(jobIds);
       setComparisonExperimentId(experimentId);
+      // A/B比較は画像比較ページにあるため、絞り込んだら移る (#402)。
+      setView("compare");
     } catch (cause) {
       setError(describe(cause));
     }
@@ -1631,7 +1641,10 @@ export function App() {
   /** 候補の画像を派生タブへ送る。候補ギャラリーと最新画像の表示 (#320) で共有する。 */
   const handleDerive = (artifactId: string) => {
     setDerivationSourceArtifactId(artifactId);
+    // 画像比較ページ (#402) から送ったときも派生タブが見えるよう、生成画面の画像タブへ移る。
+    setGenerationTab("image");
     setImageSubTab("derive");
+    setView("generate");
   };
   /**
    * 候補の画像を変更元として変更タブへ送る。候補ギャラリーと最新画像の表示 (#320) で共有する。
@@ -1639,7 +1652,9 @@ export function App() {
    */
   const handleChangeSource = (artifactId: string) => {
     setDerivationSourceArtifactId(artifactId);
+    setGenerationTab("image");
     setImageSubTab("change");
+    setView("generate");
   };
 
   const handleGenerationTabKeyDown = (
@@ -2034,6 +2049,7 @@ export function App() {
                     onDerive={isProduction ? undefined : handleDerive}
                     onChangeSource={handleChangeSource}
                   />
+                  {/* A/B比較は画像比較ページで出し、生成画面の右列は候補一覧だけにする (#402)。 */}
                   <CandidateGallery
                     candidates={visibleCandidates}
                     busyArtifactId={busyArtifactId}
@@ -2046,14 +2062,10 @@ export function App() {
                     onApplySeedOnly={applySeedOnly}
                     active={shownView === "generate" && shownGenerationTab === "image"}
                     simple={isProduction}
+                    showCompare={false}
+                    collapsible
                     comparisonActive={comparisonJobIds !== null}
-                    onDialogOpenChange={setComparisonDialogEl}
-                    onClearComparison={() => {
-                      comparisonRequestSequence.current += 1;
-                      setComparisonJobIds(null);
-                      setComparisonArtifactsByJob({});
-                      setComparisonExperimentId(null);
-                    }}
+                    onClearComparison={clearComparison}
                   />
 
                   {/* 探索スイープの実験一覧はGenerationSweepPanelがportalで描画する。スイープタブの間だけ見せる。 */}
@@ -2170,6 +2182,27 @@ export function App() {
             />
           </div>
         </>
+      )}
+
+      {visitedViews.has("compare") && (
+        <div className="full" hidden={shownView !== "compare"}>
+          <CandidateGallery
+            candidates={visibleCandidates}
+            busyArtifactId={busyArtifactId}
+            onDecide={decide}
+            onDerive={handleDerive}
+            onChangeSource={handleChangeSource}
+            onPromoteToPreset={setPromotionArtifactId}
+            onApplySettings={applyGenerationSettings}
+            onApplyPromptOnly={applyPromptOnly}
+            onApplySeedOnly={applySeedOnly}
+            active={shownView === "compare"}
+            showCompare
+            comparisonActive={comparisonJobIds !== null}
+            onDialogOpenChange={setComparisonDialogEl}
+            onClearComparison={clearComparison}
+          />
+        </div>
       )}
 
       {visitedViews.has("assets") && (

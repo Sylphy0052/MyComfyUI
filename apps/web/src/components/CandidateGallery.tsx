@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { api } from "../api/client";
@@ -12,8 +12,10 @@ import { Card } from "./ui/Card";
 import { EmptyState } from "./ui/EmptyState";
 import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
+import { PanelCollapseToggle } from "./ui/PanelCollapseToggle";
 import { ToggleGroup } from "./ui/ToggleGroup";
 import { GALLERY_DENSITY_OPTIONS, useListDensity } from "../state/densityState";
+import { usePanelCollapsed } from "../state/panelCollapseState";
 
 export const DECISION_OPTIONS: { value: string; label: string }[] = [
   { value: "undecided", label: "未判断" },
@@ -47,6 +49,10 @@ interface Props {
   onDialogOpenChange?: (dialog: HTMLDialogElement | null) => void;
   /** 作品制作 (モードB) 向けの表示。比較・詳細・派生を隠し、採否だけを出す。 */
   simple?: boolean;
+  /** A/B比較を出すか。生成画面では候補一覧だけにし、A/B比較は画像比較ページで出す (#402)。 */
+  showCompare?: boolean;
+  /** 見出しに開閉ボタンを出す。生成画面の右列で使う (#402)。 */
+  collapsible?: boolean;
 }
 interface CandidateDetail { job: GenerationJob; manifest: GenerationManifest; lineage: JobLineage | null; }
 interface ViewTransform { zoom: number; x: number; y: number; }
@@ -146,8 +152,14 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false, showCompare = true, collapsible = false }: Props) {
   const [storedDensity, setDensity] = useListDensity("candidates");
+  const [storedCollapsed, toggleCollapsed] = usePanelCollapsed("candidates");
+  const collapsed = collapsible && storedCollapsed;
+  // 生成画面と画像比較ページで2つ同時にマウントされるため、本文のidは固定値にしない。
+  const bodyId = useId();
+  // A/B比較 (比較のA/B・全画面・メタデータ差分) を出すか。モードBと生成画面の一覧では出さない。
+  const compareEnabled = !simple && showCompare;
   // モードBは切替を出さないため、ラボで選んだ形式を持ち込まず従来の中サイズに固定する。
   const effectiveDensity = simple ? "m" : storedDensity;
   const [leftId, setLeftId] = useState<string | null>(null);
@@ -283,10 +295,11 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   };
 
   useEffect(() => {
-    // ラボ: F・Escape (全画面の開閉) / A・X・U (採否) / [・] (比較のA・B) / ←・→ (候補の移動)。
-    // モードB (simple) は比較のA/Bと全画面を出さないため、F・[・]を受け付けず、
-    // 採否と候補の移動だけを受け付ける。`!simple` で判定するのはFと[・]の2か所だけにしておく。
-    if (!active || viewerIndex !== null) return;
+    // A/B比較あり: F・Escape (全画面の開閉) / A・X・U (採否) / [・] (比較のA・B) / ←・→ (候補の移動)。
+    // A/B比較なし (モードB・生成画面の一覧) は比較のA/Bと全画面を出さないため、F・[・]を受け付けず、
+    // 採否と候補の移動だけを受け付ける。`compareEnabled` で判定するのはFと[・]の2か所だけにしておく。
+    // 折りたたみ中は見えない候補を操作しないよう、何も受け付けない。
+    if (!active || collapsed || viewerIndex !== null) return;
     const keydown = (event: KeyboardEvent) => {
       // ショートカット一覧など、全画面比較以外のdialogを開いている間は背後の候補を操作しない。
       const dialogs = Array.from(document.querySelectorAll("dialog[open]"));
@@ -301,7 +314,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
       const target = event.target as HTMLElement | null;
       const key = event.key.toLowerCase();
       const editing = target?.closest("input, textarea, select, [contenteditable='true']") != null;
-      if (!simple && key === "f" && !event.repeat && (!editing || fullscreen)) {
+      if (compareEnabled && key === "f" && !event.repeat && (!editing || fullscreen)) {
         event.preventDefault(); setFullscreen((current) => !current); return;
       }
       if (editing) return;
@@ -318,7 +331,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
       // フォーカス中の要素自身で、ボタン・リンクの中にフォーカスできる要素は置かないため、
       // 入力欄の判定と違いclosestでなくmatchesで足りる。
       if (target?.matches("button, a")) return;
-      if (!simple && (event.key === "[" || event.key === "]")) {
+      if (compareEnabled && (event.key === "[" || event.key === "]")) {
         setActiveSide(event.key === "[" ? "A" : "B");
       } else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && candidates.length) {
         event.preventDefault();
@@ -329,7 +342,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [active, simple, viewerIndex, activeId, activeSide, busyArtifactId, candidates, fullscreen, onDecide]);
+  }, [active, collapsed, compareEnabled, viewerIndex, activeId, activeSide, busyArtifactId, candidates, fullscreen, onDecide]);
 
   useEffect(() => {
     if (!active) setFullscreen(false);
@@ -456,7 +469,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
   return (
     <section className="panel">
       <div className="gallery-header">
-        <h2>候補比較</h2>
+        <h2>{compareEnabled ? "候補比較" : "候補"}</h2>
         <div className="row">
           {comparisonActive && onClearComparison && (
             <button type="button" className="badge" onClick={onClearComparison}>
@@ -464,16 +477,19 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
             </button>
           )}
           {!simple && <ToggleGroup label="候補の表示形式" options={GALLERY_DENSITY_OPTIONS} value={storedDensity} onChange={setDensity} />}
+          {collapsible && <PanelCollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} controls={bodyId} label="候補" />}
         </div>
       </div>
+      {/* 閉じている間に適用が失敗しても気付けるよう、エラーは開閉の外に置く (#402)。 */}
+      {error && <p className="error">{error}</p>}
+      <div id={bodyId} hidden={collapsed}>
       {comparisonActive && (
         <p className="muted">
           実験の比較で絞り込み中です。新しく投入した候補は、絞込みを解除するまで表示されません。
         </p>
       )}
-      {error && <p className="error">{error}</p>}
       {candidates.length === 0 ? <EmptyState title="成功したJobの画像がまだありません。" description="生成が成功すると、ここに候補が並びます。" /> : <>
-        {!simple && compare}
+        {compareEnabled && compare}
         {!simple && detailArtifactId && byId.has(detailArtifactId) && selectedDetail?.lineage && (
           <ArtifactDetail
             artifact={byId.get(detailArtifactId)!.artifact}
@@ -499,19 +515,19 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
           <LoadingPlaceholder label="lineageを取得中です。" lines={2} />
         )}
         <div className={`gallery gallery-${effectiveDensity}`}>
-          {candidates.map(({ artifact, jobId }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}${simple && artifact.id === activeId ? " selected" : ""}`}>
+          {candidates.map(({ artifact, jobId }) => <Card as="figure" key={artifact.id} className={`candidate-card ${artifact.decision}${!compareEnabled && artifact.id === activeId ? " selected" : ""}`}>
             <Badge tone={`decision decision-${artifact.decision}`}>
               {DECISION_LABEL[artifact.decision] ?? artifact.decision}
             </Badge>
             <ArtifactPreview artifact={artifact} />
             <figcaption>
-              <span className="row">{simple && artifact.id === activeId && <span className="badge">選択中</span>}{!simple && artifact.id === leftId && <span className="badge">A</span>}{!simple && artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
+              <span className="row">{!compareEnabled && artifact.id === activeId && <span className="badge">選択中</span>}{compareEnabled && artifact.id === leftId && <span className="badge">A</span>}{compareEnabled && artifact.id === rightId && <span className="badge">B</span>}{artifact.decision_at && <span className="muted">{artifact.decision_at}</span>}</span>
               <span className="mono">{artifact.sha256.slice(0, 12)}</span>
               <div className="candidate-actions">
                 <div className="action-group" role="group" aria-label="表示">
                   <IconButton icon={<Icon name="expand" />} label="拡大" onClick={() => setViewerIndex(candidates.findIndex((candidate) => candidate.artifact.id === artifact.id))} />
                 </div>
-                {!simple && <div className="action-group" role="group" aria-label="比較">
+                {compareEnabled && <div className="action-group" role="group" aria-label="比較">
                   <IconButton icon={<span className="icon-glyph">A</span>} label="比較のAに置く" aria-pressed={artifact.id === leftId} onClick={() => setLeftId(artifact.id)} />
                   <IconButton icon={<span className="icon-glyph">B</span>} label="比較のBに置く" aria-pressed={artifact.id === rightId} onClick={() => setRightId(artifact.id)} />
                 </div>}
@@ -534,7 +550,7 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
             </figcaption>
           </Card>)}
         </div>
-        <dialog
+        {compareEnabled && <dialog
           ref={dialogRef}
           className="compare-fullscreen"
           aria-label="候補の全画面A/B比較"
@@ -545,8 +561,9 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
             <button type="button" onClick={() => setFullscreen(false)}>全画面を閉じる</button>
             {compare}
           </>}
-        </dialog>
+        </dialog>}
       </>}
+      </div>
       <MediaViewer
         items={candidates.map((candidate) => candidate.artifact)}
         index={viewerIndex}
