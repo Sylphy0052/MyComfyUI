@@ -7,7 +7,7 @@
 (`apps/api/scripts/prompt_eval/cases.json`)だけで動く。
 
     uv run --project apps/api python apps/api/scripts/prompt_eval.py \\
-        --provider stub --repeat 1 --out /home/kfuruhashi/.cache/prompt-eval/stub.json
+        --provider stub --repeat 1 --out stub.json
 
     uv run --project apps/api python apps/api/scripts/prompt_eval.py \\
         --compare base.json head.json

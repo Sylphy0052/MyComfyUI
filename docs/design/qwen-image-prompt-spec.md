@@ -574,3 +574,25 @@ positive の rating より上の段階を negative へ足す。段階は `safe` 
 ### 13.4 呼称の訂正
 
 本メモと実装のコメントでは Anima を「Qwen-Image (Anima)」と呼んでいたが、Anima は Qwen-Image ではない。Cosmos Predict2 の DiT に Qwen3-0.6B のテキストエンコーダを組み合わせ、VAE だけ Qwen-Image のものを使う (1 節)。表題とコメントを「Anima」へ直した。ファイル名は実装のコメントから参照しているため変えていない。
+
+## 14. 評価セットと基準値 (#394)
+
+指示文や後処理を変えたときに良くなったか悪くなったかを数字で比べるため、評価セットと採点を入れた。
+
+- 評価セット: `apps/api/scripts/prompt_eval/cases.json` の 10 ケース。1 人、2 人、3 人、作品名付きのキャラクター、rating、人物なしの背景、画像内の文字、タグで表しにくい動作、`prompt_style=tags`、2 Shot のバッチ計画を含む。各ケースの `expect` に人数・必須タグ・rating の下限・バッチの件数を書く
+- 採点: `prompt_checks.check_output` が規則ごとの違反を返す。規則は `rating`, `subject_mix`, `identity_leak`, `natural_length`, `weight_syntax`, `underscore`, `conflict`, `unknown_tag` の 8 つで、評価スクリプトはこれに `expect` の照合を足す。`unknown_tag` はタグ辞書 (`MYCOMFYUI_TAG_DICTIONARY_PATH`) に無いタグの割合で、参考値として数え、合否には使わない
+- 実行: `apps/api/scripts/prompt_eval.py` が routers と同じ組み立てと後処理を通した出力を採点し、違反率と平均所要時間を JSON へ書き出す。`--compare base.json head.json` で 2 つの結果を並べる
+
+### 14.1 基準値 (2026-09-25、部分値)
+
+12 節と同じ接続先・モデルで `--repeat 3` を回したが、推論サーバーが 5 試行目のあとに落ち、2 ケース 5 試行で打ち切られた。
+
+- 対象: `solo_character` 3 試行、`two_person` 2 試行
+- 平均所要時間: 19.8 秒
+- `natural_length`: 1/5。`two_person` で自然文が 5 文になった
+- `unknown_tag`: 5/5。`high school uniform`, `warm lighting`, `calm expression`, `cinematic lighting` など、Danbooru に無い言い回しのタグが毎回 1〜9 個混ざる
+- 残りの規則と `expect`: 0/5
+
+サーバーが落ちる原因は要求の大きさではない。prompt は約 1,040 token で n_ctx 4096 に収まり、同じ本文を直接投げても 3 件が 200 を返したあと、4 件目の応答途中で接続が切れ、以降は 500 か接続拒否になった。全ケースの基準値は、サーバーが安定してから #396 に着手する前に取り直す。
+
+`unknown_tag` が毎回出るのは、#395 (タグ辞書による正規化) で扱う問題がそのまま数字に出たものである。
