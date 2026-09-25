@@ -92,6 +92,29 @@ class ReviseCurrentPromptTest(unittest.TestCase):
         self.assertIn(f"上限の{MAX_PROMPT_TAGS}件", message)
         self.assertIn(f"戻したタグ: {MAX_PROMPT_TAGS + 1}件", message)
 
+    def test_all_blocks_over_limit_are_reported(self) -> None:
+        current = ", ".join(f"@artist{i}" for i in range(MAX_PROMPT_TAGS + 1))
+        output = _revision(
+            general_tags=[f"item{i}" for i in range(MAX_PROMPT_TAGS + 2)]
+        )
+
+        with (
+            self.assertLogs(LOGGER_NAME, level="WARNING"),
+            self.assertRaises(AgentInvalidResponse) as raised,
+        ):
+            revise_current_prompt(output, current, "")
+
+        message = str(raised.exception)
+        self.assertIn(
+            f"artist_tagsが{MAX_PROMPT_TAGS + 1}件 (うち現在のpromptから戻したタグ: "
+            f"{MAX_PROMPT_TAGS + 1}件)",
+            message,
+        )
+        self.assertIn(
+            f"general_tagsが{MAX_PROMPT_TAGS + 2}件 (うち現在のpromptから戻したタグ: 0件)",
+            message,
+        )
+
     def test_restored_tags_at_limit_are_kept(self) -> None:
         tags = [f"item{i}" for i in range(MAX_PROMPT_TAGS)]
 
