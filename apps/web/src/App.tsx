@@ -31,7 +31,7 @@ import {
 } from "./components/JobProgressPanel";
 import type { Candidate } from "./components/CandidateGallery";
 import { ComposePanel } from "./components/ComposePanel";
-import { GenerationForm } from "./components/GenerationForm";
+import { GenerationForm, type RestoreScope } from "./components/GenerationForm";
 import { GenerationSweepPanel } from "./components/GenerationSweepPanel";
 import { IntegrityList } from "./components/IntegrityList";
 import { ImageChangePanel } from "./components/ImageChangePanel";
@@ -155,10 +155,15 @@ const DECISION_NOTICES: Record<ArtifactDecision, string> = {
 };
 
 /** 生成済み画像から生成フォームへ何を戻したか知らせるトーストの文言 (#320)。 */
-const RESTORE_SCOPE_MESSAGES: Record<"all" | "prompt" | "seed", string> = {
+const RESTORE_SCOPE_MESSAGES: Record<RestoreScope, string> = {
   all: "画像の生成条件を生成フォームへ入れました。",
   prompt: "画像のプロンプトを生成フォームへ入れました。",
   seed: "画像のseedを生成フォームへ入れました。",
+};
+/** プロンプトのみ・seedのみで何も入れなかったとき。Recipeに入力欄が無いか、画像に記録が無い (#345)。 */
+const RESTORE_SKIPPED_MESSAGES: Record<Exclude<RestoreScope, "all">, string> = {
+  prompt: "選択中のRecipeへ入れられるプロンプトが無かったため、何も変えていません。",
+  seed: "選択中のRecipeへ入れられるseedが無かったため、何も変えていません。",
 };
 
 function nextTabForKey<T extends string>(
@@ -522,7 +527,7 @@ export function App() {
     recipeId: string | null;
     recipeLineage: string[];
     manifest: GenerationManifest;
-    scope?: "all" | "prompt" | "seed";
+    scope?: RestoreScope;
   } | null>(null);
   const restoreSequenceRef = useRef(0);
   const [comparisonJobIds, setComparisonJobIds] = useState<string[] | null>(null);
@@ -1578,8 +1583,13 @@ export function App() {
   const applyGenerationSettings = (
     job: GenerationJob,
     manifest: GenerationManifest,
-    scope: "all" | "prompt" | "seed" = "all",
+    scope: RestoreScope = "all",
   ) => {
+    // 生成フォームは選べるRecipeが無いと入れ終えた通知を出さず、押しても無反応に見える (#345)。
+    if (txt2imgRecipes.length === 0) {
+      notify({ tone: "info", message: "生成フォームで選べるRecipeが無いため、設定を入れられません。" });
+      return;
+    }
     restoreSequenceRef.current += 1;
     const sequence = restoreSequenceRef.current;
     const recipeId = job.recipe_id;
@@ -1603,10 +1613,25 @@ export function App() {
         setGenerationTab("image");
         setImageSubTab("generate");
         setView("generate");
-        notify({ tone: "success", message: RESTORE_SCOPE_MESSAGES[scope] });
       })
       .catch((cause) => setError(describe(cause)));
   };
+  const applyPromptOnly = (job: GenerationJob, manifest: GenerationManifest) =>
+    applyGenerationSettings(job, manifest, "prompt");
+  const applySeedOnly = (job: GenerationJob, manifest: GenerationManifest) =>
+    applyGenerationSettings(job, manifest, "seed");
+  /** 生成フォームが入れ終えてから結果を知らせる。何も入らなかったときに成功と出さない (#345)。 */
+  // 生成フォームの復元effectの依存に入るため、参照を固定する。
+  const handleRestoreApplied = useCallback(
+    (scope: RestoreScope, applied: boolean) => {
+      notify(
+        applied || scope === "all"
+          ? { tone: "success", message: RESTORE_SCOPE_MESSAGES[scope] }
+          : { tone: "info", message: RESTORE_SKIPPED_MESSAGES[scope] },
+      );
+    },
+    [notify],
+  );
 
   /** 候補の画像を派生タブへ送る。候補ギャラリーと最新画像の表示 (#320) で共有する。 */
   const handleDerive = (artifactId: string) => {
@@ -1908,6 +1933,7 @@ export function App() {
                       shortcutActive={isProduction && shownImageSubTab === "generate"}
                       plan={generationPlan}
                       restore={generationRestore}
+                      onRestoreApplied={handleRestoreApplied}
                       characters={localCharacters}
                       onRegisterOutfit={registerCharacterOutfit}
                       lastSeed={lastSeed}
@@ -2008,12 +2034,8 @@ export function App() {
                     images={latestImages}
                     manifest={latestManifest}
                     onApplySettings={applyGenerationSettings}
-                    onApplyPromptOnly={(job, manifest) =>
-                      applyGenerationSettings(job, manifest, "prompt")
-                    }
-                    onApplySeedOnly={(job, manifest) =>
-                      applyGenerationSettings(job, manifest, "seed")
-                    }
+                    onApplyPromptOnly={applyPromptOnly}
+                    onApplySeedOnly={applySeedOnly}
                     onDerive={isProduction ? undefined : handleDerive}
                     onChangeSource={handleChangeSource}
                   />
@@ -2025,12 +2047,8 @@ export function App() {
                     onChangeSource={handleChangeSource}
                     onPromoteToPreset={setPromotionArtifactId}
                     onApplySettings={applyGenerationSettings}
-                    onApplyPromptOnly={(job, manifest) =>
-                      applyGenerationSettings(job, manifest, "prompt")
-                    }
-                    onApplySeedOnly={(job, manifest) =>
-                      applyGenerationSettings(job, manifest, "seed")
-                    }
+                    onApplyPromptOnly={applyPromptOnly}
+                    onApplySeedOnly={applySeedOnly}
                     onRevisedJob={handleRevisedJob}
                     active={shownView === "generate" && shownGenerationTab === "image"}
                     simple={isProduction}

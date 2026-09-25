@@ -61,7 +61,7 @@ export function LatestImageViewer({
           <div className="action-group" role="group" aria-label="適用">
             {onApplySettings && (
               <IconButton
-                icon={<Icon name="undo" />}
+                icon={<Icon name="sliders" />}
                 label="設定を適用"
                 onClick={() => onApplySettings(job, manifest)}
               />
