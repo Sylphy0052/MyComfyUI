@@ -46,6 +46,8 @@ class WarnUntranslatedRationaleTest(unittest.TestCase):
 
 
 SENTENCE = "a girl standing in the rain at night"
+#: タグ辞書から読んだキャラクターのタグ名。`load_tag_dictionary`と同じく正規化済み。
+DICTIONARY_CHARACTERS = frozenset({"hatsune miku"})
 
 
 def _revision(**fields: object) -> dict[str, object]:
@@ -191,6 +193,60 @@ class ReviseCurrentPromptTest(unittest.TestCase):
             revised = revise_current_prompt(output, current, instruction)
 
         self.assertEqual(revised["character_tags"], [])
+
+    def test_dictionary_character_removed_as_general_is_restored(self) -> None:
+        current = "hatsune miku, smile"
+        output = _revision(
+            general_tags=["smile"],
+            tag_changes=[
+                {"tag": "hatsune miku", "change": "removed", "field": "general_tags"}
+            ],
+        )
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as logs:
+            revised = revise_current_prompt(
+                output, current, "", character_tags=DICTIONARY_CHARACTERS
+            )
+
+        self.assertEqual(revised["character_tags"], ["hatsune miku"])
+        self.assertNotIn("hatsune miku", revised["general_tags"])
+        self.assertIn("指示に綴りが無く消さなかったタグ: hatsune miku", logs.output[0])
+
+    def test_dictionary_character_added_as_general_is_dropped(self) -> None:
+        current = "smile"
+        output = _revision(
+            general_tags=["smile", "hatsune miku"],
+            tag_changes=[
+                {"tag": "hatsune miku", "change": "added", "field": "general_tags"}
+            ],
+        )
+
+        with self.assertLogs(LOGGER_NAME, level="WARNING") as logs:
+            revised = revise_current_prompt(
+                output, current, "", character_tags=DICTIONARY_CHARACTERS
+            )
+
+        self.assertEqual(revised["general_tags"], ["smile"])
+        self.assertEqual(revised["character_tags"], [])
+        self.assertIn("足さなかったタグ: hatsune miku", logs.output[0])
+
+    def test_dictionary_character_with_instruction_spelling_is_removed(self) -> None:
+        current = "hatsune miku, smile"
+        output = _revision(
+            general_tags=["smile"],
+            tag_changes=[
+                {"tag": "hatsune miku", "change": "removed", "field": "general_tags"}
+            ],
+        )
+        instruction = "hatsune mikuの要素を消してください。"
+
+        with self.assertNoLogs(LOGGER_NAME, level="WARNING"):
+            revised = revise_current_prompt(
+                output, current, instruction, character_tags=DICTIONARY_CHARACTERS
+            )
+
+        self.assertEqual(revised["character_tags"], [])
+        self.assertEqual(revised["general_tags"], ["smile"])
 
     def test_general_tag_removal_is_kept_even_without_instruction_spelling(
         self,
