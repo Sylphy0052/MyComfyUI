@@ -843,10 +843,11 @@ def revise_current_prompt(
         )
     for name in TAG_BLOCK_FIELDS:
         if len(data[name]) > MAX_PROMPT_TAGS:
+            restored_here = sum(1 for tag in restored if _restored_field(tag) == name)
             raise AgentInvalidResponse(
                 f"レビュー案のタグが多すぎます。{name}が{len(data[name])}件になり、"
-                f"上限の{MAX_PROMPT_TAGS}件を超えます (現在のpromptから戻したタグ: "
-                f"{len(restored)}件)。"
+                f"上限の{MAX_PROMPT_TAGS}件を超えます (うち現在のpromptから戻したタグ: "
+                f"{restored_here}件)。"
             )
     final_keys = {_dedupe_key(tag) for name in TAG_BLOCK_FIELDS for tag in data[name]}
     glosses = [
