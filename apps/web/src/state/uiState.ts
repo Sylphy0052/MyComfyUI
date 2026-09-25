@@ -102,13 +102,13 @@ export function readUrlUiState(search: string): Partial<UiState> {
   const rawView = params.get(PARAM_NAMES.view);
   const view = pickEnum(VIEW_VALUES, rawView);
   if (view) partial.view = view;
-  else if (rawView === "characters") {
-    // 旧「キャラクター」画面はProject詳細のキャラクタータブへ移した。
+  const projectTab = pickEnum(PROJECT_TAB_VALUES, params.get(PARAM_NAMES.projectTab));
+  if (projectTab) partial.projectTab = projectTab;
+  if (!view && rawView === "characters") {
+    // 旧「キャラクター」画面はProject詳細のキャラクタータブへ移した。旧リンクの意味をptabより優先する。
     partial.view = "projects";
     partial.projectTab = "characters";
   }
-  const projectTab = pickEnum(PROJECT_TAB_VALUES, params.get(PARAM_NAMES.projectTab));
-  if (projectTab) partial.projectTab = projectTab;
   const generationTab = pickEnum(
     GENERATION_TAB_VALUES,
     params.get(PARAM_NAMES.generationTab),
@@ -165,15 +165,15 @@ export function readStoredUiState(): Partial<UiState> {
   const rawView = typeof source.view === "string" ? source.view : null;
   const view = pickEnum(VIEW_VALUES, rawView);
   if (view) partial.view = view;
-  else if (rawView === "characters") {
-    partial.view = "projects";
-    partial.projectTab = "characters";
-  }
   const projectTab = pickEnum(
     PROJECT_TAB_VALUES,
     typeof source.projectTab === "string" ? source.projectTab : null,
   );
   if (projectTab) partial.projectTab = projectTab;
+  if (!view && rawView === "characters") {
+    partial.view = "projects";
+    partial.projectTab = "characters";
+  }
   const generationTab = pickEnum(
     GENERATION_TAB_VALUES,
     typeof source.generationTab === "string" ? source.generationTab : null,
