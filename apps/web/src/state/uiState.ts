@@ -11,6 +11,7 @@ export const MODE_VALUES = ["production", "lab"] as const;
 export const VIEW_VALUES = [
   "projects",
   "generate",
+  "compare",
   "assets",
 ] as const;
 /** Project詳細のタブ。旧`view=characters`はここへ移す。 */
