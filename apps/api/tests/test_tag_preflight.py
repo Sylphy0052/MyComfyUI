@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mycomfyui_api.adapters.tag_preflight import load_tag_dictionary
+from mycomfyui_api.adapters.tag_preflight import TagDictionaryError, load_tag_dictionary
 
 
 def _load(rows: str) -> tuple[dict[str, int], frozenset[str]]:
@@ -38,3 +38,26 @@ class LoadTagDictionaryCharacterTest(unittest.TestCase):
 
                 self.assertEqual(characters, frozenset({"some character"}))
                 self.assertEqual(counts["black hood"], 300)
+
+
+class LoadTagDictionaryErrorTest(unittest.TestCase):
+    def test_malformed_rows_are_rejected_with_line_number(self) -> None:
+        rows = {
+            "too_few_columns": ("smile,0,500\nhatsune_miku,4\n", "2行目が"),
+            "count_not_integer": ("smile,0,many\n", "1行目の件数が整数でない"),
+        }
+        for case, (text, message) in rows.items():
+            with self.subTest(case=case):
+                with self.assertRaises(TagDictionaryError) as raised:
+                    _load(text)
+
+                self.assertIn(message, str(raised.exception))
+
+    def test_missing_file_is_rejected(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaises(TagDictionaryError) as raised,
+        ):
+            load_tag_dictionary(Path(directory) / "missing.csv")
+
+        self.assertIn("タグ辞書を読めない", str(raised.exception))
