@@ -39,7 +39,7 @@
   "8": {
     "class_type": "VAEDecode",
     "inputs": {
-      "samples": ["3", 0],
+      "samples": ["21", 0],
       "vae": ["62", 0]
     }
   },
@@ -48,6 +48,29 @@
     "inputs": {
       "filename_prefix": "mycomfyui",
       "images": ["8", 0]
+    }
+  },
+  "20": {
+    "class_type": "LatentUpscaleBy",
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "scale_by": 2.0,
+      "samples": ["3", 0]
+    }
+  },
+  "21": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 0,
+      "steps": 30,
+      "cfg": 4.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.5,
+      "model": ["60", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["20", 0]
     }
   },
   "60": {

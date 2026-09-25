@@ -83,6 +83,27 @@ DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
         "control": "number",
         "help": "-1で自動採番する。",
     },
+    # hires fix (Issue #318)。画面はhires_enabledがオンのときだけ残りを出す。
+    "hires_enabled": {
+        "type": "boolean",
+        "label": "hires fix",
+        "control": "checkbox",
+        "help": "生成した画像を拡大し、2段目のサンプリングで描き込み直す。",
+    },
+    "hires_scale": {"type": "number", "label": "拡大倍率", "control": "number"},
+    "hires_upscale_method": {
+        "type": "string",
+        "label": "拡大方式",
+        "control": "select",
+        "options": list(workflow_module.LATENT_UPSCALE_METHODS),
+    },
+    "hires_steps": {
+        "type": "integer",
+        "label": "hires steps",
+        "control": "number",
+        "help": "0で1段目のステップ数と同じにする。",
+    },
+    "hires_denoise": {"type": "number", "label": "denoise", "control": "number"},
 }
 
 #: モデルファイル名は既定値として保持し、画面ではComfyUI在庫から選択する。
@@ -99,6 +120,11 @@ DEFAULT_VALUES: dict[str, Any] = {
     "steps": 30,
     "cfg": 4.0,
     "seed": workflow_module.AUTO_SEED,
+    "hires_enabled": False,
+    "hires_scale": 2.0,
+    "hires_upscale_method": "nearest-exact",
+    "hires_steps": 0,
+    "hires_denoise": 0.5,
 }
 
 

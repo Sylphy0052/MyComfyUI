@@ -45,6 +45,19 @@ INPUT_FILE_NAME_MAX_LENGTH = 200
 #: アップロードした素材を差し込む変数の種別。
 UPLOAD_VALUE_TYPES = ("image_name", "audio_name")
 
+#: 画像の幅・高さの上限。ComfyUIのEmptyLatentImageが受け付ける範囲に合わせる。
+IMAGE_DIMENSION_MAX = 8192
+
+#: latentとpixelの縮尺。Anima (Qwen-Image VAE) は8pxで1 latentになる。
+LATENT_DOWNSCALE = 8
+
+#: hires fixの拡大倍率の範囲。
+HIRES_SCALE_MIN = 1.0
+HIRES_SCALE_MAX = 4.0
+
+#: ComfyUIの`LatentUpscaleBy`が受け付ける拡大方式。
+LATENT_UPSCALE_METHODS = ("nearest-exact", "bilinear", "area", "bicubic", "bislerp")
+
 
 class WorkflowError(ValueError):
     """テンプレートの構造、または注入する値が期待と合わない。"""
@@ -81,6 +94,8 @@ class VariableRef:
     input_key: str
     value_type: str
     required: bool = False
+    #: 同じ値を同じ入力名へ書き込む追加のrole。取り除いたノードには書かない。
+    also: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -141,6 +156,15 @@ ANIMA_TXT2IMG = WorkflowBinding(
             "KSampler",
             ("seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"),
         ),
+        # hires fix (Issue #318)。1段目のlatentを拡大し、2段目のKSamplerでかけ直す。
+        "hires_upscale": NodeRef(
+            "20", "LatentUpscaleBy", ("upscale_method", "scale_by")
+        ),
+        "hires_ksampler": NodeRef(
+            "21",
+            "KSampler",
+            ("seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"),
+        ),
         "vae_decode": NodeRef("8", "VAEDecode", ()),
         "save_image": NodeRef("9", "SaveImage", ("filename_prefix",)),
     },
@@ -153,7 +177,12 @@ ANIMA_TXT2IMG = WorkflowBinding(
         # CLIPLoaderへ直結する。間に挟むと条件付けが壊れる。
         LinkRef("positive_prompt", "clip", "clip_loader"),
         LinkRef("negative_prompt", "clip", "clip_loader"),
-        LinkRef("vae_decode", "samples", "ksampler"),
+        LinkRef("hires_upscale", "samples", "ksampler"),
+        LinkRef("hires_ksampler", "model", "unet_loader"),
+        LinkRef("hires_ksampler", "positive", "positive_prompt"),
+        LinkRef("hires_ksampler", "negative", "negative_prompt"),
+        LinkRef("hires_ksampler", "latent_image", "hires_upscale"),
+        LinkRef("vae_decode", "samples", "hires_ksampler"),
         LinkRef("vae_decode", "vae", "vae_loader"),
         LinkRef("save_image", "images", "vae_decode"),
     ),
@@ -163,11 +192,24 @@ ANIMA_TXT2IMG = WorkflowBinding(
         "width": VariableRef("latent", "width", "image_dimension"),
         "height": VariableRef("latent", "height", "image_dimension"),
         "batch_size": VariableRef("latent", "batch_size", "positive_int"),
-        "seed": VariableRef("ksampler", "seed", "seed"),
+        # sampler・scheduler・cfg・seedはhires fixの2段目と共有する。
+        "seed": VariableRef("ksampler", "seed", "seed", also=("hires_ksampler",)),
         "steps": VariableRef("ksampler", "steps", "sampling_steps"),
-        "cfg": VariableRef("ksampler", "cfg", "guidance_scale"),
-        "sampler_name": VariableRef("ksampler", "sampler_name", "str"),
-        "scheduler": VariableRef("ksampler", "scheduler", "str"),
+        "cfg": VariableRef(
+            "ksampler", "cfg", "guidance_scale", also=("hires_ksampler",)
+        ),
+        "sampler_name": VariableRef(
+            "ksampler", "sampler_name", "str", also=("hires_ksampler",)
+        ),
+        "scheduler": VariableRef(
+            "ksampler", "scheduler", "str", also=("hires_ksampler",)
+        ),
+        "hires_scale": VariableRef("hires_upscale", "scale_by", "hires_scale"),
+        "hires_upscale_method": VariableRef(
+            "hires_upscale", "upscale_method", "latent_upscale_method"
+        ),
+        "hires_steps": VariableRef("hires_ksampler", "steps", "sampling_steps"),
+        "hires_denoise": VariableRef("hires_ksampler", "denoise", "unit_float"),
         "unet_name": VariableRef("unet_loader", "unet_name", "str", required=True),
         "clip_name": VariableRef("clip_loader", "clip_name", "str", required=True),
         "vae_name": VariableRef("vae_loader", "vae_name", "str", required=True),
@@ -179,6 +221,11 @@ ANIMA_TXT2IMG = WorkflowBinding(
         ModelSlot("vae_name", "VAELoader", "vae_name"),
     ),
     prompt_variable="positive_prompt",
+    # hires fixを使わないときは2段目を外し、VAEDecodeを1段目のKSamplerへ付け替える。
+    optional_nodes={
+        "hires_upscale": OptionalNode("hires_upscale"),
+        "hires_ksampler": OptionalNode("hires_ksampler", fallback_role="ksampler"),
+    },
     prompt_style="anima",
 )
 
@@ -930,7 +977,7 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
         if isinstance(value, bool) or not isinstance(value, int):
             raise WorkflowError(f"{name}は整数で指定します。")
         bounds = {
-            "image_dimension": (64, 8192),
+            "image_dimension": (64, IMAGE_DIMENSION_MAX),
             "image_batch": (1, 20),
             "sampling_steps": (1, 1000),
             "mask_grow": (0, 64),
@@ -941,6 +988,19 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
         # EmptyLatentImageは8刻みの値しか受け付けない。
         if value_type == "image_dimension" and value % 8 != 0:
             raise WorkflowError(f"{name}は8の倍数で指定します。")
+        return value
+    if value_type == "hires_scale":
+        number = _finite_number(name, value)
+        if not HIRES_SCALE_MIN <= number <= HIRES_SCALE_MAX:
+            raise WorkflowError(
+                f"{name}は{HIRES_SCALE_MIN}以上{HIRES_SCALE_MAX}以下で指定します。"
+            )
+        return number
+    if value_type == "latent_upscale_method":
+        if value not in LATENT_UPSCALE_METHODS:
+            raise WorkflowError(
+                f"{name}は{', '.join(LATENT_UPSCALE_METHODS)}のいずれかで指定します。"
+            )
         return value
     if value_type in ("guidance_scale", "control_strength", "reference_strength"):
         # 同じ「強さ」でもノードごとに意味が違うため、値の種別を分けて上限も変える。
@@ -969,6 +1029,18 @@ def _finite_number(name: str, value: Any) -> float:
     if not math.isfinite(number):
         raise WorkflowError(f"{name}は有限の数値で指定します。")
     return number
+
+
+def hires_output_size(width: int, height: int, scale: float) -> tuple[int, int]:
+    """hires fixで拡大した後の画像サイズを返す。
+
+    `LatentUpscaleBy`はlatentの幅・高さに倍率を掛けてPythonの`round`で丸める。
+    latentの1単位が8pxのため、拡大後の画像サイズは常に8の倍数になる。
+    """
+    return (
+        round(width // LATENT_DOWNSCALE * scale) * LATENT_DOWNSCALE,
+        round(height // LATENT_DOWNSCALE * scale) * LATENT_DOWNSCALE,
+    )
 
 
 def resolve_seed(value: int | None) -> int:
@@ -1066,8 +1138,11 @@ def build_workflow(
     _apply_drops(workflow, binding, drop_roles)
     for name, value in resolved.items():
         variable = binding.variables[name]
-        node_id = binding.nodes[variable.role].node_id
-        workflow[node_id]["inputs"][variable.input_key] = value
+        for role in (variable.role, *variable.also):
+            if role in drop_roles:
+                continue
+            node_id = binding.nodes[role].node_id
+            workflow[node_id]["inputs"][variable.input_key] = value
 
     model = {
         slot.variable: resolved[slot.variable]
