@@ -576,7 +576,15 @@ def _load_binding(
             f"{voice_id}のcaptionの形式が想定外です。",
             retryable=False,
         )
-    if "reference" not in raw and caption:
+    if "reference" not in raw:
+        # 参照の無い分岐を先に取る。空文字のcaptionも「無い」として扱い、参照音声の
+        # 設定不足とは別の文言で止める。
+        if not caption:
+            raise _PreflightError(
+                FAILURE_CODE_INPUT_UNRESOLVED,
+                f"{voice_id}には参照音声もcaptionもありません。",
+                retryable=False,
+            )
         return _VoiceBinding(voice_id=voice_id, caption=caption)
     reference = raw.get("reference")
     transcript = raw.get("reference_transcript")

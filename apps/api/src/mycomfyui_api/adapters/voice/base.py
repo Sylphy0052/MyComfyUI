@@ -15,6 +15,11 @@ ENGINE_IRODORI = "irodori"
 
 VOICE_ENGINES: tuple[str, ...] = (ENGINE_IRODORI,)
 
+#: `caption` (声質の文章指定) の最大文字数。声の特徴を1文で述べる欄で、数百字あれば
+#: 足りる。Snapshot・`parameters.captions`・`resolved_inputs`の3か所へ複製されるため
+#: 上限を置く。voice-runnerの`SpeechRequest.caption`の`max_length`と同じ値にする。
+MAX_CAPTION_CHARS = 500
+
 #: 参照音声の書き起こしを生成に使うengine。ここに含むengineでは、参照音声と書き起こしを
 #: 組で必須にする。Irodoriは参照音声とcaptionだけで声質を決め、書き起こしを使わない。
 #: engineを足すときは、voice-runnerの`engines.yaml`の`uses_reference_transcript`と
@@ -80,6 +85,11 @@ class SpeechRequest:
 
     声質は参照音声か`caption`の少なくとも一方で決める。両方あれば両方を使う。
     `reference_transcript`は書き起こしを使うengineでだけ参照音声と組で必須になる。
+
+    この型は値を検査しない。「参照は組で空でない」「参照もcaptionも無ければ不正」
+    「captionは`MAX_CAPTION_CHARS`以内で制御文字を含まない」の保証は、Snapshotを作る
+    `plan.py`の`_binding`と、実行時に読み直すexecutorの`_load_binding`が持つ。runnerも
+    同じ条件を自分のschemaで検査するため、ここで重ねて検査しない。
     """
 
     engine: str

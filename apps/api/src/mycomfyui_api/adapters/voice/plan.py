@@ -11,11 +11,13 @@ Shot 1件をJob 1件とし、Shot内の台詞ごとに音声を1件ずつ生成�
 """
 
 import random
+import unicodedata
 from typing import Any
 
 from mycomfyui_api import provenance, storage
 from mycomfyui_api.adapters.aimedia.client import AiMediaError
 from mycomfyui_api.adapters.voice.base import (
+    MAX_CAPTION_CHARS,
     VOICE_ENGINES,
     uses_reference_transcript,
 )
@@ -151,6 +153,16 @@ def _binding(
     caption = raw.get("caption")
     if caption is not None and (not isinstance(caption, str) or not caption.strip()):
         raise PreparationError(f"{voice_id}のcaptionは空でない文字列で指定します。")
+    if caption is not None:
+        if len(caption) > MAX_CAPTION_CHARS:
+            raise PreparationError(
+                f"{voice_id}のcaptionは{MAX_CAPTION_CHARS}文字以内で指定します。"
+            )
+        # 改行・タブを含む制御文字は拒む。captionは1行の声質指定で、Web UIも1行入力。
+        if any(unicodedata.category(char) == "Cc" for char in caption):
+            raise PreparationError(
+                f"{voice_id}のcaptionに改行などの制御文字は使えません。"
+            )
     has_reference = any(raw.get(name) not in (None, "") for name in _REFERENCE_NAMES)
     canon_id = raw.get("canon_id")
     if canon_id not in (None, "") and not _is_sha256(canon_id):
@@ -474,7 +486,8 @@ async def prepare(
             "pad_to_duration": pad_to_duration,
             "target_duration_sec": duration_sec,
             "snapshot_version": SNAPSHOT_VERSION,
-            # 参照を持たないvoiceは、captionとseedだけが再現の入力になる。
+            # 参照を持たないvoiceは、captionとseedだけが再現の入力になる。captionが
+            # 無いJobでも`{}`で付ける。キーの有無で読み手が分岐しなくて済む。
             "captions": {
                 voice_id: binding["caption"]
                 for voice_id, binding in bindings.items()

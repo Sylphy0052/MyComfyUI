@@ -11,13 +11,14 @@ import base64
 import binascii
 import logging
 import tempfile
+import unicodedata
 import wave
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette import status
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
@@ -31,6 +32,9 @@ ASR_WORKER = "asr_worker.py"
 
 #: 受け取るwavの上限。Application API側の上限と揃える。
 MAX_AUDIO_BYTES = 32 * 1024 * 1024
+
+#: captionの最大文字数。Application API側の`MAX_CAPTION_CHARS`と同じ値にする。
+MAX_CAPTION_CHARS = 500
 
 
 class RunnerModel(BaseModel):
@@ -46,9 +50,22 @@ class SpeechRequest(RunnerModel):
     reference_audio: str | None = Field(default=None, min_length=1)
     reference_transcript: str | None = Field(default=None, min_length=1)
     #: 声質の文章指定。参照が無いときはこれだけで声を作る。
-    caption: str | None = Field(default=None, min_length=1)
+    caption: str | None = Field(default=None, min_length=1, max_length=MAX_CAPTION_CHARS)
     seed: int = Field(ge=0)
     timeout_sec: float | None = Field(default=None, gt=0)
+
+    @field_validator("caption")
+    @classmethod
+    def _check_caption(cls, value: str | None) -> str | None:
+        # 空白だけは「声の指定なし」と同じで、無条件の声になるため拒む。改行などの
+        # 制御文字もAPI側と同じく拒む。
+        if value is None:
+            return value
+        if not value.strip():
+            raise ValueError("captionは空白だけにできません。")
+        if any(unicodedata.category(char) == "Cc" for char in value):
+            raise ValueError("captionに改行などの制御文字は使えません。")
+        return value
 
     @model_validator(mode="after")
     def _require_voice_source(self) -> "SpeechRequest":
