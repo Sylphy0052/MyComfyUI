@@ -82,9 +82,11 @@ async def propose_checked(
                 postprocess,
             )
         except AgentInvalidResponse as second_error:
-            # 失敗した提案の記録にも、呼び直したことと1回目の誤りを残す。
+            # 失敗した提案の記録にも、呼び直したことと1回目の誤りを残す。記録は
+            # 先頭500文字で切られるため、呼び直しの事実を先に置き、2回目も切り詰める。
             raise AgentInvalidResponse(
-                f"{second_error} (1回呼び直しても直らなかった。1回目: {first_error})"
+                f"1回呼び直しても直らなかった。1回目: {first_error}"
+                f" / 2回目: {_clip(str(second_error))}"
             ) from second_error
         return _checked(second, second_output, [second.usage], retry)
     violations = _violations(request, first_output)
