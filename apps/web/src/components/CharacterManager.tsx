@@ -204,6 +204,7 @@ function TranscriptEditor({
       <textarea
         aria-label="参照音声の書き起こし"
         placeholder="参照音声の書き起こし"
+        maxLength={2000}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
       />

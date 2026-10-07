@@ -48,6 +48,11 @@ interface VoiceBinding {
   roleTagError: string | null;
 }
 
+// キャラクターを選んでいなければ全件、選んでいればいずれかに紐付く参照音声だけを候補にする。
+const linkedToAny = (item: MediaItem, characterIds: string[]) =>
+  characterIds.length === 0 ||
+  (item.character_ids ?? []).some((id) => characterIds.includes(id));
+
 const EMPTY_BINDING: VoiceBinding = {
   canonId: "",
   relativePath: "",
@@ -333,7 +338,10 @@ export function VoicePanel({
           media_type: stored.media_type,
           role,
           character_ids: characterIds,
-          reference_transcript: transcript.trim() ? transcript : null,
+          // 空欄のときは送らず、登録済みの書き起こしを消さない。
+          ...(role === "voice_reference" && transcript.trim()
+            ? { reference_transcript: transcript }
+            : {}),
           project_id: projectId ?? undefined,
           scene_id: sceneId ?? undefined,
         });
@@ -360,7 +368,6 @@ export function VoicePanel({
       fileName: item.label ?? item.relative_path,
       transcript: item.reference_transcript ?? "",
       role: "voice_reference",
-      characterIds: item.character_ids,
       roleTagError: null,
     });
   };
@@ -663,7 +670,9 @@ export function VoicePanel({
                     aria-label={`${voiceId}の登録済みの参照音声`}
                     value={
                       refCandidates.find(
-                        (item) => item.relative_path === binding.relativePath,
+                        (item) =>
+                          item.relative_path === binding.relativePath &&
+                          linkedToAny(item, binding.characterIds),
                       )?.key ?? ""
                     }
                     onChange={(event) =>
@@ -672,13 +681,7 @@ export function VoicePanel({
                   >
                     <option value="">登録済みの参照音声を選ぶ</option>
                     {refCandidates
-                      .filter(
-                        (item) =>
-                          binding.characterIds.length === 0 ||
-                          item.character_ids.some((id) =>
-                            binding.characterIds.includes(id),
-                          ),
-                      )
+                      .filter((item) => linkedToAny(item, binding.characterIds))
                       .map((item) => (
                         <option key={item.key} value={item.key}>
                           {item.label ?? item.relative_path}

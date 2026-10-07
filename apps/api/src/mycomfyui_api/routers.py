@@ -2837,7 +2837,10 @@ async def upsert_media_role_tag(
         existing.media_type = payload.media_type
         existing.role = payload.role
         existing.character_ids = list(payload.character_ids)
-        existing.reference_transcript = payload.reference_transcript
+        # 書き起こしを知らない呼び出し元 (画像の役割付けなど) が消さないよう、
+        # 項目を送ったときだけ更新する。消すときは明示的にnullを送る。
+        if "reference_transcript" in payload.model_fields_set:
+            existing.reference_transcript = payload.reference_transcript
         existing.assigned_project_id = payload.project_id
         existing.assigned_scene_id = payload.scene_id
         existing.updated_at = now
