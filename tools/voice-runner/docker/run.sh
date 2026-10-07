@@ -24,7 +24,7 @@ if ((rc != 0)); then
   echo "$out" >&2
   # docker のエラー文言 (port is already allocated / address already in use) でポート衝突を判定する
   if grep -qiE 'port is already allocated|address already in use' <<<"$out"; then
-    echo "ホスト側ポート ${HOST_PORT} は使用中です。VOICE_RUNNER_HOST_PORT で変えられます (例: VOICE_RUNNER_HOST_PORT=$((HOST_PORT + 1)) $0 ${GPU})。" >&2
+    echo "ホスト側ポート ${HOST_PORT} は使用中です。VOICE_RUNNER_HOST_PORT で変えられます (例: VOICE_RUNNER_HOST_PORT=$((HOST_PORT < 65535 ? HOST_PORT + 1 : HOST_PORT - 1)) $0 ${GPU})。" >&2
   fi
   exit "$rc"
 fi
