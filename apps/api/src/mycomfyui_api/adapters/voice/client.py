@@ -113,7 +113,7 @@ class VoiceRunnerClient:
             body["reference_audio"] = base64.b64encode(request.reference_audio).decode(
                 "ascii"
             )
-            if request.reference_transcript is not None:
+            if request.reference_transcript:
                 body["reference_transcript"] = request.reference_transcript
         if request.caption is not None:
             body["caption"] = request.caption

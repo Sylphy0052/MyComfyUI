@@ -580,6 +580,9 @@ def _load_binding(
         return _VoiceBinding(voice_id=voice_id, caption=caption)
     reference = raw.get("reference")
     transcript = raw.get("reference_transcript")
+    # planと同じく空白だけの書き起こしは未指定とみなす。runnerは空文字を拒むため。
+    if isinstance(transcript, str) and not transcript.strip():
+        transcript = None
     if (
         not isinstance(reference, dict)
         or (transcript is not None and not isinstance(transcript, str))

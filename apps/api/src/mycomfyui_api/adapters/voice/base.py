@@ -17,6 +17,8 @@ VOICE_ENGINES: tuple[str, ...] = (ENGINE_IRODORI,)
 
 #: 参照音声の書き起こしを生成に使うengine。ここに含むengineでは、参照音声と書き起こしを
 #: 組で必須にする。Irodoriは参照音声とcaptionだけで声質を決め、書き起こしを使わない。
+#: engineを足すときは、voice-runnerの`engines.yaml`の`uses_reference_transcript`と
+#: Webの`VoicePanel.tsx`の同名の集合も同時に更新する。
 REFERENCE_TRANSCRIPT_ENGINES: frozenset[str] = frozenset()
 
 

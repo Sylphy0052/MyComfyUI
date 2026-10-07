@@ -274,6 +274,28 @@ export function VoicePanel({
     );
   }, [projectId]);
 
+  // 候補の取得より先にキャラクターを選んだ声にも、取得後に参照音声を自動で入れる。
+  // 参照音声を指定済みの声は触らない。
+  useEffect(() => {
+    setBindings((current) => {
+      let changed = false;
+      const next = Object.fromEntries(
+        Object.entries(current).map(([id, binding]) => {
+          if (binding.relativePath || binding.characterIds.length === 0) {
+            return [id, binding];
+          }
+          const linked = refCandidates.filter((item) =>
+            linkedToAny(item, binding.characterIds),
+          );
+          if (linked.length !== 1) return [id, binding];
+          changed = true;
+          return [id, { ...binding, ...referencePatch(linked[0]) }];
+        }),
+      );
+      return changed ? next : current;
+    });
+  }, [refCandidates]);
+
   // Job を素早く切り替えたとき、遅れて届いた前の Job の応答で表示を上書きしない。
   const verificationsSequence = useRef(0);
 
@@ -333,8 +355,17 @@ export function VoicePanel({
   const upload = async (voiceId: string, file: File) => {
     setError(null);
     update(voiceId, { roleTagError: null });
-    const { role, characterIds, transcript } =
+    const { role, characterIds, transcript, relativePath } =
       bindings[voiceId] ?? EMPTY_BINDING;
+    // 登録済みの参照音声から自動で入った書き起こしは、別の録音である新しいwavへ
+    // 登録しない。手で直した書き起こしだけを送る。
+    const inherited = refCandidates.find(
+      (item) => item.relative_path === relativePath,
+    )?.reference_transcript;
+    const ownTranscript =
+      inherited !== undefined && inherited !== null && transcript === inherited
+        ? ""
+        : transcript;
     try {
       const stored = await api.createVoiceReference(
         file.name,
@@ -344,6 +375,7 @@ export function VoicePanel({
         relativePath: stored.relative_path,
         sha256: stored.sha256,
         fileName: file.name,
+        transcript: ownTranscript,
       });
       if (!role) return;
       try {
@@ -356,8 +388,8 @@ export function VoicePanel({
           role,
           character_ids: characterIds,
           // 空欄のときは送らず、登録済みの書き起こしを消さない。
-          ...(role === "voice_reference" && transcript.trim()
-            ? { reference_transcript: transcript }
+          ...(role === "voice_reference" && ownTranscript.trim()
+            ? { reference_transcript: ownTranscript }
             : {}),
           project_id: projectId ?? undefined,
           scene_id: sceneId ?? undefined,
