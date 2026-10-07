@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { ApiError, VOICE_REFERENCE_PAGE_SIZE, api } from "../api/client";
@@ -456,9 +456,14 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
 
-  useEffect(() => {
+  // 切替の検知はcommitと同期させる。passive effectだと、commitからeffectまでの間に旧Projectの
+  // 応答が返ったとき、切替前と判定してPUTや画面の更新へ進んでしまう。
+  useLayoutEffect(() => {
     projectIdRef.current = projectId;
     projectGenerationRef.current += 1;
+  }, [projectId]);
+
+  useEffect(() => {
     // 切替前の保存の応答待ちで押せなくなったままにしない。応答はpersistが無視する。
     setBusy(false);
     setOverrides(null);
