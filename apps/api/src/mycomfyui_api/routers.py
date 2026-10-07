@@ -5096,10 +5096,15 @@ async def create_agent_proposal(
     )
     try:
         result = await provider.propose(request)
+        # 辞書の読み込みは、正規化の対象になるprompt案のときだけ行う。
         output = proposals.normalize_prompt_tags(
             payload.kind,
             result.output,
-            await _canonical_tag_names(),
+            (
+                await _canonical_tag_names()
+                if payload.kind in proposals.PROMPT_STYLE_KINDS
+                else None
+            ),
             context.get("prompt_style"),
         )
         output = proposals.apply_prompt_style(
@@ -5245,11 +5250,16 @@ async def _assist_image_prompt(
                 instruction,
                 await _character_tags(),
             )
+        # 現在のpromptにあった辞書外のタグは、利用者が付けたものとして外さない。
         output = proposals.normalize_prompt_tags(
             "image_prompt",
             output,
             await _canonical_tag_names(),
             context["prompt_style"],
+            keep_tags={
+                tag_preflight.normalize_tag(tag)
+                for tag in tag_preflight.split_prompt(current_positive_prompt)
+            },
         )
         output = proposals.apply_prompt_style(
             "image_prompt", output, context["prompt_style"]

@@ -797,12 +797,16 @@ def normalize_prompt_tags(
     output: dict[str, Any],
     canonical_names: Mapping[str, str] | None,
     style: str | None,
+    keep_tags: Collection[str] = (),
 ) -> dict[str, Any]:
     """prompt案のタグをタグ辞書で正規化し、positive promptを組み直す。
 
     別名は正規のタグ名へ直す。辞書に無い`general_tags`はタグ行から外し、自然文の末尾へ
     英語の句として足す。`style`が`tags`なら自然文を使わないため外すだけにする。
+    `keep_tags` (`tag_preflight.normalize_tag`で寄せた形) にあるタグは、辞書に無くても
+    外さない。補完で、利用者の現在のpromptにあったタグを消さないためである。
     直したタグと外したタグは`rationale`へ注記する。辞書が無ければ何もしない。
+    バッチ計画で正規化後のprompt合計が上限を超えるときは、正規化を諦めて元の案を返す。
     """
     if not canonical_names or kind not in PROMPT_STYLE_KINDS:
         return output
@@ -817,7 +821,7 @@ def normalize_prompt_tags(
             normalized_bodies.append(body)
             continue
         normalized, (body_renamed, body_moved, body_removed) = _canonicalize_body_tags(
-            body, canonical_names, style
+            body, canonical_names, style, frozenset(keep_tags)
         )
         if (body_renamed or body_moved or body_removed) and not _try_attach_prompt_text(
             normalized
@@ -834,6 +838,17 @@ def normalize_prompt_tags(
     if kind == "image_prompt":
         data = normalized_bodies[0]
     else:
+        total_length = sum(
+            len(item.get("positive_prompt", ""))
+            for item in normalized_bodies
+            if isinstance(item, dict)
+        )
+        if total_length > MAX_BATCH_POSITIVE_PROMPT_TOTAL:
+            # 短い別名が長い正規名へ直ると、検証時に収まっていた合計が上限を超えうる。
+            logger.warning(
+                "タグの正規化でバッチ計画のprompt合計が上限を超えるため、元の案を残しました。"
+            )
+            return output
         data["items"] = normalized_bodies
     notes = [
         f"{label}: {', '.join(dict.fromkeys(tags))}。"
@@ -851,7 +866,10 @@ def normalize_prompt_tags(
 
 
 def _canonicalize_body_tags(
-    body: dict[str, Any], canonical_names: Mapping[str, str], style: str | None
+    body: dict[str, Any],
+    canonical_names: Mapping[str, str],
+    style: str | None,
+    keep_tags: frozenset[str],
 ) -> tuple[dict[str, Any], tuple[list[str], list[str], list[str]]]:
     """prompt案1件のタグを正規化する。直したタグ、自然文へ移したタグ、外したタグを返す。"""
     result = dict(body)
@@ -874,7 +892,7 @@ def _canonicalize_body_tags(
                 continue
             canonical = canonical_names.get(key)
             if canonical is None:
-                if field_name in DROP_UNKNOWN_TAG_FIELDS:
+                if field_name in DROP_UNKNOWN_TAG_FIELDS and key not in keep_tags:
                     unknown.append(key)
                 else:
                     kept.append(value)
