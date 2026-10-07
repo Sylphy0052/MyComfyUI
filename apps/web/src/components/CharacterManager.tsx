@@ -754,14 +754,14 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     outfit.image ?? (selectedCharacter ? characterReferenceImage(selectedCharacter, outfit.id)?.image ?? null : null);
 
   /**
-   * 抽出したタグを衣装の`prompt`へ入れる。応答待ちの間に編集中のキャラクターが替わっていれば
-   * 何もしない。`onlyIfEmpty`なら、待つ間に利用者が入力した`prompt`を上書きしない (#486)。
+   * 抽出したタグを衣装の`prompt`へ入れる。応答待ちの間に編集中のキャラクターが替わっているか、
+   * `prompt`が抽出開始時の値`startPrompt`から書き換えられていれば何もしない (#486)。
    */
-  const fillOutfitPrompt = (draftId: string, outfitId: string, prompt: string, onlyIfEmpty: boolean) => {
+  const fillOutfitPrompt = (draftId: string, outfitId: string, prompt: string, startPrompt: string) => {
     setDraft((current) => current && current.id === draftId ? {
       ...current,
       outfits: current.outfits.map((item) =>
-        item.id === outfitId && (!onlyIfEmpty || !item.prompt.trim()) ? { ...item, prompt } : item),
+        item.id === outfitId && item.prompt === startPrompt ? { ...item, prompt } : item),
     } : current);
   };
 
@@ -776,7 +776,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     setOutfitTagResult(null);
     try {
       const extracted = await api.extractStoredImageTags(image.relative_path, image.media_type);
-      fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), false);
+      fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), outfit.prompt);
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -808,7 +808,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
           interrupted = true;
           break;
         }
-        fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), true);
+        fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), outfit.prompt);
         filled += 1;
       } catch (cause) {
         if (draftIdRef.current !== draftId) {
