@@ -1106,7 +1106,11 @@ def _rename_glosses(
         if key in dropped or canonical in seen:
             continue
         seen.add(canonical)
-        result.append({**gloss, "tag": canonical} if key in renamed else gloss)
+        # タグ行と同じく括弧をエスケープした綴りにしないと、`build_tag_confidence_blocks`で
+        # 訳を引くときに一致しない (#440)。
+        result.append(
+            {**gloss, "tag": _escape_parens(canonical)} if key in renamed else gloss
+        )
     return result
 
 
