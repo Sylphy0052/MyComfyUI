@@ -786,8 +786,20 @@ def _attach_prompt_text(body: dict[str, Any]) -> None:
             str(body.get("negative_prompt") or ""),
             ", ".join(rating_negative_tags(ensured)),
         )
-    tag_line = compose_tag_line(_tags_above_threshold(body))
+    above_threshold = _tags_above_threshold(body)
+    tag_line = compose_tag_line(above_threshold)
     natural_text = str(body.get("natural_text") or "").strip()
+    if (
+        not natural_text
+        and _has_content_tags(body)
+        and not _has_content_tags(above_threshold)
+    ):
+        # 内容のタグが全てしきい値で外れると、自然文が無い案はratingと品質のタグだけに
+        # なり、空でない判定を通ってしまう。webの既定のしきい値でも同じ結果になるため、
+        # 全タグを残して取り繕わず、作り直しの対象になる不正な応答として扱う (#440)。
+        raise AgentInvalidResponse(
+            "prompt案の内容を表すタグが、全て確信度のしきい値を下回っています。"
+        )
     positive_prompt = compose_positive_prompt(tag_line, natural_text)
     if not positive_prompt:
         raise AgentInvalidResponse("prompt案にタグと自然文のどちらもありません。")

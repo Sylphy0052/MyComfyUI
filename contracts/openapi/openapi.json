@@ -3209,7 +3209,7 @@
       },
       "ImagePromptAssistRead": {
         "additionalProperties": false,
-        "description": "構造化検証済みの画像prompt補完結果。\n\n`positive_prompt`はタグ行と自然文を連結した結果とする。差し替えや再生成を行える\nように、連結前の2つも個別に返す。タグ行は、確信度がしきい値の既定値(0.2)を\n下回るタグを外して組む。全タグは`tag_confidence_blocks`にある。`negative_prompt`は基準値を足したあとの値とし、\nそのまま生成の入力へ移せる形にする。提案の履歴が持つ値は追加分だけのため、同じ\n名前でも中身が違う。",
+        "description": "構造化検証済みの画像prompt補完結果。\n\n`positive_prompt`はタグ行と自然文を連結した結果とする。差し替えや再生成を行える\nように、連結前の2つも個別に返す。タグ行は、確信度がしきい値の既定値(0.2)を\n下回るタグを外して組む。全タグは`tag_confidence_blocks`にある。`tag_changes`は、\n現在のpromptのタグ行と、このしきい値を適用したあとのタグ行との差分とする。\n`negative_prompt`は基準値を足したあとの値とし、そのまま生成の入力へ移せる形にする。提案の履歴が持つ値は追加分だけのため、同じ\n名前でも中身が違う。",
         "properties": {
           "model": {
             "anyOf": [

@@ -3399,8 +3399,9 @@ export interface components {
          *
          *     `positive_prompt`はタグ行と自然文を連結した結果とする。差し替えや再生成を行える
          *     ように、連結前の2つも個別に返す。タグ行は、確信度がしきい値の既定値(0.2)を
-         *     下回るタグを外して組む。全タグは`tag_confidence_blocks`にある。`negative_prompt`は基準値を足したあとの値とし、
-         *     そのまま生成の入力へ移せる形にする。提案の履歴が持つ値は追加分だけのため、同じ
+         *     下回るタグを外して組む。全タグは`tag_confidence_blocks`にある。`tag_changes`は、
+         *     現在のpromptのタグ行と、このしきい値を適用したあとのタグ行との差分とする。
+         *     `negative_prompt`は基準値を足したあとの値とし、そのまま生成の入力へ移せる形にする。提案の履歴が持つ値は追加分だけのため、同じ
          *     名前でも中身が違う。
          */
         ImagePromptAssistRead: {
