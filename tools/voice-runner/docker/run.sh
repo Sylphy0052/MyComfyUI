@@ -9,7 +9,8 @@ set -eu
 GPU=${1:?gpu index}
 [[ $GPU =~ ^[0-9]+$ ]] || { echo "gpu index must be a number: $GPU" >&2; exit 2; }
 HOST_PORT=${VOICE_RUNNER_HOST_PORT:-18770}
-[[ $HOST_PORT =~ ^[0-9]+$ ]] || { echo "VOICE_RUNNER_HOST_PORT must be a number: $HOST_PORT" >&2; exit 2; }
+[[ $HOST_PORT =~ ^[0-9]+$ ]] && ((HOST_PORT >= 1 && HOST_PORT <= 65535)) \
+  || { echo "VOICE_RUNNER_HOST_PORT must be 1-65535: $HOST_PORT" >&2; exit 2; }
 D=/ssdnas2/data/kfuruhashi
 mkdir -p "$D/hf-cache"
 docker run -d --rm --init --name "kfuruhashi-voice-runner-g${GPU}" --gpus "device=${GPU}" \
