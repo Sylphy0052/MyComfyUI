@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import { api } from "../api/client";
+import { bareTag } from "../prompt/merge";
 import { draftString, readFormDraft, writeFormDraft } from "../state/formDraft";
 import type { AgentProvider, AgentProviderId } from "../api/client";
 import { noticeSuffix } from "./BackendNotice";
@@ -180,10 +181,13 @@ function tagDedupeKey(value: string): string {
   return stripped.trim().toLowerCase();
 }
 
-/** タグごとのON/OFFの手動指定。キーは`tagDedupeKey`で、同じタグはブロックをまたいで連動する (#441)。 */
+/** 手動指定が無いときに共有する空のMap (#441)。 */
 const NO_OVERRIDES: ReadonlyMap<string, boolean> = new Map();
 
-/** タグをpositive promptへ入れるか。手動指定があればそれに従い、無ければしきい値で決める (#441)。 */
+/**
+ * タグをpositive promptへ入れるか。手動指定があればそれに従い、無ければしきい値で決める (#441)。
+ * 手動指定のキーは`tagDedupeKey`で、同じタグはブロックをまたいで連動する。
+ */
 function isTagOn(
   item: TagConfidenceItem,
   threshold: number,
@@ -193,7 +197,26 @@ function isTagOn(
 }
 
 /**
- * ON のタグだけを残し、サーバーの`compose_tag_line`/`compose_positive_prompt`と
+ * promptへ入るタグの`tagDedupeKey`の集合。同じタグが複数ブロックにあるときは、どれかが
+ * ONなら入る (`composePositivePromptFromBlocks`が重複を1つにまとめるため) (#441)。
+ */
+function tagOnKeys(
+  blocks: TagConfidenceBlocks,
+  threshold: number,
+  overrides: ReadonlyMap<string, boolean>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const field of TAG_BLOCK_ORDER) {
+    for (const item of blocks[field]) {
+      const key = tagDedupeKey(item.tag);
+      if (item.tag && key && isTagOn(item, threshold, overrides)) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+/**
+ * ONのタグだけを残し、サーバーの`compose_tag_line`/`compose_positive_prompt`と
  * 同じ組み立て方でpositive promptへ戻す (#407)。ブロック順で連結し、重複は最初の位置に
  * 1つだけ残す。重み付きと重みなしが並んだときは、サーバーの`_dedupe`と同じく重み付きを残す。
  */
@@ -411,7 +434,7 @@ export function AssistNotes({ result }: { result: AssistResult }) {
   );
 }
 
-/** しきい値以上/未満で行を分ける表示用の1タグ分。 */
+/** ON/OFFで行を分ける表示用の1タグ分。 */
 interface DisplayTagItem extends TagConfidenceItem {
   kept: boolean;
 }
@@ -443,6 +466,7 @@ export function TagConfidenceThresholdPanel({
   onTagToggle: (tag: string, on: boolean) => void;
 }) {
   const sliderId = useId();
+  const onKeys = tagOnKeys(blocks, threshold, overrides);
   return (
     <div className="stack">
       <div className="row">
@@ -462,7 +486,7 @@ export function TagConfidenceThresholdPanel({
         if (items.length === 0) return null;
         const display: DisplayTagItem[] = items.map((item) => ({
           ...item,
-          kept: isTagOn(item, threshold, overrides),
+          kept: onKeys.has(tagDedupeKey(item.tag)),
         }));
         return (
           <div key={field}>
@@ -494,9 +518,9 @@ export function TagConfidenceThresholdPanel({
 
 /**
  * 差分レビューへ確信度のしきい値スライダーを付ける (#407)。補完結果が変わるたびに
- * しきい値を既定値へ戻し、positive promptの提案文をしきい値以上のタグで組み直す。
+ * しきい値と手動のON/OFFを既定へ戻し、positive promptの提案文をONのタグで組み直す。
  * 確信度の無い差分 (画像prompt以外の補完や、補完以外から開いた差分) はそのまま返す。
- * 一覧のタグと重なる差分のhunkは`managed`で指して、差分一覧からは外す (#441)。
+ * 一覧のタグと重なる差分のhunkは、欄の`managed`で指して差分一覧から外す (#441)。
  * しきい値の戻しは`notes`の参照で判定するため、呼び出し元は差分をstateに持ち、描画のたびに
  * 作り直さない。
  */
@@ -520,15 +544,21 @@ export function useTagThresholdDiff(promptDiff: PromptDiffState | null): {
     promptDiff.notes?.naturalText ?? "",
     overrides,
   );
+  // 差分のhunkはbareTagで対応付くため (`diffPrompt`)、`[tag]`や負の重みの記述も拾えるよう
+  // 両方の正規化でキーを持つ。空になるキーは、何にでも当たってしまうので入れない。
   const panelTagKeys = new Set(
-    TAG_BLOCK_ORDER.flatMap((field) => blocks[field].map((item) => tagDedupeKey(item.tag))),
+    TAG_BLOCK_ORDER.flatMap((field) =>
+      blocks[field].flatMap((item) => [tagDedupeKey(item.tag), bareTag(item.tag)]),
+    ).filter((key) => key !== ""),
   );
+  const isPanelTag = (text: string) =>
+    [tagDedupeKey(text), bareTag(text)].some((key) => panelTagKeys.has(key));
   return {
     diff: {
       ...promptDiff,
       fields: promptDiff.fields.map((field) =>
         field.key === "positive_prompt"
-          ? { ...field, proposed, managed: (text) => panelTagKeys.has(tagDedupeKey(text)) }
+          ? { ...field, proposed, managed: isPanelTag }
           : field,
       ),
     },
