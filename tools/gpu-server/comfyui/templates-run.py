@@ -68,6 +68,29 @@ def patch_inputs(workflow: dict) -> None:
             inputs["audio"] = AUDIO
 
 
+def wait_history(pid: str) -> dict:
+    while True:
+        time.sleep(3)
+        hist = call(f"/history/{pid}").get(pid)
+        if not hist:
+            continue
+        status = hist.get("status", {})
+        if status.get("completed") or status.get("status_str") == "error":
+            return hist
+
+
+def output_names(hist: dict) -> list[str]:
+    names = []
+    for out in hist.get("outputs", {}).values():
+        for val in out.values():
+            if not isinstance(val, list):
+                continue
+            for v in val:
+                name = v.get("filename", str(v)) if isinstance(v, dict) else str(v)
+                names.append(name[:80])
+    return names
+
+
 def run(name: str) -> None:
     with open(os.path.join(TEMPLATES_DIR, f"{name}.json")) as f:
         workflow = json.load(f)
@@ -79,30 +102,9 @@ def run(name: str) -> None:
             f"{name}: REJECTED {json.dumps(res, ensure_ascii=False)[:1500]}", flush=True
         )
         return
-    pid = res["prompt_id"]
-    while True:
-        time.sleep(3)
-        hist = call(f"/history/{pid}").get(pid)
-        if (
-            hist
-            and hist.get("status", {}).get("completed") is not None
-            and (
-                hist["status"]["completed"]
-                or hist["status"].get("status_str") == "error"
-            )
-        ):
-            break
+    hist = wait_history(res["prompt_id"])
     status = hist["status"]
-    outs = []
-    for out in hist.get("outputs", {}).values():
-        for key, val in out.items():
-            if isinstance(val, list):
-                outs += [
-                    v.get("filename", str(v))[:80]
-                    if isinstance(v, dict)
-                    else str(v)[:80]
-                    for v in val
-                ]
+    outs = output_names(hist)
     errors = [m for m in status.get("messages", []) if m[0] == "execution_error"]
     detail = errors[0][1].get("exception_message", "")[:800] if errors else ""
     print(
