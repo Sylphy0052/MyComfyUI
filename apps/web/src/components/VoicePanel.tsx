@@ -170,6 +170,9 @@ export function VoicePanel({
   // 取り込み中の操作を完了時に上書きしないよう、非同期処理が最新の指定を読むために持つ。
   const bindingsRef = useRef(bindings);
   bindingsRef.current = bindings;
+  // Shot・Projectを切り替えるたびに進める。取込の完了時に開始時と比べ、切替前に
+  // 始めた取込を切替後の声へ入れない。
+  const bindingsGeneration = useRef(0);
   const [seed, setSeed] = useState("-1");
   const [profile, setProfile] = useState("default");
   const [verifyWithAsr, setVerifyWithAsr] = useState(true);
@@ -302,6 +305,7 @@ export function VoicePanel({
 
   // Shot が変わったら指定をやり直す。別 Shot の参照音声を引き継がない。
   useEffect(() => {
+    bindingsGeneration.current += 1;
     setBindings(
       Object.fromEntries(voiceIds.map((id) => [id, { ...EMPTY_BINDING }])),
     );
@@ -309,12 +313,14 @@ export function VoicePanel({
 
   // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾くため、
   // MediaPickerと同じくProject切替時に選択を空へ戻す。取り込んだ参照音声は残す。
+  // Voice CanonもProject単位のため、手で選んだCanonを空へ戻す。
   useEffect(() => {
+    bindingsGeneration.current += 1;
     setBindings((current) =>
       Object.fromEntries(
         Object.entries(current).map(([id, binding]) => [
           id,
-          { ...binding, characterIds: [] },
+          { ...binding, characterIds: [], canonId: "" },
         ]),
       ),
     );
@@ -401,8 +407,14 @@ export function VoicePanel({
   const upload = async (voiceId: string, file: File) => {
     setError(null);
     update(voiceId, { roleTagError: null });
-    const { role, characterIds, transcript, transcriptInherited } =
-      bindings[voiceId] ?? EMPTY_BINDING;
+    const {
+      role,
+      characterIds,
+      relativePath,
+      transcript,
+      transcriptInherited,
+    } = bindings[voiceId] ?? EMPTY_BINDING;
+    const generation = bindingsGeneration.current;
     // 登録済みの参照音声から自動で入った書き起こしは、別の録音である新しいwavへ
     // 登録しない。手で直した書き起こしだけを送る。
     const ownTranscript = transcriptInherited ? "" : transcript;
@@ -411,11 +423,22 @@ export function VoicePanel({
         file.name,
         await toBase64(file),
       );
-      // 取り込み中に書き起こしを編集していたら、その編集を残す。
       const latest = bindingsRef.current[voiceId] ?? EMPTY_BINDING;
+      // 取り込み中にShot・Project・キャラクター・参照音声の指定が変わったら、
+      // 選び直した声へ入れない。
+      const applies =
+        generation === bindingsGeneration.current &&
+        sameIds(latest.characterIds, characterIds) &&
+        latest.relativePath === relativePath;
+      // 取り込み中に書き起こしを手で編集していたら、その編集を残す。候補の再取得で
+      // 自動入力された書き起こしは別の録音のものなので使わない。
       const finalTranscript =
-        latest.transcript === transcript ? ownTranscript : latest.transcript;
-      if (sameIds(latest.characterIds, characterIds)) {
+        !applies ||
+        latest.transcriptInherited ||
+        latest.transcript === transcript
+          ? ownTranscript
+          : latest.transcript;
+      if (applies) {
         update(voiceId, {
           relativePath: stored.relative_path,
           sha256: stored.sha256,
@@ -425,9 +448,12 @@ export function VoicePanel({
           uploadedCharacterIds: characterIds,
         });
       } else {
-        // キャラクターを切り替えた後に届いた取込は、選び直した声へ入れない。
+        // 役割タグは取り込みを始めた時点の指定で付ける。wavはその時点のキャラクターの
+        // 参照音声として正しく、声へ入れないことだけを伝える。
         setError(
-          `${voiceId}は取り込み中にキャラクターを切り替えたため、「${file.name}」を参照音声に入れていません。もう一度取り込んでください。`,
+          role
+            ? `「${file.name}」は取り込み中に${voiceId}のShot・Project・キャラクター・参照音声の指定が変わったため、${voiceId}には入れていません。取り込みを始めた時点のキャラクターの参照音声として登録します。`
+            : `「${file.name}」は取り込み中に${voiceId}のShot・Project・キャラクター・参照音声の指定が変わったため、${voiceId}には入れていません。もう一度取り込んでください。`,
         );
       }
       if (!role) return;
@@ -565,7 +591,11 @@ export function VoicePanel({
         continue;
       }
       if (projectId && !canonId) {
-        setError(`${voiceId}のVoice Canonを選んでください。`);
+        setError(
+          canonError
+            ? `${voiceId}のVoice Canonを選べません。Voice Canonの読み込みに失敗しました (${canonError})。画面を再読み込みしてください。`
+            : `${voiceId}のVoice Canonを選んでください。`,
+        );
         return null;
       }
       if (transcriptRequired && !binding.transcript.trim()) {

@@ -2837,8 +2837,9 @@ async def upsert_media_role_tag(
         existing.media_type = payload.media_type
         existing.role = payload.role
         # Projectもキャラクターも送らない再送は割り当てを知らない呼び出し元 (Projectを
-        # 選ばない音声の取込など) のため、既存の紐付けを消さない。外すときは
-        # `project_id`を付けて`character_ids`を空で送る。
+        # 選ばない音声の取込など) のため、既存の紐付けとProject・Sceneの割り当てを
+        # 消さない。キャラクターを外すときは`project_id`を付けて`character_ids`を空で
+        # 送り、Projectの割り当てを外すときは`project_id`をnullで明示して送る。
         keeps_assignment = (
             "project_id" not in payload.model_fields_set and not payload.character_ids
         )
