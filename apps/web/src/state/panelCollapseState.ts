@@ -4,7 +4,19 @@ import { useCallback, useState } from "react";
  * 生成画面右列のパネルの開閉をパネルごとにlocalStorageへ保存する (#402)。
  * 保存値が無い・壊れている場合は開いた状態として扱う。
  */
-export type CollapsiblePanelId = "latestImage" | "candidates" | "resultColumn";
+export type CollapsiblePanelId =
+  | "latestImage"
+  | "candidates:generate"
+  | "candidates:compare"
+  | "resultColumn";
+
+/**
+ * 画面ごとにキーを分ける前の保存キー (#406)。開閉できたのは生成画面の候補一覧だけなので、
+ * 旧値は生成画面側へ引き継ぐ。
+ */
+const LEGACY_PANEL_IDS: Partial<Record<CollapsiblePanelId, string>> = {
+  "candidates:generate": "candidates",
+};
 
 const STORAGE_KEY = "mycomfyui.panelCollapsed.v1";
 
@@ -39,7 +51,11 @@ export function usePanelCollapsed(
   panelId: CollapsiblePanelId,
 ): [boolean, () => void] {
   const [collapsed, setCollapsed] = useState(
-    () => readStoredCollapseMap()[panelId] === true,
+    () => {
+      const stored = readStoredCollapseMap();
+      const legacyId = LEGACY_PANEL_IDS[panelId];
+      return (stored[panelId] ?? (legacyId ? stored[legacyId] : undefined)) === true;
+    },
   );
   const toggle = useCallback(() => {
     setCollapsed((current) => {

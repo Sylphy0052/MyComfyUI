@@ -53,6 +53,8 @@ interface Props {
   showCompare?: boolean;
   /** 見出しに開閉ボタンを出す。生成画面の右列で使う (#402)。 */
   collapsible?: boolean;
+  /** 開閉状態の保存キー。画面ごとに別のキーを渡し、他画面の開閉と連動させない (#406)。 */
+  panelId?: "candidates:generate" | "candidates:compare";
 }
 interface CandidateDetail { job: GenerationJob; manifest: GenerationManifest; lineage: JobLineage | null; }
 interface ViewTransform { zoom: number; x: number; y: number; }
@@ -152,9 +154,9 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false, showCompare = true, collapsible = false }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false, showCompare = true, collapsible = false, panelId = "candidates:compare" }: Props) {
   const [storedDensity, setDensity] = useListDensity("candidates");
-  const [storedCollapsed, toggleCollapsed] = usePanelCollapsed("candidates");
+  const [storedCollapsed, toggleCollapsed] = usePanelCollapsed(panelId);
   const collapsed = collapsible && storedCollapsed;
   // 生成画面と画像比較ページで2つ同時にマウントされるため、本文のidは固定値にしない。
   const bodyId = useId();
