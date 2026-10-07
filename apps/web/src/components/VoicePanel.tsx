@@ -312,7 +312,10 @@ export function VoicePanel({
   }, [voiceIds]);
 
   // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾くため、
-  // MediaPickerと同じくProject切替時に選択を空へ戻す。取り込んだ参照音声は残す。
+  // MediaPickerと同じくProject切替時に選択を空へ戻す。参照音声は切替時には外さない。
+  // 切替先の候補に無い参照音声は、選んだ・取り込んだ時点の (前のProjectの) キャラクターで
+  // 判定されるため、切替先でキャラクターを選ぶと`selectCharacters`が外す。どの
+  // キャラクターにも結び付いていない参照音声は残る。
   // Voice CanonもProject単位のため、手で選んだCanonを空へ戻す。
   useEffect(() => {
     bindingsGeneration.current += 1;
