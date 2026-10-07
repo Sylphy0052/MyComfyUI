@@ -15,7 +15,10 @@ from typing import Any
 
 from mycomfyui_api import provenance, storage
 from mycomfyui_api.adapters.aimedia.client import AiMediaError
-from mycomfyui_api.adapters.voice.base import VOICE_ENGINES
+from mycomfyui_api.adapters.voice.base import (
+    VOICE_ENGINES,
+    uses_reference_transcript,
+)
 from mycomfyui_api.execution import (
     PreparationContext,
     PreparationError,
@@ -125,15 +128,18 @@ def _cached_input_path(value: Any, voice_id: str) -> str:
     return candidate
 
 
-def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
+def _binding(
+    voice_id: str, raw: Any, *, transcript_required: bool
+) -> dict[str, Any]:
     """1つのvoice_idに対応する実行用の値を組み立てる。
 
-    声質は参照音声の組 (取り込んだwav、sha256、参照テキスト) か`caption`の少なくとも
-    一方で決める。両方あれば両方を使う。
+    声質は参照音声 (取り込んだwavとsha256) か`caption`の少なくとも一方で決める。
+    両方あれば両方を使う。
 
-    参照テキストを持たない参照音声は実行対象にしない。嘘の参照テキストを渡すと
-    生成が破綻することが`ai-media/検証_minimax/18`で確認されており、空文字を黙って
-    渡すのは同じ結果を招くためである。
+    書き起こしを使うengine (`transcript_required`) では、参照テキストを持たない参照
+    音声を実行対象にしない。嘘の参照テキストを渡すと生成が破綻することが
+    `ai-media/検証_minimax/18`で確認されており、空文字を黙って渡すのは同じ結果を
+    招くためである。書き起こしを使わないengineでは任意とし、入力があれば記録に残す。
     """
     if not isinstance(raw, dict):
         raise PreparationError(f"{voice_id}のvoice設定がobjectではありません。")
@@ -169,10 +175,14 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
             "trim_leading_silence": False,
         }
     transcript = raw.get("reference_transcript")
-    if not isinstance(transcript, str) or not transcript.strip():
+    if transcript is not None and not isinstance(transcript, str):
+        raise PreparationError(f"{voice_id}のreference_transcriptは文字列で指定します。")
+    if transcript is not None and not transcript.strip():
+        transcript = None
+    if transcript is None and transcript_required:
         raise PreparationError(
             f"{voice_id}のreference_transcriptがありません。"
-            "参照テキストを持たないVoice Canonは実行できません。"
+            "このengineは参照テキストを持たない参照音声で実行できません。"
         )
     sha256 = raw.get("reference_sha256")
     if not _is_sha256(sha256):
@@ -194,13 +204,14 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
             ),
             "sha256": str(sha256).lower(),
         },
-        "reference_transcript": transcript,
         "leading_silence_sec": float(leading_silence),
         # 先頭無音を切るかどうかはAdapterが決める。判断結果をManifestへ残す。
         "trim_leading_silence": (
             float(leading_silence) >= LEADING_SILENCE_TRIM_THRESHOLD_SEC
         ),
     }
+    if transcript is not None:
+        binding["reference_transcript"] = transcript
     if caption is not None:
         binding["caption"] = caption
     if canon_id:
@@ -380,7 +391,11 @@ async def prepare(
             "voicesに、台詞が参照するvoiceの設定 (参照音声かcaption) が必要です。"
         )
     bindings = {
-        str(voice_id): _binding(str(voice_id), raw)
+        str(voice_id): _binding(
+            str(voice_id),
+            raw,
+            transcript_required=uses_reference_transcript(recipe.engine),
+        )
         for voice_id, raw in raw_voices.items()
     }
 

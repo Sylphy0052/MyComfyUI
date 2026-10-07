@@ -27,6 +27,7 @@ from mycomfyui_api.adapters.voice.base import (
     VoicePayloadTooLarge,
     VoiceTimeout,
     VoiceUnavailable,
+    uses_reference_transcript,
 )
 from mycomfyui_api.adapters.voice.factory import create_voice_backend
 from mycomfyui_api.models import (
@@ -513,7 +514,12 @@ def _build_context(
     shot = snapshot.get("shot") if isinstance(snapshot.get("shot"), dict) else {}
     target = shot.get("duration_sec")
     bindings = {
-        str(voice_id): _load_binding(str(voice_id), raw, settings)
+        str(voice_id): _load_binding(
+            str(voice_id),
+            raw,
+            settings,
+            transcript_required=uses_reference_transcript(engine),
+        )
         for voice_id, raw in raw_voices.items()
     }
     missing = sorted(
@@ -547,12 +553,15 @@ def _build_context(
     )
 
 
-def _load_binding(voice_id: str, raw: Any, settings: Settings) -> _VoiceBinding:
+def _load_binding(
+    voice_id: str, raw: Any, settings: Settings, *, transcript_required: bool
+) -> _VoiceBinding:
     """参照音声を入力cacheから読み、Voice Canonが宣言するhashと突き合わせる。
 
     一致しない場合はJobを失敗させる。別人の声や別の録音で生成した履歴が、Voice Canon
     で生成したものとして残るのを防ぐ。参照を持たずcaptionだけのvoice (スナップショット
-    版3以降) は、読み込みもhash検査も行わない。
+    版3以降) は、読み込みもhash検査も行わない。書き起こしは、書き起こしを使うengine
+    (`transcript_required`) でだけ必須とする。
     """
     if not isinstance(raw, dict):
         raise _PreflightError(
@@ -571,7 +580,14 @@ def _load_binding(voice_id: str, raw: Any, settings: Settings) -> _VoiceBinding:
         return _VoiceBinding(voice_id=voice_id, caption=caption)
     reference = raw.get("reference")
     transcript = raw.get("reference_transcript")
-    if not isinstance(reference, dict) or not isinstance(transcript, str):
+    # planと同じく空白だけの書き起こしは未指定とみなす。runnerは空文字を拒むため。
+    if isinstance(transcript, str) and not transcript.strip():
+        transcript = None
+    if (
+        not isinstance(reference, dict)
+        or (transcript is not None and not isinstance(transcript, str))
+        or (transcript is None and transcript_required)
+    ):
         raise _PreflightError(
             FAILURE_CODE_INPUT_UNRESOLVED,
             f"{voice_id}の参照音声の設定が不足しています。",

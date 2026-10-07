@@ -16,6 +16,7 @@ engines:
     sample_rate: 48000
     # 参照音声かcaption (声質の文章指定) で声質を決める。参照テキストは使わない。
     needs_katakana: false
+    uses_reference_transcript: false
     timeout_sec: 300
 
 asr:

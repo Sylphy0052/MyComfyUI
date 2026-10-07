@@ -53,6 +53,20 @@ const linkedToAny = (item: MediaItem, characterIds: string[]) =>
   characterIds.length === 0 ||
   (item.character_ids ?? []).some((id) => characterIds.includes(id));
 
+// 参照音声の書き起こしを生成に使うengine。APIのREFERENCE_TRANSCRIPT_ENGINESと揃える。
+// Irodoriは書き起こしを使わないため、空でも投入できる (Issue #436)。
+const REFERENCE_TRANSCRIPT_ENGINES = new Set<string>();
+
+// 登録済みの参照音声を声の指定へ入れる値。書き起こしは入れた後も手で直せる。
+const referencePatch = (item: MediaItem): Partial<VoiceBinding> => ({
+  relativePath: item.relative_path,
+  sha256: item.sha256,
+  fileName: item.label ?? item.relative_path,
+  transcript: item.reference_transcript ?? "",
+  role: "voice_reference",
+  roleTagError: null,
+});
+
 const EMPTY_BINDING: VoiceBinding = {
   canonId: "",
   relativePath: "",
@@ -168,6 +182,9 @@ export function VoicePanel({
     () => jobs.filter((job) => job.kind === "voice"),
     [jobs],
   );
+  const transcriptRequired = REFERENCE_TRANSCRIPT_ENGINES.has(
+    recipes.find((item) => item.id === recipeId)?.engine ?? "",
+  );
   const selectedVoiceJob = useMemo(
     () => voiceJobs.find((item) => item.id === selectedJobId) ?? null,
     [voiceJobs, selectedJobId],
@@ -257,6 +274,28 @@ export function VoicePanel({
     );
   }, [projectId]);
 
+  // 候補の取得より先にキャラクターを選んだ声にも、取得後に参照音声を自動で入れる。
+  // 参照音声を指定済みの声は触らない。
+  useEffect(() => {
+    setBindings((current) => {
+      let changed = false;
+      const next = Object.fromEntries(
+        Object.entries(current).map(([id, binding]) => {
+          if (binding.relativePath || binding.characterIds.length === 0) {
+            return [id, binding];
+          }
+          const linked = refCandidates.filter((item) =>
+            linkedToAny(item, binding.characterIds),
+          );
+          if (linked.length !== 1) return [id, binding];
+          changed = true;
+          return [id, { ...binding, ...referencePatch(linked[0]) }];
+        }),
+      );
+      return changed ? next : current;
+    });
+  }, [refCandidates]);
+
   // Job を素早く切り替えたとき、遅れて届いた前の Job の応答で表示を上書きしない。
   const verificationsSequence = useRef(0);
 
@@ -316,8 +355,17 @@ export function VoicePanel({
   const upload = async (voiceId: string, file: File) => {
     setError(null);
     update(voiceId, { roleTagError: null });
-    const { role, characterIds, transcript } =
+    const { role, characterIds, transcript, relativePath } =
       bindings[voiceId] ?? EMPTY_BINDING;
+    // 登録済みの参照音声から自動で入った書き起こしは、別の録音である新しいwavへ
+    // 登録しない。手で直した書き起こしだけを送る。
+    const inherited = refCandidates.find(
+      (item) => item.relative_path === relativePath,
+    )?.reference_transcript;
+    const ownTranscript =
+      inherited !== undefined && inherited !== null && transcript === inherited
+        ? ""
+        : transcript;
     try {
       const stored = await api.createVoiceReference(
         file.name,
@@ -327,6 +375,7 @@ export function VoicePanel({
         relativePath: stored.relative_path,
         sha256: stored.sha256,
         fileName: file.name,
+        transcript: ownTranscript,
       });
       if (!role) return;
       try {
@@ -339,8 +388,8 @@ export function VoicePanel({
           role,
           character_ids: characterIds,
           // 空欄のときは送らず、登録済みの書き起こしを消さない。
-          ...(role === "voice_reference" && transcript.trim()
-            ? { reference_transcript: transcript }
+          ...(role === "voice_reference" && ownTranscript.trim()
+            ? { reference_transcript: ownTranscript }
             : {}),
           project_id: projectId ?? undefined,
           scene_id: sceneId ?? undefined,
@@ -358,17 +407,42 @@ export function VoicePanel({
     }
   };
 
-  // 登録済みの参照音声を選ぶ。書き起こしは入れた後も手で直せる。
   const selectRegisteredReference = (voiceId: string, key: string) => {
     const item = refCandidates.find((candidate) => candidate.key === key);
-    if (!item) return;
+    if (item) update(voiceId, referencePatch(item));
+  };
+
+  // キャラクターIDとdisplay_nameが一致するVoice Canon。キャラクターを1人だけ選んだ
+  // ときに使い、一致が無ければCanonを手で選ぶ (Issue #436)。
+  const matchedCanon = (characterIds: string[]) =>
+    characterIds.length === 1
+      ? (canon.find((item) => item.display_name === characterIds[0]) ?? null)
+      : null;
+
+  // キャラクターを選ぶと、紐付いた登録済みの参照音声が1件だけならそれを入れる。
+  // 別のキャラクターに紐付く登録済みの参照音声は外し、選んだのと違う声で作らない。
+  const selectCharacters = (voiceId: string, characterIds: string[]) => {
+    const binding = bindings[voiceId] ?? EMPTY_BINDING;
+    const linked =
+      characterIds.length > 0
+        ? refCandidates.filter((item) => linkedToAny(item, characterIds))
+        : [];
+    if (linked.length === 1) {
+      update(voiceId, { characterIds, ...referencePatch(linked[0]) });
+      return;
+    }
+    const current = refCandidates.find(
+      (item) => item.relative_path === binding.relativePath,
+    );
+    const stale =
+      current !== undefined &&
+      (current.character_ids ?? []).length > 0 &&
+      !linkedToAny(current, characterIds);
     update(voiceId, {
-      relativePath: item.relative_path,
-      sha256: item.sha256,
-      fileName: item.label ?? item.relative_path,
-      transcript: item.reference_transcript ?? "",
-      role: "voice_reference",
-      roleTagError: null,
+      characterIds,
+      ...(stale
+        ? { relativePath: "", sha256: "", fileName: null, transcript: "" }
+        : {}),
     });
   };
 
@@ -384,6 +458,10 @@ export function VoicePanel({
     for (const voiceId of fixed.has("voices") ? [] : voiceIds) {
       const binding = bindings[voiceId] ?? EMPTY_BINDING;
       const caption = binding.caption.trim();
+      const matched = projectId ? matchedCanon(binding.characterIds) : null;
+      // 一致するCanonがあるときプルダウンは出ないため、手で選んだ値は使わない。
+      const manualCanonId = matched ? "" : binding.canonId;
+      const canonId = matched?.canon_id ?? manualCanonId;
       if (!binding.relativePath || !binding.sha256) {
         if (!caption) {
           setError(
@@ -391,7 +469,7 @@ export function VoicePanel({
           );
           return null;
         }
-        if (projectId && binding.canonId) {
+        if (projectId && manualCanonId) {
           // 選んだ Canon を黙って捨てると、Canon の声で作ったと取り違える。
           setError(
             `${voiceId}のVoice Canonは参照音声と組で使います。参照音声を取り込むか、Canonの選択を外してください。`,
@@ -402,11 +480,11 @@ export function VoicePanel({
         voices[voiceId] = { caption };
         continue;
       }
-      if (projectId && !binding.canonId) {
+      if (projectId && !canonId) {
         setError(`${voiceId}のVoice Canonを選んでください。`);
         return null;
       }
-      if (!binding.transcript.trim()) {
+      if (transcriptRequired && !binding.transcript.trim()) {
         // 嘘の参照テキストを渡すと生成が破綻するため、空のまま送らない。
         setError(`${voiceId}の参照テキストを入力してください。`);
         return null;
@@ -417,12 +495,14 @@ export function VoicePanel({
         return null;
       }
       voices[voiceId] = {
-        ...(binding.canonId ? { canon_id: binding.canonId } : {}),
+        ...(canonId ? { canon_id: canonId } : {}),
         reference_relative_path: binding.relativePath,
         // Voice Canon の source_sha256 と突き合わせる値。取り込んだファイルの
         // 内容 hash をそのまま使う。実行前に実ファイルと照合される。
         reference_sha256: binding.sha256,
-        reference_transcript: binding.transcript,
+        ...(binding.transcript.trim()
+          ? { reference_transcript: binding.transcript }
+          : {}),
         leading_silence_sec: leading,
         ...(caption ? { caption } : {}),
       };
@@ -636,10 +716,28 @@ export function VoicePanel({
           </h3>
           {voiceIds.map((voiceId) => {
             const binding = bindings[voiceId] ?? EMPTY_BINDING;
+            const matched = projectId
+              ? matchedCanon(binding.characterIds)
+              : null;
             return (
               <div key={voiceId} className="stack">
                 <label htmlFor={`reference-${voiceId}`}>{voiceId}</label>
-                {projectId && (
+                <MediaRoleTagFields
+                  kind="audio"
+                  role={binding.role}
+                  onRoleChange={(role) => update(voiceId, { role })}
+                  characters={characters}
+                  characterIds={binding.characterIds}
+                  onCharacterIdsChange={(characterIds) =>
+                    selectCharacters(voiceId, characterIds)
+                  }
+                />
+                {matched && (
+                  <p className="muted">
+                    Voice Canon: {matched.display_name} (キャラクターから自動)
+                  </p>
+                )}
+                {projectId && !matched && (
                   <select
                     id={`canon-${voiceId}`}
                     value={binding.canonId}
@@ -655,16 +753,6 @@ export function VoicePanel({
                     ))}
                   </select>
                 )}
-                <MediaRoleTagFields
-                  kind="audio"
-                  role={binding.role}
-                  onRoleChange={(role) => update(voiceId, { role })}
-                  characters={characters}
-                  characterIds={binding.characterIds}
-                  onCharacterIdsChange={(characterIds) =>
-                    update(voiceId, { characterIds })
-                  }
-                />
                 {projectId && (
                   <select
                     aria-label={`${voiceId}の登録済みの参照音声`}
@@ -710,7 +798,11 @@ export function VoicePanel({
                 )}
                 <textarea
                   aria-label={`${voiceId}の参照テキスト`}
-                  placeholder="参照音声の書き起こし"
+                  placeholder={
+                    transcriptRequired
+                      ? "参照音声の書き起こし"
+                      : "参照音声の書き起こし (任意。このengineは生成に使わない)"
+                  }
                   value={binding.transcript}
                   onChange={(event) =>
                     update(voiceId, { transcript: event.target.value })
