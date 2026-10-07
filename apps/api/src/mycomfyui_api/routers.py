@@ -32,6 +32,7 @@ from starlette.concurrency import run_in_threadpool
 
 from mycomfyui_api import (
     approvals,
+    bootstrap,
     graph_validation,
     image_imports,
     provenance,
@@ -1161,6 +1162,15 @@ async def _resolve_generation_defaults(
         for name, value in payload.inputs.items():
             inputs[name] = value
             input_origins[name] = "runtime"
+    # 入力に無ければRecipe既定を見る。利用者が編集した既定から安全語が落ちていることがある。
+    recipe_defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
+    negative = inputs.get(
+        "negative_prompt", recipe_defaults.get("negative_prompt") or ""
+    )
+    if isinstance(negative, str):
+        safe_negative = bootstrap.with_reference_safety_negative(recipe, negative)
+        if safe_negative != negative:
+            inputs["negative_prompt"] = safe_negative
 
     return (
         payload.model_copy(
@@ -4309,17 +4319,37 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
 
 @router.post("/image-tags", response_model=schemas.ImageTagExtractRead)
 async def extract_image_tags(payload: schemas.ImageTagExtractRequest, request: Request):
-    """画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。"""
+    """画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。
+
+    画像は`content_base64`か、入力cacheを指す`relative_path`のどちらか一方で受け取る
+    (排他はスキーマで検証済み)。後者は登録済みの衣装・参照画像の読み直しに使う (#486)。
+    """
     settings = get_settings()
-    encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
-    if len(payload.content_base64) > encoded_limit:
-        raise _validation_error(
-            "画像が上限を超えています。", {"limit": settings.max_image_bytes}
-        )
-    try:
-        data = base64.b64decode(payload.content_base64, validate=True)
-    except (binascii.Error, ValueError) as error:
-        raise _validation_error("content_base64を復号できません。") from error
+    if payload.relative_path is not None:
+        try:
+            path = storage.resolve_input(payload.relative_path, settings)
+            byte_size = path.stat().st_size
+            if byte_size > settings.max_image_bytes:
+                raise _validation_error(
+                    "画像が上限を超えています。",
+                    {"byte_size": byte_size, "limit": settings.max_image_bytes},
+                )
+            data = await run_in_threadpool(path.read_bytes)
+        except (storage.StorageError, OSError, ValueError) as error:
+            # ValueErrorはNULを含むパスで`Path.resolve()`が送出する。
+            raise _validation_error("入力cacheの画像を読み込めません。") from error
+        content_base64 = base64.b64encode(data).decode("ascii")
+    else:
+        content_base64 = payload.content_base64 or ""
+        encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
+        if len(content_base64) > encoded_limit:
+            raise _validation_error(
+                "画像が上限を超えています。", {"limit": settings.max_image_bytes}
+            )
+        try:
+            data = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise _validation_error("content_base64を復号できません。") from error
     if not data:
         raise _validation_error("空の画像は解析できません。")
     if len(data) > settings.max_image_bytes:
@@ -4328,9 +4358,7 @@ async def extract_image_tags(payload: schemas.ImageTagExtractRequest, request: R
             {"byte_size": len(data), "limit": settings.max_image_bytes},
         )
     try:
-        tags = await ComfyUITagger(settings).extract(
-            payload.content_base64, payload.media_type
-        )
+        tags = await ComfyUITagger(settings).extract(content_base64, payload.media_type)
     except ImageTaggerError as error:
         raise ApiError(
             "IMAGE_TAGGER_ERROR", str(error), status_code=status.HTTP_503_SERVICE_UNAVAILABLE

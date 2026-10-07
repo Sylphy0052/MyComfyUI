@@ -3539,12 +3539,17 @@ export interface components {
         /**
          * ImageTagExtractRequest
          * @description 画像タグ抽出へ渡す画像。画像だけを受け付ける。
+         *
+         *     中身は`content_base64`か、入力cache(`inputs/`配下)を指す`relative_path`の
+         *     どちらか一方で渡す。後者は登録済みの衣装・参照画像を読み直すために使う (#486)。
          */
         ImageTagExtractRequest: {
             /** Content Base64 */
-            content_base64: string;
+            content_base64?: string | null;
             /** Media Type */
             media_type: string;
+            /** Relative Path */
+            relative_path?: string | null;
         };
         /** JobAssignmentUpdate */
         JobAssignmentUpdate: {

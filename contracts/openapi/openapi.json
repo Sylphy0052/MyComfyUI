@@ -3497,21 +3497,38 @@
       },
       "ImageTagExtractRequest": {
         "additionalProperties": false,
-        "description": "画像タグ抽出へ渡す画像。画像だけを受け付ける。",
+        "description": "画像タグ抽出へ渡す画像。画像だけを受け付ける。\n\n中身は`content_base64`か、入力cache(`inputs/`配下)を指す`relative_path`の\nどちらか一方で渡す。後者は登録済みの衣装・参照画像を読み直すために使う (#486)。",
         "properties": {
           "content_base64": {
-            "minLength": 1,
-            "title": "Content Base64",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Base64"
           },
           "media_type": {
             "minLength": 1,
             "title": "Media Type",
             "type": "string"
+          },
+          "relative_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relative Path"
           }
         },
         "required": [
-          "content_base64",
           "media_type"
         ],
         "title": "ImageTagExtractRequest",

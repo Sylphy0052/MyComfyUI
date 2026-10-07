@@ -475,12 +475,41 @@ _IMAGE_REF_SCHEMA: dict[str, Any] = {
     "cfg": dict(DEFAULT_INPUT_SCHEMA["cfg"]),
     "seed": dict(DEFAULT_INPUT_SCHEMA["seed"]),
 }
+#: 参照付き生成のnegativeの先頭に置く語。参照は同一性だけを運び、衣装タグが欠けると
+#: 裸体で出力されることがあるため既定で避ける (#484, #486)。
+IMAGE_REF_SAFETY_NEGATIVE = "nsfw, nude, nipples"
+_IMAGE_REF_TEMPLATES = frozenset(
+    {comfyui_prepare.REF_SIGLIP_TEMPLATE, comfyui_prepare.REF_INCONTEXT_TEMPLATE}
+)
+
+
+def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
+    """参照Recipeのnegativeへ、欠けている安全語を先頭に足す。参照Recipe以外はそのまま返す。
+
+    Recipe既定はこの語を持つが、Project・LookProfile・実行時の入力でnegativeを上書きすると
+    落ちるため、既定値を全て解決した後に補う (#486)。
+    """
+    reference = recipe.workflow_template_ref
+    name = reference.get("name") if isinstance(reference, dict) else None
+    if not isinstance(name, str) or name not in _IMAGE_REF_TEMPLATES:
+        return negative
+    present = {term.strip() for term in negative.split(",")}
+    missing = [
+        term for term in IMAGE_REF_SAFETY_NEGATIVE.split(", ") if term not in present
+    ]
+    if not missing:
+        return negative
+    return ", ".join([*missing, negative.strip()] if negative.strip() else missing)
+
+
 _IMAGE_REF_DEFAULTS: dict[str, Any] = {
     "unet_name": DEFAULT_VALUES["unet_name"],
     "clip_name": DEFAULT_VALUES["clip_name"],
     "vae_name": DEFAULT_VALUES["vae_name"],
     "filename_prefix": DEFAULT_VALUES["filename_prefix"],
-    "negative_prompt": DEFAULT_VALUES["negative_prompt"],
+    "negative_prompt": (
+        f"{IMAGE_REF_SAFETY_NEGATIVE}, {DEFAULT_VALUES['negative_prompt']}"
+    ),
     "width": 896,
     "height": 1344,
     "steps": 30,
@@ -793,6 +822,14 @@ TEMPLATE_RECIPES: tuple[tuple[str, str, str, dict[str, Any], dict[str, Any]], ..
 )
 
 
+#: `defaults`の変更も後継Recipeで既存DBへ反映するRecipe。参照付きRecipeはnegativeの既定に
+#: nsfw除けを持ち、既存DBに古い既定が残ると安全語が入らない (#486)。他のRecipeは既存DBの
+#: 既定が意図して変わっていることがあるため、テンプレートとinput_schemaだけで判定する。
+_DEFAULTS_TRACKED_RECIPES = frozenset(
+    {IMAGE_REF_SIGLIP_RECIPE_NAME, IMAGE_REF_INCONTEXT_RECIPE_NAME}
+)
+
+
 async def _existing_recipes(session: AsyncSession, name: str) -> list[Recipe]:
     """同じ名前のRecipeを新しい順に返す。後継を結ぶ先の判定に使う。"""
     result = await session.execute(
@@ -820,6 +857,7 @@ async def ensure_media_recipes(
             isinstance(recipe.workflow_template_ref, dict)
             and recipe.workflow_template_ref.get("sha256") == digest
             and recipe.input_schema == schema
+            and (name not in _DEFAULTS_TRACKED_RECIPES or recipe.defaults == defaults)
             for recipe in existing
         ):
             continue

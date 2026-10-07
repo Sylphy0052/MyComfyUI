@@ -952,6 +952,13 @@ export function GenerationForm({
     candidateReference && referenceRecipe && !referenceBlocker && !referenceDismissed && !useInheritedDefaults
       ? candidateReference
       : null;
+  // 参照は同一性だけを運び、衣装はプロンプトのタグで受け取る。参照に使う衣装 (選んだ衣装、
+  // 無ければ既定の衣装) のpromptに英字が無いと衣装が描かれないことがあるため警告する。
+  // タグは英語で書くため、英字を1文字も含まないprompt (空・日本語だけ) をタグ未設定とみなす。
+  // 投入は止めない (#486)。
+  const referenceOutfitId = effectiveOutfitId ?? outfitCharacter?.default_outfit_id ?? null;
+  const referenceOutfit = (outfitCharacter?.outfits ?? []).find((item) => item.id === referenceOutfitId);
+  const referenceOutfitUntagged = Boolean(autoReference && referenceOutfit && !/[A-Za-z]/.test(referenceOutfit.prompt));
   const referenceLookProfiles = useMemo(
     () =>
       autoReference && referenceRecipe
@@ -1232,6 +1239,11 @@ export function GenerationForm({
                         onChange={(event) => setReferenceStrength(event.target.value)}
                       />
                     </label>
+                  )}
+                  {referenceOutfitUntagged && (
+                    <p className="error">
+                      衣装のタグが未設定です。参照画像だけでは衣装が描かれないことがあります。
+                    </p>
                   )}
                   {!referenceRecipe && (
                     <p className="muted">

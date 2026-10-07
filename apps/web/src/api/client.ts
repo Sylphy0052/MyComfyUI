@@ -1124,6 +1124,16 @@ export const api = {
       }),
     }),
 
+  /** 入力cacheに登録済みの画像からタグを抽出する (#486)。 */
+  extractStoredImageTags: (relativePath: string, mediaType: string) =>
+    request<ImageTagExtract>("/image-tags", {
+      method: "POST",
+      body: JSON.stringify({
+        relative_path: relativePath,
+        media_type: mediaType,
+      }),
+    }),
+
   listApprovalLogs: (params: { subjectId?: string; limit?: number }) => {
     const query = new URLSearchParams();
     if (params.subjectId) query.set("subject_id", params.subjectId);
