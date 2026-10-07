@@ -5,6 +5,7 @@ uses_reference_transcriptはrunner側で持つ。Application APIはこれらを�
 """
 
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -84,6 +85,25 @@ def _float(raw: Any, fallback: float) -> float:
     return float(raw) if isinstance(raw, int | float) else fallback
 
 
+_REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
+
+
+def _revision(engine_id: str, raw: dict[str, Any], key: str) -> str | None:
+    """HFのcommit shaを読む。キーがあるのに不正な値を黙って捨てると固定が外れるため失敗させる。
+
+    YAMLは引用符なしの数字だけのshaをintに、`12345e67`の形をfloatに読むので、
+    str以外もここで弾く。
+    """
+    if key not in raw:
+        return None
+    value = raw[key]
+    if not isinstance(value, str) or not _REVISION_PATTERN.fullmatch(value):
+        raise ConfigError(
+            f"{engine_id}の{key}は40桁の小文字16進のcommit shaを引用符付きで書いてください。"
+        )
+    return value
+
+
 def _engine(engine_id: str, raw: Any) -> EngineConfig:
     if not isinstance(raw, dict):
         raise ConfigError(f"{engine_id}の設定がmappingではありません。")
@@ -94,21 +114,27 @@ def _engine(engine_id: str, raw: Any) -> EngineConfig:
         raise ConfigError(f"{engine_id}にpythonかmodel_idがありません。")
     if not isinstance(sample_rate, int) or sample_rate <= 0:
         raise ConfigError(f"{engine_id}のsample_rateが不正です。")
-    revision = raw.get("model_revision")
+    revision = _revision(engine_id, raw, "model_revision")
     home = raw.get("home")
     codec_repo = raw.get("codec_repo")
-    codec_revision = raw.get("codec_revision")
+    codec_revision = _revision(engine_id, raw, "codec_revision")
+    if codec_repo is not None and not isinstance(codec_repo, str):
+        raise ConfigError(f"{engine_id}のcodec_repoが文字列ではありません。")
+    if (codec_repo is None) != (codec_revision is None):
+        raise ConfigError(
+            f"{engine_id}のcodec_repoとcodec_revisionは両方書くか両方省いてください。"
+        )
     return EngineConfig(
         id=engine_id,
         python=Path(python),
         model_id=model_id,
-        model_revision=revision if isinstance(revision, str) else None,
+        model_revision=revision,
         sample_rate=sample_rate,
         needs_katakana=bool(raw.get("needs_katakana")),
         timeout_sec=_float(raw.get("timeout_sec"), DEFAULT_TIMEOUT_SEC),
         home=Path(home) if isinstance(home, str) else None,
-        codec_repo=codec_repo if isinstance(codec_repo, str) else None,
-        codec_revision=codec_revision if isinstance(codec_revision, str) else None,
+        codec_repo=codec_repo,
+        codec_revision=codec_revision,
         uses_reference_transcript=bool(raw.get("uses_reference_transcript")),
     )
 
