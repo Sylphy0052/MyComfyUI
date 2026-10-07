@@ -65,7 +65,27 @@ export function toReferenceInputs(
   }
   kept.source_image = { relative_path: image.relative_path, sha256: image.sha256 };
   if ("reference_strength" in schema) kept.reference_strength = strength;
+  if (typeof kept.negative_prompt === "string") {
+    kept.negative_prompt = withReferenceNegative(kept.negative_prompt, referenceRecipe);
+  }
   return { inputs: kept, dropped };
+}
+
+function splitPromptTerms(text: string): string[] {
+  return text.split(",").map((term) => term.trim()).filter(Boolean);
+}
+
+/**
+ * 参照Recipeの既定negativeの語のうち、入力のnegativeに無いものを先頭に足す。元Recipeの
+ * negativeで上書きすると、参照Recipeが既定で持つnsfw除けの語が落ちるため (#486)。
+ */
+export function withReferenceNegative(negative: string, referenceRecipe: Recipe): string {
+  const base = (referenceRecipe.defaults as SchemaMap).negative_prompt;
+  if (typeof base !== "string") return negative;
+  const present = new Set(splitPromptTerms(negative));
+  const missing = splitPromptTerms(base).filter((term) => !present.has(term));
+  if (missing.length === 0) return negative;
+  return [...missing, negative.trim()].filter(Boolean).join(", ");
 }
 
 /**
