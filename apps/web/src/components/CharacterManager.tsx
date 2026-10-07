@@ -703,6 +703,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     const files = Array.from(fileList ?? []);
     if (files.length === 0 || !projectId) return;
     const startProjectId = projectId;
+    const startGeneration = projectGenerationRef.current;
     const plan = planReferenceImport(files.map((file) => file.name), characters);
     const targets = files.filter((file) => plan.targets.includes(file.name));
     setError(null);
@@ -759,7 +760,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       if (done) setRefImportReport({ results: done.results, skipped: [...skipped, ...done.skipped] });
     } catch (cause) {
       // 切替後の失敗はpersistが知らせる。旧Projectの取り込み結果は切替先の画面へ出さない。
-      if (projectIdRef.current !== startProjectId) return;
+      if (projectGenerationRef.current !== startGeneration) return;
       setError(`保存に失敗したため、参照画像は1件も登録していません。同じファイルを選び直してください: ${describe(cause)}`);
       setRefImportReport({ results: [], skipped });
     } finally {
