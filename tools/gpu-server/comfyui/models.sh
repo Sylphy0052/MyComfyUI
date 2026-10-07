@@ -1,15 +1,16 @@
 #!/bin/bash
-# g18上で実行 (ssh.exe g18 'bash -s' < this): 不足モデルを配布元(HF)からコンテナ内で取得する
+# g18上のこのディレクトリで実行 (bash models.sh): 不足モデルを配布元(HF)からコンテナ内で取得する
 # revisionは2026-10-07に取得したときのcommitに固定する。配置済みのファイルはskipするので、固定は新規取得にだけ効く
 set -Eeuo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/revisions.sh"
 D=/ssdnas2/data/kfuruhashi
-docker run -i --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HF_HOME=/tmp/hf \
+docker run -i --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HF_HOME=/tmp/hf -e INCONTEXT_REV \
   -v "$D/ComfyUI:/ComfyUI" -v "$D/comfyui-models:/models" kfuruhashi-comfyui:cu130 python - <<'EOF'
 import os, shutil
 import huggingface_hub as h
 
 FILES = [
-    ("darask0/Anima-InContext-Character", "e084c88c02dcaa55806c56b22a43461d4c32be85",
+    ("darask0/Anima-InContext-Character", os.environ["INCONTEXT_REV"],
      "anima-incontext-character.safetensors", "/models/loras"),
     ("Comfy-Org/ACE-Step_ComfyUI_repackaged", "e39503e8265a02363b8c6d3fed3732944f4fc67f",
      "all_in_one/ace_step_v1_3.5b.safetensors", "/models/checkpoints"),

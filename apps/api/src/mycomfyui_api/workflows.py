@@ -222,32 +222,37 @@ async def ensure_workflows(session: AsyncSession) -> dict[str, WorkflowVersion]:
     latest: dict[str, WorkflowVersion] = {}
     created = 0
     synced = 0
-    for definition in definitions():
-        workflow = await _get_or_create_workflow(session, definition)
-        # enginesは版を持たないので、定義に合わせて上書きする。撤去したengineが残ると、
-        # engineで絞り込んだ一覧に実行できないWorkflowが混ざる。
-        engines = list(definition.engines)
-        if workflow.engines != engines:
-            workflow.engines = engines
-            synced += 1
-        version = await _get_version(session, workflow.id, definition.version)
-        if version is None:
-            version = WorkflowVersion(
-                id=schemas.new_id(),
-                workflow_id=workflow.id,
-                version=definition.version,
-                template_sha256=definition.template_sha256,
-                variables=definition.variables,
-                model_slots=definition.model_slots,
-                inputs=definition.inputs,
-                outputs=definition.outputs,
-                created_at=schemas.now_iso(),
-            )
-            session.add(version)
-            created += 1
-        latest[definition.name] = version
-    if created or synced:
-        await session.commit()
+    # enginesの書き換えはcommitまでsessionに残る。途中で例外が出たら巻き戻す。
+    try:
+        for definition in definitions():
+            workflow = await _get_or_create_workflow(session, definition)
+            # enginesは版を持たないので、定義に合わせて上書きする。撤去したengineが残ると、
+            # engineで絞り込んだ一覧に実行できないWorkflowが混ざる。
+            engines = list(definition.engines)
+            if workflow.engines != engines:
+                workflow.engines = engines
+                synced += 1
+            version = await _get_version(session, workflow.id, definition.version)
+            if version is None:
+                version = WorkflowVersion(
+                    id=schemas.new_id(),
+                    workflow_id=workflow.id,
+                    version=definition.version,
+                    template_sha256=definition.template_sha256,
+                    variables=definition.variables,
+                    model_slots=definition.model_slots,
+                    inputs=definition.inputs,
+                    outputs=definition.outputs,
+                    created_at=schemas.now_iso(),
+                )
+                session.add(version)
+                created += 1
+            latest[definition.name] = version
+        if created or synced:
+            await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
     if created:
         logger.info("Workflowの版を%d件登録しました。", created)
     if synced:

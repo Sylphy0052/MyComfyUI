@@ -1,16 +1,17 @@
 #!/bin/bash
-# g18上で実行 (ssh.exe g18 'bash -s' < this): ComfyUIのカスタムノードをコンテナ内で導入する
+# g18上のこのディレクトリで実行 (bash nodes.sh): ComfyUIのカスタムノードをコンテナ内で導入する
 set -Eeuo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/revisions.sh"
 D=/ssdnas2/data/kfuruhashi
-docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HF_HOME=/tmp/hf \
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HF_HOME=/tmp/hf -e INCONTEXT_REV \
   -v "$D/ComfyUI:/ComfyUI" kfuruhashi-comfyui:cu130 bash -Eeuo pipefail -c '
 cd /ComfyUI/custom_nodes
 [ -d ComfyUI-Anima_IP-Adapter ] || git clone -q https://github.com/LuciferTC9527/ComfyUI-Anima_IP-Adapter
-git -C ComfyUI-Anima_IP-Adapter checkout -q 6b77cd0
+git -C ComfyUI-Anima_IP-Adapter checkout -q 6b77cd0c367d76402174ace2be50d3cb6aa77855
 [ -d ComfyUI-WD14-Tagger ] || git clone -q https://github.com/pythongosssss/ComfyUI-WD14-Tagger
-git -C ComfyUI-WD14-Tagger checkout -q 9e0a6e7
+git -C ComfyUI-WD14-Tagger checkout -q 9e0a6e700299182fc05c58b62e7ad9f72182a78b
 if [ ! -d comfyui-anima-incontext ]; then
-  python -c "import huggingface_hub as h; h.snapshot_download(\"darask0/Anima-InContext-Character\", revision=\"e084c88c02dcaa55806c56b22a43461d4c32be85\", allow_patterns=[\"comfyui-anima-incontext/*\"], local_dir=\"/tmp/ic\")"
+  python -c "import huggingface_hub as h; h.snapshot_download(\"darask0/Anima-InContext-Character\", revision=\"$INCONTEXT_REV\", allow_patterns=[\"comfyui-anima-incontext/*\"], local_dir=\"/tmp/ic\")"
   cp -r /tmp/ic/comfyui-anima-incontext .
 fi
 ls
