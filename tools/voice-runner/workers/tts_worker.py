@@ -147,10 +147,49 @@ def run_cosyvoice3(request: dict[str, Any]) -> tuple[Any, int]:
     return chunks[0]["tts_speech"], sample_rate
 
 
+def run_irodori(request: dict[str, Any]) -> tuple[Any, int]:
+    """Irodori-TTS。参照音声だけで声質を写すため、参照テキストは使わない。
+
+    入力は漢字かな交じりのままでよい。`model_id`はHugging Faceのrepo idで、
+    `model.safetensors`とtokenizerをHFのキャッシュへ取得してから読む。
+
+    Irodori-TTSはvenvへパッケージとして入らないため、cloneした`home`を
+    import pathへ足す。
+    """
+    home = request.get("katakana_home")
+    if home:
+        sys.path.insert(0, home)
+    from irodori_tts.inference_runtime import (
+        InferenceRuntime,
+        RuntimeKey,
+        SamplingRequest,
+        download_hf_checkpoint,
+    )
+
+    runtime = InferenceRuntime.from_key(
+        RuntimeKey(
+            checkpoint=download_hf_checkpoint(request["model_id"]),
+            model_device="cuda",
+            codec_device="cuda",
+        )
+    )
+    set_seed(int(request["seed"]))
+    result = runtime.synthesize(
+        SamplingRequest(
+            text=request["text"],
+            ref_wav=request["reference_audio"],
+            seed=int(request["seed"]),
+        )
+    )
+    wav = result.audio.detach().to(device="cpu").float().numpy()
+    return wav, int(result.sample_rate)
+
+
 RUNNERS = {
     "qwen3-tts-clone": run_qwen3,
     "voxcpm2-prompt": run_voxcpm2,
     "cosyvoice3": run_cosyvoice3,
+    "irodori": run_irodori,
 }
 
 
