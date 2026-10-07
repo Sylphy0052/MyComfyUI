@@ -15,6 +15,7 @@ Providerを再度呼ぶのは次の2つだけで、どちらも1回に限る。
 from __future__ import annotations
 
 import dataclasses
+import math
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -182,21 +183,46 @@ def _checked(
 ) -> CheckedProposal:
     usage = _sum_usage(usages)
     if retry is not None:
-        usage["retry"] = retry
+        # Providerのusageが`retry`を持つときは、消さずに作り直しの記録へ入れる
+        record = dict(retry)
+        if "retry" in usage:
+            record["provider_retry"] = usage["retry"]
+        usage["retry"] = record
     return CheckedProposal(output, result.model, usage, retry)
 
 
 def _sum_usage(usages: list[Mapping[str, Any]]) -> dict[str, Any]:
-    """数値の項目は足し、それ以外は最初に現れた値を残す。
+    """数値の項目は足し、入れ子の辞書は再帰して合算し、それ以外は最初に現れた値を残す。
 
     項目名はProviderごとに違う (Qwenはトークン数、Claude Codeは費用と所要時間) ため、
-    名前を決め打ちせずに合算する。
+    名前を決め打ちせずに合算する。`NaN`と`inf`はJSON列へ保存できないため合算に入れず、
+    その要素を捨てる。同じ項目で型が食い違うときは、最初に現れた値を残す。
     """
     total: dict[str, Any] = {}
     for usage in usages:
-        for key, value in usage.items():
-            if isinstance(value, int | float) and not isinstance(value, bool):
-                total[key] = total.get(key, 0) + value
-            else:
-                total.setdefault(key, value)
+        _merge_usage(total, usage)
     return total
+
+
+def _merge_usage(total: dict[str, Any], usage: Mapping[str, Any]) -> None:
+    for key, value in usage.items():
+        current = total.get(key)
+        if isinstance(value, Mapping):
+            if key not in total:
+                total[key] = {}
+                current = total[key]
+            if isinstance(current, dict):
+                _merge_usage(current, value)
+        elif _is_number(value):
+            if not math.isfinite(value):
+                continue
+            if key not in total:
+                total[key] = value
+            elif _is_number(current):
+                total[key] = current + value
+        else:
+            total.setdefault(key, value)
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
