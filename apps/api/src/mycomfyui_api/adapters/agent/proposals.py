@@ -1318,11 +1318,14 @@ def revise_current_prompt(
     data["tag_glosses"] = glosses
     # 最終的なタグに残らなかった確信度は捨てる。戻したタグやratingの補完値は
     # ここに無いため、`build_tag_confidence_blocks`側で確信度1.0として扱う。
+    # 案が残した現在のタグも捨てて1.0にする。指示に関わらないタグは消さないため、
+    # 低い確信度を付けられても既定のしきい値で外れないようにする。
     data["tag_confidences"] = [
         confidence
         for confidence in data.get("tag_confidences") or []
         if isinstance(confidence, dict)
-        and _dedupe_key(_normalize_tag(confidence.get("tag"))) in final_keys
+        and (key := _dedupe_key(_normalize_tag(confidence.get("tag")))) in final_keys
+        and key not in current_keys
     ]
     _attach_prompt_text(data)
     return data
