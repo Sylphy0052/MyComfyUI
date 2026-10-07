@@ -17,6 +17,11 @@ export interface PromptDiffField {
    * 記述を消す意図とみなせる欄だけで立てる (#357)。
    */
   acceptRemovals?: boolean;
+  /**
+   * 別のUIで採否を決める記述か。前後どちらかの記述が該当するhunkは一覧に出さず、常に
+   * 採用する。確信度パネルのON/OFFと二重にならないようにする (#441)。
+   */
+  managed?: (text: string) => boolean;
 }
 
 /**
@@ -62,7 +67,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
   const [toggled, setToggled] = useState<Set<string>>(() => new Set());
 
   const isAccepted = (field: PromptDiffField, hunk: DiffHunk, key: string) =>
-    isAcceptedByDefault(field, hunk) !== toggled.has(key);
+    isManaged(field, hunk) || isAcceptedByDefault(field, hunk) !== toggled.has(key);
 
   const toggle = (id: string) => {
     setToggled((current) => {
@@ -106,7 +111,8 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
   return (
     <div className="stack">
       {children}
-      {diffs.map(({ field, hunks, keys }) => {
+      {diffs.map(({ field, hunks: allHunks, keys }) => {
+        const hunks = allHunks.filter((hunk) => !isManaged(field, hunk));
         if (hunks.length === 0) return null;
         return (
           <div key={field.key}>
@@ -154,6 +160,13 @@ function badgeKind(kind: DiffHunk["kind"]): string {
   if (kind === "add") return "added";
   if (kind === "remove") return "missing";
   return "updated";
+}
+
+/** 別のUIが採否を決めるhunkか (`PromptDiffField.managed`)。 */
+function isManaged(field: PromptDiffField, hunk: DiffHunk): boolean {
+  const { managed } = field;
+  if (!managed) return false;
+  return [hunk.before?.text, hunk.after?.text].some((text) => text !== undefined && managed(text));
 }
 
 /** 既定で採用するhunkか。削除は`acceptRemovals`を立てた欄だけ採用する。 */

@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import { api } from "../api/client";
+import { bareTag } from "../prompt/merge";
 import { draftString, readFormDraft, writeFormDraft } from "../state/formDraft";
 import type { AgentProvider, AgentProviderId } from "../api/client";
 import { noticeSuffix } from "./BackendNotice";
@@ -180,8 +181,42 @@ function tagDedupeKey(value: string): string {
   return stripped.trim().toLowerCase();
 }
 
+/** 手動指定が無いときに共有する空のMap (#441)。 */
+const NO_OVERRIDES: ReadonlyMap<string, boolean> = new Map();
+
 /**
- * しきい値以上のタグだけを残し、サーバーの`compose_tag_line`/`compose_positive_prompt`と
+ * タグをpositive promptへ入れるか。手動指定があればそれに従い、無ければしきい値で決める (#441)。
+ * 手動指定のキーは`tagDedupeKey`で、同じタグはブロックをまたいで連動する。
+ */
+function isTagOn(
+  item: TagConfidenceItem,
+  threshold: number,
+  overrides: ReadonlyMap<string, boolean>,
+): boolean {
+  return overrides.get(tagDedupeKey(item.tag)) ?? item.confidence >= threshold;
+}
+
+/**
+ * promptへ入るタグの`tagDedupeKey`の集合。同じタグが複数ブロックにあるときは、どれかが
+ * ONなら入る (`composePositivePromptFromBlocks`が重複を1つにまとめるため) (#441)。
+ */
+function tagOnKeys(
+  blocks: TagConfidenceBlocks,
+  threshold: number,
+  overrides: ReadonlyMap<string, boolean>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const field of TAG_BLOCK_ORDER) {
+    for (const item of blocks[field]) {
+      const key = tagDedupeKey(item.tag);
+      if (item.tag && key && isTagOn(item, threshold, overrides)) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+/**
+ * ONのタグだけを残し、サーバーの`compose_tag_line`/`compose_positive_prompt`と
  * 同じ組み立て方でpositive promptへ戻す (#407)。ブロック順で連結し、重複は最初の位置に
  * 1つだけ残す。重み付きと重みなしが並んだときは、サーバーの`_dedupe`と同じく重み付きを残す。
  */
@@ -189,11 +224,12 @@ export function composePositivePromptFromBlocks(
   blocks: TagConfidenceBlocks,
   threshold: number,
   naturalText: string,
+  overrides: ReadonlyMap<string, boolean> = NO_OVERRIDES,
 ): string {
   const chosen = new Map<string, string>();
   for (const field of TAG_BLOCK_ORDER) {
     for (const item of blocks[field]) {
-      if (item.confidence < threshold) continue;
+      if (!isTagOn(item, threshold, overrides)) continue;
       const key = tagDedupeKey(item.tag);
       if (!item.tag || !key) continue;
       const current = chosen.get(key);
@@ -398,7 +434,7 @@ export function AssistNotes({ result }: { result: AssistResult }) {
   );
 }
 
-/** しきい値以上/未満で行を分ける表示用の1タグ分。 */
+/** ON/OFFで行を分ける表示用の1タグ分。 */
 interface DisplayTagItem extends TagConfidenceItem {
   kept: boolean;
 }
@@ -413,18 +449,24 @@ const TAG_BLOCK_LABELS: Record<keyof TagConfidenceBlocks, string> = {
 
 /**
  * 確信度としきい値スライダー。ブロックごとに見出しを出し、タグを確信度の降順で
- * 並べる。しきい値未満のタグは薄く表示し、positive promptからは除く (#407)。
+ * 並べる。各タグのチェックでON/OFFを選べ、OFFのタグは薄く表示してpositive promptから
+ * 除く。既定はしきい値以上がON (#407, #441)。
  */
 export function TagConfidenceThresholdPanel({
   blocks,
   threshold,
+  overrides,
   onThresholdChange,
+  onTagToggle,
 }: {
   blocks: TagConfidenceBlocks;
   threshold: number;
+  overrides: ReadonlyMap<string, boolean>;
   onThresholdChange: (threshold: number) => void;
+  onTagToggle: (tag: string, on: boolean) => void;
 }) {
   const sliderId = useId();
+  const onKeys = tagOnKeys(blocks, threshold, overrides);
   return (
     <div className="stack">
       <div className="row">
@@ -444,7 +486,7 @@ export function TagConfidenceThresholdPanel({
         if (items.length === 0) return null;
         const display: DisplayTagItem[] = items.map((item) => ({
           ...item,
-          kept: item.confidence >= threshold,
+          kept: onKeys.has(tagDedupeKey(item.tag)),
         }));
         return (
           <div key={field}>
@@ -455,8 +497,15 @@ export function TagConfidenceThresholdPanel({
                   key={`${item.tag}-${index}`}
                   className={item.kept ? undefined : "muted"}
                 >
-                  <span className="mono">{item.tag}</span> ({item.confidence.toFixed(2)})
-                  {item.ja && <span> {item.ja}</span>}
+                  <label className="row">
+                    <input
+                      type="checkbox"
+                      checked={item.kept}
+                      onChange={(event) => onTagToggle(item.tag, event.target.checked)}
+                    />
+                    <span className="mono">{item.tag}</span> ({item.confidence.toFixed(2)})
+                    {item.ja && <span> {item.ja}</span>}
+                  </label>
                 </li>
               ))}
             </ul>
@@ -469,8 +518,9 @@ export function TagConfidenceThresholdPanel({
 
 /**
  * 差分レビューへ確信度のしきい値スライダーを付ける (#407)。補完結果が変わるたびに
- * しきい値を既定値へ戻し、positive promptの提案文をしきい値以上のタグで組み直す。
+ * しきい値と手動のON/OFFを既定へ戻し、positive promptの提案文をONのタグで組み直す。
  * 確信度の無い差分 (画像prompt以外の補完や、補完以外から開いた差分) はそのまま返す。
+ * 一覧のタグと重なる差分のhunkは、欄の`managed`で指して差分一覧から外す (#441)。
  * しきい値の戻しは`notes`の参照で判定するため、呼び出し元は差分をstateに持ち、描画のたびに
  * 作り直さない。
  */
@@ -479,24 +529,55 @@ export function useTagThresholdDiff(promptDiff: PromptDiffState | null): {
   panel: ReactNode;
 } {
   const blocks = promptDiff?.notes?.tagConfidenceBlocks;
-  const [selected, setSelected] = useState<{ blocks?: TagConfidenceBlocks; threshold: number }>({
-    threshold: DEFAULT_TAG_CONFIDENCE_THRESHOLD,
-  });
+  const [selected, setSelected] = useState<{
+    blocks?: TagConfidenceBlocks;
+    threshold: number;
+    overrides: ReadonlyMap<string, boolean>;
+  }>({ threshold: DEFAULT_TAG_CONFIDENCE_THRESHOLD, overrides: NO_OVERRIDES });
   if (!promptDiff || !blocks) return { diff: promptDiff, panel: null };
-  const threshold = selected.blocks === blocks ? selected.threshold : DEFAULT_TAG_CONFIDENCE_THRESHOLD;
-  const proposed = composePositivePromptFromBlocks(blocks, threshold, promptDiff.notes?.naturalText ?? "");
+  const current = selected.blocks === blocks ? selected : null;
+  const threshold = current?.threshold ?? DEFAULT_TAG_CONFIDENCE_THRESHOLD;
+  const overrides = current?.overrides ?? NO_OVERRIDES;
+  const proposed = composePositivePromptFromBlocks(
+    blocks,
+    threshold,
+    promptDiff.notes?.naturalText ?? "",
+    overrides,
+  );
+  // 差分のhunkはbareTagで対応付くため (`diffPrompt`)、`[tag]`や負の重みの記述も拾えるよう
+  // 両方の正規化でキーを持つ。空になるキーは、何にでも当たってしまうので入れない。
+  const panelTagKeys = new Set(
+    TAG_BLOCK_ORDER.flatMap((field) =>
+      blocks[field].flatMap((item) => [tagDedupeKey(item.tag), bareTag(item.tag)]),
+    ).filter((key) => key !== ""),
+  );
+  const isPanelTag = (text: string) =>
+    [tagDedupeKey(text), bareTag(text)].some((key) => panelTagKeys.has(key));
   return {
     diff: {
       ...promptDiff,
       fields: promptDiff.fields.map((field) =>
-        field.key === "positive_prompt" ? { ...field, proposed } : field,
+        field.key === "positive_prompt"
+          ? { ...field, proposed, managed: isPanelTag }
+          : field,
       ),
     },
     panel: (
       <TagConfidenceThresholdPanel
         blocks={blocks}
         threshold={threshold}
-        onThresholdChange={(value) => setSelected({ blocks, threshold: value })}
+        overrides={overrides}
+        // スライダーはタグ全体の一括指定なので、手動のON/OFFは捨ててしきい値で決め直す。
+        onThresholdChange={(value) =>
+          setSelected({ blocks, threshold: value, overrides: NO_OVERRIDES })
+        }
+        onTagToggle={(tag, on) =>
+          setSelected({
+            blocks,
+            threshold,
+            overrides: new Map(overrides).set(tagDedupeKey(tag), on),
+          })
+        }
       />
     ),
   };
