@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 
-import { ApiError, api } from "../api/client";
+import { ApiError, VOICE_REFERENCE_PAGE_SIZE, api } from "../api/client";
 import type {
   AgentProvider,
   MediaItem,
@@ -182,8 +182,6 @@ interface MediaImpact {
   before: number | null;
   unknownTime: number;
 }
-
-const VOICE_REFERENCE_PAGE_SIZE = 200;
 
 /** 参照音声の書き起こしの表示・編集。空欄で保存するとnullに戻す。 */
 function TranscriptEditor({

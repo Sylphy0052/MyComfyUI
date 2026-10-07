@@ -221,6 +221,10 @@ export function subscribeAgentProvidersChanged(listener: () => void): () => void
   return () => window.removeEventListener(AGENT_PROVIDERS_CHANGED_EVENT, listener);
 }
 
+// listMediaItemsで参照音声(voice_reference)を辿るときの1ページあたりの件数。APIの`limit`上限と同じ。
+// 画面ごとに件数がずれないよう、VoicePanelとCharacterManagerで共有する。
+export const VOICE_REFERENCE_PAGE_SIZE = 200;
+
 export const api = {
   listRecipes: (kind?: string, options?: { latest?: boolean }) => {
     const params = new URLSearchParams();
