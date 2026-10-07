@@ -433,6 +433,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const [outfitTagProgress, setOutfitTagProgress] = useState<string | null>(null);
   const [outfitTagResult, setOutfitTagResult] = useState<{
     filled: number;
+    skipped: number;
     failures: { name: string; reason: string }[];
     interrupted: boolean;
   } | null>(null);
@@ -447,9 +448,9 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   // 取り込み中は編集フォームを開かせない。開いた下書きの保存で衣装一覧が古い内容に戻るため。
   const importing = refImportProgress !== null;
   const projectIdRef = useRef(projectId);
-  // タグ抽出の応答待ちの間に編集中のキャラクターが替わったかを見る (#486)。
-  const draftIdRef = useRef<string | null>(null);
-  draftIdRef.current = draft?.id ?? null;
+  // タグ抽出の応答待ちの間に、編集中のキャラクターや衣装のpromptが変わったかを見る (#486)。
+  const draftRef = useRef<CharacterDraft | null>(null);
+  draftRef.current = draft;
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
 
@@ -765,6 +766,12 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     } : current);
   };
 
+  /** 編集中の下書きで、衣装の`prompt`が抽出開始時の値`startPrompt`のままか (#486)。 */
+  const outfitPromptUnchanged = (draftId: string, outfitId: string, startPrompt: string) => {
+    const current = draftRef.current;
+    return current?.id === draftId && current.outfits.find((item) => item.id === outfitId)?.prompt === startPrompt;
+  };
+
   /** 衣装1件の元画像からTaggerでタグを取り直し、`prompt`欄へ入れる。保存は利用者が行う (#486)。 */
   const extractOutfitTags = async (outfit: ProjectCharacterOutfit) => {
     const image = outfitSourceImage(outfit);
@@ -776,7 +783,11 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     setOutfitTagResult(null);
     try {
       const extracted = await api.extractStoredImageTags(image.relative_path, image.media_type);
-      fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), outfit.prompt);
+      if (outfitPromptUnchanged(draftId, outfit.id, outfit.prompt)) {
+        fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), outfit.prompt);
+      } else if (draftRef.current?.id === draftId) {
+        setError(`抽出中に「${outfit.name}」のプロンプトが編集されたため、抽出したタグで置き換えていません。`);
+      }
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -797,6 +808,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     setError(null);
     setOutfitTagResult(null);
     let filled = 0;
+    let skipped = 0;
     let interrupted = false;
     const failures: { name: string; reason: string }[] = [];
     for (let index = 0; index < targets.length; index += 1) {
@@ -804,14 +816,18 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       setOutfitTagProgress(`抽出中 ${index + 1}/${targets.length}`);
       try {
         const extracted = await api.extractStoredImageTags(image.relative_path, image.media_type);
-        if (draftIdRef.current !== draftId) {
+        if (draftRef.current?.id !== draftId) {
           interrupted = true;
           break;
+        }
+        if (!outfitPromptUnchanged(draftId, outfit.id, outfit.prompt)) {
+          skipped += 1;
+          continue;
         }
         fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), outfit.prompt);
         filled += 1;
       } catch (cause) {
-        if (draftIdRef.current !== draftId) {
+        if (draftRef.current?.id !== draftId) {
           interrupted = true;
           break;
         }
@@ -819,7 +835,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       }
     }
     setOutfitTagProgress(null);
-    setOutfitTagResult({ filled, failures, interrupted });
+    setOutfitTagResult({ filled, skipped, failures, interrupted });
     setExtractingOutfitTags(false);
   };
 
@@ -1215,6 +1231,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
               {outfitTagResult && (
                 <p className={outfitTagResult.failures.length > 0 ? "error" : "muted"}>
                   {outfitTagResult.filled}件を抽出しました。保存すると反映されます。
+                  {outfitTagResult.skipped > 0 && ` 抽出中にプロンプトが編集された${outfitTagResult.skipped}件は置き換えていません。`}
                   {outfitTagResult.interrupted && " 編集中のキャラクターが替わったため、残りは抽出していません。"}
                   {outfitTagResult.failures.length > 0 &&
                     ` 失敗${outfitTagResult.failures.length}件: ${outfitTagResult.failures.map((item) => `${item.name} (${item.reason})`).join(", ")}`}
