@@ -116,7 +116,8 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
                 // 既定採用の削除hunkにのみ「(既定で選択)」の注記を出す。
                 const isDefaultRemoval = hunk.kind === "remove" && field.acceptRemovals;
                 return (
-                  <li key={id} className="row">
+                  // 採否は内容で持つが、同じ内容のhunkが並ぶこともあるため、keyは一意な位置で付ける。
+                  <li key={hunk.id} className="row">
                     <label className="row">
                       <input
                         type="checkbox"
