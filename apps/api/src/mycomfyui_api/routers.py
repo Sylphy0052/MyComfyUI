@@ -32,6 +32,7 @@ from starlette.concurrency import run_in_threadpool
 
 from mycomfyui_api import (
     approvals,
+    bootstrap,
     graph_validation,
     image_imports,
     provenance,
@@ -1161,6 +1162,11 @@ async def _resolve_generation_defaults(
         for name, value in payload.inputs.items():
             inputs[name] = value
             input_origins[name] = "runtime"
+    negative = inputs.get("negative_prompt")
+    if isinstance(negative, str):
+        inputs["negative_prompt"] = bootstrap.with_reference_safety_negative(
+            recipe, negative
+        )
 
     return (
         payload.model_copy(

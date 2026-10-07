@@ -478,6 +478,30 @@ _IMAGE_REF_SCHEMA: dict[str, Any] = {
 #: 参照付き生成のnegativeの先頭に置く語。参照は同一性だけを運び、衣装タグが欠けると
 #: 裸体で出力されることがあるため既定で避ける (#484, #486)。
 IMAGE_REF_SAFETY_NEGATIVE = "nsfw, nude, nipples"
+_IMAGE_REF_TEMPLATES = frozenset(
+    {comfyui_prepare.REF_SIGLIP_TEMPLATE, comfyui_prepare.REF_INCONTEXT_TEMPLATE}
+)
+
+
+def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
+    """参照Recipeのnegativeへ、欠けている安全語を先頭に足す。参照Recipe以外はそのまま返す。
+
+    Recipe既定はこの語を持つが、Project・LookProfile・実行時の入力でnegativeを上書きすると
+    落ちるため、既定値を全て解決した後に補う (#486)。
+    """
+    reference = recipe.workflow_template_ref
+    name = reference.get("name") if isinstance(reference, dict) else None
+    if not isinstance(name, str) or name not in _IMAGE_REF_TEMPLATES:
+        return negative
+    present = {term.strip() for term in negative.split(",")}
+    missing = [
+        term for term in IMAGE_REF_SAFETY_NEGATIVE.split(", ") if term not in present
+    ]
+    if not missing:
+        return negative
+    return ", ".join([*missing, negative.strip()] if negative.strip() else missing)
+
+
 _IMAGE_REF_DEFAULTS: dict[str, Any] = {
     "unet_name": DEFAULT_VALUES["unet_name"],
     "clip_name": DEFAULT_VALUES["clip_name"],
