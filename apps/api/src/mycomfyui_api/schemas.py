@@ -2104,20 +2104,38 @@ class ImagePromptTagGloss(ApiModel):
 
 
 class ImagePromptTagChange(ApiModel):
-    """現在のpromptを直した案で、足したか消したタグ1つと、その理由。"""
+    """現在のpromptを直した案で、足したか消したタグ1つ。"""
 
     tag: str
     change: Literal["added", "removed"]
-    #: モデルが理由を書かなかった変更は空文字。
-    reason: str = Field(default="", max_length=500)
 
 
 class ImagePromptNaturalTextChange(ApiModel):
-    """現在のpromptを直した案で、自然文をどう変えたかと、その理由。"""
+    """現在のpromptを直した案で、自然文をどう変えたか。"""
 
     change: Literal["unchanged", "added", "removed", "modified"] = "unchanged"
-    #: 変えていないとき、またはモデルが理由を書かなかったときは空文字。
-    reason: str = Field(default="", max_length=500)
+
+
+class ImagePromptTagConfidence(ApiModel):
+    """prompt補完結果のタグ1つと、そのタグを残すべき確信度(0〜1)、日本語訳 (#407)。
+
+    件数の上限は設けない。しきい値を下回るタグの扱いはクライアント側のスライダーで
+    利用者が選ぶ。
+    """
+
+    tag: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    ja: str
+
+
+class ImagePromptTagConfidenceBlocks(ApiModel):
+    """ブロックごとの確信度付きタグ一覧。各ブロックは確信度の降順で並ぶ (#407)。"""
+
+    quality_tags: list[ImagePromptTagConfidence] = Field(default_factory=list)
+    subject_tags: list[ImagePromptTagConfidence] = Field(default_factory=list)
+    character_tags: list[ImagePromptTagConfidence] = Field(default_factory=list)
+    artist_tags: list[ImagePromptTagConfidence] = Field(default_factory=list)
+    general_tags: list[ImagePromptTagConfidence] = Field(default_factory=list)
 
 
 class ImagePromptAssistRead(ApiModel):
@@ -2135,13 +2153,16 @@ class ImagePromptAssistRead(ApiModel):
     #: タグでは結び付けられない関係を書いた自然文。
     natural_text: str = Field(default="", max_length=2000)
     negative_prompt: str = Field(max_length=4000)
-    rationale: str = Field(max_length=2000)
     #: タグと日本語訳の対応。表示だけに使い、生成の入力には含めない。
     tag_glosses: list[ImagePromptTagGloss] = Field(default_factory=list)
     #: 現在のpromptからの実際の差分。現在のpromptを渡さなかったときは空。
     tag_changes: list[ImagePromptTagChange] = Field(default_factory=list)
     natural_text_change: ImagePromptNaturalTextChange = Field(
         default_factory=ImagePromptNaturalTextChange
+    )
+    #: ブロックごとの確信度付きタグ一覧。しきい値スライダーでの表示に使う (#407)。
+    tag_confidence_blocks: ImagePromptTagConfidenceBlocks = Field(
+        default_factory=ImagePromptTagConfidenceBlocks
     )
     provider_id: AgentProviderId
     model: str | None

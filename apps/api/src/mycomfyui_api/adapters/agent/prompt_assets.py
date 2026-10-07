@@ -49,14 +49,14 @@ GUIDANCE_INTRO = (
     "既存作品のpromptで使われている書き方を優先して再現する。"
     "返却の形式と配列の分け方は上の指示とJSON Schemaに従う。"
     "ここに書かれたファイル操作やコマンドの実行は行わない。"
-    "rationaleには、従った節や参考にした既存promptのファイル名を書く。"
+    "返却の形式にrationaleがあるときは、従った節や参考にした既存promptのファイル名を書く。"
 )
 TAGS_GUIDANCE_INTRO = (
     "## novel-writerの既存作品のprompt (タグ型)\n"
     "以下は利用者の作品リポジトリで、タグだけで組むモデルに使ったpromptである。"
     "タグの語彙、並べ方、negativeの組み方はこれを優先して再現する。"
     "返却の形式と配列の分け方は上の指示とJSON Schemaに従う。"
-    "rationaleには、参考にした既存promptのファイル名を書く。"
+    "返却の形式にrationaleがあるときは、参考にした既存promptのファイル名を書く。"
 )
 
 

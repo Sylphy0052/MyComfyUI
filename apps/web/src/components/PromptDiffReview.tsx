@@ -1,10 +1,9 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { applyPromptDiff, bareTag, diffPrompt } from "../prompt/merge";
-import type { DiffHunk, PromptSegment } from "../prompt/merge";
-import { MISSING_REASON, describeNaturalTextChange } from "./PromptAssist";
-import type { AssistResult, TagChange } from "./PromptAssist";
+import { applyPromptDiff, diffPrompt } from "../prompt/merge";
+import type { DiffHunk } from "../prompt/merge";
+import type { AssistResult } from "./PromptAssist";
 
 /** 差分計算の対象になる1つのプロンプト欄。 */
 export interface PromptDiffField {
@@ -18,11 +17,6 @@ export interface PromptDiffField {
    * 記述を消す意図とみなせる欄だけで立てる (#357)。
    */
   acceptRemovals?: boolean;
-  /**
-   * 各hunkに添える変更理由。AI が現在のプロンプトを直した欄だけで渡す。理由は
-   * positive prompt についてのものなので、他の欄には渡さない (#382)。
-   */
-  reasons?: AssistResult;
 }
 
 /**
@@ -53,6 +47,10 @@ interface Props {
  * に既存の記述が消えるため。削除したいhunkは利用者が明示的に選ぶ。
  * `acceptRemovals`を立てた欄だけは削除も採用状態にする。既定で選ばれた削除は
  * 利用者が選んだものと見た目で区別できるよう「(既定で選択)」と注記する (#366)。
+ *
+ * 採否は、既定から利用者が反転したhunkの集合として内容で覚える。`fields`はしきい値
+ * スライダーで作り直されることがあり (#407)、位置から作る`hunk.id`はそのたびにずれる。
+ * 内容で覚えれば、作り直した後も同じhunkの選択が残り、新しく現れたhunkは既定に従う。
  */
 export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props) {
   const diffs = fields.map((field) => ({
@@ -60,18 +58,13 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
     hunks: diffPrompt(field.current, field.proposed),
   }));
 
-  const [accepted, setAccepted] = useState<Set<string>>(() => {
-    const initial = new Set<string>();
-    diffs.forEach(({ field, hunks }) => {
-      hunks
-        .filter((hunk) => field.acceptRemovals || hunk.kind !== "remove")
-        .forEach((hunk) => initial.add(`${field.key}\u0000${hunk.id}`));
-    });
-    return initial;
-  });
+  const [toggled, setToggled] = useState<Set<string>>(() => new Set());
+
+  const isAccepted = (field: PromptDiffField, hunk: DiffHunk) =>
+    isAcceptedByDefault(field, hunk) !== toggled.has(hunkContentKey(field, hunk));
 
   const toggle = (id: string) => {
-    setAccepted((current) => {
+    setToggled((current) => {
       const next = new Set(current);
       if (next.has(id)) {
         next.delete(id);
@@ -89,7 +82,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
     diffs.forEach(({ field, hunks }) => {
       const fieldAccepted = new Set(
         hunks
-          .filter((hunk) => accepted.has(`${field.key}\u0000${hunk.id}`))
+          .filter((hunk) => isAccepted(field, hunk))
           .map((hunk) => hunk.id),
       );
       result[field.key] = applyPromptDiff(field.current, hunks, fieldAccepted);
@@ -119,7 +112,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
             <p className="muted">{field.label}</p>
             <ul className="list plain">
               {hunks.map((hunk) => {
-                const id = `${field.key}\u0000${hunk.id}`;
+                const id = hunkContentKey(field, hunk);
                 // 既定採用の削除hunkにのみ「(既定で選択)」の注記を出す。
                 const isDefaultRemoval = hunk.kind === "remove" && field.acceptRemovals;
                 return (
@@ -127,7 +120,7 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
                     <label className="row">
                       <input
                         type="checkbox"
-                        checked={accepted.has(id)}
+                        checked={isAccepted(field, hunk)}
                         onChange={() => toggle(id)}
                       />
                       <span className={`badge change-${badgeKind(hunk.kind)}`}>
@@ -136,9 +129,6 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
                       {isDefaultRemoval && <span className="muted">(既定で選択)</span>}
                     </label>
                     <span className="mono">{describeHunk(hunk)}</span>
-                    {field.reasons && (
-                      <span className="muted">{hunkReason(hunk, field.reasons)}</span>
-                    )}
                   </li>
                 );
               })}
@@ -164,6 +154,18 @@ function badgeKind(kind: DiffHunk["kind"]): string {
   return "updated";
 }
 
+/** 既定で採用するhunkか。削除は`acceptRemovals`を立てた欄だけ採用する。 */
+function isAcceptedByDefault(field: PromptDiffField, hunk: DiffHunk): boolean {
+  return field.acceptRemovals === true || hunk.kind !== "remove";
+}
+
+/** hunkの採否を覚えるキー。欄と種類と前後の記述から作り、位置に依存させない。 */
+function hunkContentKey(field: PromptDiffField, hunk: DiffHunk): string {
+  return [field.key, hunk.kind, hunk.before?.text ?? "", hunk.after?.text ?? ""].join(
+    "\u0000",
+  );
+}
+
 function hunkLabel(kind: DiffHunk["kind"]): string {
   if (kind === "add") return "追加";
   if (kind === "remove") return "削除";
@@ -174,29 +176,4 @@ function describeHunk(hunk: DiffHunk): string {
   if (hunk.kind === "add") return hunk.after?.text ?? "";
   if (hunk.kind === "remove") return hunk.before?.text ?? "";
   return `${hunk.before?.text ?? ""} → ${hunk.after?.text ?? ""}`;
-}
-
-/** 変更一覧から、同じタグ・同じ種別の理由を探す。重み付けと大文字小文字は区別しない。 */
-function tagReason(
-  changes: readonly TagChange[],
-  change: TagChange["change"],
-  segment: PromptSegment | null,
-): string | null {
-  if (!segment) return null;
-  const key = bareTag(segment.text);
-  const found = changes.find((item) => item.change === change && bareTag(item.tag) === key);
-  return found ? found.reason || MISSING_REASON : null;
-}
-
-/** hunkに添える理由。自然文の段落は自然文の変更理由を、タグはタグの変更理由を返す。 */
-function hunkReason(hunk: DiffHunk, reasons: AssistResult): string {
-  if (hunk.before?.paragraph || hunk.after?.paragraph) {
-    return describeNaturalTextChange(reasons.naturalTextChange) ?? MISSING_REASON;
-  }
-  const changes = reasons.tagChanges ?? [];
-  const found = [
-    hunk.kind !== "add" && tagReason(changes, "removed", hunk.before),
-    hunk.kind !== "remove" && tagReason(changes, "added", hunk.after),
-  ].filter((reason): reason is string => Boolean(reason));
-  return found.length > 0 ? found.join(" / ") : MISSING_REASON;
 }

@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import type { ReactNode } from "react";
 
 import { api } from "../api/client";
 import { draftString, readFormDraft, writeFormDraft } from "../state/formDraft";
 import type { AgentProvider, AgentProviderId } from "../api/client";
 import { noticeSuffix } from "./BackendNotice";
+import type { PromptDiffState } from "./PromptDiffReview";
 
 interface Props {
   /** 選択肢として出す AI プロバイダ。取得は呼び出し元が行う。 */
@@ -78,14 +80,30 @@ export function PromptAssist({ current, recipeId, onApply, ...rest }: Props) {
             current_negative_prompt: current.negative,
           }),
         });
+        const blocks = result.tag_confidence_blocks;
         const notes = {
-          rationale: result.rationale,
           tagGlosses: result.tag_glosses ?? [],
           tagChanges: result.tag_changes ?? [],
           naturalTextChange: result.natural_text_change,
+          tagConfidenceBlocks: blocks && {
+            quality_tags: blocks.quality_tags ?? [],
+            subject_tags: blocks.subject_tags ?? [],
+            character_tags: blocks.character_tags ?? [],
+            artist_tags: blocks.artist_tags ?? [],
+            general_tags: blocks.general_tags ?? [],
+          },
+          naturalText: result.natural_text,
         };
         onApply({
-          positive: result.positive_prompt,
+          // 確信度の付いた補完は、しきい値の既定値で外したタグを除いて渡す。差分レビューを
+          // 持つ画面は`useTagThresholdDiff`でスライダーに合わせて組み直す (#407)。
+          positive: notes.tagConfidenceBlocks
+            ? composePositivePromptFromBlocks(
+                notes.tagConfidenceBlocks,
+                DEFAULT_TAG_CONFIDENCE_THRESHOLD,
+                notes.naturalText ?? "",
+              )
+            : result.positive_prompt,
           negative: result.negative_prompt,
           notes,
           review,
@@ -104,27 +122,105 @@ export interface AssistRequest {
   review: boolean;
 }
 
-/** 現在の prompt を直した案で、足したか消したタグ1つと、その理由 (#382)。 */
+/** 現在の prompt を直した案で、足したか消したタグ1つ (#382)。理由は返さない (#407)。 */
 export interface TagChange {
   tag: string;
   change: "added" | "removed";
-  /** AI が理由を書かなかったときは空文字。 */
-  reason: string;
 }
 
-/** 現在の prompt を直した案で、自然文をどう変えたかと、その理由 (#382)。 */
+/** 現在の prompt を直した案で、自然文をどう変えたか (#382)。理由は返さない (#407)。 */
 export interface NaturalTextChange {
   change: "unchanged" | "added" | "removed" | "modified";
-  reason: string;
+}
+
+/** タグ1つの確信度と日本語訳。ブロック内は確信度の降順で並ぶ (#407)。 */
+export interface TagConfidenceItem {
+  tag: string;
+  confidence: number;
+  ja: string;
+}
+
+/** ブロックごとの確信度付きタグ一覧 (#407)。 */
+export interface TagConfidenceBlocks {
+  quality_tags: TagConfidenceItem[];
+  subject_tags: TagConfidenceItem[];
+  character_tags: TagConfidenceItem[];
+  artist_tags: TagConfidenceItem[];
+  general_tags: TagConfidenceItem[];
+}
+
+/** `TagConfidenceBlocks`のキーを、タグ行を組み立てる順で並べたもの (#407)。 */
+const TAG_BLOCK_ORDER: (keyof TagConfidenceBlocks)[] = [
+  "quality_tags",
+  "subject_tags",
+  "character_tags",
+  "artist_tags",
+  "general_tags",
+];
+
+/** しきい値スライダーの既定値。永続化はしない (#407)。 */
+export const DEFAULT_TAG_CONFIDENCE_THRESHOLD = 0.2;
+
+/** 重み付きタグの書式。サーバーの`WEIGHTED_TAG_PATTERN`と同じ (#407)。 */
+const WEIGHTED_TAG_PATTERN = /^\((.+):\s*[0-9.]+\)$/;
+
+/**
+ * 重複判定に使うキー。サーバーの`_dedupe_key`と同じく、重み括弧と、括弧が1組だけの
+ * 強調括弧を外し、大文字小文字を無視する (#407)。
+ */
+function tagDedupeKey(value: string): string {
+  let stripped = value.trim();
+  const weighted = WEIGHTED_TAG_PATTERN.exec(stripped);
+  if (weighted) {
+    stripped = weighted[1];
+  } else if (stripped.startsWith("(") && stripped.endsWith(")")) {
+    const inner = stripped.slice(1, -1);
+    if (!inner.includes("(") && !inner.includes(")")) stripped = inner;
+  }
+  return stripped.trim().toLowerCase();
+}
+
+/**
+ * しきい値以上のタグだけを残し、サーバーの`compose_tag_line`/`compose_positive_prompt`と
+ * 同じ組み立て方でpositive promptへ戻す (#407)。ブロック順で連結し、重複は最初の位置に
+ * 1つだけ残す。重み付きと重みなしが並んだときは、サーバーの`_dedupe`と同じく重み付きを残す。
+ */
+export function composePositivePromptFromBlocks(
+  blocks: TagConfidenceBlocks,
+  threshold: number,
+  naturalText: string,
+): string {
+  const chosen = new Map<string, string>();
+  for (const field of TAG_BLOCK_ORDER) {
+    for (const item of blocks[field]) {
+      if (item.confidence < threshold) continue;
+      const key = tagDedupeKey(item.tag);
+      if (!item.tag || !key) continue;
+      const current = chosen.get(key);
+      if (current === undefined) {
+        chosen.set(key, item.tag);
+      } else if (WEIGHTED_TAG_PATTERN.test(item.tag.trim()) && !WEIGHTED_TAG_PATTERN.test(current.trim())) {
+        chosen.set(key, item.tag);
+      }
+    }
+  }
+  const tagLine = [...chosen.values()].join(", ");
+  const parts = [tagLine, naturalText].map((part) => part.trim()).filter((part) => part);
+  return parts.join("\n\n");
 }
 
 /** 補完後に欄の下へ出す、AI の説明とタグの日本語訳、直した案の変更理由。 */
 export interface AssistResult {
+  /** video/music補完の説明。image_promptは理由を返さないため使わない (#407)。 */
   rationale?: string;
   tagGlosses?: { tag: string; ja: string }[];
   /** 現在の prompt を直したときだけ入る。変更一覧は API が実際の差分から組み立てる (#382)。 */
   tagChanges?: TagChange[];
   naturalTextChange?: NaturalTextChange;
+  /** image_prompt補完・レビューだけで入る、しきい値スライダー用のタグ一覧 (#407)。 */
+  tagConfidenceBlocks?: TagConfidenceBlocks;
+  /** しきい値変更でpositive promptを組み直すための自然文 (#407)。 */
+  naturalText?: string;
 }
 
 interface FieldProps {
@@ -274,14 +370,6 @@ export function PromptAssistField({
   );
 }
 
-/** 理由が空のときに出す文言。 */
-export const MISSING_REASON = "理由の記載なし";
-
-const TAG_CHANGE_LABELS: Record<TagChange["change"], string> = {
-  added: "追加",
-  removed: "削除",
-};
-
 const NATURAL_TEXT_CHANGE_LABELS: Record<NaturalTextChange["change"], string> = {
   unchanged: "変更なし",
   added: "追加",
@@ -289,47 +377,125 @@ const NATURAL_TEXT_CHANGE_LABELS: Record<NaturalTextChange["change"], string> = 
   modified: "修正",
 };
 
-/** 自然文の変更を「自然文を修正: 理由」の形で返す。変えていなければ null。 */
+/** 自然文の変更を「自然文を修正」の形で返す。理由は返さない (#407)。変えていなければ null。 */
 export function describeNaturalTextChange(change: NaturalTextChange | undefined): string | null {
   if (!change || change.change === "unchanged") return null;
-  return `自然文を${NATURAL_TEXT_CHANGE_LABELS[change.change]}: ${change.reason || MISSING_REASON}`;
+  return `自然文を${NATURAL_TEXT_CHANGE_LABELS[change.change]}`;
 }
 
-/** AI の説明とタグの日本語訳、直した案の変更理由。補完欄の下と、補完から開いた差分レビューの上に出す。 */
+/**
+ * AI の説明と自然文の変更を補完欄の下と、補完から開いた差分レビューの上に出す。
+ * タグの変更理由とタグ訳の一覧は#407でしきい値スライダー付きの確信度一覧へ置き換え、
+ * ここでは出さない。
+ */
 export function AssistNotes({ result }: { result: AssistResult }) {
   const naturalText = describeNaturalTextChange(result.naturalTextChange);
   return (
     <>
       {result.rationale && <p className="muted">AIの説明: {result.rationale}</p>}
-      {result.tagChanges && result.tagChanges.length > 0 && (
-        <details className="tag-glosses" open>
-          <summary>タグの変更と理由 ({result.tagChanges.length})</summary>
-          <dl>
-            {result.tagChanges.map((change, index) => (
-              <div key={`${change.change}-${change.tag}-${index}`}>
-                <dt>
-                  {TAG_CHANGE_LABELS[change.change]}: {change.tag}
-                </dt>
-                <dd>{change.reason || MISSING_REASON}</dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-      )}
       {naturalText && <p className="muted">{naturalText}</p>}
-      {result.tagGlosses && result.tagGlosses.length > 0 && (
-        <details className="tag-glosses" open>
-          <summary>タグの日本語訳 ({result.tagGlosses.length})</summary>
-          <dl>
-            {result.tagGlosses.map((gloss, index) => (
-              <div key={`${gloss.tag}-${index}`}>
-                <dt>{gloss.tag}</dt>
-                <dd>{gloss.ja}</dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-      )}
     </>
   );
+}
+
+/** しきい値以上/未満で行を分ける表示用の1タグ分。 */
+interface DisplayTagItem extends TagConfidenceItem {
+  kept: boolean;
+}
+
+const TAG_BLOCK_LABELS: Record<keyof TagConfidenceBlocks, string> = {
+  quality_tags: "品質",
+  subject_tags: "被写体",
+  character_tags: "キャラクター",
+  artist_tags: "作風",
+  general_tags: "一般",
+};
+
+/**
+ * 確信度としきい値スライダー。ブロックごとに見出しを出し、タグを確信度の降順で
+ * 並べる。しきい値未満のタグは薄く表示し、positive promptからは除く (#407)。
+ */
+export function TagConfidenceThresholdPanel({
+  blocks,
+  threshold,
+  onThresholdChange,
+}: {
+  blocks: TagConfidenceBlocks;
+  threshold: number;
+  onThresholdChange: (threshold: number) => void;
+}) {
+  const sliderId = useId();
+  return (
+    <div className="stack">
+      <div className="row">
+        <label htmlFor={sliderId}>確信度のしきい値 ({threshold.toFixed(2)})</label>
+        <input
+          id={sliderId}
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={threshold}
+          onChange={(event) => onThresholdChange(Number(event.target.value))}
+        />
+      </div>
+      {TAG_BLOCK_ORDER.map((field) => {
+        const items = blocks[field];
+        if (items.length === 0) return null;
+        const display: DisplayTagItem[] = items.map((item) => ({
+          ...item,
+          kept: item.confidence >= threshold,
+        }));
+        return (
+          <div key={field}>
+            <p className="muted">{TAG_BLOCK_LABELS[field]}</p>
+            <ul className="list plain">
+              {display.map((item, index) => (
+                <li
+                  key={`${item.tag}-${index}`}
+                  className={item.kept ? undefined : "muted"}
+                >
+                  <span className="mono">{item.tag}</span> ({item.confidence.toFixed(2)})
+                  {item.ja && <span> {item.ja}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * 差分レビューへ確信度のしきい値スライダーを付ける (#407)。補完結果が変わるたびに
+ * しきい値を既定値へ戻し、positive promptの提案文をしきい値以上のタグで組み直す。
+ * 確信度の無い差分 (画像prompt以外の補完や、補完以外から開いた差分) はそのまま返す。
+ */
+export function useTagThresholdDiff(promptDiff: PromptDiffState | null): {
+  diff: PromptDiffState | null;
+  panel: ReactNode;
+} {
+  const blocks = promptDiff?.notes?.tagConfidenceBlocks;
+  const [selected, setSelected] = useState<{ blocks?: TagConfidenceBlocks; threshold: number }>({
+    threshold: DEFAULT_TAG_CONFIDENCE_THRESHOLD,
+  });
+  if (!promptDiff || !blocks) return { diff: promptDiff, panel: null };
+  const threshold = selected.blocks === blocks ? selected.threshold : DEFAULT_TAG_CONFIDENCE_THRESHOLD;
+  const proposed = composePositivePromptFromBlocks(blocks, threshold, promptDiff.notes?.naturalText ?? "");
+  return {
+    diff: {
+      ...promptDiff,
+      fields: promptDiff.fields.map((field) =>
+        field.key === "positive_prompt" ? { ...field, proposed } : field,
+      ),
+    },
+    panel: (
+      <TagConfidenceThresholdPanel
+        blocks={blocks}
+        threshold={threshold}
+        onThresholdChange={(value) => setSelected({ blocks, threshold: value })}
+      />
+    ),
+  };
 }

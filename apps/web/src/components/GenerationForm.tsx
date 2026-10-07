@@ -24,7 +24,7 @@ import type {
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
-import { AssistNotes, PromptAssist } from "./PromptAssist";
+import { AssistNotes, PromptAssist, useTagThresholdDiff } from "./PromptAssist";
 import type { AssistResult } from "./PromptAssist";
 import { PlanPresetNote } from "./ProductionPlanPanel";
 import { PromptDiffReview } from "./PromptDiffReview";
@@ -374,6 +374,9 @@ export function GenerationForm({
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [batchCount, setBatchCount] = useState(() => draftString(draft?.batchCount) ?? "1");
   const [promptDiff, setPromptDiff] = useState<PromptDiffState | null>(null);
+  // タグ確信度のしきい値スライダーを動かすたび、positive promptの提案文をAPIへ
+  // 再依頼せずに組み直す (#407)。
+  const { diff: effectivePromptDiff, panel: tagThresholdPanel } = useTagThresholdDiff(promptDiff);
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
   // Recipeを切り替えて復元するとき、ModelSelectorが切替時に選択を空にするので、
   // 切替後のRecipe変更の効果で入れ直すまでモデルの選択値をここに置く。
@@ -762,7 +765,6 @@ export function GenerationForm({
           current: values.positive_prompt ?? "",
           proposed: result.positive,
           acceptRemovals: result.review,
-          reasons: result.notes,
         },
         {
           key: "negative_prompt",
@@ -1254,13 +1256,14 @@ export function GenerationForm({
         <fieldset className="form-section">
           <legend>プロンプト</legend>
           <div hidden={simple}>
-            {promptDiff && (
+            {effectivePromptDiff && (
               <PromptDiffReview
-                fields={promptDiff.fields}
+                fields={effectivePromptDiff.fields}
                 onCancel={() => setPromptDiff(null)}
                 onAccept={applyPromptDiffResult}
               >
-                {promptDiff.notes && <AssistNotes result={promptDiff.notes} />}
+                {effectivePromptDiff.notes && <AssistNotes result={effectivePromptDiff.notes} />}
+                {tagThresholdPanel}
               </PromptDiffReview>
             )}
             {/* 候補の確認中も外さずに隠す。外すと入力中の説明文が捨てられる。 */}

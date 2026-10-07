@@ -5224,6 +5224,7 @@ async def _assist_image_prompt(
         raise _agent_error(error) from error
     # 書き方の整形で自然文が落ちることもあるため、整形後の案で差分を取る。
     output = proposals.describe_prompt_changes(output, current_positive_prompt)
+    confidence_blocks = proposals.build_tag_confidence_blocks(output)
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],
         tag_line=output.get("tag_line", ""),
@@ -5231,10 +5232,12 @@ async def _assist_image_prompt(
         negative_prompt=proposals.merge_negative_prompt(
             proposals.DEFAULT_NEGATIVE_PROMPT, output.get("negative_prompt", "")
         ),
-        rationale=output["rationale"],
         tag_glosses=output.get("tag_glosses", []),
         tag_changes=output["tag_changes"],
         natural_text_change=output["natural_text_change"],
+        tag_confidence_blocks=schemas.ImagePromptTagConfidenceBlocks(
+            **confidence_blocks
+        ),
         provider_id=provider.id,
         model=result.model,
     )

@@ -12,7 +12,7 @@ import type {
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
-import { AssistNotes, PromptAssist } from "./PromptAssist";
+import { AssistNotes, PromptAssist, useTagThresholdDiff } from "./PromptAssist";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffState } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
@@ -92,6 +92,8 @@ export function ImageDerivationPanel({
   const [previewError, setPreviewError] = useState<ApiError | null>(null);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [promptDiff, setPromptDiff] = useState<PromptDiffState | null>(null);
+  // 確信度のしきい値スライダーに合わせてpositive promptの提案文を組み直す (#407)。
+  const { diff: reviewDiff, panel: tagThresholdPanel } = useTagThresholdDiff(promptDiff);
   const sourceArtifactIdRef = useRef(sourceArtifactId);
   sourceArtifactIdRef.current = sourceArtifactId;
 
@@ -392,9 +394,9 @@ export function ImageDerivationPanel({
           onSelectionChange={setLookProfileIds}
         />
         {mode !== "upscale" && <>
-          {promptDiff ? (
+          {reviewDiff ? (
             <PromptDiffReview
-              fields={promptDiff.fields}
+              fields={reviewDiff.fields}
               onCancel={() => setPromptDiff(null)}
               onAccept={(result) => {
                 if ("positive_prompt" in result) setPrompt(result.positive_prompt);
@@ -407,7 +409,8 @@ export function ImageDerivationPanel({
                 setPromptDiff(null);
               }}
             >
-              {promptDiff.notes && <AssistNotes result={promptDiff.notes} />}
+              {reviewDiff.notes && <AssistNotes result={reviewDiff.notes} />}
+              {tagThresholdPanel}
             </PromptDiffReview>
           ) : (
             <PromptAssist
@@ -427,7 +430,6 @@ export function ImageDerivationPanel({
                       current: prompt,
                       proposed: result.positive,
                       acceptRemovals: result.review,
-                      reasons: result.notes,
                     },
                     {
                       key: "negative_prompt",
