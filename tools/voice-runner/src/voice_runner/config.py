@@ -118,8 +118,10 @@ def _engine(engine_id: str, raw: Any) -> EngineConfig:
     home = raw.get("home")
     codec_repo = raw.get("codec_repo")
     codec_revision = _revision(engine_id, raw, "codec_revision")
-    if codec_repo is not None and not isinstance(codec_repo, str):
-        raise ConfigError(f"{engine_id}のcodec_repoが文字列ではありません。")
+    if codec_repo is not None and (
+        not isinstance(codec_repo, str) or not codec_repo.strip()
+    ):
+        raise ConfigError(f"{engine_id}のcodec_repoが空でない文字列ではありません。")
     if (codec_repo is None) != (codec_revision is None):
         raise ConfigError(
             f"{engine_id}のcodec_repoとcodec_revisionは両方書くか両方省いてください。"
