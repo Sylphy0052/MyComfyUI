@@ -1,6 +1,7 @@
 #!/bin/bash
 # g18上で実行: ./run.sh <gpu_index>。Qwen3.8-27B (UD-IQ3_S) をllama.cpp serverで起動する。
 # OpenAI互換APIを127.0.0.1:18000にだけ公開する。常駐させず、使い終えたら docker stop kfuruhashi-qwen
+# --host 0.0.0.0 はコンテナ内のbind。ホストからの公開範囲は -p の 127.0.0.1 で決まる。
 set -eu
 GPU=${1:?gpu index}
 D=/ssdnas2/data/kfuruhashi

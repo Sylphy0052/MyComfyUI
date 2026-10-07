@@ -8,8 +8,7 @@ transformers も入っていない。runnerが
 の形で起動し、終わったらプロセスごと落としてVRAMを返す。
 
 request.json の項目は voice_runner.app が組み立てる。engine名で分岐し、選んだ
-engineのライブラリだけをimportする。呼び出し仕様の出典は novel-writer の
-`tools/ai-media/docs/tts-backends.md`。
+engineのライブラリだけをimportする。
 """
 
 from __future__ import annotations
@@ -23,10 +22,7 @@ from typing import Any
 
 
 def set_seed(seed: int) -> None:
-    """生成の直前に乱数を固定する。
-
-    irodoriは`SamplingRequest.seed`にも同じ値を渡す。
-    """
+    """生成の直前に乱数を固定する。irodoriは`SamplingRequest.seed`にも同じ値を渡す。"""
     import numpy as np
     import torch
 

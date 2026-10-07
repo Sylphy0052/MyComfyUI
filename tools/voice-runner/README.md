@@ -17,7 +17,7 @@ Backend だけ別マシンにある構成でも、変わるのは接続先 URL
 ## 前提
 
 - Python 3.12 と [uv](https://docs.astral.sh/uv/)
-- TTS と ASR の各 venv が、このマシンに用意されていること
+- TTS と ASR の venv が用意されていること。`docker/` のイメージには irodori の venv が入っており、ASR も同じ venv で動く
 - GPU は 1 度に 1 Backend だけを使う。1 リクエストにつき 1 つの Backend をロードし、
   生成が終わったらプロセスを落として VRAM を返す
 

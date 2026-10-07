@@ -43,7 +43,7 @@ docker run --rm --network host --user "$(id -u):$(id -g)" \
   kfuruhashi-comfyui:cu130 python -u templates-run.py [テンプレート名 ...]
 ```
 
-2026-10-07にGPU 3 (A100 80GB) で11本を実行し、すべて成功した。所要時間は次のとおり。
+2026-10-07にGPU 3 (A100 80GB) で11本を実行し、すべて成功した。所要時間は次のとおり (1回だけ計った参考値)。
 
 - wd14_tagger: 19s
 - image_upscale: 3s
