@@ -2088,6 +2088,7 @@ export function App() {
                     simple={isProduction}
                     showCompare={false}
                     collapsible
+                    panelId="candidates:generate"
                     comparisonActive={comparisonJobIds !== null}
                     onClearComparison={clearComparison}
                   />
