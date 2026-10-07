@@ -778,7 +778,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
             </ul>
             <Button disabled={busy} onClick={() => openDraft(selectedCharacter)}>編集</Button>
             <ReferenceSetPanel
-              key={selectedCharacter.id}
+              key={`reference-set:${selectedCharacter.id}`}
               projectId={projectId}
               character={selectedCharacter}
               onSaved={(saved) => {
@@ -787,7 +787,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
               }}
             />
             <VoiceReferenceSection
-              key={selectedCharacter.id}
+              key={`voice-reference:${selectedCharacter.id}`}
               projectId={projectId}
               character={selectedCharacter}
             />
