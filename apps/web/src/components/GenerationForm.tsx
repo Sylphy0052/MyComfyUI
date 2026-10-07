@@ -17,10 +17,19 @@ import type {
   ApiError,
   GenerationManifest,
   GenerationPreview,
+  LookProfile,
   ProjectCharacterOutfit,
   ProjectCharacterProfile,
   Recipe,
 } from "../api/client";
+import { characterReferenceImage, REFERENCE_SLOTS } from "../state/referenceSlots";
+import {
+  DEFAULT_REFERENCE_STRENGTH,
+  filterLookProfilesForRecipe,
+  referenceRecipeBlocker,
+  referenceStrengthRange,
+  toReferenceInputs,
+} from "../state/referenceGeneration";
 import { ExecutionPreview } from "./ExecutionPreview";
 import { ModelSelector } from "./ModelSelector";
 import { LookProfileManager } from "./LookProfileManager";
@@ -176,6 +185,11 @@ export type RestoreScope = "all" | "prompt" | "seed";
 interface Props {
   projectId: string | null;
   recipes: Recipe[];
+  /**
+   * 参照画像つきで投入するRecipe (`anima_ref_incontext`)。キャラクターの参照セットに画像が
+   * あるとき、`recipes`の代わりにこれで投入する。無い環境ではtxt2imgだけで投入する (#474)。
+   */
+  referenceRecipe?: Recipe | null;
   submitting: boolean;
   onSubmit: (
     recipe: Recipe | null,
@@ -281,6 +295,7 @@ function draftPlanNegative(value: unknown): { merged: string; source: string } |
 export function GenerationForm({
   projectId,
   recipes,
+  referenceRecipe = null,
   submitting,
   onSubmit,
   onPreview,
@@ -364,6 +379,12 @@ export function GenerationForm({
   const [extractedTags, setExtractedTags] = useState<string[]>([]);
   const [outfitCharacterId, setOutfitCharacterId] = useState("");
   const [outfitSearch, setOutfitSearch] = useState("");
+  // 参照画像の自動選択 (#474)。選んだ衣装と「外した」状態、強度は下書きへ保存しない。
+  const [selectedOutfitId, setSelectedOutfitId] = useState<string | null>(null);
+  const [referenceDismissed, setReferenceDismissed] = useState(false);
+  const [referenceStrength, setReferenceStrength] = useState(String(DEFAULT_REFERENCE_STRENGTH));
+  const [lookProfileList, setLookProfileList] = useState<LookProfile[]>([]);
+  const [lookProfileStatus, setLookProfileStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [outfitRegisterName, setOutfitRegisterName] = useState("");
   const [outfitRegisterTags, setOutfitRegisterTags] = useState("");
   const [outfitRegisterPrompt, setOutfitRegisterPrompt] = useState("");
@@ -391,6 +412,41 @@ export function GenerationForm({
       setRecipeId(recipes[0].id);
     }
   }, [recipes, recipeId]);
+
+  // Projectが変わったら、前のProjectのキャラクターと衣装の選択を持ち越さない。
+  useEffect(() => {
+    setOutfitCharacterId("");
+    setSelectedOutfitId(null);
+    setReferenceDismissed(false);
+  }, [projectId]);
+
+  // 参照付きで投入するとき、参照Recipeに合うLookProfileを絞るために一覧を取る (#474)。
+  const needsLookProfileList = lookProfileIds.length > 0 && referenceRecipe !== null;
+  useEffect(() => {
+    if (!needsLookProfileList) {
+      setLookProfileStatus("idle");
+      return;
+    }
+    let active = true;
+    setLookProfileStatus("loading");
+    api
+      .listLookProfiles({ kind: "image", limit: 200 })
+      .then((items) => {
+        if (!active) return;
+        setLookProfileList(items);
+        setLookProfileStatus("ok");
+      })
+      .catch(() => {
+        // 取れなければ、合うか判断できないProfileは外して投入し、その旨を表示する。
+        if (!active) return;
+        // 古い一覧で判定すると表示と外す集合が食い違うため、一覧も空にする。
+        setLookProfileList([]);
+        setLookProfileStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [needsLookProfileList, lookProfileIds]);
 
   // Recipe変更の効果から参照する。描画中に代入して、effectの実行順に依存しないようにする。
   const touchedRef = useRef(touchedFields);
@@ -729,6 +785,33 @@ export function GenerationForm({
     return inputs;
   };
 
+  /**
+   * 自動参照が有効なら、参照Recipeへ切り替えて入力とLookProfileを参照Recipeに合わせる (#474)。
+   * 強度が不正なら表示して`null`を返す。投入とプレビューで同じ内容にそろえる。
+   */
+  const withReference = (
+    base: Recipe,
+    inputs: Record<string, unknown>,
+  ): { recipe: Recipe; inputs: Record<string, unknown>; lookProfileIds: string[] } | null => {
+    if (!autoReference || !referenceRecipe) {
+      return { recipe: base, inputs, lookProfileIds };
+    }
+    const strength = Number(referenceStrength);
+    if (referenceStrength.trim() === "" || !Number.isFinite(strength) || strength < strengthRange.min || strength > strengthRange.max) {
+      setInvalid(`参照強度は${strengthRange.min}以上${strengthRange.max}以下の数値で入力してください。`);
+      return null;
+    }
+    if (lookProfileIds.length > 0 && lookProfileStatus === "loading") {
+      setInvalid("LookProfileを確認しています。少し待ってからもう一度投入してください。終わらない場合はLookProfileか参照を外すと投入できます。");
+      return null;
+    }
+    return {
+      recipe: referenceRecipe,
+      inputs: toReferenceInputs(inputs, referenceRecipe, autoReference.image, strength).inputs,
+      lookProfileIds: referenceLookProfiles.kept,
+    };
+  };
+
   const submit = () => {
     const parsedBatchCount = Number(batchCount);
     if (!Number.isInteger(parsedBatchCount) || parsedBatchCount < 1 || parsedBatchCount > 20) {
@@ -746,7 +829,11 @@ export function GenerationForm({
     if (!inputs) {
       return;
     }
-    onSubmit(recipe, inputs, false, parsedBatchCount, lookProfileIds);
+    const target = withReference(recipe, inputs);
+    if (!target) {
+      return;
+    }
+    onSubmit(target.recipe, target.inputs, false, parsedBatchCount, target.lookProfileIds);
   };
 
   const applyAssist = (result: {
@@ -799,7 +886,11 @@ export function GenerationForm({
     if (!inputs) {
       return;
     }
-    onPreview(recipe, inputs, false, lookProfileIds);
+    const target = withReference(recipe, inputs);
+    if (!target) {
+      return;
+    }
+    onPreview(target.recipe, target.inputs, false, target.lookProfileIds);
   };
 
   const extractTags = async () => {
@@ -840,7 +931,54 @@ export function GenerationForm({
 
   // キャラクターを選び、検索で候補を絞る (#316)。候補をクリックすると差分プレビューを開く。
   const outfitCharacter = characters.find((item) => item.id === outfitCharacterId);
-  const characterOutfits = (outfitCharacter?.outfits ?? []).filter((outfit) => outfit.prompt.trim());
+  // promptが空でも、参照セットに画像がある衣装は候補に含める (#474)。
+  const characterOutfits = (outfitCharacter?.outfits ?? []).filter(
+    (outfit) => outfit.prompt.trim() || outfitCharacter && characterReferenceImage(outfitCharacter, outfit.id),
+  );
+  // 参照画像は、選んだ衣装 → 既定の衣装 → 衣装指定なしの順で探す。使えるのは、作品制作の
+  // 既定値を使わず、参照Recipeがあり、使用者が外していないときだけ。
+  // 再読み込みで衣装が無くなっていたら選択なし扱いにする。別の衣装の参照では代用しない。
+  const effectiveOutfitId =
+    selectedOutfitId && (outfitCharacter?.outfits ?? []).some((item) => item.id === selectedOutfitId)
+      ? selectedOutfitId
+      : null;
+  const candidateReference = outfitCharacter
+    ? characterReferenceImage(outfitCharacter, effectiveOutfitId)
+    : null;
+  const referenceBlocker =
+    referenceRecipe && recipe ? referenceRecipeBlocker(referenceRecipe, recipe) : null;
+  const strengthRange = referenceRecipe ? referenceStrengthRange(referenceRecipe) : { min: 0, max: 2 };
+  const autoReference =
+    candidateReference && referenceRecipe && !referenceBlocker && !referenceDismissed && !useInheritedDefaults
+      ? candidateReference
+      : null;
+  const referenceLookProfiles = useMemo(
+    () =>
+      autoReference && referenceRecipe
+        ? filterLookProfilesForRecipe(lookProfileIds, lookProfileList, referenceRecipe)
+        : { kept: lookProfileIds, dropped: [] as string[] },
+    [autoReference, referenceRecipe, lookProfileIds, lookProfileList],
+  );
+  const referenceSlotLabel = candidateReference
+    ? REFERENCE_SLOTS.find((def) => def.key === candidateReference.slotKey)?.label ?? candidateReference.slotKey
+    : "";
+  const referenceHiresUnsupported =
+    autoReference !== null &&
+    referenceRecipe !== null &&
+    hiresEnabled &&
+    !(HIRES_ENABLED_FIELD_NAME in referenceRecipe.input_schema);
+  // hires以外で参照Recipeに無く、送らない入力。値を持つ項目だけ数える。
+  const referenceDroppedInputs =
+    autoReference && referenceRecipe
+      ? Object.keys(values).filter(
+          (name) =>
+            values[name].trim() !== "" &&
+            allFields.some((field) => field.name === name && field.control !== "model") &&
+            !(name in referenceRecipe.input_schema) &&
+            !HIRES_FIELD_NAMES.has(name) &&
+            name !== HIRES_ENABLED_FIELD_NAME,
+        )
+      : [];
   const outfitSearchTerm = outfitSearch.trim().toLowerCase();
   const filteredOutfitCandidates = outfitSearchTerm
     ? characterOutfits.filter((outfit) => {
@@ -853,6 +991,8 @@ export function GenerationForm({
   const outfitAtLimit = (outfitCharacter?.outfits?.length ?? 0) >= 100;
 
   const selectOutfitCandidate = (outfit: ProjectCharacterOutfit) => {
+    setSelectedOutfitId(outfit.id);
+    setReferenceDismissed(false);
     const merged = mergePrompt(values.positive_prompt ?? "", outfit.prompt);
     if (merged.added === 0) return;
     setPromptDiff({
@@ -1037,6 +1177,8 @@ export function GenerationForm({
                   onChange={(event) => {
                     setOutfitCharacterId(event.target.value);
                     setOutfitSearch("");
+                    setSelectedOutfitId(null);
+                    setReferenceDismissed(false);
                   }}
                 >
                   <option value="">キャラクターを選択</option>
@@ -1050,6 +1192,72 @@ export function GenerationForm({
                   onChange={(event) => setOutfitSearch(event.target.value)}
                 />
               </div>
+              {candidateReference && (
+                <div className="stack">
+                  <div className="row">
+                    {candidateReference.artifactId && (
+                      <img
+                        src={api.artifactContentUrl(candidateReference.artifactId)}
+                        alt={`参照画像 (${referenceSlotLabel})`}
+                        style={{ width: 64, height: 64, objectFit: "cover" }}
+                      />
+                    )}
+                    <div className="stack">
+                      <span>{candidateReference.image.file_name}</span>
+                      <span className="muted">
+                        参照画像: {referenceSlotLabel}
+                        {autoReference ? "" : referenceDismissed ? " (外しています)" : " (使いません)"}
+                      </span>
+                    </div>
+                    {autoReference && (
+                      <button type="button" onClick={() => setReferenceDismissed(true)}>
+                        参照を外す
+                      </button>
+                    )}
+                    {referenceDismissed && referenceRecipe && !useInheritedDefaults && (
+                      <button type="button" onClick={() => setReferenceDismissed(false)}>
+                        参照を使う
+                      </button>
+                    )}
+                  </div>
+                  {autoReference && (
+                    <label>
+                      参照強度
+                      <input
+                        type="number"
+                        min={strengthRange.min}
+                        max={strengthRange.max}
+                        step={0.05}
+                        value={referenceStrength}
+                        onChange={(event) => setReferenceStrength(event.target.value)}
+                      />
+                    </label>
+                  )}
+                  {!referenceRecipe && (
+                    <p className="muted">
+                      参照Recipe「Anima 参照 衣装」が登録されていないため、参照画像は使わずに投入します。
+                    </p>
+                  )}
+                  {useInheritedDefaults && (
+                    <p className="muted">作品制作の既定値を使うあいだは、参照画像を使いません。</p>
+                  )}
+                  {referenceHiresUnsupported && (
+                    <p className="muted">hires fixは参照画像つきの生成では使えません。オフとして投入します。</p>
+                  )}
+                  {referenceBlocker && <p className="muted">{referenceBlocker}</p>}
+                  {referenceDroppedInputs.length > 0 && (
+                    <p className="muted">参照Recipeに無い入力は送りません: {referenceDroppedInputs.join(", ")}</p>
+                  )}
+                  {referenceLookProfiles.dropped.length > 0 && (
+                    <p className="muted">
+                      {lookProfileStatus === "error"
+                        ? "LookProfileを取得できず外しました: "
+                        : "参照Recipeに合わない、または一覧に無いため、次のLookProfileは外して投入します: "}
+                      {referenceLookProfiles.dropped.join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
               {outfitCharacter && (
                 <ul className="list">
                   {visibleOutfitCandidates.length === 0 && <li className="muted">該当する衣装がありません。</li>}
@@ -1058,6 +1266,7 @@ export function GenerationForm({
                       <button
                         type="button"
                         disabled={useInheritedDefaults}
+                        aria-pressed={selectedOutfitId === outfit.id}
                         onClick={() => selectOutfitCandidate(outfit)}
                       >
                         <span>{outfit.name}</span>

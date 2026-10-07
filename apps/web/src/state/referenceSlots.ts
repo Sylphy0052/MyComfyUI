@@ -5,7 +5,7 @@
  * 7枚構成の枠を定義し、キャラクターの参照セット検索・枠の生成プロンプト組立・場面で
  * 使う参照画像の抽出を行う。API・DBは変えない純関数。
  */
-import type { ProjectCharacterProfile, ProjectReferenceSet } from "../api/client";
+import type { ProjectCharacterProfile, ProjectReferenceImage, ProjectReferenceSet } from "../api/client";
 import type { PickedMedia } from "../components/MediaPicker";
 import type { NamedItem } from "./productionPlan";
 import { findLocalCharacter } from "./characterPrompt";
@@ -100,4 +100,41 @@ export function sceneReferenceImages(
     }
   }
   return result;
+}
+
+/**
+ * 生成フォームが参照画像として自動で使う枠の優先順 (#474)。全身から顔の順で、最初に画像がある枠を使う。
+ * 背景枠は人物を写さないため使わない。
+ */
+export const AUTO_REFERENCE_SLOT_ORDER = [
+  "full_body",
+  "bust",
+  "pose",
+  "face_closed",
+  "face_angle",
+  "face_open",
+] as const satisfies readonly ReferenceSlotKey[];
+
+export interface CharacterReferenceImage {
+  slotKey: ReferenceSlotKey;
+  image: ProjectReferenceImage;
+  /** サムネイル表示用のArtifact。無ければnull。 */
+  artifactId: string | null;
+}
+
+/**
+ * 生成フォームで自動で使う参照画像を返す。衣装の探し方は`sceneReferenceImages`と同じで、
+ * 選んだ衣装 (無ければ既定の衣装) の参照セットだけを見る。別の衣装のセットでは代用しない。
+ */
+export function characterReferenceImage(
+  character: ProjectCharacterProfile,
+  outfitId: string | null,
+): CharacterReferenceImage | null {
+  const referenceSet = findReferenceSet(character, outfitId ?? character.default_outfit_id ?? null);
+  if (!referenceSet) return null;
+  for (const slotKey of AUTO_REFERENCE_SLOT_ORDER) {
+    const slot = referenceSet.slots?.[slotKey];
+    if (slot?.image) return { slotKey, image: slot.image, artifactId: slot.artifact_id ?? null };
+  }
+  return null;
 }

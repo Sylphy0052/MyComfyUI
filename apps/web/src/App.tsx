@@ -562,6 +562,11 @@ export function App() {
     const allowed = new Set(["anima_ref_siglip", "anima_ref_incontext"]);
     return recipes.filter((recipe) => allowed.has(recipeTemplateName(recipe)));
   }, [recipes]);
+  // 生成フォームが参照画像つきで投入するときのRecipe (#474)。無い環境ではtxt2imgだけで投入する。
+  const referenceRecipe = useMemo(
+    () => changeRecipes.find((recipe) => recipeTemplateName(recipe) === "anima_ref_incontext") ?? null,
+    [changeRecipes],
+  );
 
   const jobScope = useMemo<Parameters<typeof api.listJobs>[0]>(() => {
     if (!projectId) return { unassigned: true };
@@ -1963,6 +1968,7 @@ export function App() {
                     <GenerationForm
                       projectId={projectId}
                       recipes={txt2imgRecipes}
+                      referenceRecipe={referenceRecipe}
                       submitting={submitting}
                       onSubmit={submit}
                       onPreview={preview}
