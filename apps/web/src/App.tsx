@@ -1824,6 +1824,7 @@ export function App() {
                   setProjectTab("characters");
                 }}
                 onStructureChanged={() => setStructureToken((value) => value + 1)}
+                onSceneDetailsChanged={() => setCharacterOverridesToken((value) => value + 1)}
                 scenes={scenes}
                 sceneId={sceneId}
                 onSelectScene={setSceneId}

@@ -120,8 +120,6 @@ async def scene_summary(session: AsyncSession, scene: ProjectScene) -> dict[str,
         "tags": list(scene.tags or []),
         "production_status": scene.production_status,
         "todo": scene.todo,
-        "due_date": scene.due_date,
-        "priority": scene.priority,
         "shot_count": shot_count,
     }
     return {**data, "reference": _reference(scene.project_id, f"scenes/{scene.id}", data)}
@@ -300,8 +298,7 @@ async def create_scene(project_id: schemas.AiMediaId, payload: schemas.SceneCrea
         id=schemas.new_id(), project_id=project_id, sequence=sequence,
         summary=payload.summary, notes=payload.notes, tags=list(payload.tags),
         production_status=payload.production_status, todo=payload.todo,
-        due_date=payload.due_date, priority=payload.priority, created_at=now, updated_at=now,
-        deleted_at=None,
+        created_at=now, updated_at=now, deleted_at=None,
     )
     session.add(scene)
     await session.flush()

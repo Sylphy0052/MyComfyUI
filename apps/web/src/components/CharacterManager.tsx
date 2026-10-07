@@ -41,6 +41,7 @@ const EMPTY_PROFILE: ProfileDraft = {
 };
 
 type SceneOutfitMap = NonNullable<ProjectLocalOverrides["scene_outfits"]>;
+type SceneDetailMap = NonNullable<ProjectLocalOverrides["scene_details"]>;
 
 function describe(error: unknown): string {
   if (error instanceof ApiError) return `${error.message}(${error.code})`;
@@ -176,6 +177,24 @@ function pruneSceneOutfits(
     if (Object.keys(rest).length > 0) next[sceneId] = rest;
   }
   return next;
+}
+
+/**
+ * scene_detailsの登場キャラクターから、削除するキャラクターを落とす (Issue #478)。
+ * 未登録のIDを指したままだと保存が422になるため、キャラクターの削除と同時に外す。
+ */
+function pruneSceneDetails(
+  sceneDetails: SceneDetailMap | undefined,
+  characterId: string,
+): SceneDetailMap {
+  return Object.fromEntries(
+    Object.entries(sceneDetails ?? {}).map(([sceneId, detail]) => [
+      sceneId,
+      detail.characters
+        ? { ...detail, characters: detail.characters.filter((id) => id !== characterId) }
+        : detail,
+    ]),
+  );
 }
 
 interface MediaImpact {
@@ -834,6 +853,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
         ...latest,
         characters: (latest.characters ?? []).filter((item) => item.id !== profile.id),
         scene_outfits: pruneSceneOutfits(latest.scene_outfits, profile.id, new Set()),
+        scene_details: pruneSceneDetails(latest.scene_details, profile.id),
       }));
       if (selectedId === profile.id) {
         setSelectedId(null);

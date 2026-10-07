@@ -1,5 +1,6 @@
 import json
 import math
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
@@ -145,6 +146,43 @@ def normalize_tag(value: str) -> str:
 ArtifactTagValue = Annotated[
     str, Field(min_length=1, max_length=MAX_TAG_LENGTH), AfterValidator(normalize_tag)
 ]
+
+#: Sceneのタグの最大長と最大個数。自然文のメモとしても使うため、Artifactのタグより
+#: 長く多く持てるようにする (Issue #478)。
+MAX_SCENE_TAG_LENGTH = 500
+MAX_SCENE_TAGS = 200
+
+
+def normalize_scene_tag(value: str) -> str:
+    """Sceneのタグとして受け付ける値だけを通す。
+
+    Sceneのタグはパスセグメントに載らないため、`normalize_tag`と違って`/`を許す。
+    前後の空白を落とし、改行とタブを含む制御文字は拒否する。自然文を入れるため、
+    全角空白などの空白文字は通す。
+    """
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("タグを空にできません。")
+    if len(candidate) > MAX_SCENE_TAG_LENGTH:
+        raise ValueError(f"Sceneのタグは{MAX_SCENE_TAG_LENGTH}文字以内で指定してください。")
+    # Ccは改行・タブ・C0/C1制御文字、Zl/ZpはU+2028/U+2029の行・段落区切り。
+    if any(unicodedata.category(character) in {"Cc", "Zl", "Zp"} for character in candidate):
+        raise ValueError("タグに改行・タブ・制御文字を含められません。")
+    return candidate
+
+
+#: Sceneへ付けるタグ。自然文と`/`を許す。
+SceneTagValue = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_SCENE_TAG_LENGTH),
+    AfterValidator(normalize_scene_tag),
+]
+
+
+def _reject_duplicate_scene_tags(value: list[str] | None) -> list[str] | None:
+    if value is not None and len(set(value)) != len(value):
+        raise ValueError("Sceneのタグを重複させられません。")
+    return value
 
 
 class ApiModel(BaseModel):
@@ -504,6 +542,40 @@ class ProjectCharacterProfile(ApiModel):
         return self
 
 
+class SceneDetail(ApiModel):
+    """Sceneごとの登場キャラクター・場所・時間帯・季節・タグ (Issue #478)。
+
+    外部ProjectのSceneは書き込めないため、localと外部のどちらのSceneもlocal_overridesに
+    持つ。Noneは未設定を表し、外部Projectではai-mediaの値を初期値として表示する。
+    タグを使うのは外部ProjectのSceneだけで、localのSceneは`project_scene.tags`に持つ。
+    """
+
+    characters: list[str] | None = Field(default=None, max_length=100)
+    location: str | None = Field(default=None, max_length=200)
+    time_of_day: str | None = Field(default=None, max_length=50)
+    season: str | None = Field(default=None, max_length=50)
+    tags: list[SceneTagValue] | None = Field(default=None, max_length=MAX_SCENE_TAGS)
+
+    @field_validator("characters")
+    @classmethod
+    def _unique_characters(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("登場キャラクターを重複させられません。")
+        return value
+
+    @field_validator("location", "time_of_day", "season")
+    @classmethod
+    def _blank_as_unset(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @field_validator("tags")
+    @classmethod
+    def _unique_tags(cls, value: list[str] | None) -> list[str] | None:
+        return _reject_duplicate_scene_tags(value)
+
+
 class ProjectLocalOverrides(ApiModel):
     characters: list[ProjectCharacterProfile] = Field(
         default_factory=list, max_length=100
@@ -512,6 +584,8 @@ class ProjectLocalOverrides(ApiModel):
     shot_prompts: dict[str, str] = Field(default_factory=dict)
     # 場面ごとに選んだ衣装を{scene_id: {character_id: outfit_id}}の形で持つ。
     scene_outfits: dict[str, dict[str, str]] = Field(default_factory=dict)
+    # Sceneごとの登場キャラクター・場所・時間帯・季節・タグを{scene_id: SceneDetail}で持つ。
+    scene_details: dict[str, SceneDetail] = Field(default_factory=dict)
 
     @field_validator("characters")
     @classmethod
@@ -540,6 +614,26 @@ class ProjectLocalOverrides(ApiModel):
                         f"場面{scene_id}の衣装指定が登録済みの衣装を指していません: "
                         f"{character_id} / {outfit_id}"
                     )
+        return self
+
+    @model_validator(mode="after")
+    def _scene_details_refer_characters(self) -> "ProjectLocalOverrides":
+        if len(self.scene_details) > 10_000:
+            raise ValueError("Sceneの詳細を10,000件より多く登録できません。")
+        character_ids = {character.id for character in self.characters}
+        for scene_id, detail in self.scene_details.items():
+            if not scene_id or len(scene_id) > 128:
+                raise ValueError("Scene IDは1〜128文字で指定してください。")
+            unknown = [
+                character_id
+                for character_id in detail.characters or []
+                if character_id not in character_ids
+            ]
+            if unknown:
+                raise ValueError(
+                    f"場面{scene_id}の登場キャラクターが登録済みのキャラクターを指していません: "
+                    + ", ".join(unknown)
+                )
         return self
 
     @field_validator("scene_prompts", "shot_prompts")
@@ -604,8 +698,18 @@ class PortableScene(ApiModel):
     tags: list[str] = Field(default_factory=list)
     production_status: ProductionStatus = "not_started"
     todo: str | None = None
-    due_date: str | None = None
-    priority: ProductionPriority | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_removed_fields(cls, value: Any) -> Any:
+        # 期限と優先度はIssue #478でSceneから外した。旧形式のexportファイルにあっても読み捨てる。
+        if isinstance(value, dict):
+            return {
+                key: item
+                for key, item in value.items()
+                if key not in {"due_date", "priority"}
+            }
+        return value
 
 
 class PortableShot(ApiModel):
@@ -806,35 +910,28 @@ class ProjectDeletionImpact(ApiModel):
 class SceneCreate(ApiModel):
     summary: str = Field(min_length=1, max_length=1_000)
     notes: str | None = Field(default=None, max_length=10_000)
-    tags: list[ArtifactTagValue] = Field(default_factory=list, max_length=50)
+    tags: list[SceneTagValue] = Field(default_factory=list, max_length=MAX_SCENE_TAGS)
     production_status: ProductionStatus = "not_started"
     todo: str | None = Field(default=None, max_length=2_000)
-    due_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    priority: ProductionPriority | None = None
 
     @field_validator("tags")
     @classmethod
     def _unique_tags(cls, value: list[str]) -> list[str]:
-        if len(set(value)) != len(value):
-            raise ValueError("Sceneのタグを重複させられません。")
+        _reject_duplicate_scene_tags(value)
         return value
 
 
 class SceneUpdate(ApiModel):
     summary: str | None = Field(default=None, min_length=1, max_length=1_000)
     notes: str | None = Field(default=None, max_length=10_000)
-    tags: list[ArtifactTagValue] | None = Field(default=None, max_length=50)
+    tags: list[SceneTagValue] | None = Field(default=None, max_length=MAX_SCENE_TAGS)
     production_status: ProductionStatus | None = None
     todo: str | None = Field(default=None, max_length=2_000)
-    due_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    priority: ProductionPriority | None = None
 
     @field_validator("tags")
     @classmethod
     def _unique_tags(cls, value: list[str] | None) -> list[str] | None:
-        if value is not None and len(set(value)) != len(value):
-            raise ValueError("Sceneのタグを重複させられません。")
-        return value
+        return _reject_duplicate_scene_tags(value)
 
 
 class ShotCreate(ApiModel):

@@ -4688,17 +4688,6 @@
       "PortableScene": {
         "additionalProperties": false,
         "properties": {
-          "due_date": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Due Date"
-          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4713,23 +4702,6 @@
               }
             ],
             "title": "Notes"
-          },
-          "priority": {
-            "anyOf": [
-              {
-                "enum": [
-                  "low",
-                  "medium",
-                  "high",
-                  "urgent"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Priority"
           },
           "production_status": {
             "default": "not_started",
@@ -5616,6 +5588,13 @@
             "maxItems": 100,
             "title": "Characters",
             "type": "array"
+          },
+          "scene_details": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SceneDetail"
+            },
+            "title": "Scene Details",
+            "type": "object"
           },
           "scene_outfits": {
             "additionalProperties": {
@@ -7136,18 +7115,6 @@
       "SceneCreate": {
         "additionalProperties": false,
         "properties": {
-          "due_date": {
-            "anyOf": [
-              {
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Due Date"
-          },
           "notes": {
             "anyOf": [
               {
@@ -7159,23 +7126,6 @@
               }
             ],
             "title": "Notes"
-          },
-          "priority": {
-            "anyOf": [
-              {
-                "enum": [
-                  "low",
-                  "medium",
-                  "high",
-                  "urgent"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Priority"
           },
           "production_status": {
             "default": "not_started",
@@ -7197,11 +7147,11 @@
           },
           "tags": {
             "items": {
-              "maxLength": 64,
+              "maxLength": 500,
               "minLength": 1,
               "type": "string"
             },
-            "maxItems": 50,
+            "maxItems": 200,
             "title": "Tags",
             "type": "array"
           },
@@ -7224,21 +7174,85 @@
         "title": "SceneCreate",
         "type": "object"
       },
-      "SceneUpdate": {
+      "SceneDetail": {
         "additionalProperties": false,
+        "description": "Sceneごとの登場キャラクター・場所・時間帯・季節・タグ (Issue #478)。\n\n外部ProjectのSceneは書き込めないため、localと外部のどちらのSceneもlocal_overridesに\n持つ。Noneは未設定を表し、外部Projectではai-mediaの値を初期値として表示する。\nタグを使うのは外部ProjectのSceneだけで、localのSceneは`project_scene.tags`に持つ。",
         "properties": {
-          "due_date": {
+          "characters": {
             "anyOf": [
               {
-                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Characters"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 200,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Due Date"
+            "title": "Location"
           },
+          "season": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 500,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "time_of_day": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Of Day"
+          }
+        },
+        "title": "SceneDetail",
+        "type": "object"
+      },
+      "SceneUpdate": {
+        "additionalProperties": false,
+        "properties": {
           "notes": {
             "anyOf": [
               {
@@ -7250,23 +7264,6 @@
               }
             ],
             "title": "Notes"
-          },
-          "priority": {
-            "anyOf": [
-              {
-                "enum": [
-                  "low",
-                  "medium",
-                  "high",
-                  "urgent"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Priority"
           },
           "production_status": {
             "anyOf": [
@@ -7303,11 +7300,11 @@
             "anyOf": [
               {
                 "items": {
-                  "maxLength": 64,
+                  "maxLength": 500,
                   "minLength": 1,
                   "type": "string"
                 },
-                "maxItems": 50,
+                "maxItems": 200,
                 "type": "array"
               },
               {
