@@ -54,6 +54,18 @@ MAX_PROMPT_TAG_LENGTH = 100
 #: prompt案の自然文の長さ上限。混在形式では2〜3文・50語程度までしか効かない。
 MAX_NATURAL_TEXT_LENGTH = 2000
 
+#: prompt規約の自然文の長さ。2〜3文、60語以下とする。`prompt_checks`の判定と、
+#: 辞書に無いタグを自然文へ移すかの判定が同じ値を見る。
+NATURAL_TEXT_MIN_SENTENCES = 2
+NATURAL_TEXT_MAX_SENTENCES = 3
+NATURAL_TEXT_MAX_WORDS = 60
+
+
+def split_natural_sentences(natural_text: str) -> list[str]:
+    """自然文を終止符(`.!?`)で文に分ける。空の文は数えない。"""
+    return [s for s in re.split(r"[.!?]+", natural_text) if s.strip()]
+
+
 #: 連結したpositive promptの長さ上限。API契約の`positive_prompt`と同じ値にする。
 #: タグの件数には上限を設けない (#407) ため、連結後に当てる。
 MAX_POSITIVE_PROMPT_LENGTH = 4000
@@ -894,8 +906,12 @@ def normalize_prompt_tags(
             normalized
         ):
             # 移した句で上限を超えたり、タグが全て外れたりした案は組み立てられない。
-            # 検証済みの元の案は使えるため、正規化だけを諦めて残す。
-            logger.warning("タグの正規化で案を組み立てられないため、元の案を残しました。")
+            # 検証済みの元の案は使えるため、正規化だけを諦めて残す。`body`が変わって
+            # いないことは、`_canonicalize_body_tags`が浅いコピーだけを書き換えることと、
+            # `_try_attach_prompt_text`が`normalized`のキーへ代入するだけであることに頼る。
+            logger.warning(
+                "タグの正規化で案を組み立てられないため、元の案を残しました。"
+            )
             normalized_bodies.append(body)
             continue
         normalized_bodies.append(normalized)
@@ -917,6 +933,10 @@ def normalize_prompt_tags(
             )
             return output
         data["items"] = normalized_bodies
+    # 注記のタグ名は、LLMが返した文字列を加工せずに`rationale`と`natural_text`へ連結して
+    # いる。既存の`rationale`と`natural_text`もLLMの出力そのままで、`apps/web/src`は
+    # `innerHTML`系を使わずReactのエスケープで描画するため、今は実害が無い (#414)。
+    # これらをHTMLとして描画する箇所を足すときは、描画側でエスケープすること。
     notes = [
         f"{label}: {', '.join(dict.fromkeys(tags))}。"
         for label, tags in (
@@ -939,7 +959,14 @@ def _canonicalize_body_tags(
     style: str | None,
     keep_tags: frozenset[str],
 ) -> tuple[dict[str, Any], tuple[list[str], list[str], list[str]]]:
-    """prompt案1件のタグを正規化する。直したタグ、自然文へ移したタグ、外したタグを返す。"""
+    """prompt案1件のタグを正規化する。直したタグ、自然文へ移したタグ、外したタグを返す。
+
+    `body`は書き換えない。`normalize_prompt_tags`は組み直しに失敗した案を、この関数へ
+    渡した元の`body`へ戻す。そのため変更は`dict(body)`の浅いコピーの上だけで行い、
+    変更したブロックのlistは新しく作って`result`へ代入する。`body`のlistを
+    その場で書き換える(`append`や`sort`など)ように変えると、元の案へ戻しても
+    変更が残り、戻す処理が黙って壊れる。
+    """
     result = dict(body)
     renamed: dict[str, str] = {}
     unknown: list[str] = []
@@ -976,7 +1003,15 @@ def _canonicalize_body_tags(
         natural_text = _append_phrase(
             str(body.get("natural_text") or "").strip(), ", ".join(unknown)
         )
-        if style != "tags" and len(natural_text) <= MAX_NATURAL_TEXT_LENGTH:
+        # 移すかどうかは、スキーマの文字数上限ではなくprompt規約の長さ(3文以下・60語以下)で
+        # 判定する。足して規約を超えるなら外すだけにする。最小の文数は、移す前から満たして
+        # いない自然文があるため、ここでは見ない。
+        if (
+            style != "tags"
+            and len(natural_text) <= MAX_NATURAL_TEXT_LENGTH
+            and len(split_natural_sentences(natural_text)) <= NATURAL_TEXT_MAX_SENTENCES
+            and len(natural_text.split()) <= NATURAL_TEXT_MAX_WORDS
+        ):
             result["natural_text"] = natural_text
             moved = unknown
         else:

@@ -111,11 +111,6 @@ _HAIRSTYLE_TAGS = frozenset(
 #: glasses`など)。
 _GLASSES_PATTERN = re.compile(r"glasses$")
 
-#: `natural_text`の長さの規則。2〜3文、60語以下とする。
-_NATURAL_TEXT_MIN_SENTENCES = 2
-_NATURAL_TEXT_MAX_SENTENCES = 3
-_NATURAL_TEXT_MAX_WORDS = 60
-
 
 def check_prompt_body(
     body: Mapping[str, Any],
@@ -297,11 +292,13 @@ def _check_natural_length(
             "natural_length",
             "natural_text must be 2-3 sentences (<=60 words); it is empty.",
         )
-    sentences = [s for s in re.split(r"[.!?]+", natural_text) if s.strip()]
+    sentences = proposals.split_natural_sentences(natural_text)
     word_count = len(natural_text.split())
     if (
-        _NATURAL_TEXT_MIN_SENTENCES <= len(sentences) <= _NATURAL_TEXT_MAX_SENTENCES
-        and word_count <= _NATURAL_TEXT_MAX_WORDS
+        proposals.NATURAL_TEXT_MIN_SENTENCES
+        <= len(sentences)
+        <= proposals.NATURAL_TEXT_MAX_SENTENCES
+        and word_count <= proposals.NATURAL_TEXT_MAX_WORDS
     ):
         return None
     message = (
