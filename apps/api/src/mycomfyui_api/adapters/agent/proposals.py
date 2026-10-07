@@ -527,6 +527,16 @@ def _dedupe_key(value: str) -> str:
     return stripped.strip().casefold()
 
 
+def _confidence_key(value: Any) -> str:
+    """確信度と訳を引くキー。`_dedupe_key`に加え、括弧のエスケープの有無を揃える (#470)。
+
+    タグ行は版権名の括弧をエスケープした綴り (`hoshino ai \\(oshi no ko\\)`) で持つが、
+    Providerは`tag_confidences`と`tag_glosses`を素の括弧で返すことがある。綴りで引くと
+    確信度を取りこぼし、1.0として扱われてしきい値で外せなくなる。
+    """
+    return _dedupe_key(_normalize_tag(value)).replace("\\(", "(").replace("\\)", ")")
+
+
 def _is_weighted(value: str) -> bool:
     """`(tag:1.2)`のように重みを持つ書き方かどうか。"""
     return WEIGHTED_TAG_PATTERN.match(value.strip()) is not None
@@ -592,7 +602,7 @@ def build_tag_confidence_blocks(
     for gloss in data.get("tag_glosses") or []:
         if not isinstance(gloss, dict):
             continue
-        key = _dedupe_key(_normalize_tag(gloss.get("tag")))
+        key = _confidence_key(gloss.get("tag"))
         if key:
             glosses[key] = str(gloss.get("ja") or "")
 
@@ -603,7 +613,7 @@ def build_tag_confidence_blocks(
             tag = _normalize_tag(raw_tag)
             if not tag:
                 continue
-            key = _dedupe_key(tag)
+            key = _confidence_key(tag)
             confidence = _tag_confidence(key, confidences)
             items.append(
                 {
@@ -618,12 +628,12 @@ def build_tag_confidence_blocks(
 
 
 def _tag_confidences(data: Mapping[str, Any]) -> dict[str, float]:
-    """`tag_confidences`を`_dedupe_key`で引ける形にする。"""
+    """`tag_confidences`を`_confidence_key`で引ける形にする。"""
     confidences: dict[str, float] = {}
     for item in data.get("tag_confidences") or []:
         if not isinstance(item, dict):
             continue
-        key = _dedupe_key(_normalize_tag(item.get("tag")))
+        key = _confidence_key(item.get("tag"))
         if key:
             # 同じタグが複数回あれば、高い方を採る。画面は先に出た位置のタグを残すため。
             confidence = float(item.get("confidence", 1.0))
@@ -651,7 +661,7 @@ def _tags_above_threshold(body: Mapping[str, Any]) -> dict[str, Any]:
         result[field_name] = [
             value
             for value in values
-            if _tag_confidence(_dedupe_key(_normalize_tag(value)), confidences)
+            if _tag_confidence(_confidence_key(value), confidences)
             >= DEFAULT_TAG_CONFIDENCE_THRESHOLD
         ]
     return result
@@ -1402,12 +1412,15 @@ def revise_current_prompt(
             if dropped_natural_text
             else "いいえ",
         )
-    final_keys = {_dedupe_key(tag) for name in TAG_BLOCK_FIELDS for tag in data[name]}
+    final_keys = {
+        _confidence_key(tag) for name in TAG_BLOCK_FIELDS for tag in data[name]
+    }
+    current_confidence_keys = {_confidence_key(tag) for tag in current}
     glosses = [
         gloss
         for gloss in data.get("tag_glosses") or []
         if isinstance(gloss, dict)
-        and _dedupe_key(_normalize_tag(gloss.get("tag"))) in final_keys
+        and _confidence_key(gloss.get("tag")) in final_keys
     ]
     if _dedupe_key(rating) == FALLBACK_RATING_TAG and not any(
         gloss.get("tag") == FALLBACK_RATING_TAG for gloss in glosses
@@ -1422,8 +1435,8 @@ def revise_current_prompt(
         confidence
         for confidence in data.get("tag_confidences") or []
         if isinstance(confidence, dict)
-        and (key := _dedupe_key(_normalize_tag(confidence.get("tag")))) in final_keys
-        and key not in current_keys
+        and (key := _confidence_key(confidence.get("tag"))) in final_keys
+        and key not in current_confidence_keys
     ]
     _attach_prompt_text(data)
     return data
