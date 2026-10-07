@@ -3658,6 +3658,8 @@ export interface components {
             label?: string | null;
             /** Media Type */
             media_type: string;
+            /** Reference Transcript */
+            reference_transcript?: string | null;
             /** Relative Path */
             relative_path: string;
             /** Role */
@@ -3700,6 +3702,8 @@ export interface components {
             id: string;
             /** Media Type */
             media_type: string | null;
+            /** Reference Transcript */
+            reference_transcript?: string | null;
             /** Relative Path */
             relative_path: string | null;
             /** Role */
@@ -3726,6 +3730,8 @@ export interface components {
             media_type?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Reference Transcript */
+            reference_transcript?: string | null;
             /** Relative Path */
             relative_path?: string | null;
             /**

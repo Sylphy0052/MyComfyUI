@@ -3859,6 +3859,17 @@
             "title": "Media Type",
             "type": "string"
           },
+          "reference_transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Transcript"
+          },
           "relative_path": {
             "title": "Relative Path",
             "type": "string"
@@ -4021,6 +4032,17 @@
             ],
             "title": "Media Type"
           },
+          "reference_transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Transcript"
+          },
           "relative_path": {
             "anyOf": [
               {
@@ -4143,6 +4165,18 @@
               }
             ],
             "title": "Project Id"
+          },
+          "reference_transcript": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Transcript"
           },
           "relative_path": {
             "anyOf": [

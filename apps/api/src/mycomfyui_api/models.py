@@ -618,6 +618,8 @@ class MediaRoleTag(Base):
     media_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(Text, nullable=False)
     character_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    #: 声質参照(`voice_reference`)の書き起こし。音声タブで選ぶと参照テキストへ入る。
+    reference_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_project_id: Mapped[str | None] = mapped_column(
         String(PROJECT_ID_LENGTH), nullable=True
     )

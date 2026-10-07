@@ -2823,6 +2823,7 @@ async def upsert_media_role_tag(
             media_type=payload.media_type,
             role=payload.role,
             character_ids=list(payload.character_ids),
+            reference_transcript=payload.reference_transcript,
             assigned_project_id=payload.project_id,
             assigned_scene_id=payload.scene_id,
             created_at=now,
@@ -2836,6 +2837,7 @@ async def upsert_media_role_tag(
         existing.media_type = payload.media_type
         existing.role = payload.role
         existing.character_ids = list(payload.character_ids)
+        existing.reference_transcript = payload.reference_transcript
         existing.assigned_project_id = payload.project_id
         existing.assigned_scene_id = payload.scene_id
         existing.updated_at = now
@@ -3045,6 +3047,7 @@ async def list_media_items(
                 label=artifact.relative_path.rsplit("/", 1)[-1],
                 role=tag.role if tag else None,
                 character_ids=list(tag.character_ids) if tag else [],
+                reference_transcript=tag.reference_transcript if tag else None,
                 artifact_id=artifact.id,
                 assigned_project_id=artifact.assigned_project_id,
                 assigned_scene_id=artifact.assigned_scene_id,
@@ -3107,6 +3110,7 @@ async def list_media_items(
                 label=tag.file_name,
                 role=tag.role,
                 character_ids=list(tag.character_ids),
+                reference_transcript=tag.reference_transcript,
                 artifact_id=None,
                 assigned_project_id=tag.assigned_project_id,
                 assigned_scene_id=tag.assigned_scene_id,
