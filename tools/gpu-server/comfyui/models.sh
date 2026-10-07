@@ -1,6 +1,6 @@
 #!/bin/bash
 # g18上で実行 (ssh.exe g18 'bash -s' < this): 不足モデルを配布元(HF)からコンテナ内で取得する
-# revisionは2026-10-07に取得したときのcommitに固定する
+# revisionは2026-10-07に取得したときのcommitに固定する。配置済みのファイルはskipするので、固定は新規取得にだけ効く
 set -Eeuo pipefail
 D=/ssdnas2/data/kfuruhashi
 docker run -i --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HF_HOME=/tmp/hf \

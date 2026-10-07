@@ -86,7 +86,8 @@ def output_names(hist: dict) -> list[str]:
             if not isinstance(val, list):
                 continue
             for v in val:
-                names.append(v.get("filename", str(v))[:80] if isinstance(v, dict) else str(v)[:80])
+                name = v.get("filename", str(v)) if isinstance(v, dict) else str(v)
+                names.append(name[:80])
     return names
 
 
