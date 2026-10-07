@@ -128,8 +128,6 @@ class ProjectScene(Base):
     tags: Mapped[list] = mapped_column(JSON, nullable=False)
     production_status: Mapped[str] = mapped_column(Text, nullable=False)
     todo: Mapped[str | None] = mapped_column(Text, nullable=True)
-    due_date: Mapped[str | None] = mapped_column(Text, nullable=True)
-    priority: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
     deleted_at: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -3913,14 +3913,10 @@ export interface components {
         };
         /** PortableScene */
         PortableScene: {
-            /** Due Date */
-            due_date?: string | null;
             /** Id */
             id: string;
             /** Notes */
             notes?: string | null;
-            /** Priority */
-            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /**
              * Production Status
              * @default not_started
@@ -4182,6 +4178,10 @@ export interface components {
         ProjectLocalOverrides: {
             /** Characters */
             characters?: components["schemas"]["ProjectCharacterProfile"][];
+            /** Scene Details */
+            scene_details?: {
+                [key: string]: components["schemas"]["SceneDetail"];
+            };
             /** Scene Outfits */
             scene_outfits?: {
                 [key: string]: {
@@ -4681,12 +4681,8 @@ export interface components {
         };
         /** SceneCreate */
         SceneCreate: {
-            /** Due Date */
-            due_date?: string | null;
             /** Notes */
             notes?: string | null;
-            /** Priority */
-            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /**
              * Production Status
              * @default not_started
@@ -4700,14 +4696,30 @@ export interface components {
             /** Todo */
             todo?: string | null;
         };
+        /**
+         * SceneDetail
+         * @description Sceneごとの登場キャラクター・場所・時間帯・季節・タグ (Issue #478)。
+         *
+         *     外部ProjectのSceneは書き込めないため、localと外部のどちらのSceneもlocal_overridesに
+         *     持つ。Noneは未設定を表し、外部Projectではai-mediaの値を初期値として表示する。
+         *     タグを使うのは外部ProjectのSceneだけで、localのSceneは`project_scene.tags`に持つ。
+         */
+        SceneDetail: {
+            /** Characters */
+            characters?: string[] | null;
+            /** Location */
+            location?: string | null;
+            /** Season */
+            season?: string | null;
+            /** Tags */
+            tags?: string[] | null;
+            /** Time Of Day */
+            time_of_day?: string | null;
+        };
         /** SceneUpdate */
         SceneUpdate: {
-            /** Due Date */
-            due_date?: string | null;
             /** Notes */
             notes?: string | null;
-            /** Priority */
-            priority?: ("low" | "medium" | "high" | "urgent") | null;
             /** Production Status */
             production_status?: ("not_started" | "in_progress" | "has_candidates" | "accepted" | "completed") | null;
             /** Summary */

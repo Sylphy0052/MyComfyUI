@@ -105,7 +105,12 @@ def _project_settings(project: Project) -> dict[str, Any]:
             project.generation_defaults or {}
         ).model_dump(),
         "local_overrides": local_overrides.model_copy(
-            update={"scene_prompts": {}, "shot_prompts": {}, "scene_outfits": {}}
+            update={
+                "scene_prompts": {},
+                "shot_prompts": {},
+                "scene_outfits": {},
+                "scene_details": {},
+            }
         ).model_dump(),
     }
 
@@ -282,6 +287,9 @@ def _portable_local_overrides(
                 ),
                 "scene_outfits": (
                     dict(overrides.scene_outfits) if include_structure else {}
+                ),
+                "scene_details": (
+                    dict(overrides.scene_details) if include_structure else {}
                 ),
             }
         ),
@@ -743,6 +751,10 @@ def _restore_local_overrides(
             scene_ids.get(resource_id, resource_id): dict(selection)
             for resource_id, selection in overrides.scene_outfits.items()
         },
+        scene_details={
+            scene_ids.get(resource_id, resource_id): detail.model_copy()
+            for resource_id, detail in overrides.scene_details.items()
+        },
         shot_prompts={
             shot_ids.get(resource_id, resource_id): prompt
             for resource_id, prompt in overrides.shot_prompts.items()
@@ -899,7 +911,7 @@ async def _import_package_locked(
             id=scene_ids[item.id], project_id=project_id, sequence=item.sequence,
             summary=item.summary, notes=item.notes, tags=list(item.tags),
             production_status=item.production_status, created_at=now, updated_at=now, deleted_at=None,
-            todo=item.todo, due_date=item.due_date, priority=item.priority,
+            todo=item.todo,
         ))
     for item in package.shots:
         if item.scene_id not in scene_ids:
