@@ -532,9 +532,12 @@ def _confidence_key(value: Any) -> str:
 
     タグ行は版権名の括弧をエスケープした綴り (`hoshino ai \\(oshi no ko\\)`) で持つが、
     Providerは`tag_confidences`と`tag_glosses`を素の括弧で返すことがある。綴りで引くと
-    確信度を取りこぼし、1.0として扱われてしきい値で外せなくなる。
+    確信度を取りこぼし、1.0として扱われてしきい値で外せなくなる。エスケープは
+    `_dedupe_key`より先に外す。後に外すと、全体が括弧の`\\(foo\\)`は`(foo)`のまま残り、
+    強調括弧を剥がした`(foo)`の`foo`と一致しない。
     """
-    return _dedupe_key(_normalize_tag(value)).replace("\\(", "(").replace("\\)", ")")
+    unescaped = _normalize_tag(value).replace("\\(", "(").replace("\\)", ")")
+    return _dedupe_key(unescaped)
 
 
 def _is_weighted(value: str) -> bool:
