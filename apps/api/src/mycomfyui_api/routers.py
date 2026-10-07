@@ -527,8 +527,13 @@ async def list_recipes(
 
     Recipeは作成後に書き換えず、更新時は`supersedes_recipe_id`で後継を作る。既定では
     後継に置き換えられたRecipeを除き、選択肢に古い版が並ばないようにする。
+    撤去したengineのRecipeはDBに残っていても実行できないため、選択肢に出さない。
     """
-    query = select(Recipe).order_by(Recipe.created_at.desc(), Recipe.id.asc())
+    query = (
+        select(Recipe)
+        .where(Recipe.engine.in_(SUPPORTED_ENGINES))
+        .order_by(Recipe.created_at.desc(), Recipe.id.asc())
+    )
     if kind is not None:
         query = query.where(Recipe.kind == kind)
     if engine is not None:

@@ -97,19 +97,25 @@ class VoiceRunnerClient:
         return RunnerHealth(base_url=self._base_url, engines=tuple(engines))
 
     async def speech(self, request: SpeechRequest) -> SpeechResult:
-        self._guard_size(len(request.reference_audio), "参照音声")
         body: dict[str, Any] = {
             "engine": request.engine,
             "text": request.text,
             "reading": request.reading,
             "language": request.language,
-            "reference_audio": base64.b64encode(request.reference_audio).decode(
-                "ascii"
-            ),
-            "reference_transcript": request.reference_transcript,
             "seed": request.seed,
             "timeout_sec": request.timeout_sec or self._timeout,
         }
+        # 参照音声が無いときは参照の2項目をまとめて省き、captionが無いときはcaptionを
+        # 省く。runnerは未知の項目を拒むため、captionを持たない要求は対応前のrunnerにも
+        # そのまま通る。
+        if request.reference_audio is not None:
+            self._guard_size(len(request.reference_audio), "参照音声")
+            body["reference_audio"] = base64.b64encode(request.reference_audio).decode(
+                "ascii"
+            )
+            body["reference_transcript"] = request.reference_transcript
+        if request.caption is not None:
+            body["caption"] = request.caption
         payload = await self._post("/v1/speech", body)
         wav = self._decode_audio(payload.get("wav"))
         sample_rate = payload.get("sample_rate")

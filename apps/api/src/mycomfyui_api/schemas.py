@@ -190,6 +190,7 @@ class ProjectGenerationDefaultWarning(ApiModel):
     code: Literal[
         "RECIPE_NOT_FOUND",
         "RECIPE_KIND_MISMATCH",
+        "ENGINE_UNSUPPORTED",
         "WORKFLOW_NOT_FOUND",
         "INPUT_NOT_SUPPORTED",
         "INPUT_VALUE_UNAVAILABLE",

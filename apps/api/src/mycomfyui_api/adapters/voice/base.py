@@ -11,15 +11,9 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 #: 音声Backendのengine識別子。Recipeの`engine`にそのまま入る。
-ENGINE_QWEN3_TTS = "qwen3-tts-clone"
-ENGINE_VOXCPM2 = "voxcpm2-prompt"
-ENGINE_COSYVOICE3 = "cosyvoice3"
+ENGINE_IRODORI = "irodori"
 
-VOICE_ENGINES: tuple[str, ...] = (
-    ENGINE_QWEN3_TTS,
-    ENGINE_VOXCPM2,
-    ENGINE_COSYVOICE3,
-)
+VOICE_ENGINES: tuple[str, ...] = (ENGINE_IRODORI,)
 
 
 class VoiceError(Exception):
@@ -71,13 +65,18 @@ class RunnerHealth:
 
 @dataclass(frozen=True)
 class SpeechRequest:
-    """1台詞ぶんの生成要求。"""
+    """1台詞ぶんの生成要求。
+
+    声質は参照 (`reference_audio`と`reference_transcript`の組) か`caption`の少なくとも
+    一方で決める。両方あれば両方を使う。
+    """
 
     engine: str
     text: str
-    reference_audio: bytes
-    reference_transcript: str
     seed: int
+    reference_audio: bytes | None = None
+    reference_transcript: str | None = None
+    caption: str | None = None
     reading: str | None = None
     language: str = "ja"
     timeout_sec: float | None = None
