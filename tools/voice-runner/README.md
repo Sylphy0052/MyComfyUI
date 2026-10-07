@@ -134,6 +134,7 @@ docker stop kfuruhashi-voice-runner-g<gpu_index>  # 使い終えたら止める
 コンテナ名は GPU 番号を含む (`kfuruhashi-voice-runner-g0` など)。別 GPU で同時に
 起動するときは、ホスト側ポートが重ならないよう `VOICE_RUNNER_HOST_PORT=18771 docker/run.sh 1`
 のように変える。
+ポートが使用中で起動できないときは、`run.sh` が docker のエラーに続けてこの変数を案内して終了する。
 
 モデル (`Aratako/Irodori-TTS-v4.1-Small` とコーデック
 `Aratako/Semantic-DACVAE-Japanese-32dim`) は `engines.yaml` の `model_revision` と

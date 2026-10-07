@@ -13,9 +13,19 @@ HOST_PORT=${VOICE_RUNNER_HOST_PORT:-18770}
   || { echo "VOICE_RUNNER_HOST_PORT must be 1-65535: $HOST_PORT" >&2; exit 2; }
 D=/ssdnas2/data/kfuruhashi
 mkdir -p "$D/hf-cache"
-docker run -d --rm --init --name "kfuruhashi-voice-runner-g${GPU}" --gpus "device=${GPU}" \
+rc=0
+out=$(docker run -d --rm --init --name "kfuruhashi-voice-runner-g${GPU}" --gpus "device=${GPU}" \
   --cap-drop ALL --security-opt no-new-privileges \
   --user "$(id -u):$(id -g)" -e HOME=/tmp -e USER="$(id -un)" \
   -p "127.0.0.1:${HOST_PORT}:8770" \
   -v "$D/hf-cache:/hf-cache" \
-  kfuruhashi-voice-runner:irodori
+  kfuruhashi-voice-runner:irodori 2>&1) || rc=$?
+if ((rc != 0)); then
+  echo "$out" >&2
+  # docker のエラー文言 (port is already allocated / address already in use) でポート衝突を判定する
+  if grep -qiE 'port is already allocated|address already in use' <<<"$out"; then
+    echo "ホスト側ポート ${HOST_PORT} は使用中です。VOICE_RUNNER_HOST_PORT で変えられます (例: VOICE_RUNNER_HOST_PORT=$((HOST_PORT + 1)) $0 ${GPU})。" >&2
+  fi
+  exit "$rc"
+fi
+echo "$out"
