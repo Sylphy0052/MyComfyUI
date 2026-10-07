@@ -438,7 +438,10 @@ export function GenerationForm({
       })
       .catch(() => {
         // 取れなければ、合うか判断できないProfileは外して投入し、その旨を表示する。
-        if (active) setLookProfileStatus("error");
+        if (!active) return;
+        // 古い一覧で判定すると表示と外す集合が食い違うため、一覧も空にする。
+        setLookProfileList([]);
+        setLookProfileStatus("error");
       });
     return () => {
       active = false;
@@ -799,7 +802,7 @@ export function GenerationForm({
       return null;
     }
     if (lookProfileIds.length > 0 && lookProfileStatus === "loading") {
-      setInvalid("LookProfileを確認しています。少し待ってからもう一度投入してください。");
+      setInvalid("LookProfileを確認しています。少し待ってからもう一度投入してください。終わらない場合はLookProfileか参照を外すと投入できます。");
       return null;
     }
     return {
