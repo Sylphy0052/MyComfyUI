@@ -2836,13 +2836,21 @@ async def upsert_media_role_tag(
         existing.byte_size = payload.byte_size
         existing.media_type = payload.media_type
         existing.role = payload.role
-        existing.character_ids = list(payload.character_ids)
+        # Projectもキャラクターも送らない再送は割り当てを知らない呼び出し元 (Projectを
+        # 選ばない音声の取込など) のため、既存の紐付けとProject・Sceneの割り当てを
+        # 消さない。キャラクターを外すときは`project_id`を付けて`character_ids`を空で
+        # 送り、Projectの割り当てを外すときは`project_id`をnullで明示して送る。
+        keeps_assignment = (
+            "project_id" not in payload.model_fields_set and not payload.character_ids
+        )
+        if not keeps_assignment:
+            existing.character_ids = list(payload.character_ids)
+            existing.assigned_project_id = payload.project_id
+            existing.assigned_scene_id = payload.scene_id
         # 書き起こしを知らない呼び出し元 (画像の役割付けなど) が消さないよう、
         # 項目を送ったときだけ更新する。消すときは明示的にnullを送る。
         if "reference_transcript" in payload.model_fields_set:
             existing.reference_transcript = payload.reference_transcript
-        existing.assigned_project_id = payload.project_id
-        existing.assigned_scene_id = payload.scene_id
         existing.updated_at = now
         row = existing
     await _commit(session)

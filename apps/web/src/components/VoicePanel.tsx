@@ -44,6 +44,13 @@ interface VoiceBinding {
   /** 取込時に参照音声へ付ける役割とキャラクター (Issue #249)。役割が空なら付けない。 */
   role: MediaRole | "";
   characterIds: string[];
+  /**
+   * 書き起こしが登録済みの参照音声から自動で入った値のままか。手で編集すると外れる。
+   * 値の一致では、自動入力と同じ文面を手で入れた場合と区別できない。
+   */
+  transcriptInherited: boolean;
+  /** アップロードした参照音声を取り込んだ時点のキャラクター。登録の有無によらず切替の判定に使う。 */
+  uploadedCharacterIds: string[];
   /** 取込は済んだが役割を付けられなかったときの理由。次にこの声を取り込むまで残す。 */
   roleTagError: string | null;
 }
@@ -66,9 +73,25 @@ const referencePatch = (item: MediaItem): Partial<VoiceBinding> => ({
   sha256: item.sha256,
   fileName: item.label ?? item.relative_path,
   transcript: item.reference_transcript ?? "",
+  transcriptInherited: true,
+  uploadedCharacterIds: [],
   role: "voice_reference",
   roleTagError: null,
 });
+
+// 参照音声が未指定の声へ書き起こしを先に手で入れていたら、自動で入れる参照音声の
+// 書き起こしで上書きしない。
+const autoFillPatch = (
+  binding: VoiceBinding,
+  item: MediaItem,
+): Partial<VoiceBinding> => {
+  const patch = referencePatch(item);
+  if (binding.relativePath || !binding.transcript.trim()) return patch;
+  return { ...patch, transcript: binding.transcript, transcriptInherited: false };
+};
+
+const sameIds = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((id) => b.includes(id));
 
 const EMPTY_BINDING: VoiceBinding = {
   canonId: "",
@@ -80,6 +103,8 @@ const EMPTY_BINDING: VoiceBinding = {
   fileName: null,
   role: "voice_reference",
   characterIds: [],
+  transcriptInherited: false,
+  uploadedCharacterIds: [],
   roleTagError: null,
 };
 
@@ -134,12 +159,20 @@ export function VoicePanel({
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
   usePlanPresetDefaults(planPreset, shotId, recipes, setRecipeId, setUseInheritedDefaults);
   const [canon, setCanon] = useState<CanonDescriptor[]>([]);
+  // 読み込めないとキャラクターからCanonを自動で選べないため、画面に理由を出す。
+  const [canonError, setCanonError] = useState<string | null>(null);
   // 登録済みの参照音声(voice_reference)の候補。取込・タグ付けのたびに引き直す。
   const [refCandidates, setRefCandidates] = useState<MediaItem[]>([]);
   const [refReload, setRefReload] = useState(0);
   const characters = useProjectCharacters(projectId);
   const [health, setHealth] = useState<VoiceBackendHealth | null>(null);
   const [bindings, setBindings] = useState<Record<string, VoiceBinding>>({});
+  // 取り込み中の操作を完了時に上書きしないよう、非同期処理が最新の指定を読むために持つ。
+  const bindingsRef = useRef(bindings);
+  bindingsRef.current = bindings;
+  // Shot・Projectを切り替えるたびに進める。取込の完了時に開始時と比べ、切替前に
+  // 始めた取込を切替後の声へ入れない。
+  const bindingsGeneration = useRef(0);
   const [seed, setSeed] = useState("-1");
   const [profile, setProfile] = useState("default");
   const [verifyWithAsr, setVerifyWithAsr] = useState(true);
@@ -215,6 +248,7 @@ export function VoicePanel({
   }, []);
 
   useEffect(() => {
+    setCanonError(null);
     if (!projectId) {
       setCanon([]);
       return;
@@ -225,7 +259,10 @@ export function VoicePanel({
         const list = await api.listCanon(projectId, "voice");
         if (active) setCanon(list.items);
       } catch (cause) {
-        if (active) setError(describe(cause));
+        if (active) {
+          setCanon([]);
+          setCanonError(describe(cause));
+        }
       }
     })();
     return () => {
@@ -268,6 +305,7 @@ export function VoicePanel({
 
   // Shot が変わったら指定をやり直す。別 Shot の参照音声を引き継がない。
   useEffect(() => {
+    bindingsGeneration.current += 1;
     setBindings(
       Object.fromEntries(voiceIds.map((id) => [id, { ...EMPTY_BINDING }])),
     );
@@ -275,12 +313,14 @@ export function VoicePanel({
 
   // キャラクターはProject単位。別Projectの選択を持ち越すとAPIが422で弾くため、
   // MediaPickerと同じくProject切替時に選択を空へ戻す。取り込んだ参照音声は残す。
+  // Voice CanonもProject単位のため、手で選んだCanonを空へ戻す。
   useEffect(() => {
+    bindingsGeneration.current += 1;
     setBindings((current) =>
       Object.fromEntries(
         Object.entries(current).map(([id, binding]) => [
           id,
-          { ...binding, characterIds: [] },
+          { ...binding, characterIds: [], canonId: "" },
         ]),
       ),
     );
@@ -301,7 +341,7 @@ export function VoicePanel({
           );
           if (linked.length !== 1) return [id, binding];
           changed = true;
-          return [id, { ...binding, ...referencePatch(linked[0]) }];
+          return [id, { ...binding, ...autoFillPatch(binding, linked[0]) }];
         }),
       );
       return changed ? next : current;
@@ -367,28 +407,54 @@ export function VoicePanel({
   const upload = async (voiceId: string, file: File) => {
     setError(null);
     update(voiceId, { roleTagError: null });
-    const { role, characterIds, transcript, relativePath } =
-      bindings[voiceId] ?? EMPTY_BINDING;
+    const {
+      role,
+      characterIds,
+      relativePath,
+      transcript,
+      transcriptInherited,
+    } = bindings[voiceId] ?? EMPTY_BINDING;
+    const generation = bindingsGeneration.current;
     // 登録済みの参照音声から自動で入った書き起こしは、別の録音である新しいwavへ
     // 登録しない。手で直した書き起こしだけを送る。
-    const inherited = refCandidates.find(
-      (item) => item.relative_path === relativePath,
-    )?.reference_transcript;
-    const ownTranscript =
-      inherited !== undefined && inherited !== null && transcript === inherited
-        ? ""
-        : transcript;
+    const ownTranscript = transcriptInherited ? "" : transcript;
     try {
       const stored = await api.createVoiceReference(
         file.name,
         await toBase64(file),
       );
-      update(voiceId, {
-        relativePath: stored.relative_path,
-        sha256: stored.sha256,
-        fileName: file.name,
-        transcript: ownTranscript,
-      });
+      const latest = bindingsRef.current[voiceId] ?? EMPTY_BINDING;
+      // 取り込み中にShot・Project・キャラクター・参照音声の指定が変わったら、
+      // 選び直した声へ入れない。
+      const applies =
+        generation === bindingsGeneration.current &&
+        sameIds(latest.characterIds, characterIds) &&
+        latest.relativePath === relativePath;
+      // 取り込み中に書き起こしを手で編集していたら、その編集を残す。編集して開始時と
+      // 同じ文面へ戻した場合も手入力として扱う。候補の再取得で自動入力された
+      // 書き起こしは別の録音のものなので使わない。
+      const finalTranscript =
+        !applies || latest.transcriptInherited
+          ? ownTranscript
+          : latest.transcript;
+      if (applies) {
+        update(voiceId, {
+          relativePath: stored.relative_path,
+          sha256: stored.sha256,
+          fileName: file.name,
+          transcript: finalTranscript,
+          transcriptInherited: false,
+          uploadedCharacterIds: characterIds,
+        });
+      } else {
+        // 役割タグは取り込みを始めた時点の指定で付ける。wavはその時点のキャラクターの
+        // 参照音声として正しく、声へ入れないことだけを伝える。
+        setError(
+          role
+            ? `「${file.name}」は取り込み中に${voiceId}のShot・Project・キャラクター・参照音声の指定が変わったため、${voiceId}には入れていません。取り込みを始めた時点のキャラクターの参照音声として登録します。`
+            : `「${file.name}」は取り込み中に${voiceId}のShot・Project・キャラクター・参照音声の指定が変わったため、${voiceId}には入れていません。もう一度取り込んでください。`,
+        );
+      }
       if (!role) return;
       try {
         await api.upsertMediaRoleTag({
@@ -400,8 +466,8 @@ export function VoicePanel({
           role,
           character_ids: characterIds,
           // 空欄のときは送らず、登録済みの書き起こしを消さない。
-          ...(role === "voice_reference" && ownTranscript.trim()
-            ? { reference_transcript: ownTranscript }
+          ...(role === "voice_reference" && finalTranscript.trim()
+            ? { reference_transcript: finalTranscript }
             : {}),
           project_id: projectId ?? undefined,
           scene_id: sceneId ?? undefined,
@@ -425,11 +491,39 @@ export function VoicePanel({
   };
 
   // キャラクターIDとdisplay_nameが一致するVoice Canon。キャラクターを1人だけ選んだ
-  // ときに使い、一致が無ければCanonを手で選ぶ (Issue #436)。
-  const matchedCanon = (characterIds: string[]) =>
+  // ときに使い、一致が無ければCanonを手で選ぶ (Issue #436)。同じdisplay_nameが複数
+  // あると決められないため、自動では選ばない。
+  const canonMatches = (characterIds: string[]) =>
     characterIds.length === 1
-      ? (canon.find((item) => item.display_name === characterIds[0]) ?? null)
-      : null;
+      ? canon.filter((item) => item.display_name === characterIds[0])
+      : [];
+  const matchedCanon = (characterIds: string[]) => {
+    const matches = canonMatches(characterIds);
+    return matches.length === 1 ? matches[0] : null;
+  };
+
+  // 手で選ぶプルダウンの表示。同じdisplay_nameが複数あると見分けられないため、
+  // そのときはcanon_idを添える。
+  const canonLabel = (item: CanonDescriptor) => {
+    if (item.display_name === null) return item.canon_id;
+    const sameName = canon.filter(
+      (other) => other.display_name === item.display_name,
+    );
+    return sameName.length > 1
+      ? `${item.display_name} (${item.canon_id})`
+      : item.display_name;
+  };
+
+  // Canonを自動で選べない理由。手で選ぶプルダウンの前に出す。
+  const canonHint = (characterIds: string[]): string | null => {
+    if (characterIds.length > 1) {
+      return "キャラクターを複数選んでいるため、Voice Canonは自動で選べません。手で選んでください。";
+    }
+    if (canonMatches(characterIds).length > 1) {
+      return "同じ表示名のVoice Canonが複数あるため、自動で選べません。手で選んでください。";
+    }
+    return null;
+  };
 
   // キャラクターを選ぶと、紐付いた登録済みの参照音声が1件だけならそれを入れる。
   // 別のキャラクターに紐付く登録済みの参照音声は外し、選んだのと違う声で作らない。
@@ -440,20 +534,35 @@ export function VoicePanel({
         ? refCandidates.filter((item) => linkedToAny(item, characterIds))
         : [];
     if (linked.length === 1) {
-      update(voiceId, { characterIds, ...referencePatch(linked[0]) });
+      update(voiceId, { characterIds, ...autoFillPatch(binding, linked[0]) });
       return;
     }
     const current = refCandidates.find(
       (item) => item.relative_path === binding.relativePath,
     );
+    // 登録の有無によらず、参照音声が結び付いたキャラクターで判定する。
+    // 取り込んだだけで未登録のwavは、取り込んだ時点のキャラクターを使う。
+    const ownCharacterIds =
+      current !== undefined
+        ? (current.character_ids ?? [])
+        : binding.relativePath
+          ? binding.uploadedCharacterIds
+          : [];
     const stale =
-      current !== undefined &&
-      (current.character_ids ?? []).length > 0 &&
-      !linkedToAny(current, characterIds);
+      ownCharacterIds.length > 0 &&
+      characterIds.length > 0 &&
+      !ownCharacterIds.some((id) => characterIds.includes(id));
     update(voiceId, {
       characterIds,
       ...(stale
-        ? { relativePath: "", sha256: "", fileName: null, transcript: "" }
+        ? {
+            relativePath: "",
+            sha256: "",
+            fileName: null,
+            transcript: "",
+            transcriptInherited: false,
+            uploadedCharacterIds: [],
+          }
         : {}),
     });
   };
@@ -493,7 +602,11 @@ export function VoicePanel({
         continue;
       }
       if (projectId && !canonId) {
-        setError(`${voiceId}のVoice Canonを選んでください。`);
+        setError(
+          canonError
+            ? `${voiceId}のVoice Canonを選べません。Voice Canonの読み込みに失敗しました (${canonError})。画面を再読み込みしてください。`
+            : `${voiceId}のVoice Canonを選んでください。`,
+        );
         return null;
       }
       if (transcriptRequired && !binding.transcript.trim()) {
@@ -749,6 +862,14 @@ export function VoicePanel({
                     Voice Canon: {matched.display_name} (キャラクターから自動)
                   </p>
                 )}
+                {projectId && canonError && (
+                  <p className="error">
+                    Voice Canonを読み込めなかったため、キャラクターから自動で選べません: {canonError}
+                  </p>
+                )}
+                {projectId && !matched && !canonError && canonHint(binding.characterIds) && (
+                  <p className="muted">{canonHint(binding.characterIds)}</p>
+                )}
                 {projectId && !matched && (
                   <select
                     id={`canon-${voiceId}`}
@@ -760,7 +881,7 @@ export function VoicePanel({
                     <option value="">Voice Canonを選ぶ</option>
                     {canon.map((item) => (
                       <option key={item.canon_id} value={item.canon_id}>
-                        {item.display_name ?? item.canon_id}
+                        {canonLabel(item)}
                       </option>
                     ))}
                   </select>
@@ -817,7 +938,10 @@ export function VoicePanel({
                   }
                   value={binding.transcript}
                   onChange={(event) =>
-                    update(voiceId, { transcript: event.target.value })
+                    update(voiceId, {
+                      transcript: event.target.value,
+                      transcriptInherited: false,
+                    })
                   }
                 />
                 <input

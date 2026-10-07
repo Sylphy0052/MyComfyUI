@@ -85,6 +85,17 @@ def _float(raw: Any, fallback: float) -> float:
     return float(raw) if isinstance(raw, int | float) else fallback
 
 
+def _flag(engine_id: str, raw: dict[str, Any], key: str) -> bool:
+    """真偽値の設定を読む。省略はFalse。
+
+    `bool("false")`は真になり設定の意図と逆に働くため、bool以外は失敗させる。
+    """
+    value = raw.get(key, False)
+    if not isinstance(value, bool):
+        raise ConfigError(f"{engine_id}の{key}はtrueかfalseで書いてください。")
+    return value
+
+
 _REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 
@@ -132,12 +143,12 @@ def _engine(engine_id: str, raw: Any) -> EngineConfig:
         model_id=model_id,
         model_revision=revision,
         sample_rate=sample_rate,
-        needs_katakana=bool(raw.get("needs_katakana")),
+        needs_katakana=_flag(engine_id, raw, "needs_katakana"),
         timeout_sec=_float(raw.get("timeout_sec"), DEFAULT_TIMEOUT_SEC),
         home=Path(home) if isinstance(home, str) else None,
         codec_repo=codec_repo,
         codec_revision=codec_revision,
-        uses_reference_transcript=bool(raw.get("uses_reference_transcript")),
+        uses_reference_transcript=_flag(engine_id, raw, "uses_reference_transcript"),
     )
 
 
