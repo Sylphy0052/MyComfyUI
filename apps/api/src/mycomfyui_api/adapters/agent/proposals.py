@@ -10,11 +10,12 @@ Providerへ流れないようにするためである。
 
 import json
 import logging
+import math
 import re
 from collections.abc import Collection, Iterable, Mapping
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from mycomfyui_api.adapters import tag_preflight
 from mycomfyui_api.adapters.agent.base import (
@@ -54,7 +55,7 @@ MAX_PROMPT_TAG_LENGTH = 100
 MAX_NATURAL_TEXT_LENGTH = 2000
 
 #: 連結したpositive promptの長さ上限。API契約の`positive_prompt`と同じ値にする。
-#: ブロックごとの上限を全て使うとこの値を超えるため、連結後に改めて当てる。
+#: タグの件数には上限を設けない (#407) ため、連結後に当てる。
 MAX_POSITIVE_PROMPT_LENGTH = 4000
 
 #: BGM条件案のmoodとgenreそれぞれの長さ上限。連結してpositive promptの上限に収める。
@@ -137,10 +138,10 @@ class PromptBody(ProposalOutput):
     negative_prompt: str = Field(default="", max_length=MAX_NEGATIVE_PROMPT_LENGTH)
 
 
-#: タグ、訳、確信度を別々の配列で返させると、タグが3回出力されて応答が長くなり、
-#: コンテキスト長の小さいProviderで応答が途中で切れた(#407)。1つのobjectにまとめて
-#: タグの出力を1回にし、`validate_output`で内部の形へ展開する。docstringは出力
-#: Schemaの説明としてProviderへ渡るため短く保つ。
+# タグ、訳、確信度を別々の配列で返させると、タグが3回出力されて応答が長くなり、
+# コンテキスト長の小さいProviderで応答が途中で切れた(#407)。1つのobjectにまとめて
+# タグの出力を1回にし、`validate_output`で内部の形へ展開する。docstringは出力
+# Schemaの説明としてProviderへ渡るため短く保つ。
 class ScoredTag(ProposalOutput):
     """prompt案のタグ1つと、その日本語訳と確信度。"""
 
@@ -149,6 +150,18 @@ class ScoredTag(ProposalOutput):
     ja: str = Field(default="", max_length=100)
     #: そのタグを残すべき確信度。しきい値は利用者がクライアント側のスライダーで選ぶ。
     conf: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    @field_validator("conf", mode="before")
+    @classmethod
+    def _clamp_conf(cls, value: Any) -> float:
+        # 確信度の誤りだけで案全体を拒否しない。範囲外は0〜1へ丸め、数でなければ1.0にする。
+        try:
+            conf = float(value)
+        except (TypeError, ValueError):
+            return 1.0
+        if math.isnan(conf):
+            return 1.0
+        return min(max(conf, 0.0), 1.0)
 
 
 TagChangeKind = Literal["added", "removed"]
@@ -559,7 +572,9 @@ def build_tag_confidence_blocks(
             continue
         key = _dedupe_key(_normalize_tag(item.get("tag")))
         if key:
-            confidences[key] = float(item.get("confidence", 1.0))
+            # 同じタグが複数回あれば、高い方を採る。画面は先に出た位置のタグを残すため。
+            confidence = float(item.get("confidence", 1.0))
+            confidences[key] = max(confidence, confidences.get(key, confidence))
     glosses: dict[str, str] = {}
     for gloss in data.get("tag_glosses") or []:
         if not isinstance(gloss, dict):
@@ -911,7 +926,8 @@ def normalize_prompt_tags(
         )
         if tags
     ]
-    if notes:
+    # image_promptは理由を返さない (#407) ため、注記はrationaleを持つバッチ計画だけに足す。
+    if notes and kind != "image_prompt":
         # 1件ずつ足すと、後の注記の分だけ先の注記が切られる。まとめて1回で足す。
         _append_rationale_note(data, "\n".join(notes))
     return data
@@ -969,6 +985,10 @@ def _canonicalize_body_tags(
         result["tag_glosses"] = _rename_glosses(
             body["tag_glosses"], renamed, set(unknown)
         )
+    if isinstance(body.get("tag_confidences"), list) and (renamed or unknown):
+        result["tag_confidences"] = _rename_confidences(
+            body["tag_confidences"], renamed, set(unknown)
+        )
     changes = [f"{old} → {new}" for old, new in renamed.items()]
     return result, (changes, moved, removed)
 
@@ -1012,6 +1032,26 @@ def _rename_glosses(
             continue
         seen.add(canonical)
         result.append({**gloss, "tag": canonical} if key in renamed else gloss)
+    return result
+
+
+def _rename_confidences(
+    confidences: list[Any], renamed: Mapping[str, str], dropped: set[str]
+) -> list[Any]:
+    """確信度のタグ名を正規のタグ名へ直し、タグ行から外したタグの確信度を除く (#407)。
+
+    直さないと、正規名へ直したタグが`build_tag_confidence_blocks`で確信度を引けず、
+    1.0として扱われてしきい値で外せなくなる。
+    """
+    result: list[Any] = []
+    for item in confidences:
+        if not isinstance(item, dict) or not isinstance(item.get("tag"), str):
+            result.append(item)
+            continue
+        key = tag_preflight.normalize_tag(item["tag"])
+        if key in dropped:
+            continue
+        result.append({**item, "tag": renamed[key]} if key in renamed else item)
     return result
 
 

@@ -407,7 +407,7 @@ const TAG_BLOCK_LABELS: Record<keyof TagConfidenceBlocks, string> = {
   quality_tags: "品質",
   subject_tags: "被写体",
   character_tags: "キャラクター",
-  artist_tags: "作風",
+  artist_tags: "絵師",
   general_tags: "一般",
 };
 
@@ -471,6 +471,8 @@ export function TagConfidenceThresholdPanel({
  * 差分レビューへ確信度のしきい値スライダーを付ける (#407)。補完結果が変わるたびに
  * しきい値を既定値へ戻し、positive promptの提案文をしきい値以上のタグで組み直す。
  * 確信度の無い差分 (画像prompt以外の補完や、補完以外から開いた差分) はそのまま返す。
+ * しきい値の戻しは`notes`の参照で判定するため、呼び出し元は差分をstateに持ち、描画のたびに
+ * 作り直さない。
  */
 export function useTagThresholdDiff(promptDiff: PromptDiffState | null): {
   diff: PromptDiffState | null;
