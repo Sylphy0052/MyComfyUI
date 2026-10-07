@@ -1051,7 +1051,10 @@ def _rename_confidences(
         key = tag_preflight.normalize_tag(item["tag"])
         if key in dropped:
             continue
-        result.append({**item, "tag": renamed[key]} if key in renamed else item)
+        if key in renamed:
+            # タグ行と同じく括弧をエスケープした綴りにしないと、確信度を引くときに一致しない。
+            item = {**item, "tag": _escape_parens(renamed[key])}
+        result.append(item)
     return result
 
 
