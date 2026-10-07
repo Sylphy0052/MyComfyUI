@@ -51,17 +51,18 @@ interface Props {
  * 採否は、既定から利用者が反転したhunkの集合として内容で覚える。`fields`はしきい値
  * スライダーで作り直されることがあり (#407)、位置から作る`hunk.id`はそのたびにずれる。
  * 内容で覚えれば、作り直した後も同じhunkの選択が残り、新しく現れたhunkは既定に従う。
+ * 同じ内容のhunkが並ぶ (重複タグの削除など) ときは、内容に出現順を足して区別する。
  */
 export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props) {
-  const diffs = fields.map((field) => ({
-    field,
-    hunks: diffPrompt(field.current, field.proposed),
-  }));
+  const diffs = fields.map((field) => {
+    const hunks = diffPrompt(field.current, field.proposed);
+    return { field, hunks, keys: hunkSelectionKeys(field, hunks) };
+  });
 
   const [toggled, setToggled] = useState<Set<string>>(() => new Set());
 
-  const isAccepted = (field: PromptDiffField, hunk: DiffHunk) =>
-    isAcceptedByDefault(field, hunk) !== toggled.has(hunkContentKey(field, hunk));
+  const isAccepted = (field: PromptDiffField, hunk: DiffHunk, key: string) =>
+    isAcceptedByDefault(field, hunk) !== toggled.has(key);
 
   const toggle = (id: string) => {
     setToggled((current) => {
@@ -79,10 +80,10 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
 
   const apply = () => {
     const result: Record<string, string> = {};
-    diffs.forEach(({ field, hunks }) => {
+    diffs.forEach(({ field, hunks, keys }) => {
       const fieldAccepted = new Set(
         hunks
-          .filter((hunk) => isAccepted(field, hunk))
+          .filter((hunk) => isAccepted(field, hunk, keys.get(hunk.id) ?? ""))
           .map((hunk) => hunk.id),
       );
       result[field.key] = applyPromptDiff(field.current, hunks, fieldAccepted);
@@ -105,23 +106,23 @@ export function PromptDiffReview({ fields, onCancel, onAccept, children }: Props
   return (
     <div className="stack">
       {children}
-      {diffs.map(({ field, hunks }) => {
+      {diffs.map(({ field, hunks, keys }) => {
         if (hunks.length === 0) return null;
         return (
           <div key={field.key}>
             <p className="muted">{field.label}</p>
             <ul className="list plain">
               {hunks.map((hunk) => {
-                const id = hunkContentKey(field, hunk);
+                const id = keys.get(hunk.id) ?? "";
                 // 既定採用の削除hunkにのみ「(既定で選択)」の注記を出す。
                 const isDefaultRemoval = hunk.kind === "remove" && field.acceptRemovals;
                 return (
-                  // 採否は内容で持つが、同じ内容のhunkが並ぶこともあるため、keyは一意な位置で付ける。
+                  // 採否は内容と出現順で持つ。行のkeyは`hunk.id`で付ける。
                   <li key={hunk.id} className="row">
                     <label className="row">
                       <input
                         type="checkbox"
-                        checked={isAccepted(field, hunk)}
+                        checked={isAccepted(field, hunk, id)}
                         onChange={() => toggle(id)}
                       />
                       <span className={`badge change-${badgeKind(hunk.kind)}`}>
@@ -165,6 +166,25 @@ function hunkContentKey(field: PromptDiffField, hunk: DiffHunk): string {
   return [field.key, hunk.kind, hunk.before?.text ?? "", hunk.after?.text ?? ""].join(
     "\u0000",
   );
+}
+
+/**
+ * hunkごとの採否キーを`hunk.id`で引けるようにする。同じ内容のhunkには出現順を足し、
+ * 1件ずつ選べるようにする。しきい値で作り直しても、同じ内容どうしの順は変わらない。
+ */
+function hunkSelectionKeys(
+  field: PromptDiffField,
+  hunks: readonly DiffHunk[],
+): Map<string, string> {
+  const seen = new Map<string, number>();
+  const keys = new Map<string, string>();
+  hunks.forEach((hunk) => {
+    const contentKey = hunkContentKey(field, hunk);
+    const occurrence = seen.get(contentKey) ?? 0;
+    seen.set(contentKey, occurrence + 1);
+    keys.set(hunk.id, `${contentKey}\u0000${occurrence}`);
+  });
+  return keys;
 }
 
 function hunkLabel(kind: DiffHunk["kind"]): string {
