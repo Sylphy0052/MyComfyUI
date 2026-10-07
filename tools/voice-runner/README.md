@@ -143,17 +143,24 @@ docker stop kfuruhashi-voice-runner-g<gpu_index>  # 使い終えたら止める
 GPU は使わない。
 
 ```bash
-y() { awk -v k="$1:" '$1 == k {print $2}' engines.yaml; }
-docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e USER="$(id -un)" \
-  -e MODEL_REV="$(y model_revision)" -e CODEC_REV="$(y codec_revision)" \
+mkdir -p /ssdnas2/data/kfuruhashi/hf-cache  # 先に作る。Docker に任せると root 所有になる
+y() { awk -v k="$1:" '$1 == k {gsub(/"/, "", $2); print $2; exit}' engines.yaml; }
+MODEL_ID=$(y model_id) MODEL_REV=$(y model_revision)
+CODEC_ID=$(y codec_repo) CODEC_REV=$(y codec_revision)
+bad=
+for v in MODEL_ID MODEL_REV CODEC_ID CODEC_REV; do
+  [ -n "${!v}" ] || { echo "engines.yaml から $v を読めません" >&2; bad=1; }
+done
+[ -z "$bad" ] && docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e USER="$(id -un)" \
+  -e MODEL_ID="$MODEL_ID" -e MODEL_REV="$MODEL_REV" \
+  -e CODEC_ID="$CODEC_ID" -e CODEC_REV="$CODEC_REV" \
   -v /ssdnas2/data/kfuruhashi/hf-cache:/hf-cache kfuruhashi-voice-runner:irodori \
   /opt/irodori/.venv/bin/python -c '
 import os
 from huggingface_hub import hf_hub_download, snapshot_download
-snapshot_download("Aratako/Irodori-TTS-v4.1-Small", revision=os.environ["MODEL_REV"],
+snapshot_download(os.environ["MODEL_ID"], revision=os.environ["MODEL_REV"],
                   allow_patterns=["model.safetensors", "tokenizer/*"])
-hf_hub_download("Aratako/Semantic-DACVAE-Japanese-32dim", "weights.pth",
-                revision=os.environ["CODEC_REV"])'
+hf_hub_download(os.environ["CODEC_ID"], "weights.pth", revision=os.environ["CODEC_REV"])'
 ```
 
 `model_revision` を更新するときは
