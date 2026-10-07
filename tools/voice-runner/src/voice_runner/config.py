@@ -36,7 +36,6 @@ class EngineConfig:
     needs_katakana: bool
     timeout_sec: float
     home: Path | None = None
-    mode: str | None = None
 
     @property
     def available(self) -> bool:
@@ -92,7 +91,6 @@ def _engine(engine_id: str, raw: Any) -> EngineConfig:
         raise ConfigError(f"{engine_id}のsample_rateが不正です。")
     revision = raw.get("model_revision")
     home = raw.get("home")
-    mode = raw.get("mode")
     return EngineConfig(
         id=engine_id,
         python=Path(python),
@@ -102,7 +100,6 @@ def _engine(engine_id: str, raw: Any) -> EngineConfig:
         needs_katakana=bool(raw.get("needs_katakana")),
         timeout_sec=_float(raw.get("timeout_sec"), DEFAULT_TIMEOUT_SEC),
         home=Path(home) if isinstance(home, str) else None,
-        mode=mode if isinstance(mode, str) else None,
     )
 
 
