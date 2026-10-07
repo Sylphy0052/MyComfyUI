@@ -48,6 +48,9 @@ interface VoiceBinding {
   roleTagError: string | null;
 }
 
+// listMediaItemsの1回あたりの取得件数。APIの`limit`上限と同じ。
+const REFERENCE_PAGE_SIZE = 200;
+
 // キャラクターを選んでいなければ全件、選んでいればいずれかに紐付く参照音声だけを候補にする。
 const linkedToAny = (item: MediaItem, characterIds: string[]) =>
   characterIds.length === 0 ||
@@ -238,12 +241,21 @@ export function VoicePanel({
     let active = true;
     (async () => {
       try {
-        const list = await api.listMediaItems({
-          projectId,
-          role: "voice_reference",
-          source: "registered_input",
-          limit: 200,
-        });
+        // APIのlimit上限(200)で切れないよう、1ページに満たなくなるまで辿る。
+        // 候補は複数の声で共有し、声ごとにキャラクターが違うため全件を持つ。
+        const list: MediaItem[] = [];
+        for (let offset = 0; ; offset += REFERENCE_PAGE_SIZE) {
+          const page = await api.listMediaItems({
+            projectId,
+            role: "voice_reference",
+            source: "registered_input",
+            limit: REFERENCE_PAGE_SIZE,
+            offset,
+          });
+          list.push(...page);
+          // アンマウント後は残りのページを取りに行かない。
+          if (!active || page.length < REFERENCE_PAGE_SIZE) break;
+        }
         if (active) setRefCandidates(list);
       } catch (cause) {
         if (active) setError(describe(cause));
