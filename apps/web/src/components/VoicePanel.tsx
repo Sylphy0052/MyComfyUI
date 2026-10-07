@@ -478,8 +478,20 @@ export function VoicePanel({
         // 他の声の取込で消えないよう、全体のエラーでなくbindingに持たせる。
         // 声へ入れなかったwavなら、その声に出すと入れていない声のエラーに見えるため、
         // 取り込みの通知へ出す。
+        // 役割の登録を待つ間に指定が変わることもあるため、失敗した時点で取り込んだwavが
+        // まだ指定されているかを確かめ直す。
         const reason = `役割を付けられませんでした: ${describe(cause)}`;
-        if (applies) update(voiceId, { roleTagError: reason });
+        const current = bindingsRef.current[voiceId] ?? EMPTY_BINDING;
+        const stillApplies =
+          applies &&
+          generation === bindingsGeneration.current &&
+          sameIds(current.characterIds, characterIds) &&
+          current.relativePath === stored.relative_path;
+        if (stillApplies) update(voiceId, { roleTagError: reason });
+        else if (applies)
+          setError(
+            `「${file.name}」は役割の登録中に${voiceId}の指定が変わったため、${voiceId}のエラーとしては表示しません。${reason}`,
+          );
         else
           setError(
             `「${file.name}」は取り込み中に指定が変わったため${voiceId}には入れておらず、${reason}`,
