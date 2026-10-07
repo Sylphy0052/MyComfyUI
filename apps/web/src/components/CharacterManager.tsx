@@ -380,15 +380,15 @@ function RefImportSummary({ report }: { report: ReferenceImportReport }) {
         {count("unchanged")} / スキップ {report.skipped.length}
       </p>
       <ul className="list">
-        {report.results.map((item) => (
-          <li key={item.fileName} className="muted">
+        {report.results.map((item, index) => (
+          <li key={`${index}:${item.fileName}`} className="muted">
             {REF_IMPORT_LABELS[item.kind]}: {item.fileName} → {item.characterName} / {item.outfitName}
             {item.newOutfit ? " (新規衣装)" : ""}
             {item.previousFileName ? ` (旧: ${item.previousFileName})` : ""}
           </li>
         ))}
-        {report.skipped.map((item) => (
-          <li key={`skip:${item.fileName}`} className="error">
+        {report.skipped.map((item, index) => (
+          <li key={`skip:${index}:${item.fileName}`} className="error">
             スキップ: {item.fileName} ({item.reason})
           </li>
         ))}
@@ -417,10 +417,14 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const [mediaImpact, setMediaImpact] = useState<MediaImpact | null>(null);
   const [impactError, setImpactError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 取り込み中は編集フォームを開かせない。開いた下書きの保存で衣装一覧が古い内容に戻るため。
+  const importing = refImportProgress !== null;
+  const projectIdRef = useRef(projectId);
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
 
   useEffect(() => {
+    projectIdRef.current = projectId;
     setOverrides(null);
     setDraft(null);
     setSelectedId(null);
@@ -651,7 +655,8 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
    */
   const importReferenceImages = async (fileList: FileList | null) => {
     const files = Array.from(fileList ?? []);
-    if (files.length === 0) return;
+    if (files.length === 0 || !projectId) return;
+    const startProjectId = projectId;
     const plan = planReferenceImport(files.map((file) => file.name), characters);
     const targets = files.filter((file) => plan.targets.includes(file.name));
     setError(null);
@@ -677,6 +682,17 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
         uploadFailures.push({ fileName: file.name, reason: describe(cause) });
       }
     }
+    const skipped = [...plan.skipped, ...uploadFailures];
+    // 取り込み中に別のProjectへ切り替えたら、旧Projectへ保存しない。
+    if (projectIdRef.current !== startProjectId) {
+      setRefImportProgress(null);
+      return;
+    }
+    if (entries.length === 0) {
+      setRefImportReport({ results: [], skipped });
+      setRefImportProgress(null);
+      return;
+    }
     setRefImportProgress("保存中...");
     try {
       let report: ReferenceImportReport | null = null;
@@ -686,14 +702,10 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
         return applied.overrides;
       });
       const done = report as ReferenceImportReport | null;
-      if (done) {
-        setRefImportReport({
-          results: done.results,
-          skipped: [...plan.skipped, ...uploadFailures, ...done.skipped],
-        });
-      }
-    } catch {
-      // persistが画面へAPIエラーを表示する。
+      if (done) setRefImportReport({ results: done.results, skipped: [...skipped, ...done.skipped] });
+    } catch (cause) {
+      setError(`保存に失敗したため、参照画像は1件も登録していません。同じファイルを選び直してください: ${describe(cause)}`);
+      setRefImportReport({ results: [], skipped });
     } finally {
       setRefImportProgress(null);
     }
@@ -870,12 +882,12 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
               }}
             />
             <Button
-              disabled={busy || draft !== null}
+              disabled={busy || importing || draft !== null}
               onClick={() => refImportInput.current?.click()}
             >
               {refImportProgress ?? "参照画像を一括登録"}
             </Button>
-            <Button variant="primary" disabled={busy} onClick={() => openDraft()}>追加</Button>
+            <Button variant="primary" disabled={busy || importing} onClick={() => openDraft()}>追加</Button>
           </div>
         </div>
         {refImportReport && <RefImportSummary report={refImportReport} />}
@@ -906,8 +918,8 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
             <div className="row spread">
               <h3>{selectedCharacter.name}</h3>
               <div className="row">
-                <Button disabled={busy} onClick={() => openDraft(selectedCharacter)}>編集</Button>
-                <Button variant="danger" disabled={busy} onClick={() => void removeCharacter(selectedCharacter)}>削除</Button>
+                <Button disabled={busy || importing} onClick={() => openDraft(selectedCharacter)}>編集</Button>
+                <Button variant="danger" disabled={busy || importing} onClick={() => void removeCharacter(selectedCharacter)}>削除</Button>
               </div>
             </div>
             <p className="muted">{(selectedCharacter.tags ?? []).join(", ") || "タグなし"}</p>
@@ -941,7 +953,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
                     : "生成物の件数を取得中..."}
               </li>
             </ul>
-            <Button disabled={busy} onClick={() => openDraft(selectedCharacter)}>編集</Button>
+            <Button disabled={busy || importing} onClick={() => openDraft(selectedCharacter)}>編集</Button>
             <ReferenceSetPanel
               key={`reference-set:${selectedCharacter.id}`}
               projectId={projectId}

@@ -62,6 +62,9 @@ export interface ReferenceImportReport {
 
 const normalize = (value: string) => value.normalize("NFKC").trim();
 const sortedChars = (value: string) => Array.from(value).sort().join("");
+/** 衣装名の上限 (`ProjectName`)。照合でも同じ長さに切り、作った衣装と後続ファイルを一致させる。 */
+const MAX_OUTFIT_NAME = 120;
+const outfitName = (part: string) => part.slice(0, MAX_OUTFIT_NAME);
 
 /** ファイル名を「キャラ部分」「衣装部分」へ分ける。命名規則外ならnull。 */
 export function parseReferenceName(fileName: string): ParsedReferenceName | null {
@@ -153,11 +156,14 @@ export function applyReferenceImport(
       continue;
     }
     const match = matchCharacter(parsed.character, list);
-    if (match.kind !== "found") continue;
+    if (match.kind !== "found") {
+      report.skipped.push({ fileName: entry.fileName, reason: match.kind === "none" ? "キャラ該当なし" : "キャラ曖昧" });
+      continue;
+    }
     const character = characters.get(match.character.id) ?? match.character;
 
     const outfits = [...(character.outfits ?? [])];
-    let outfit = matchOutfit(parsed.outfit, outfits);
+    let outfit = matchOutfit(outfitName(parsed.outfit), outfits);
     let newOutfit = false;
     if (!outfit) {
       if (outfits.length >= MAX_OUTFITS) {
@@ -166,7 +172,7 @@ export function applyReferenceImport(
       }
       outfit = {
         id: crypto.randomUUID(),
-        name: parsed.outfit.slice(0, 120),
+        name: outfitName(parsed.outfit),
         prompt: "",
         tags: [],
         image: null,
