@@ -448,6 +448,8 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   // 取り込み中は編集フォームを開かせない。開いた下書きの保存で衣装一覧が古い内容に戻るため。
   const importing = refImportProgress !== null;
   const projectIdRef = useRef(projectId);
+  // Projectを切り替えた回数。A→B→Aと戻っても、切替前に始めた保存を別物として見分ける (#479)。
+  const projectGenerationRef = useRef(0);
   // タグ抽出の応答待ちの間に、編集中のキャラクターや衣装のpromptが変わったかを見る (#486)。
   const draftRef = useRef<CharacterDraft | null>(null);
   draftRef.current = draft;
@@ -456,6 +458,9 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
 
   useEffect(() => {
     projectIdRef.current = projectId;
+    projectGenerationRef.current += 1;
+    // 切替前の保存の応答待ちで押せなくなったままにしない。応答はpersistが無視する。
+    setBusy(false);
     setOverrides(null);
     setDraft(null);
     setSelectedId(null);
@@ -590,11 +595,13 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   // 衣装選択や場面プロンプトの編集を、手元の古い値で巻き戻さないようにする。
   // 応答待ちの間にProjectを切り替えたら、旧Projectの値を切替先の画面へ入れない (#479)。
   // GETの後に切り替わっていれば保存せず、PUTの後なら保存は済んでいるので画面だけ更新しない。
+  // 失敗は切替後でも知らせる (編集が保存されていないことに気付けるようにする)。
   // 戻り値は、開始時のProjectを表示したまま保存を終えたかどうか。falseなら呼び出し側も画面を触らない。
   const persist = async (update: (latest: ProjectLocalOverrides) => ProjectLocalOverrides): Promise<boolean> => {
     if (!projectId) return false;
     const startProjectId = projectId;
-    const switched = () => projectIdRef.current !== startProjectId;
+    const startGeneration = projectGenerationRef.current;
+    const switched = () => projectGenerationRef.current !== startGeneration;
     setBusy(true);
     setError(null);
     try {
@@ -606,10 +613,10 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       onChanged();
       return true;
     } catch (cause) {
-      if (!switched()) setError(describe(cause));
+      setError(switched() ? `切替前のProjectへの保存に失敗しました: ${describe(cause)}` : describe(cause));
       throw cause;
     } finally {
-      setBusy(false);
+      if (!switched()) setBusy(false);
     }
   };
 
@@ -751,6 +758,8 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       }
       if (done) setRefImportReport({ results: done.results, skipped: [...skipped, ...done.skipped] });
     } catch (cause) {
+      // 切替後の失敗はpersistが知らせる。旧Projectの取り込み結果は切替先の画面へ出さない。
+      if (projectIdRef.current !== startProjectId) return;
       setError(`保存に失敗したため、参照画像は1件も登録していません。同じファイルを選び直してください: ${describe(cause)}`);
       setRefImportReport({ results: [], skipped });
     } finally {
