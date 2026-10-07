@@ -10,7 +10,7 @@ git -C ComfyUI-Anima_IP-Adapter checkout -q 6b77cd0
 [ -d ComfyUI-WD14-Tagger ] || git clone -q https://github.com/pythongosssss/ComfyUI-WD14-Tagger
 git -C ComfyUI-WD14-Tagger checkout -q 9e0a6e7
 if [ ! -d comfyui-anima-incontext ]; then
-  python -c "import huggingface_hub as h; h.snapshot_download(\"darask0/Anima-InContext-Character\", allow_patterns=[\"comfyui-anima-incontext/*\"], local_dir=\"/tmp/ic\")"
+  python -c "import huggingface_hub as h; h.snapshot_download(\"darask0/Anima-InContext-Character\", revision=\"e084c88c02dcaa55806c56b22a43461d4c32be85\", allow_patterns=[\"comfyui-anima-incontext/*\"], local_dir=\"/tmp/ic\")"
   cp -r /tmp/ic/comfyui-anima-incontext .
 fi
 ls

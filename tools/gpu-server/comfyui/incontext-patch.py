@@ -8,11 +8,10 @@
 
 from pathlib import Path
 
-path = Path("/ComfyUI/custom_nodes/comfyui-anima-incontext/incontext.py")
-src = path.read_text()
+TARGET = Path("/ComfyUI/custom_nodes/comfyui-anima-incontext/incontext.py")
 MARK = "# patched: AttentionTensorContainer"
 
-old_head = """    def ref_attn_op(q_B_S_H_D, k_B_S_H_D, v_B_S_H_D, transformer_options={}):
+OLD_HEAD = """    def ref_attn_op(q_B_S_H_D, k_B_S_H_D, v_B_S_H_D, transformer_options={}):
         if (
             not state.active
             or state.bias_B is None
@@ -21,7 +20,7 @@ old_head = """    def ref_attn_op(q_B_S_H_D, k_B_S_H_D, v_B_S_H_D, transformer_o
         ):
             return fallback_op(q_B_S_H_D, k_B_S_H_D, v_B_S_H_D, transformer_options=transformer_options)
 """
-new_head = (
+NEW_HEAD = (
     """    def ref_attn_op(q_B_S_H_D, k_B_S_H_D, v_B_S_H_D, transformer_options={}, **kwargs):
         """
     + MARK
@@ -42,9 +41,17 @@ new_head = (
         )
 """
 )
-if MARK in src:
-    print("already patched")
-else:
-    assert src.count(old_head) == 1, "unexpected source"
-    path.write_text(src.replace(old_head, new_head))
+
+
+def main() -> None:
+    src = TARGET.read_text()
+    if MARK in src:
+        print("already patched")
+        return
+    assert src.count(OLD_HEAD) == 1, "unexpected source"
+    TARGET.write_text(src.replace(OLD_HEAD, NEW_HEAD))
     print("patched")
+
+
+if __name__ == "__main__":
+    main()

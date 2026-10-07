@@ -14,15 +14,15 @@ g18上の配置は次のとおり。`/ssdnas2`はNFSで、ほかの計算機サ�
 `comfyui/`を`/ssdnas2/data/kfuruhashi/docker/comfyui`へ置き、g18上で実行する。
 
 1. イメージを作る: `docker build -t kfuruhashi-comfyui:cu130 .`。python:3.12-slimにCUDA 13.0版のtorchとComfyUIの依存を入れる。tritonがカーネルをビルドするため`gcc`と`libc6-dev`が要る。WD14 Taggerのため`onnxruntime`も入れる
-2. カスタムノードを入れる: `bash nodes.sh`
-   - `ComfyUI-Anima_IP-Adapter` (`6b77cd0`)
-   - `ComfyUI-WD14-Tagger` (`9e0a6e7`)
+2. カスタムノードを入れる: `bash nodes.sh`。各ノードのcommitは`nodes.sh`で固定している
+   - `ComfyUI-Anima_IP-Adapter`
+   - `ComfyUI-WD14-Tagger`
    - `comfyui-anima-incontext` (HF `darask0/Anima-InContext-Character`に同梱)
 3. `comfyui-anima-incontext`にパッチを当てる: `docker run --rm --user "$(id -u):$(id -g)" -v /ssdnas2/data/kfuruhashi/ComfyUI:/ComfyUI -v "$PWD:/w" kfuruhashi-comfyui:cu130 python /w/incontext-patch.py`
    - ComfyUI `8d534945` (2026-09-27) 以降、attentionの差し替え関数には`preferred_attention`などの引数が追加で渡される。q/k/vは`AttentionTensorContainer`に包まれて届く
    - パッチを当てないと、`anima_ref_incontext`が`'AttentionTensorContainer' object has no attribute 'shape'`で失敗する
    - 当て済みかどうかは目印の`# patched: AttentionTensorContainer`で判定する。何度実行してもよい
-4. 足りないモデルをHFから取得する: `bash models.sh`。InContext LoRA、ACE-Step、4x-UltraSharp、SD1.5、ControlNet canny、SigLIP2を取得する
+4. 足りないモデルをHFから取得する: `bash models.sh`。InContext LoRA、ACE-Step、4x-UltraSharp、SD1.5、ControlNet canny、SigLIP2を取得する。HFのrevisionは`models.sh`で固定している
 5. 起動する: `./run.sh <GPU番号>`。空いているGPUを先に`nvidia-smi`で確かめる
    - `127.0.0.1:18188`にだけ公開する
    - コンテナは`--init`付きで起動する。付けないとpythonがPID 1になり、`docker stop`が`PID is zombie`で失敗する
