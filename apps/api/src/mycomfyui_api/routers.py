@@ -4658,7 +4658,11 @@ async def _prompt_guidance(
         return ""
     hint = "\n".join([instruction, json.dumps(context, ensure_ascii=False)])
     guidance = await run_in_threadpool(
-        prompt_assets.load_guidance, get_settings().novel_writer_root, style, hint
+        prompt_assets.load_guidance,
+        get_settings().novel_writer_root,
+        style,
+        hint,
+        has_rationale=kind in proposals.RATIONALE_KINDS,
     )
     if guidance is None:
         return ""

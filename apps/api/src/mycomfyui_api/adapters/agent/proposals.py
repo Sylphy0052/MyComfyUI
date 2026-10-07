@@ -375,6 +375,10 @@ PROMPT_DIRECTIVE = (
 
 #: 書き方をエンジンに応じて切り替えるprompt案の種別。
 PROMPT_STYLE_KINDS = frozenset({"image_prompt", "batch_generation_plan"})
+#: 返却の形式に`rationale`を持つ種別。novel-writer資産の指示の出し分けに使う (#440)。
+RATIONALE_KINDS = frozenset(
+    kind for kind, model in OUTPUT_MODELS.items() if "rationale" in model.model_fields
+)
 
 #: タグだけを解釈するモデル(SD1.5など)へ出すときに足す指示。`PROMPT_DIRECTIVE`のうち
 #: 自然文とAnima固有の書き方を打ち消す。自然文は`apply_prompt_style`でも落とす。
