@@ -905,6 +905,11 @@ details summary {
   margin-bottom: var(--space-3);
 }
 
+.image-result-column-toggle-row [role="status"] {
+  display: flex;
+  gap: var(--space-3);
+}
+
 .image-input-column {
   min-width: 0;
 }

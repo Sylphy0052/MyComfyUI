@@ -1928,6 +1928,15 @@ export function App() {
               </nav>
 
               <div className="row image-result-column-toggle-row">
+                {/* 結果パネルを閉じている間も、進行中ジョブと昇格候補があることを示す (#410)。 */}
+                <span role="status">
+                  {resultColumnCollapsed && runningJob && (
+                    <span className="badge running">生成中</span>
+                  )}
+                  {resultColumnCollapsed && promotionCandidate && !isProduction && (
+                    <span className="badge">昇格候補あり</span>
+                  )}
+                </span>
                 <PanelCollapseToggle
                   collapsed={resultColumnCollapsed}
                   onToggle={toggleResultColumn}
