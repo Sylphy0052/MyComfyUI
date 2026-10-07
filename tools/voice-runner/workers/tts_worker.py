@@ -59,6 +59,10 @@ def write_wav(path: Path, samples: Any, sample_rate: int) -> None:
         sink.writeframes(pcm.tobytes())
 
 
+class PinnedFetchError(RuntimeError):
+    """固定revisionでのモデル取得に失敗した。設定の見直しを促す文面を持つ。"""
+
+
 def run_irodori(request: dict[str, Any]) -> tuple[Any, int]:
     """Irodori-TTS。参照音声とcaption (声質の文章指定) で声を作り、参照テキストは使わない。
 
@@ -80,11 +84,54 @@ def run_irodori(request: dict[str, Any]) -> tuple[Any, int]:
         download_hf_checkpoint,
     )
 
+    revision = request.get("model_revision")
+    if revision:
+        # download_hf_checkpointはrevisionを受けないため、同じ取得内容を固定revisionで行う。
+        from huggingface_hub import snapshot_download
+
+        try:
+            snapshot_dir = Path(
+                snapshot_download(
+                    repo_id=request["model_id"],
+                    revision=revision,
+                    allow_patterns=["model.safetensors", "tokenizer/*"],
+                )
+            )
+        except Exception as error:
+            raise PinnedFetchError(
+                f"モデルを取得できませんでした: repo={request['model_id']} "
+                f"revision={revision}。engines.yamlのmodel_revisionを見直してください。"
+                f" ({type(error).__name__}: {error})"
+            ) from error
+        checkpoint = str(snapshot_dir / "model.safetensors")
+    else:
+        checkpoint = download_hf_checkpoint(request["model_id"])
+    key_args: dict[str, Any] = {}
+    codec_repo = request.get("codec_repo")
+    if codec_repo:
+        codec_revision = request.get("codec_revision")
+        if codec_revision:
+            # コーデックはrepo idだと最新を取得するため、固定revisionで取得した
+            # weights.pthのパスを渡す (codec.pyはローカルパスをそのまま読む)。
+            from huggingface_hub import hf_hub_download
+
+            try:
+                codec_repo = hf_hub_download(
+                    repo_id=codec_repo, filename="weights.pth", revision=codec_revision
+                )
+            except Exception as error:
+                raise PinnedFetchError(
+                    f"コーデックを取得できませんでした: repo={codec_repo} "
+                    f"revision={codec_revision}。engines.yamlのcodec_revisionを見直してください。"
+                    f" ({type(error).__name__}: {error})"
+                ) from error
+        key_args["codec_repo"] = codec_repo
     runtime = InferenceRuntime.from_key(
         RuntimeKey(
-            checkpoint=download_hf_checkpoint(request["model_id"]),
+            checkpoint=checkpoint,
             model_device="cuda",
             codec_device="cuda",
+            **key_args,
         )
     )
     reference = request.get("reference_audio")
@@ -120,7 +167,15 @@ def main() -> int:
         )
         return 1
     started = time.monotonic()
-    wav, sample_rate = runner(request)
+    try:
+        wav, sample_rate = runner(request)
+    except PinnedFetchError as error:
+        # process.pyはexit codeが0以外のときstderrを呼び出し側へ返す。
+        print(str(error), file=sys.stderr)
+        response_path.write_text(
+            json.dumps({"error": str(error)}, ensure_ascii=False), encoding="utf-8"
+        )
+        return 1
     output = Path(request["output"])
     write_wav(output, wav, sample_rate)
     with wave.open(str(output), "rb") as source:

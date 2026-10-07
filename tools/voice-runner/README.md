@@ -128,12 +128,45 @@ venv はイメージに無いため、`GET /v1/health` では `available: false`
 docker build -f docker/Dockerfile -t kfuruhashi-voice-runner:irodori .
 nvidia-smi                 # 空いている GPU を確かめる
 docker/run.sh <gpu_index>  # 127.0.0.1:18770 で待ち受ける
-docker stop kfuruhashi-voice-runner  # 使い終えたら止める
+docker stop kfuruhashi-voice-runner-g<gpu_index>  # 使い終えたら止める
 ```
 
+コンテナ名は GPU 番号を含む (`kfuruhashi-voice-runner-g0` など)。別 GPU で同時に
+起動するときは、ホスト側ポートが重ならないよう `VOICE_RUNNER_HOST_PORT=18771 docker/run.sh 1`
+のように変える。
+
 モデル (`Aratako/Irodori-TTS-v4.1-Small` とコーデック
-`Aratako/Semantic-DACVAE-Japanese-32dim`) は初回の生成時に
-`/ssdnas2/data/kfuruhashi/hf-cache` へ取得する。手元の Application API からは
+`Aratako/Semantic-DACVAE-Japanese-32dim`) は `engines.yaml` の `model_revision` と
+`codec_revision` (HF の commit sha) で固定してあり、`/ssdnas2/data/kfuruhashi/hf-cache`
+へ取得する。tokenizer はモデルの repo に同梱されている。取得を初回の生成まで
+遅らせると、回線が遅いときに `timeout_sec: 300` に掛かる。初回の前に次で取得しておく。
+GPU は使わない。
+
+```bash
+mkdir -p /ssdnas2/data/kfuruhashi/hf-cache  # 先に作る。Docker に任せると root 所有になる
+y() { awk -v k="$1:" '$1 == k {gsub(/"/, "", $2); print $2; exit}' engines.yaml; }
+MODEL_ID=$(y model_id) MODEL_REV=$(y model_revision)
+CODEC_ID=$(y codec_repo) CODEC_REV=$(y codec_revision)
+bad=
+for v in MODEL_ID MODEL_REV CODEC_ID CODEC_REV; do
+  [ -n "${!v}" ] || { echo "engines.yaml から $v を読めません" >&2; bad=1; }
+done
+[ -z "$bad" ] && docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e USER="$(id -un)" \
+  -e MODEL_ID="$MODEL_ID" -e MODEL_REV="$MODEL_REV" \
+  -e CODEC_ID="$CODEC_ID" -e CODEC_REV="$CODEC_REV" \
+  -v /ssdnas2/data/kfuruhashi/hf-cache:/hf-cache kfuruhashi-voice-runner:irodori \
+  /opt/irodori/.venv/bin/python -c '
+import os
+from huggingface_hub import hf_hub_download, snapshot_download
+snapshot_download(os.environ["MODEL_ID"], revision=os.environ["MODEL_REV"],
+                  allow_patterns=["model.safetensors", "tokenizer/*"])
+hf_hub_download(os.environ["CODEC_ID"], "weights.pth", revision=os.environ["CODEC_REV"])'
+```
+
+`model_revision` を更新するときは
+`curl -s https://huggingface.co/api/models/<repo> | jq -r .sha` で現在の sha を取る。
+ASR の `openai/whisper-large-v3-turbo` は固定していない。
+手元の Application API からは
 `ssh.exe -L 8770:127.0.0.1:18770 <server>` で転送し、
 `MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://127.0.0.1:8770` で接続する。
 
