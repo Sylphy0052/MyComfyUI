@@ -67,8 +67,13 @@ def split_natural_sentences(natural_text: str) -> list[str]:
 
 
 #: 連結したpositive promptの長さ上限。API契約の`positive_prompt`と同じ値にする。
-#: タグの件数には上限を設けない (#407) ため、連結後に当てる。
+#: タグの件数には上限を設けない (#407) ため、しきい値の既定値で外したあとの連結結果に当てる。
 MAX_POSITIVE_PROMPT_LENGTH = 4000
+
+#: 確信度のしきい値の既定値。webの`DEFAULT_TAG_CONFIDENCE_THRESHOLD`と同じ値にする。
+#: 連結済みのpositive promptはこの値を下回るタグを外して組む。承認後の生成Jobと、
+#: しきい値スライダーを持たない画面がそのまま使うためである (#440)。
+DEFAULT_TAG_CONFIDENCE_THRESHOLD = 0.2
 
 #: BGM条件案のmoodとgenreそれぞれの長さ上限。連結してpositive promptの上限に収める。
 MAX_MUSIC_TAGS_LENGTH = 1000
@@ -578,15 +583,7 @@ def build_tag_confidence_blocks(
     タグなので、モデルが確信度を付けていても1.0に揃える。件数の上限は設けず、
     しきい値で残すか外すかは利用者がクライアント側のスライダーで選ぶ。
     """
-    confidences: dict[str, float] = {}
-    for item in data.get("tag_confidences") or []:
-        if not isinstance(item, dict):
-            continue
-        key = _dedupe_key(_normalize_tag(item.get("tag")))
-        if key:
-            # 同じタグが複数回あれば、高い方を採る。画面は先に出た位置のタグを残すため。
-            confidence = float(item.get("confidence", 1.0))
-            confidences[key] = max(confidence, confidences.get(key, confidence))
+    confidences = _tag_confidences(data)
     glosses: dict[str, str] = {}
     for gloss in data.get("tag_glosses") or []:
         if not isinstance(gloss, dict):
@@ -603,7 +600,7 @@ def build_tag_confidence_blocks(
             if not tag:
                 continue
             key = _dedupe_key(tag)
-            confidence = 1.0 if key in RATING_TAGS else confidences.get(key, 1.0)
+            confidence = _tag_confidence(key, confidences)
             items.append(
                 {
                     "tag": tag,
@@ -614,6 +611,46 @@ def build_tag_confidence_blocks(
         items.sort(key=lambda item: item["confidence"], reverse=True)
         blocks[field_name] = items
     return blocks
+
+
+def _tag_confidences(data: Mapping[str, Any]) -> dict[str, float]:
+    """`tag_confidences`を`_dedupe_key`で引ける形にする。"""
+    confidences: dict[str, float] = {}
+    for item in data.get("tag_confidences") or []:
+        if not isinstance(item, dict):
+            continue
+        key = _dedupe_key(_normalize_tag(item.get("tag")))
+        if key:
+            # 同じタグが複数回あれば、高い方を採る。画面は先に出た位置のタグを残すため。
+            confidence = float(item.get("confidence", 1.0))
+            confidences[key] = max(confidence, confidences.get(key, confidence))
+    return confidences
+
+
+def _tag_confidence(key: str, confidences: Mapping[str, float]) -> float:
+    """タグ1つの確信度。確信度が無いタグとratingは1.0とする。"""
+    return 1.0 if key in RATING_TAGS else confidences.get(key, 1.0)
+
+
+def _tags_above_threshold(body: Mapping[str, Any]) -> dict[str, Any]:
+    """確信度がしきい値の既定値を下回るタグを、各ブロックから外した写しを返す (#440)。
+
+    webが既定のしきい値でpositive promptを組み直すとき (`composePositivePromptFromBlocks`)
+    と同じタグを残す。`tag_confidences`を持たない案 (バッチ計画) は全タグを残す。
+    """
+    confidences = _tag_confidences(body)
+    result = dict(body)
+    for field_name in TAG_BLOCK_FIELDS:
+        values = body.get(field_name)
+        if not isinstance(values, list):
+            continue
+        result[field_name] = [
+            value
+            for value in values
+            if _tag_confidence(_dedupe_key(_normalize_tag(value)), confidences)
+            >= DEFAULT_TAG_CONFIDENCE_THRESHOLD
+        ]
+    return result
 
 
 def merge_negative_prompt(baseline: str, extra: str) -> str:
@@ -728,6 +765,8 @@ def _attach_prompt_text(body: dict[str, Any]) -> None:
     """タグ行と連結済みpositive promptを派生項目として足す。
 
     Providerにはタグ配列と自然文だけを返させ、生成Jobへ渡す文字列はここで作る。
+    タグ行は確信度がしきい値の既定値を下回るタグを外して組む (#440)。タグ配列には
+    全タグを残し、しきい値スライダーの一覧 (`build_tag_confidence_blocks`) に使う。
     """
     quality_tags = body.get("quality_tags")
     if isinstance(quality_tags, list):
@@ -743,13 +782,14 @@ def _attach_prompt_text(body: dict[str, Any]) -> None:
             str(body.get("negative_prompt") or ""),
             ", ".join(rating_negative_tags(ensured)),
         )
-    tag_line = compose_tag_line(body)
+    tag_line = compose_tag_line(_tags_above_threshold(body))
     natural_text = str(body.get("natural_text") or "").strip()
     positive_prompt = compose_positive_prompt(tag_line, natural_text)
     if not positive_prompt:
         raise AgentInvalidResponse("prompt案にタグと自然文のどちらもありません。")
     if len(positive_prompt) > MAX_POSITIVE_PROMPT_LENGTH:
         # ブロックごとの上限を全て使うとAPI契約の長さを超える。連結後に改めて当てる。
+        # しきい値で外すタグは生成に渡らないため数えない (#440)。
         raise AgentInvalidResponse(
             f"prompt案が長すぎます。{MAX_POSITIVE_PROMPT_LENGTH}文字以内にしてください。"
         )

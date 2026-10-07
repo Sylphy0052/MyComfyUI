@@ -159,7 +159,10 @@ const TAG_BLOCK_ORDER: (keyof TagConfidenceBlocks)[] = [
   "general_tags",
 ];
 
-/** しきい値スライダーの既定値。永続化はしない (#407)。 */
+/**
+ * しきい値スライダーの既定値。永続化はしない (#407)。サーバーの
+ * `DEFAULT_TAG_CONFIDENCE_THRESHOLD`と同じ値にする (#440)。
+ */
 export const DEFAULT_TAG_CONFIDENCE_THRESHOLD = 0.2;
 
 /** 重み付きタグの書式。サーバーの`WEIGHTED_TAG_PATTERN`と同じ (#407)。 */
