@@ -401,6 +401,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             parser.error("--provider と --out は --compare を使わないとき必須")
         if args.repeat < 1:
             parser.error("--repeat は1以上")
+        # 評価は長時間かかるため、書けない`--out`は実行前に弾く (終了間際のtracebackを避ける)。
+        if args.out.is_dir():
+            parser.error(f"--out はファイルを指定する (ディレクトリ): {args.out}")
+        # 親は`write_report`が作るので、既存の祖先がディレクトリでないときだけ弾く。
+        for ancestor in args.out.resolve().parents:
+            if ancestor.exists():
+                if not ancestor.is_dir():
+                    parser.error(f"--out の親がディレクトリでない: {ancestor}")
+                break
     return args
 
 
