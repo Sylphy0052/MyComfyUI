@@ -229,7 +229,7 @@ export function SceneDetailsEditor({
             const checked = selected.includes(character.id);
             return (
               <div key={character.id} className="row">
-                <label>
+                <label className="checkbox-field">
                   <input
                     type="checkbox"
                     checked={checked}
@@ -238,16 +238,19 @@ export function SceneDetailsEditor({
                   {character.name}
                 </label>
                 {checked && (character.outfits ?? []).length > 0 && (
-                  <select
-                    aria-label={`${character.name}の服装`}
-                    value={outfits[character.id] ?? ""}
-                    onChange={(event) => setOutfits((current) => ({ ...current, [character.id]: event.target.value }))}
-                  >
-                    <option value="">服装を指定しない</option>
-                    {(character.outfits ?? []).map((outfit) => (
-                      <option key={outfit.id} value={outfit.id}>{outfit.name}</option>
-                    ))}
-                  </select>
+                  <label style={{ flex: 1 }}>
+                    服装
+                    <select
+                      aria-label={`${character.name}の服装`}
+                      value={outfits[character.id] ?? ""}
+                      onChange={(event) => setOutfits((current) => ({ ...current, [character.id]: event.target.value }))}
+                    >
+                      <option value="">服装を指定しない</option>
+                      {(character.outfits ?? []).map((outfit) => (
+                        <option key={outfit.id} value={outfit.id}>{outfit.name}</option>
+                      ))}
+                    </select>
+                  </label>
                 )}
               </div>
             );
