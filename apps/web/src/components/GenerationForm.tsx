@@ -26,6 +26,8 @@ import { characterReferenceImage, REFERENCE_SLOTS } from "../state/referenceSlot
 import {
   DEFAULT_REFERENCE_STRENGTH,
   filterLookProfilesForRecipe,
+  referenceRecipeBlocker,
+  referenceStrengthRange,
   toReferenceInputs,
 } from "../state/referenceGeneration";
 import { ExecutionPreview } from "./ExecutionPreview";
@@ -382,6 +384,7 @@ export function GenerationForm({
   const [referenceDismissed, setReferenceDismissed] = useState(false);
   const [referenceStrength, setReferenceStrength] = useState(String(DEFAULT_REFERENCE_STRENGTH));
   const [lookProfileList, setLookProfileList] = useState<LookProfile[]>([]);
+  const [lookProfileStatus, setLookProfileStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [outfitRegisterName, setOutfitRegisterName] = useState("");
   const [outfitRegisterTags, setOutfitRegisterTags] = useState("");
   const [outfitRegisterPrompt, setOutfitRegisterPrompt] = useState("");
@@ -410,18 +413,32 @@ export function GenerationForm({
     }
   }, [recipes, recipeId]);
 
+  // Projectが変わったら、前のProjectのキャラクターと衣装の選択を持ち越さない。
+  useEffect(() => {
+    setOutfitCharacterId("");
+    setSelectedOutfitId(null);
+    setReferenceDismissed(false);
+  }, [projectId]);
+
   // 参照付きで投入するとき、参照Recipeに合うLookProfileを絞るために一覧を取る (#474)。
   const needsLookProfileList = lookProfileIds.length > 0 && referenceRecipe !== null;
   useEffect(() => {
-    if (!needsLookProfileList) return;
+    if (!needsLookProfileList) {
+      setLookProfileStatus("idle");
+      return;
+    }
     let active = true;
+    setLookProfileStatus("loading");
     api
       .listLookProfiles({ kind: "image", limit: 200 })
       .then((items) => {
-        if (active) setLookProfileList(items);
+        if (!active) return;
+        setLookProfileList(items);
+        setLookProfileStatus("ok");
       })
       .catch(() => {
-        // 取れなければ一覧が空のまま。合うか判断できないProfileは外して投入する。
+        // 取れなければ、合うか判断できないProfileは外して投入し、その旨を表示する。
+        if (active) setLookProfileStatus("error");
       });
     return () => {
       active = false;
@@ -777,8 +794,12 @@ export function GenerationForm({
       return { recipe: base, inputs, lookProfileIds };
     }
     const strength = Number(referenceStrength);
-    if (referenceStrength.trim() === "" || !Number.isFinite(strength) || strength < 0 || strength > 2) {
-      setInvalid("参照強度は0以上2以下の数値で入力してください。");
+    if (referenceStrength.trim() === "" || !Number.isFinite(strength) || strength < strengthRange.min || strength > strengthRange.max) {
+      setInvalid(`参照強度は${strengthRange.min}以上${strengthRange.max}以下の数値で入力してください。`);
+      return null;
+    }
+    if (lookProfileIds.length > 0 && lookProfileStatus === "loading") {
+      setInvalid("LookProfileを確認しています。少し待ってからもう一度投入してください。");
       return null;
     }
     return {
@@ -913,18 +934,26 @@ export function GenerationForm({
   );
   // 参照画像は、選んだ衣装 → 既定の衣装 → 衣装指定なしの順で探す。使えるのは、作品制作の
   // 既定値を使わず、参照Recipeがあり、使用者が外していないときだけ。
+  // 再読み込みで衣装が無くなっていたら選択なし扱いにする。別の衣装の参照では代用しない。
+  const effectiveOutfitId =
+    selectedOutfitId && (outfitCharacter?.outfits ?? []).some((item) => item.id === selectedOutfitId)
+      ? selectedOutfitId
+      : null;
   const candidateReference = outfitCharacter
-    ? characterReferenceImage(outfitCharacter, selectedOutfitId)
+    ? characterReferenceImage(outfitCharacter, effectiveOutfitId)
     : null;
+  const referenceBlocker =
+    referenceRecipe && recipe ? referenceRecipeBlocker(referenceRecipe, recipe) : null;
+  const strengthRange = referenceRecipe ? referenceStrengthRange(referenceRecipe) : { min: 0, max: 2 };
   const autoReference =
-    candidateReference && referenceRecipe && !referenceDismissed && !useInheritedDefaults
+    candidateReference && referenceRecipe && !referenceBlocker && !referenceDismissed && !useInheritedDefaults
       ? candidateReference
       : null;
   const referenceLookProfiles = useMemo(
     () =>
       autoReference && referenceRecipe
         ? filterLookProfilesForRecipe(lookProfileIds, lookProfileList, referenceRecipe)
-        : { kept: lookProfileIds, dropped: [] as LookProfile[] },
+        : { kept: lookProfileIds, dropped: [] as string[] },
     [autoReference, referenceRecipe, lookProfileIds, lookProfileList],
   );
   const referenceSlotLabel = candidateReference
@@ -935,6 +964,18 @@ export function GenerationForm({
     referenceRecipe !== null &&
     hiresEnabled &&
     !(HIRES_ENABLED_FIELD_NAME in referenceRecipe.input_schema);
+  // hires以外で参照Recipeに無く、送らない入力。値を持つ項目だけ数える。
+  const referenceDroppedInputs =
+    autoReference && referenceRecipe
+      ? Object.keys(values).filter(
+          (name) =>
+            values[name].trim() !== "" &&
+            allFields.some((field) => field.name === name && field.control !== "model") &&
+            !(name in referenceRecipe.input_schema) &&
+            !HIRES_FIELD_NAMES.has(name) &&
+            name !== HIRES_ENABLED_FIELD_NAME,
+        )
+      : [];
   const outfitSearchTerm = outfitSearch.trim().toLowerCase();
   const filteredOutfitCandidates = outfitSearchTerm
     ? characterOutfits.filter((outfit) => {
@@ -1181,8 +1222,8 @@ export function GenerationForm({
                       参照強度
                       <input
                         type="number"
-                        min={0}
-                        max={2}
+                        min={strengthRange.min}
+                        max={strengthRange.max}
                         step={0.05}
                         value={referenceStrength}
                         onChange={(event) => setReferenceStrength(event.target.value)}
@@ -1200,10 +1241,16 @@ export function GenerationForm({
                   {referenceHiresUnsupported && (
                     <p className="muted">hires fixは参照画像つきの生成では使えません。オフとして投入します。</p>
                   )}
+                  {referenceBlocker && <p className="muted">{referenceBlocker}</p>}
+                  {referenceDroppedInputs.length > 0 && (
+                    <p className="muted">参照Recipeに無い入力は送りません: {referenceDroppedInputs.join(", ")}</p>
+                  )}
                   {referenceLookProfiles.dropped.length > 0 && (
                     <p className="muted">
-                      参照Recipeに合わないため、次のLookProfileは外して投入します:{" "}
-                      {referenceLookProfiles.dropped.map((profile) => profile.name).join(", ")}
+                      {lookProfileStatus === "error"
+                        ? "LookProfileを取得できず外しました: "
+                        : "参照Recipeに合わない、または一覧に無いため、次のLookProfileは外して投入します: "}
+                      {referenceLookProfiles.dropped.join(", ")}
                     </p>
                   )}
                 </div>
