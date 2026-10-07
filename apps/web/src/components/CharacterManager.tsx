@@ -685,6 +685,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     const skipped = [...plan.skipped, ...uploadFailures];
     // 取り込み中に別のProjectへ切り替えたら、旧Projectへ保存しない。
     if (projectIdRef.current !== startProjectId) {
+      setError("取り込み中にProjectを切り替えたため、参照画像の一括登録を中止しました。");
       setRefImportProgress(null);
       return;
     }
