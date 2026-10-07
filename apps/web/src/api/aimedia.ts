@@ -25,8 +25,6 @@ export interface SceneSummary {
   tags?: string[];
   production_status?: ProductionStatus;
   todo?: string | null;
-  due_date?: string | null;
-  priority?: ProductionPriority | null;
   reference: ImmutableReference;
 }
 
@@ -92,8 +90,6 @@ export interface SceneData {
   tags?: string[];
   production_status?: ProductionStatus;
   todo?: string | null;
-  due_date?: string | null;
-  priority?: ProductionPriority | null;
   location?: { id: string; display_name?: string | null };
   time_of_day?: string;
   season?: string | null;

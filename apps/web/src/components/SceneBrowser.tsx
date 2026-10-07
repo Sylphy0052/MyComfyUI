@@ -13,6 +13,7 @@ import type {
   ShotSummary,
 } from "../api/aimedia";
 import { ProjectLocalOverridesEditor } from "./ProjectLocalOverridesEditor";
+import { SceneDetailsEditor } from "./SceneDetailsEditor";
 import { useNotify } from "./ui/notify";
 import { ToggleGroup } from "./ui/ToggleGroup";
 import { ROW_DENSITY_OPTIONS, useListDensity } from "../state/densityState";
@@ -94,6 +95,8 @@ interface Props {
   onManageProjects: () => void;
   onManageCharacters: () => void;
   onStructureChanged: () => void;
+  /** Sceneの詳細 (登場キャラクター・服装など) を保存したら呼ぶ。 */
+  onSceneDetailsChanged?: () => void;
   scenes: SceneSummary[];
   sceneId: string | null;
   onSelectScene: (sceneId: string) => void;
@@ -114,7 +117,7 @@ type Editor = "create-scene" | "edit-scene" | "create-shot" | "edit-shot" | null
 export function SceneBrowser(props: Props) {
   const {
     projects, projectId, onSelectProject, onManageProjects, onManageCharacters,
-    onStructureChanged,
+    onStructureChanged, onSceneDetailsChanged,
     scenes: sceneItems, sceneId, onSelectScene, scene, shots: shotItems, shotId, onSelectShot, shot,
     simple = false,
   } = props;
@@ -342,6 +345,15 @@ export function SceneBrowser(props: Props) {
             shotId={shotId}
             onOpenCharacters={onManageCharacters}
           />
+          {scene && (
+            <SceneDetailsEditor
+              key={`${projectId}-${scene.data.id}`}
+              projectId={projectId}
+              scene={scene}
+              external={!editable}
+              onSaved={onSceneDetailsChanged}
+            />
+          )}
         </div>
       )}
       {selectedProject && !editable && !simple && (
@@ -374,12 +386,6 @@ export function SceneBrowser(props: Props) {
               <button type="button" aria-pressed={item.id === sceneId} onClick={() => onSelectScene(item.id)}>
                 <span>#{item.sequence} {item.summary}</span>
                 <span className="muted">Shot {item.shot_count}件 {statusLabel(item.production_status)}</span>
-                {(item.priority || item.due_date) && (
-                  <span className="muted">
-                    {item.priority ? `優先度:${PRIORITIES.find((entry) => entry.value === item.priority)?.label}` : ""}
-                    {item.due_date ? ` 期限:${item.due_date}` : ""}
-                  </span>
-                )}
               </button>
               {structureEditable && <div className="row structure-actions">
                 <span className="drag-handle" title="ドラッグで並べ替え" aria-hidden="true" {...handleDragProps("scene", index, item.id)}>⠿</span>
@@ -502,7 +508,9 @@ function StructureEditor({ kind, initial, onCancel, onSave }: {
 }) {
   const [summary, setSummary] = useState(initial?.summary ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [tags, setTags] = useState((initial?.tags ?? []).join(", "));
+  // Sceneのタグは自然文と読点を含められるため1行に1個、Shotのタグはカンマ区切りで入力する。
+  const tagSeparator = kind === "scene" ? "\n" : ",";
+  const [tags, setTags] = useState((initial?.tags ?? []).join(kind === "scene" ? "\n" : ", "));
   const [productionStatus, setProductionStatus] = useState<ProductionStatus>(initial?.production_status ?? "not_started");
   const [todo, setTodo] = useState(initial?.todo ?? "");
   const [dueDate, setDueDate] = useState(initial?.due_date ?? "");
@@ -515,14 +523,14 @@ function StructureEditor({ kind, initial, onCancel, onSave }: {
     const common = {
       summary,
       notes: notes || null,
-      tags: tags.split(",").map((value) => value.trim()).filter(Boolean),
+      tags: tags.split(tagSeparator).map((value) => value.trim()).filter(Boolean),
       production_status: productionStatus,
       todo: todo || null,
-      due_date: dueDate || null,
-      priority: priority || null,
     };
     try {
-      await onSave(kind === "shot" ? { ...common, duration_sec: duration } : common);
+      await onSave(kind === "shot"
+        ? { ...common, duration_sec: duration, due_date: dueDate || null, priority: priority || null }
+        : common);
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -538,12 +546,14 @@ function StructureEditor({ kind, initial, onCancel, onSave }: {
         {STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
       </select></label>
       <label>TODO<textarea maxLength={2000} value={todo} onChange={(event) => setTodo(event.target.value)} /></label>
-      <label>期限<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label>
-      <label>優先度<select value={priority} onChange={(event) => setPriority(event.target.value as ProductionPriority | "")}>
+      {kind === "shot" && <label>期限<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label>}
+      {kind === "shot" && <label>優先度<select value={priority} onChange={(event) => setPriority(event.target.value as ProductionPriority | "")}>
         <option value="">未設定</option>
         {PRIORITIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-      </select></label>
-      <label>タグ（カンマ区切り）<input value={tags} onChange={(event) => setTags(event.target.value)} /></label>
+      </select></label>}
+      {kind === "scene"
+        ? <label>タグ（1行に1個、200個まで）<textarea rows={5} value={tags} onChange={(event) => setTags(event.target.value)} /></label>
+        : <label>タグ（カンマ区切り）<input value={tags} onChange={(event) => setTags(event.target.value)} /></label>}
       <label>メモ<textarea maxLength={10000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
       {error && <p className="error">{error}</p>}
       <div className="row"><button type="button" disabled={busy} onClick={onCancel}>キャンセル</button><button type="submit" className="primary" disabled={busy}>{busy ? "保存中..." : "保存"}</button></div>
