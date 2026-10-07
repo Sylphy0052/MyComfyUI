@@ -338,6 +338,13 @@ export function VoicePanel({
           );
           return null;
         }
+        if (projectId && binding.canonId) {
+          // 選んだ Canon を黙って捨てると、Canon の声で作ったと取り違える。
+          setError(
+            `${voiceId}のVoice Canonは参照音声と組で使います。参照音声を取り込むか、Canonの選択を外してください。`,
+          );
+          return null;
+        }
         // 参照音声を使わない声は Voice Canon と結び付けない。
         voices[voiceId] = { caption };
         continue;

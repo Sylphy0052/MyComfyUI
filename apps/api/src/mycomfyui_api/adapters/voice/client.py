@@ -105,8 +105,9 @@ class VoiceRunnerClient:
             "seed": request.seed,
             "timeout_sec": request.timeout_sec or self._timeout,
         }
-        # 参照もcaptionも、無いときは項目ごと省く。runnerは未知の項目を拒むため、
-        # captionを持たない要求は対応前のrunnerにもそのまま通る。
+        # 参照音声が無いときは参照の2項目をまとめて省き、captionが無いときはcaptionを
+        # 省く。runnerは未知の項目を拒むため、captionを持たない要求は対応前のrunnerにも
+        # そのまま通る。
         if request.reference_audio is not None:
             self._guard_size(len(request.reference_audio), "参照音声")
             body["reference_audio"] = base64.b64encode(request.reference_audio).decode(
