@@ -593,8 +593,8 @@ def build_tag_confidence_blocks(
     """ブロックごとの最終タグへ確信度と日本語訳を添え、確信度の降順で返す (#407)。
 
     `revise_current_prompt`が現在のpromptから戻したタグや、補ったratingタグは
-    モデルの`tag_confidences`に無いため確信度1.0として扱う。ratingは必ず1つ残す
-    タグなので、モデルが確信度を付けていても1.0に揃える。件数の上限は設けず、
+    モデルの`tag_confidences`に無いため確信度1.0として扱う。`quality_tags`と
+    ratingは、モデルが確信度を付けていても1.0に揃える (#470)。件数の上限は設けず、
     しきい値で残すか外すかは利用者がクライアント側のスライダーで選ぶ。
     """
     confidences = _tag_confidences(data)
@@ -614,7 +614,7 @@ def build_tag_confidence_blocks(
             if not tag:
                 continue
             key = _confidence_key(tag)
-            confidence = _tag_confidence(key, confidences)
+            confidence = _tag_confidence(field_name, key, confidences)
             items.append(
                 {
                     "tag": tag,
@@ -641,9 +641,17 @@ def _tag_confidences(data: Mapping[str, Any]) -> dict[str, float]:
     return confidences
 
 
-def _tag_confidence(key: str, confidences: Mapping[str, float]) -> float:
-    """タグ1つの確信度。確信度が無いタグとratingは1.0とする。"""
-    return 1.0 if key in RATING_TAGS else confidences.get(key, 1.0)
+def _tag_confidence(
+    field_name: str, key: str, confidences: Mapping[str, float]
+) -> float:
+    """タグ1つの確信度。確信度が無いタグ、`quality_tags`のタグ、ratingは1.0とする。
+
+    品質タグは絵の内容を表さないため、確信度のしきい値では外さない (#470)。
+    外したいときは利用者が確信度ブロックのON/OFFで外す。
+    """
+    if field_name == "quality_tags" or key in RATING_TAGS:
+        return 1.0
+    return confidences.get(key, 1.0)
 
 
 def _tags_above_threshold(body: Mapping[str, Any]) -> dict[str, Any]:
@@ -661,7 +669,7 @@ def _tags_above_threshold(body: Mapping[str, Any]) -> dict[str, Any]:
         result[field_name] = [
             value
             for value in values
-            if _tag_confidence(_confidence_key(value), confidences)
+            if _tag_confidence(field_name, _confidence_key(value), confidences)
             >= DEFAULT_TAG_CONFIDENCE_THRESHOLD
         ]
     return result
