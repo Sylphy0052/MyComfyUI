@@ -213,8 +213,17 @@ def load_tag_dictionary(path: Path) -> tuple[dict[str, int], frozenset[str]]:
     どちらも正規化したタグ名と別名で引けるようにする。正規のタグ名と別名が衝突した
     ときは、件数も種別も正規のタグ名を優先する。
     """
+    counts, characters, _canonical = _read_tag_dictionary(path)
+    return counts, characters
+
+
+def _read_tag_dictionary(
+    path: Path,
+) -> tuple[dict[str, int], frozenset[str], dict[str, str]]:
+    """`load_tag_dictionary`の戻り値に、別名から正規のタグ名への対応を足して返す。"""
     counts: dict[str, int] = {}
     aliases: dict[str, int] = {}
+    canonical_aliases: dict[str, str] = {}
     characters: set[str] = set()
     character_aliases: set[str] = set()
     try:
@@ -241,13 +250,15 @@ def load_tag_dictionary(path: Path) -> tuple[dict[str, int], frozenset[str]]:
                     for alias in row[3].split(","):
                         if alias.strip():
                             aliases.setdefault(normalize_tag(alias), count)
+                            canonical_aliases.setdefault(normalize_tag(alias), name)
                             if is_character:
                                 character_aliases.add(normalize_tag(alias))
     except (OSError, UnicodeDecodeError, csv.Error) as error:
         raise TagDictionaryError(f"タグ辞書を読めない: {error}") from error
     # `black_hood`のように、別名が別の種別の正規のタグ名と重なるときは正規の方に従う。
     characters.update(character_aliases - counts.keys())
-    return {**aliases, **counts}, frozenset(characters)
+    canonical = {**canonical_aliases, **{name: name for name in counts}}
+    return {**aliases, **counts}, frozenset(characters), canonical
 
 
 class TagDictionary:
@@ -258,6 +269,7 @@ class TagDictionary:
         self._stamp: tuple[int, int] | None = None
         self._counts: dict[str, int] = {}
         self._characters: frozenset[str] = frozenset()
+        self._canonical: dict[str, str] = {}
 
     def post_counts(self) -> dict[str, int]:
         """タグ名から投稿件数への対応を返す。読めなければ`TagDictionaryError`。"""
@@ -269,6 +281,14 @@ class TagDictionary:
         self._load()
         return self._characters
 
+    def canonical_names(self) -> dict[str, str]:
+        """正規化したタグ名と別名から、正規のタグ名への対応を返す。
+
+        読めなければ`TagDictionaryError`。
+        """
+        self._load()
+        return self._canonical
+
     def _load(self) -> None:
         try:
             stat = self._path.stat()
@@ -276,7 +296,9 @@ class TagDictionary:
             raise TagDictionaryError(f"タグ辞書を読めない: {error}") from error
         stamp = (stat.st_mtime_ns, stat.st_size)
         if stamp != self._stamp:
-            self._counts, self._characters = load_tag_dictionary(self._path)
+            self._counts, self._characters, self._canonical = _read_tag_dictionary(
+                self._path
+            )
             self._stamp = stamp
 
 
