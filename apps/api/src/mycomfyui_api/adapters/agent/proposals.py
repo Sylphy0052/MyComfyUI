@@ -1427,8 +1427,7 @@ def revise_current_prompt(
     glosses = [
         gloss
         for gloss in data.get("tag_glosses") or []
-        if isinstance(gloss, dict)
-        and _confidence_key(gloss.get("tag")) in final_keys
+        if isinstance(gloss, dict) and _confidence_key(gloss.get("tag")) in final_keys
     ]
     if _dedupe_key(rating) == FALLBACK_RATING_TAG and not any(
         gloss.get("tag") == FALLBACK_RATING_TAG for gloss in glosses
