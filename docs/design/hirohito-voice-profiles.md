@@ -127,7 +127,7 @@ Issue #429 の下調べ。`novel-writer`の設定から、声と話し方の設�
 - seed: 全員・全案で`4290`に固定した。案の違いはcaptionだけ。
 - 1回目の案の作り分け: Aは上のVoice Canonの数値 (高さ、速さ、energy) に寄せる。Bは性格と感情に寄せる。Cは声質を大きく変える。
 - 台本: 1人4台詞 (初対面のあいさつ、日常、感情が動く台詞、本音)。novel-writerの実例を優先し、足りない分は口調に合わせて書き足した。
-- 生成物: `~/.cache/mycomfyui-smoke-418/voice-429/<ラウンド>/`に、台詞ごとの`<案>_<台詞番号>.wav`と、4台詞を0.6秒の無音でつないだ`<案>_all.wav`を置いた。リポジトリには入れていない。
+- 生成物: `~/.cache/mycomfyui-smoke-418/voice-429/<ラウンド>/`に、台詞ごとの`<案>_<台詞番号>.wav`と、4台詞を0.6秒の無音でつないだ`<案>_all.wav`を置いた。リポジトリには入れていない。ただし採用した6本は、`voice_reference`へ取り込んだときと同じファイル名で[`hirohito-voice-samples/`](./hirohito-voice-samples/)に置いた。sha256は各キャラクターの「採用」の行と一致する。
 - 読みの確認: runnerの`POST /v1/transcribe` (`openai/whisper-large-v3-turbo`) で書き起こした。
 - ゼロショットでは、captionとseedが同じでも台詞が変わると声が変わる。そのため採用は案単位ではなく、1本のwav単位で選ぶ。
 
