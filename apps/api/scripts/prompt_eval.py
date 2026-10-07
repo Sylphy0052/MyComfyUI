@@ -404,11 +404,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         # 評価は長時間かかるため、書けない`--out`は実行前に弾く (終了間際のtracebackを避ける)。
         if args.out.is_dir():
             parser.error(f"--out はファイルを指定する (ディレクトリ): {args.out}")
-        # 親は`write_report`が作るので、既存の祖先がディレクトリでないときだけ弾く。
-        for ancestor in args.out.resolve().parents:
-            if ancestor.exists():
-                if not ancestor.is_dir():
-                    parser.error(f"--out の親がディレクトリでない: {ancestor}")
+        # 親は`write_report`が字句上のパスのまま作るので、同じく字句上の祖先を辿って検証する。
+        # リンク先の無いsymlinkは`exists()`が偽になり、作ることもできないのでここで弾く。
+        for path in (args.out, *args.out.parents):
+            if path.is_symlink() and not path.exists():
+                parser.error(f"--out の経路にリンク先の無いsymlinkがある: {path}")
+            if path is not args.out and path.exists():
+                if not path.is_dir():
+                    parser.error(f"--out の親がディレクトリでない: {path}")
                 break
     return args
 
