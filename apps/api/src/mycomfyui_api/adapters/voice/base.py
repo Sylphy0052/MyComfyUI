@@ -65,13 +65,18 @@ class RunnerHealth:
 
 @dataclass(frozen=True)
 class SpeechRequest:
-    """1台詞ぶんの生成要求。"""
+    """1台詞ぶんの生成要求。
+
+    声質は参照 (`reference_audio`と`reference_transcript`の組) か`caption`の少なくとも
+    一方で決める。両方あれば両方を使う。
+    """
 
     engine: str
     text: str
-    reference_audio: bytes
-    reference_transcript: str
     seed: int
+    reference_audio: bytes | None = None
+    reference_transcript: str | None = None
+    caption: str | None = None
     reading: str | None = None
     language: str = "ja"
     timeout_sec: float | None = None

@@ -99,10 +99,15 @@ worker は生成の直前に `torch.manual_seed` / `torch.cuda.manual_seed_all` 
 破綻する** (検証_minimax/18 で 655 秒の暴走)。書き起こしを持たない Voice Canon は
 実行対象にしない。
 
+参照を使わないときは `reference_audio` と `reference_transcript` を組ごと省き、
+`caption` (声質の文章指定。例: 「落ち着いた若い女性の声」) を渡す。参照と `caption` を
+両方渡すと両方を使う。どちらも無い要求、参照の片方だけの要求は 422 で拒む。
+
 ## Irodori-TTS を Docker で動かす
 
 `irodori` engine は [Irodori-TTS](https://github.com/Aratako/Irodori-TTS) を使う。
-参照音声だけで声質を写すため、`reference_transcript` は受け取るが生成には使わない。
+参照音声か `caption` で声質を決める。参照が無いときは `no_ref` で `caption` だけから作る。
+`reference_transcript` は受け取るが生成には使わない。
 入力は漢字かな交じりのままでよい。
 
 計算機サーバでは `docker/Dockerfile` のイメージで runner ごと動かす。イメージには

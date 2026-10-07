@@ -187,11 +187,13 @@ VOICE_INPUT_SCHEMA: dict[str, Any] = {
     "voices": {
         "type": "object",
         "required": True,
-        "label": "Voice Canonと参照音声",
+        "label": "Voice Canon・参照音声・caption",
         "control": "voices",
         "help": (
-            "台詞のvoice_idごとに、Voice Canonと取り込んだ参照音声を指定する。"
-            "未所属で生成するときはVoice Canonを指定しない。"
+            "台詞のvoice_idごとに、取り込んだ参照音声かcaption(声質の文章指定)の"
+            "少なくとも一方を指定する。参照音声を使うProjectの台詞ではVoice Canonも"
+            "指定する。未所属で生成するときや、captionだけで生成するときはVoice "
+            "Canonを指定しない。"
         ),
     },
     "profile": {"type": "string", "label": "プロファイル", "control": "text"},
