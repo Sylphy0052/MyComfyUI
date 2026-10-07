@@ -34,6 +34,7 @@ from mycomfyui_api.adapters.agent import base as agent_base
 from mycomfyui_api.adapters.agent import (
     create_agent_providers,
     prompt_checks,
+    prompt_retry,
     proposals,
 )
 from mycomfyui_api.settings import get_settings
@@ -146,8 +147,14 @@ async def run_attempt(
     provider: agent_base.AgentProvider,
     case: dict[str, Any],
     tag_dictionary_path: Path | None,
+    *,
+    retry_enabled: bool,
 ) -> dict[str, Any]:
     """1回分の問い合わせと、`routers.py`と同じ後処理・判定を行う。
+
+    違反時の作り直し (`prompt_retry`) もEndpointと同じ関数で行う。`retry`には
+    作り直させたときだけ`CheckedProposal.retry`の辞書を入れ、作り直さなかったときと
+    `AgentError`で終えたときは`None`とする。
 
     `AgentUnavailable`はここで揉み消さず、呼び出し側へ伝えて評価全体を打ち切らせる。
     それ以外の`AgentError` (応答の形が壊れているなど) は1回分の失敗として記録する。
@@ -164,9 +171,29 @@ async def run_attempt(
         context=context,
         guidance=guidance,
     )
+    canonical_tags = await routers._canonical_tag_names()
+
+    # `routers.py`の`create_agent_proposal`と同じ順の後処理。採点はこの結果に対して行う。
+    async def postprocess(result: agent_base.ProposalResult) -> dict[str, Any]:
+        output = proposals.normalize_prompt_tags(
+            case["kind"], result.output, canonical_tags, context.get("prompt_style")
+        )
+        output = proposals.apply_prompt_style(
+            case["kind"], output, context.get("prompt_style")
+        )
+        return proposals.restrict_output(
+            case["kind"],
+            output,
+            artifact_ids=set(),
+            shot_ids=routers._context_shot_ids(context),
+            recipe_input_names=set(),
+        )
+
     started = time.monotonic()
     try:
-        result = await provider.propose(request)
+        checked = await prompt_retry.propose_checked(
+            provider, request, postprocess, enabled=retry_enabled
+        )
     except agent_base.AgentUnavailable:
         raise
     except agent_base.AgentError as error:
@@ -174,24 +201,10 @@ async def run_attempt(
             "output": None,
             "violations": [],
             "exception": {"type": type(error).__name__, "message": str(error)},
+            "retry": None,
             "duration_sec": round(time.monotonic() - started, 3),
         }
-    output = proposals.normalize_prompt_tags(
-        case["kind"],
-        result.output,
-        await routers._canonical_tag_names(),
-        context.get("prompt_style"),
-    )
-    output = proposals.apply_prompt_style(
-        case["kind"], output, context.get("prompt_style")
-    )
-    output = proposals.restrict_output(
-        case["kind"],
-        output,
-        artifact_ids=set(),
-        shot_ids=routers._context_shot_ids(context),
-        recipe_input_names=set(),
-    )
+    output = checked.output
     violations = prompt_checks.check_output(
         case["kind"], output, context=context, tag_dictionary_path=tag_dictionary_path
     )
@@ -200,6 +213,7 @@ async def run_attempt(
         "output": output,
         "violations": [asdict(violation) for violation in violations],
         "exception": None,
+        "retry": checked.retry,
         "duration_sec": round(time.monotonic() - started, 3),
     }
 
@@ -208,6 +222,7 @@ def summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
     """規則ごとの違反率と例外件数を集計する。分母は出力を得られた試行数のみとする。"""
     total_attempts = 0
     ok_attempts = 0
+    retried_attempts = 0
     exception_counts: dict[str, int] = {}
     rule_hits: dict[str, int] = {rule: 0 for rule in EVAL_RULE_IDS}
     durations: list[float] = []
@@ -215,6 +230,9 @@ def summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         for attempt in case["attempts"]:
             total_attempts += 1
             durations.append(attempt["duration_sec"])
+            # `retry`を持たない#396より前のレポートも`--compare`で読めるようにする。
+            if attempt.get("retry") is not None:
+                retried_attempts += 1
             if attempt["exception"] is not None:
                 exception_type = attempt["exception"]["type"]
                 exception_counts[exception_type] = (
@@ -232,6 +250,7 @@ def summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "total_attempts": total_attempts,
         "ok_attempts": ok_attempts,
+        "retried_attempts": retried_attempts,
         "exception_counts": exception_counts,
         "rule_hits": rule_hits,
         "rule_rates": rule_rates,
@@ -241,14 +260,19 @@ def summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-async def run_eval(provider_id: str, repeat: int, out_path: Path) -> int:
+async def run_eval(
+    provider_id: str, repeat: int, out_path: Path, retry_enabled: bool | None
+) -> int:
     settings = get_settings()
+    if retry_enabled is None:
+        retry_enabled = settings.agent_prompt_retry_enabled
     providers = create_agent_providers(settings)
     provider = providers[provider_id]
     cases = load_cases()
     report: dict[str, Any] = {
         "provider": provider_id,
         "repeat": repeat,
+        "retry": retry_enabled,
         "generated_at": datetime.now(UTC).isoformat(),
         "cases": [],
         "partial": True,
@@ -265,7 +289,10 @@ async def run_eval(provider_id: str, repeat: int, out_path: Path) -> int:
             for _ in range(repeat):
                 try:
                     attempt = await run_attempt(
-                        provider, case, settings.tag_dictionary_path
+                        provider,
+                        case,
+                        settings.tag_dictionary_path,
+                        retry_enabled=retry_enabled,
                     )
                 except agent_base.AgentUnavailable as error:
                     report["fatal_error"] = {
@@ -304,13 +331,15 @@ def write_report(report: dict[str, Any], out_path: Path) -> None:
 def print_summary(report: dict[str, Any]) -> None:
     summary = report["summary"]
     print(
-        f"=== prompt_eval: provider={report['provider']} repeat={report['repeat']} ==="
+        f"=== prompt_eval: provider={report['provider']} repeat={report['repeat']} "
+        f"retry={report.get('retry')} ==="
     )
     print(
         f"cases={len(report['cases'])} attempts={summary['total_attempts']} "
         f"ok={summary['ok_attempts']} exceptions={sum(summary['exception_counts'].values())}"
     )
     print(f"mean duration: {summary.get('mean_duration_sec')} sec")
+    print(f"retried attempts: {summary.get('retried_attempts')}")
     if summary["exception_counts"]:
         for exception_type, count in sorted(summary["exception_counts"].items()):
             print(f"  exception {exception_type}: {count}")
@@ -347,7 +376,7 @@ def compare_reports(base_path: Path, head_path: Path) -> int:
         print(f"{rule:<24}{base_text:>8}{head_text:>8}{diff_text:>8}")
     base_summary = base.get("summary", {})
     head_summary = head.get("summary", {})
-    for key in ("ok_attempts", "mean_duration_sec"):
+    for key in ("ok_attempts", "retried_attempts", "mean_duration_sec"):
         print(f"{key:<24}{base_summary.get(key)!s:>8}{head_summary.get(key)!s:>8}")
     return 0
 
@@ -357,6 +386,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--provider", choices=PROVIDER_IDS)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--out", type=Path)
+    parser.add_argument(
+        "--retry",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="違反時の作り直しの有無。省略時は設定 (agent_prompt_retry_enabled) に従う",
+    )
     parser.add_argument(
         "--compare", nargs=2, metavar=("BASE", "HEAD"), type=Path, default=None
     )
@@ -373,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.compare is not None:
         return compare_reports(args.compare[0], args.compare[1])
-    return asyncio.run(run_eval(args.provider, args.repeat, args.out))
+    return asyncio.run(run_eval(args.provider, args.repeat, args.out, args.retry))
 
 
 if __name__ == "__main__":
