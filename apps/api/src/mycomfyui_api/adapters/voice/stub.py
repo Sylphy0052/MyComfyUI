@@ -36,6 +36,7 @@ SAMPLE_RATES = {
     "qwen3-tts-clone": 24000,
     "voxcpm2-prompt": 48000,
     "cosyvoice3": 24000,
+    "irodori": 48000,
 }
 
 #: 1文字あたりの発話時間。日本語の朗読の実測(おおよそ4文字/秒)に寄せた概算値。
