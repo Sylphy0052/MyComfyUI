@@ -60,7 +60,9 @@ def write_wav(path: Path, samples: Any, sample_rate: int) -> None:
 
 
 def run_irodori(request: dict[str, Any]) -> tuple[Any, int]:
-    """Irodori-TTS。参照音声だけで声質を写すため、参照テキストは使わない。
+    """Irodori-TTS。参照音声とcaption (声質の文章指定) で声を作り、参照テキストは使わない。
+
+    参照が無ければ`no_ref=True`でcaptionだけから作る。参照とcaptionが両方あれば両方を渡す。
 
     入力は漢字かな交じりのままでよい。`model_id`はHugging Faceのrepo idで、
     `model.safetensors`とtokenizerをHFのキャッシュへ取得してから読む。
@@ -85,11 +87,14 @@ def run_irodori(request: dict[str, Any]) -> tuple[Any, int]:
             codec_device="cuda",
         )
     )
+    reference = request.get("reference_audio")
     set_seed(int(request["seed"]))
     result = runtime.synthesize(
         SamplingRequest(
             text=request["text"],
-            ref_wav=request["reference_audio"],
+            ref_wav=reference,
+            no_ref=reference is None,
+            caption=request.get("caption"),
             seed=int(request["seed"]),
         )
     )

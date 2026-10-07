@@ -26,12 +26,17 @@ import { Icon } from "./ui/Icon";
 import { IconButton } from "./ui/IconButton";
 import { EmptyState } from "./ui/EmptyState";
 
-/** 1 つの voice_id に対する Voice Canon と参照音声の指定。 */
+/**
+ * 1 つの voice_id に対する Voice Canon・参照音声・caption の指定。
+ * 参照音声か caption の少なくとも一方が要る (Issue #426)。
+ */
 interface VoiceBinding {
   canonId: string;
   relativePath: string;
   sha256: string;
   transcript: string;
+  /** 声質の文章指定。参照音声が無ければこれだけで声を作る。 */
+  caption: string;
   leadingSilenceSec: string;
   /** 取り込んだファイルの表示名。指定済みかどうかの目印にする。 */
   fileName: string | null;
@@ -47,6 +52,7 @@ const EMPTY_BINDING: VoiceBinding = {
   relativePath: "",
   sha256: "",
   transcript: "",
+  caption: "",
   leadingSilenceSec: "0",
   fileName: null,
   role: "voice_reference",
@@ -324,12 +330,20 @@ export function VoicePanel({
     const voices: Record<string, unknown> = {};
     for (const voiceId of fixed.has("voices") ? [] : voiceIds) {
       const binding = bindings[voiceId] ?? EMPTY_BINDING;
+      const caption = binding.caption.trim();
+      if (!binding.relativePath || !binding.sha256) {
+        if (!caption) {
+          setError(
+            `${voiceId}の参照音声を取り込むか、captionを入力してください。`,
+          );
+          return null;
+        }
+        // 参照音声を使わない声は Voice Canon と結び付けない。
+        voices[voiceId] = { caption };
+        continue;
+      }
       if (projectId && !binding.canonId) {
         setError(`${voiceId}のVoice Canonを選んでください。`);
-        return null;
-      }
-      if (!binding.relativePath || !binding.sha256) {
-        setError(`${voiceId}の参照音声を取り込んでください。`);
         return null;
       }
       if (!binding.transcript.trim()) {
@@ -350,6 +364,7 @@ export function VoicePanel({
         reference_sha256: binding.sha256,
         reference_transcript: binding.transcript,
         leading_silence_sec: leading,
+        ...(caption ? { caption } : {}),
       };
     }
     const parsedSeed = Number.parseInt(seed || "-1", 10);
@@ -555,7 +570,9 @@ export function VoicePanel({
           )}
 
           <h3 className="muted">
-            {projectId ? "Voice Canonと参照音声" : "参照音声"}
+            {projectId
+              ? "Voice Canon・参照音声・caption"
+              : "参照音声・caption"}
           </h3>
           {voiceIds.map((voiceId) => {
             const binding = bindings[voiceId] ?? EMPTY_BINDING;
@@ -601,8 +618,8 @@ export function VoicePanel({
                   {binding.fileName
                     ? `${binding.fileName} / sha256=${binding.sha256}`
                     : projectId
-                      ? "参照音声は未取り込み。Voice Canonのsource_sha256と一致するwavを選ぶ。"
-                      : "参照音声は未取り込み。話者の特徴が分かるwavを選ぶ。"}
+                      ? "参照音声は未取り込み。Voice Canonのsource_sha256と一致するwavを選ぶ。captionだけで作るならVoice Canonは不要。"
+                      : "参照音声は未取り込み。話者の特徴が分かるwavを選ぶか、captionだけで作る。"}
                 </p>
                 {binding.roleTagError && (
                   <p className="error">{binding.roleTagError}</p>
@@ -613,6 +630,14 @@ export function VoicePanel({
                   value={binding.transcript}
                   onChange={(event) =>
                     update(voiceId, { transcript: event.target.value })
+                  }
+                />
+                <input
+                  aria-label={`${voiceId}のcaption`}
+                  placeholder="caption (例: 落ち着いた若い女性の声)"
+                  value={binding.caption}
+                  onChange={(event) =>
+                    update(voiceId, { caption: event.target.value })
                   }
                 />
                 <label htmlFor={`silence-${voiceId}`}>

@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette import status
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
@@ -42,11 +42,23 @@ class SpeechRequest(RunnerModel):
     text: str = Field(min_length=1)
     reading: str | None = None
     language: str = "ja"
-    #: 参照音声のwav(base64)。
-    reference_audio: str = Field(min_length=1)
-    reference_transcript: str = Field(min_length=1)
+    #: 参照音声のwav(base64)。書き起こしと組で渡すか、組ごと省く。
+    reference_audio: str | None = Field(default=None, min_length=1)
+    reference_transcript: str | None = Field(default=None, min_length=1)
+    #: 声質の文章指定。参照が無いときはこれだけで声を作る。
+    caption: str | None = Field(default=None, min_length=1)
     seed: int = Field(ge=0)
     timeout_sec: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _require_voice_source(self) -> "SpeechRequest":
+        if (self.reference_audio is None) != (self.reference_transcript is None):
+            raise ValueError(
+                "reference_audioとreference_transcriptは組で渡してください。"
+            )
+        if self.reference_audio is None and self.caption is None:
+            raise ValueError("参照音声かcaptionの少なくとも一方が必要です。")
+        return self
 
 
 class SpeechResponse(RunnerModel):
@@ -181,17 +193,23 @@ def create_app() -> FastAPI:
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 engine.detail or "engineが使えません。",
             )
-        reference = _decode(payload.reference_audio, "参照音声")
+        reference = (
+            _decode(payload.reference_audio, "参照音声")
+            if payload.reference_audio is not None
+            else None
+        )
         timeout = payload.timeout_sec or engine.timeout_sec
         with tempfile.TemporaryDirectory(prefix="voice-runner-") as raw_dir:
             workdir = Path(raw_dir)
-            reference_path = workdir / "reference.wav"
-            try:
-                reference_path.write_bytes(reference)
-            except OSError as error:
-                raise HTTPException(
-                    status.HTTP_502_BAD_GATEWAY, "参照音声を書き出せませんでした。"
-                ) from error
+            reference_path: Path | None = None
+            if reference is not None:
+                reference_path = workdir / "reference.wav"
+                try:
+                    reference_path.write_bytes(reference)
+                except OSError as error:
+                    raise HTTPException(
+                        status.HTTP_502_BAD_GATEWAY, "参照音声を書き出せませんでした。"
+                    ) from error
             output_path = workdir / "out.wav"
             request: dict[str, Any] = {
                 "engine": engine.id,
@@ -202,8 +220,9 @@ def create_app() -> FastAPI:
                 "text": payload.text,
                 "reading": payload.reading,
                 "language": payload.language,
-                "reference_audio": str(reference_path),
+                "reference_audio": str(reference_path) if reference_path else None,
                 "reference_transcript": payload.reference_transcript,
+                "caption": payload.caption,
                 "seed": payload.seed,
                 "output": str(output_path),
             }
