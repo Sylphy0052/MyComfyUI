@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { ApiError, VOICE_REFERENCE_PAGE_SIZE, api } from "../api/client";
@@ -12,8 +12,10 @@ import type {
   ProjectReferenceImage,
 } from "../api/client";
 import type { SceneEnvelope, SceneSummary } from "../api/aimedia";
-import { MediaPicker, readPickedImage, toReferenceImage } from "./MediaPicker";
+import { MediaPicker, mediaTypeOf, readPickedImage, toBase64, toReferenceImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
+import { applyReferenceImport, planReferenceImport } from "../state/referenceImport";
+import type { ReferenceImportEntry, ReferenceImportReport } from "../state/referenceImport";
 import { PromptAssist } from "./PromptAssist";
 import { ReferenceSetPanel } from "./ReferenceSetPanel";
 import { Button } from "./ui/Button";
@@ -360,6 +362,41 @@ interface Props {
   reloadToken?: number;
 }
 
+const REF_IMPORT_LABELS = {
+  registered: "登録",
+  overwritten: "上書き",
+  unchanged: "変更なし",
+} as const;
+
+/** 参照画像の一括登録の結果。件数と一覧を出す。 */
+function RefImportSummary({ report }: { report: ReferenceImportReport }) {
+  const count = (kind: keyof typeof REF_IMPORT_LABELS) =>
+    report.results.filter((item) => item.kind === kind).length;
+  const created = report.results.filter((item) => item.newOutfit).length;
+  return (
+    <div className="stack">
+      <p>
+        登録 {count("registered")} / 上書き {count("overwritten")} / 新規衣装 {created} / 変更なし{" "}
+        {count("unchanged")} / スキップ {report.skipped.length}
+      </p>
+      <ul className="list">
+        {report.results.map((item) => (
+          <li key={item.fileName} className="muted">
+            {REF_IMPORT_LABELS[item.kind]}: {item.fileName} → {item.characterName} / {item.outfitName}
+            {item.newOutfit ? " (新規衣装)" : ""}
+            {item.previousFileName ? ` (旧: ${item.previousFileName})` : ""}
+          </li>
+        ))}
+        {report.skipped.map((item) => (
+          <li key={`skip:${item.fileName}`} className="error">
+            スキップ: {item.fileName} ({item.reason})
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function CharacterManager({ projectId, active, scenes, onChanged, reloadToken = 0 }: Props) {
   const [overrides, setOverrides] = useState<ProjectLocalOverrides | null>(null);
   const [draft, setDraft] = useState<CharacterDraft | null>(null);
@@ -372,6 +409,9 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const [outfitBulkProgress, setOutfitBulkProgress] = useState<string | null>(null);
   const [outfitBulkFailures, setOutfitBulkFailures] = useState<{ name: string; reason: string }[]>([]);
   const [outfitSkipped, setOutfitSkipped] = useState(0);
+  const refImportInput = useRef<HTMLInputElement>(null);
+  const [refImportProgress, setRefImportProgress] = useState<string | null>(null);
+  const [refImportReport, setRefImportReport] = useState<ReferenceImportReport | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sceneData, setSceneData] = useState<Record<string, SceneEnvelope>>({});
   const [mediaImpact, setMediaImpact] = useState<MediaImpact | null>(null);
@@ -605,6 +645,60 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     setAddingOutfit(false);
   };
 
+  /**
+   * 立ち絵を `<キャラ>_<衣装>.png` の名前で一括登録する (#473)。スキップ対象はアップロード
+   * せず、残りを順にアップロードして、1回のpersistで衣装の参照セットへ振り分ける。
+   */
+  const importReferenceImages = async (fileList: FileList | null) => {
+    const files = Array.from(fileList ?? []);
+    if (files.length === 0) return;
+    const plan = planReferenceImport(files.map((file) => file.name), characters);
+    const targets = files.filter((file) => plan.targets.includes(file.name));
+    setError(null);
+    setRefImportReport(null);
+    const entries: ReferenceImportEntry[] = [];
+    const uploadFailures: { fileName: string; reason: string }[] = [];
+    for (let index = 0; index < targets.length; index += 1) {
+      const file = targets[index];
+      setRefImportProgress(`アップロード中 ${index + 1}/${targets.length}`);
+      try {
+        const stored = await api.createImageReference(file.name, await toBase64(file), mediaTypeOf(file));
+        entries.push({
+          fileName: file.name,
+          image: {
+            file_name: file.name,
+            relative_path: stored.relative_path,
+            sha256: stored.sha256,
+            byte_size: stored.byte_size,
+            media_type: stored.media_type,
+          },
+        });
+      } catch (cause) {
+        uploadFailures.push({ fileName: file.name, reason: describe(cause) });
+      }
+    }
+    setRefImportProgress("保存中...");
+    try {
+      let report: ReferenceImportReport | null = null;
+      await persist((latest) => {
+        const applied = applyReferenceImport(latest, entries);
+        report = applied.report;
+        return applied.overrides;
+      });
+      const done = report as ReferenceImportReport | null;
+      if (done) {
+        setRefImportReport({
+          results: done.results,
+          skipped: [...plan.skipped, ...uploadFailures, ...done.skipped],
+        });
+      }
+    } catch {
+      // persistが画面へAPIエラーを表示する。
+    } finally {
+      setRefImportProgress(null);
+    }
+  };
+
   const updateOutfit = (id: string, patch: Partial<ProjectCharacterOutfit>) => {
     setDraft((current) => current && ({
       ...current,
@@ -761,8 +855,30 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       <section className="panel stack" style={{ minWidth: 280 }}>
         <div className="row spread">
           <h2>キャラクター</h2>
-          <Button variant="primary" disabled={busy} onClick={() => openDraft()}>追加</Button>
+          <div className="row">
+            <input
+              ref={refImportInput}
+              type="file"
+              multiple
+              accept="image/png"
+              hidden
+              onChange={(event) => {
+                const input = event.target;
+                void importReferenceImages(input.files).finally(() => {
+                  input.value = "";
+                });
+              }}
+            />
+            <Button
+              disabled={busy || draft !== null}
+              onClick={() => refImportInput.current?.click()}
+            >
+              {refImportProgress ?? "参照画像を一括登録"}
+            </Button>
+            <Button variant="primary" disabled={busy} onClick={() => openDraft()}>追加</Button>
+          </div>
         </div>
+        {refImportReport && <RefImportSummary report={refImportReport} />}
         {characters.length === 0 && <p className="muted">登録はありません。</p>}
         <ul className="list structure-list">
           {characters.map((profile) => (
