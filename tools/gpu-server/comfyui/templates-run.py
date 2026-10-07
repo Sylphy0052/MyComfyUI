@@ -85,6 +85,24 @@ def wait_history(pid: str, timeout: float = WAIT_TIMEOUT) -> dict | None:
     return None
 
 
+def stop(pid: str) -> None:
+    """実行中なら止め、待機中なら順番待ちから外す。
+
+    `/interrupt`は実行中のpromptにしか効かないため、`/queue`のdeleteも送る。止めないと後続の
+    promptが同じ待機列で後ろに積まれ、残りのテンプレートも順にTIMEOUTになる。
+    """
+    for path, body in (("/interrupt", {"prompt_id": pid}), ("/queue", {"delete": [pid]})):
+        req = urllib.request.Request(
+            BASE + path,
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(req, timeout=60).close()
+        except OSError as e:
+            print(f"  {path} failed prompt_id={pid}: {e}", flush=True)
+
+
 def output_names(hist: dict) -> list[str]:
     names = []
     for out in hist.get("outputs", {}).values():
@@ -111,6 +129,7 @@ def run(name: str) -> None:
     hist = wait_history(res["prompt_id"])
     if hist is None:
         print(f"{name}: TIMEOUT {WAIT_TIMEOUT:.0f}s prompt_id={res['prompt_id']}", flush=True)
+        stop(res["prompt_id"])
         return
     status = hist["status"]
     outs = output_names(hist)
