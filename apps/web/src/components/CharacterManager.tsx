@@ -588,17 +588,25 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
 
   // 全体置換のPUTのため、保存直前に最新を読み直してから変更を当てる。制作計画での
   // 衣装選択や場面プロンプトの編集を、手元の古い値で巻き戻さないようにする。
-  const persist = async (update: (latest: ProjectLocalOverrides) => ProjectLocalOverrides) => {
-    if (!projectId) return;
+  // 応答待ちの間にProjectを切り替えたら、旧Projectの値を切替先の画面へ入れない (#479)。
+  // GETの後に切り替わっていれば保存せず、PUTの後なら保存は済んでいるので画面だけ更新しない。
+  // 戻り値は、開始時のProjectを表示したまま保存を終えたかどうか。falseなら呼び出し側も画面を触らない。
+  const persist = async (update: (latest: ProjectLocalOverrides) => ProjectLocalOverrides): Promise<boolean> => {
+    if (!projectId) return false;
+    const startProjectId = projectId;
+    const switched = () => projectIdRef.current !== startProjectId;
     setBusy(true);
     setError(null);
     try {
-      const latest = await api.getProjectLocalOverrides(projectId);
-      const saved = await api.updateProjectLocalOverrides(projectId, update(latest));
+      const latest = await api.getProjectLocalOverrides(startProjectId);
+      if (switched()) return false;
+      const saved = await api.updateProjectLocalOverrides(startProjectId, update(latest));
+      if (switched()) return false;
       setOverrides(saved);
       onChanged();
+      return true;
     } catch (cause) {
-      setError(describe(cause));
+      if (!switched()) setError(describe(cause));
       throw cause;
     } finally {
       setBusy(false);
@@ -728,12 +736,19 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     setRefImportProgress("保存中...");
     try {
       let report: ReferenceImportReport | null = null;
-      await persist((latest) => {
+      const shown = await persist((latest) => {
         const applied = applyReferenceImport(latest, entries);
         report = applied.report;
         return applied.overrides;
       });
       const done = report as ReferenceImportReport | null;
+      if (!shown) {
+        // 振り分けを当てた (done有り) ならPUTまで終えている。
+        setError(done
+          ? "保存中にProjectを切り替えました。参照画像は切替前のProjectに登録済みです。"
+          : "保存前にProjectを切り替えたため、参照画像の一括登録を中止しました。");
+        return;
+      }
       if (done) setRefImportReport({ results: done.results, skipped: [...skipped, ...done.skipped] });
     } catch (cause) {
       setError(`保存に失敗したため、参照画像は1件も登録していません。同じファイルを選び直してください: ${describe(cause)}`);
@@ -910,7 +925,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       default_outfit_id: outfitIds.has(draft.default_outfit_id) ? draft.default_outfit_id : null,
     };
     try {
-      await persist((latest) => {
+      const saved = await persist((latest) => {
         const current = latest.characters ?? [];
         // フォームを開いてから別の画面・タブで同じキャラクターが更新・削除されていたら、
         // 手元の値で丸ごと置き換えると相手の変更が消えるため保存しない。
@@ -940,6 +955,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
           scene_outfits: pruneSceneOutfits(latest.scene_outfits, finalProfile.id, outfitIds),
         };
       });
+      if (!saved) return;
       setDraft(null);
       setSelectedId(profile.id);
     } catch {
@@ -950,12 +966,13 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const removeCharacter = async (profile: ProjectCharacterProfile) => {
     if (!overrides || !window.confirm(`${profile.name}の登録を削除しますか？`)) return;
     try {
-      await persist((latest) => ({
+      const saved = await persist((latest) => ({
         ...latest,
         characters: (latest.characters ?? []).filter((item) => item.id !== profile.id),
         scene_outfits: pruneSceneOutfits(latest.scene_outfits, profile.id, new Set()),
         scene_details: pruneSceneDetails(latest.scene_details, profile.id),
       }));
+      if (!saved) return;
       if (selectedId === profile.id) {
         setSelectedId(null);
         setDraft(null);
