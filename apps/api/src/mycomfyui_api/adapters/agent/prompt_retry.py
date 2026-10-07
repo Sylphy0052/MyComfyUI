@@ -32,6 +32,9 @@ from mycomfyui_api.adapters.agent.base import (
 #: 作り直すかの判断が要るため対象にしない。
 RETRY_KINDS = frozenset({"image_prompt"})
 
+#: 指示文と記録へ入れる誤りの説明1件あたりの上限文字数。
+_CLIP_CHARS = 300
+
 #: Providerの結果から、採点と保存に使う最終の案を作る。
 Postprocess = Callable[[ProposalResult], Awaitable[dict[str, Any]]]
 
@@ -68,14 +71,21 @@ async def propose_checked(
     try:
         first, first_output = await _attempt(provider, request, postprocess)
     except AgentInvalidResponse as error:
-        retry = {"reason": "invalid_response", "first_error": str(error)}
-        second, second_output = await _attempt(
-            provider,
-            _with_feedback(
-                request, "前回の出力は応答の形式に合わなかった。", [str(error)]
-            ),
-            postprocess,
-        )
+        first_error = _clip(str(error))
+        retry = {"reason": "invalid_response", "first_error": first_error}
+        try:
+            second, second_output = await _attempt(
+                provider,
+                _with_feedback(
+                    request, "前回の出力は応答の形式に合わなかった。", [first_error]
+                ),
+                postprocess,
+            )
+        except AgentInvalidResponse as second_error:
+            # 失敗した提案の記録にも、呼び直したことと1回目の誤りを残す。
+            raise AgentInvalidResponse(
+                f"{second_error} (1回呼び直しても直らなかった。1回目: {first_error})"
+            ) from second_error
         return _checked(second, second_output, [second.usage], retry)
     violations = _violations(request, first_output)
     if not violations:
@@ -95,7 +105,7 @@ async def propose_checked(
             postprocess,
         )
     except AgentError as error:
-        retry |= {"chosen": 1, "retry_error": str(error)}
+        retry |= {"chosen": 1, "retry_error": _clip(str(error))}
         return _checked(first, first_output, [first.usage], retry)
     second_violations = _violations(request, second_output)
     retry["second_violations"] = [_violation_record(item) for item in second_violations]
@@ -141,15 +151,25 @@ def _with_feedback(
 
 def _violation_line(violation: prompt_checks.Violation) -> str:
     text = f"{violation.rule}: {violation.message}"
-    return f"{text} ({violation.detail})" if violation.detail else text
+    return f"{text} ({_clip(violation.detail)})" if violation.detail else text
 
 
 def _violation_record(violation: prompt_checks.Violation) -> dict[str, str]:
     return {
         "rule": violation.rule,
         "message": violation.message,
-        "detail": violation.detail,
+        "detail": _clip(violation.detail),
     }
+
+
+def _clip(text: str) -> str:
+    """改行を畳み、長さを`_CLIP_CHARS`までに切る。
+
+    検証エラーの全文や違反の抜粋にはモデルの出力が丸ごと入ることがある。そのまま
+    指示文と記録へ入れると、指示が膨らみ、出力の断片を次の回へ持ち込むためである。
+    """
+    text = " ".join(text.split())
+    return text if len(text) <= _CLIP_CHARS else f"{text[: _CLIP_CHARS - 1]}…"
 
 
 def _checked(

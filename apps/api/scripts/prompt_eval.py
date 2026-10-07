@@ -147,12 +147,14 @@ async def run_attempt(
     provider: agent_base.AgentProvider,
     case: dict[str, Any],
     tag_dictionary_path: Path | None,
+    *,
     retry_enabled: bool,
 ) -> dict[str, Any]:
     """1回分の問い合わせと、`routers.py`と同じ後処理・判定を行う。
 
-    違反時の作り直し (`prompt_retry`) もEndpointと同じ関数で行い、作り直させたかを
-    `retry`へ残す。
+    違反時の作り直し (`prompt_retry`) もEndpointと同じ関数で行う。`retry`には
+    作り直させたときだけ`CheckedProposal.retry`の辞書を入れ、作り直さなかったときと
+    `AgentError`で終えたときは`None`とする。
 
     `AgentUnavailable`はここで揉み消さず、呼び出し側へ伝えて評価全体を打ち切らせる。
     それ以外の`AgentError` (応答の形が壊れているなど) は1回分の失敗として記録する。
@@ -171,6 +173,7 @@ async def run_attempt(
     )
     canonical_tags = await routers._canonical_tag_names()
 
+    # `routers.py`の`create_agent_proposal`と同じ順の後処理。採点はこの結果に対して行う。
     async def postprocess(result: agent_base.ProposalResult) -> dict[str, Any]:
         output = proposals.normalize_prompt_tags(
             case["kind"], result.output, canonical_tags, context.get("prompt_style")
@@ -227,6 +230,7 @@ def summarize(cases: list[dict[str, Any]]) -> dict[str, Any]:
         for attempt in case["attempts"]:
             total_attempts += 1
             durations.append(attempt["duration_sec"])
+            # `retry`を持たない#396より前のレポートも`--compare`で読めるようにする。
             if attempt.get("retry") is not None:
                 retried_attempts += 1
             if attempt["exception"] is not None:
@@ -285,7 +289,10 @@ async def run_eval(
             for _ in range(repeat):
                 try:
                     attempt = await run_attempt(
-                        provider, case, settings.tag_dictionary_path, retry_enabled
+                        provider,
+                        case,
+                        settings.tag_dictionary_path,
+                        retry_enabled=retry_enabled,
                     )
                 except agent_base.AgentUnavailable as error:
                     report["fatal_error"] = {
