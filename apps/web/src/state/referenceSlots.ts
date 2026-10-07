@@ -138,3 +138,22 @@ export function characterReferenceImage(
   }
   return null;
 }
+
+/**
+ * 参照画像のsha256から、その画像を自動参照に使うキャラクターと衣装を探す。参照付きJobを
+ * 復元するとき、投入時と同じ参照になる選択へ戻すために使う (#480)。見つからなければnull。
+ */
+export function findReferenceSelection(
+  characters: readonly ProjectCharacterProfile[],
+  sha256s: readonly string[],
+): { characterId: string; outfitId: string | null } | null {
+  if (sha256s.length === 0) return null;
+  for (const character of characters) {
+    for (const referenceSet of character.reference_sets ?? []) {
+      const outfitId = referenceSet.outfit_id ?? null;
+      const image = characterReferenceImage(character, outfitId)?.image;
+      if (image && sha256s.includes(image.sha256)) return { characterId: character.id, outfitId };
+    }
+  }
+  return null;
+}

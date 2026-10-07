@@ -21,7 +21,7 @@ import type {
   ProjectCharacterProfile,
   Recipe,
 } from "../api/client";
-import { characterReferenceImage, REFERENCE_SLOTS } from "../state/referenceSlots";
+import { characterReferenceImage, findReferenceSelection, REFERENCE_SLOTS } from "../state/referenceSlots";
 import {
   DEFAULT_REFERENCE_STRENGTH,
   filterLookProfilesForRecipe,
@@ -539,9 +539,37 @@ export function GenerationForm({
     } else if (scope === "all") {
       setModelValues(models);
     }
+    // 参照付きのJob (#474) は参照Recipeが選択肢に無いため、今のRecipeへ入れる。投入時と同じ
+    // 参照画像になるキャラクターと衣装を選び直し、強度も戻す (#480)。参照画像はinput_refsの
+    // 入力cacheのsha256で探す (parametersのsource_imageはファイル名しか持たない)。
+    const referenceJob =
+      scope === "all" &&
+      !original &&
+      referenceRecipe !== null &&
+      findRecipeOrSuccessor([referenceRecipe], restore.recipeLineage) !== null;
+    let referenceRestored = false;
+    if (referenceJob) {
+      const hashes = (manifest.input_refs ?? [])
+        .filter((ref) => ref.kind === "cached_input" && typeof ref.sha256 === "string")
+        .map((ref) => ref.sha256 as string);
+      const selection = findReferenceSelection(characters, hashes);
+      if (selection) {
+        setOutfitCharacterId(selection.characterId);
+        setOutfitSearch("");
+        setSelectedOutfitId(selection.outfitId);
+        setReferenceDismissed(false);
+        referenceRestored = true;
+      }
+      const strength = (manifest.parameters ?? {}).reference_strength;
+      if (typeof strength === "number" && Number.isFinite(strength)) setReferenceStrength(String(strength));
+    }
     setRestoreNotice(
       scope !== "all"
         ? null
+        : referenceJob
+        ? referenceRestored
+          ? "参照付きのJobのため、同じ参照画像を使うキャラクターと衣装を選び直しました。"
+          : "参照付きのJobですが、同じ参照画像を持つキャラクターと衣装が見つからないため、参照なしで入れました。キャラクターと衣装を選ぶと参照付きで投入します。"
         : !restore.recipeId
         ? "元のRecipeが記録されていないため、現在のRecipeへ合う項目だけ入れました。"
         : !original
@@ -551,7 +579,7 @@ export function GenerationForm({
           : null,
     );
     onRestoreApplied?.(scope, scope === "all" || Object.keys(filled).length > 0);
-  }, [restore, recipes, recipe, recipeId, plan, onRestoreApplied]);
+  }, [restore, recipes, recipe, recipeId, plan, onRestoreApplied, referenceRecipe, characters]);
 
   // 計画のPresetとプロンプトを入れる。値は触った印を付け、上のRecipe変更の効果で持ち越させる。
   useEffect(() => {
