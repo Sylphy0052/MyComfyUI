@@ -214,7 +214,7 @@ def _merge_usage(total: dict[str, Any], usage: Mapping[str, Any]) -> None:
             if isinstance(current, dict):
                 _merge_usage(current, value)
         elif _is_number(value):
-            if not math.isfinite(value):
+            if isinstance(value, float) and not math.isfinite(value):
                 continue
             if key not in total:
                 total[key] = value
