@@ -2,7 +2,8 @@ import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import { api } from "../api/client";
-import { bareTag } from "../prompt/merge";
+import { bareTag, parsePrompt } from "../prompt/merge";
+import type { DiffHunk } from "../prompt/merge";
 import { draftString, readFormDraft, writeFormDraft } from "../state/formDraft";
 import type { AgentProvider, AgentProviderId } from "../api/client";
 import { noticeSuffix } from "./BackendNotice";
@@ -517,10 +518,46 @@ export function TagConfidenceThresholdPanel({
 }
 
 /**
+ * 確信度パネルのON/OFFで足す・消すだけのhunkか判定する関数を作る (#443)。別の書き方のタグが
+ * 相手側に残るhunk (重複を畳む削除、強調の付け外し) は、利用者が選べるよう該当させない。
+ */
+export function panelHunkJudge(
+  blocks: TagConfidenceBlocks,
+  current: string,
+  proposed: string,
+): (hunk: DiffHunk) => boolean {
+  // 差分のhunkはbareTagで対応付くため (`diffPrompt`)、`[tag]`や負の重みの記述も拾えるよう
+  // 両方の正規化でキーを持つ。空になるキーは、何にでも当たってしまうので入れない。
+  const panelTagKeys = new Set(
+    TAG_BLOCK_ORDER.flatMap((field) =>
+      blocks[field].flatMap((item) => [tagDedupeKey(item.tag), bareTag(item.tag)]),
+    ).filter((key) => key !== ""),
+  );
+  const tagKeys = (text: string) => [tagDedupeKey(text), bareTag(text)];
+  const isPanelTag = (text: string) => tagKeys(text).some((key) => panelTagKeys.has(key));
+  const keysOf = (prompt: string) =>
+    new Set(parsePrompt(prompt).flatMap((segment) => tagKeys(segment.text)));
+  const currentKeys = keysOf(current);
+  const proposedKeys = keysOf(proposed);
+  return (hunk) => {
+    if (hunk.kind === "add" && hunk.after) {
+      const keys = tagKeys(hunk.after.text);
+      return isPanelTag(hunk.after.text) && !keys.some((key) => currentKeys.has(key));
+    }
+    if (hunk.kind === "remove" && hunk.before) {
+      const keys = tagKeys(hunk.before.text);
+      return isPanelTag(hunk.before.text) && !keys.some((key) => proposedKeys.has(key));
+    }
+    return false;
+  };
+}
+
+/**
  * 差分レビューへ確信度のしきい値スライダーを付ける (#407)。補完結果が変わるたびに
  * しきい値と手動のON/OFFを既定へ戻し、positive promptの提案文をONのタグで組み直す。
  * 確信度の無い差分 (画像prompt以外の補完や、補完以外から開いた差分) はそのまま返す。
- * 一覧のタグと重なる差分のhunkは、欄の`managed`で指して差分一覧から外す (#441)。
+ * 一覧のタグを足す・消すだけの差分のhunkは、欄の`managed`で指して差分一覧から外す (#441)。
+ * 重複を畳む削除と、強調だけの変更は一覧に残す (#443)。
  * しきい値の戻しは`notes`の参照で判定するため、呼び出し元は差分をstateに持ち、描画のたびに
  * 作り直さない。
  */
@@ -544,21 +581,17 @@ export function useTagThresholdDiff(promptDiff: PromptDiffState | null): {
     promptDiff.notes?.naturalText ?? "",
     overrides,
   );
-  // 差分のhunkはbareTagで対応付くため (`diffPrompt`)、`[tag]`や負の重みの記述も拾えるよう
-  // 両方の正規化でキーを持つ。空になるキーは、何にでも当たってしまうので入れない。
-  const panelTagKeys = new Set(
-    TAG_BLOCK_ORDER.flatMap((field) =>
-      blocks[field].flatMap((item) => [tagDedupeKey(item.tag), bareTag(item.tag)]),
-    ).filter((key) => key !== ""),
+  const isPanelHunk = panelHunkJudge(
+    blocks,
+    promptDiff.fields.find((field) => field.key === "positive_prompt")?.current ?? "",
+    proposed,
   );
-  const isPanelTag = (text: string) =>
-    [tagDedupeKey(text), bareTag(text)].some((key) => panelTagKeys.has(key));
   return {
     diff: {
       ...promptDiff,
       fields: promptDiff.fields.map((field) =>
         field.key === "positive_prompt"
-          ? { ...field, proposed, managed: isPanelTag }
+          ? { ...field, proposed, managed: isPanelHunk }
           : field,
       ),
     },
