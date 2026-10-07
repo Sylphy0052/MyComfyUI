@@ -251,6 +251,9 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  getLookProfile: (profileId: string) =>
+    request<LookProfile>(`/look-profiles/${encodeURIComponent(profileId)}`),
+
   updateLookProfile: (profileId: string, payload: LookProfileUpdate) =>
     request<LookProfile>(`/look-profiles/${encodeURIComponent(profileId)}`, {
       method: "PATCH",

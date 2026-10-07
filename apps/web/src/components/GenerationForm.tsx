@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { api, subscribeAgentProvidersChanged } from "../api/client";
+import { ApiError, api, subscribeAgentProvidersChanged } from "../api/client";
 import { mergePrompt } from "../prompt/merge";
 import {
   draftString,
@@ -14,7 +14,6 @@ import { planPresetBlocker, type PlanPreset } from "../state/productionPlan";
 import { ignoresShortcut } from "./ui/shortcuts";
 import type {
   AgentProvider,
-  ApiError,
   GenerationManifest,
   GenerationPreview,
   LookProfile,
@@ -419,34 +418,6 @@ export function GenerationForm({
     setSelectedOutfitId(null);
     setReferenceDismissed(false);
   }, [projectId]);
-
-  // 参照付きで投入するとき、参照Recipeに合うLookProfileを絞るために一覧を取る (#474)。
-  const needsLookProfileList = lookProfileIds.length > 0 && referenceRecipe !== null;
-  useEffect(() => {
-    if (!needsLookProfileList) {
-      setLookProfileStatus("idle");
-      return;
-    }
-    let active = true;
-    setLookProfileStatus("loading");
-    api
-      .listLookProfiles({ kind: "image", limit: 200 })
-      .then((items) => {
-        if (!active) return;
-        setLookProfileList(items);
-        setLookProfileStatus("ok");
-      })
-      .catch(() => {
-        // 取れなければ、合うか判断できないProfileは外して投入し、その旨を表示する。
-        if (!active) return;
-        // 古い一覧で判定すると表示と外す集合が食い違うため、一覧も空にする。
-        setLookProfileList([]);
-        setLookProfileStatus("error");
-      });
-    return () => {
-      active = false;
-    };
-  }, [needsLookProfileList, lookProfileIds]);
 
   // Recipe変更の効果から参照する。描画中に代入して、effectの実行順に依存しないようにする。
   const touchedRef = useRef(touchedFields);
@@ -959,6 +930,44 @@ export function GenerationForm({
   const referenceOutfitId = effectiveOutfitId ?? outfitCharacter?.default_outfit_id ?? null;
   const referenceOutfit = (outfitCharacter?.outfits ?? []).find((item) => item.id === referenceOutfitId);
   const referenceOutfitUntagged = Boolean(autoReference && referenceOutfit && !/[A-Za-z]/.test(referenceOutfit.prompt));
+
+  // 参照付きで投入するとき、参照Recipeに合うLookProfileを絞るために選んだProfileを取る (#474)。
+  // 参照が効かない場面 (キャラクター未選択など) では取らない。一覧は件数の上限で取りこぼすため、
+  // 選んだIDを1件ずつ取る (#480)。
+  const needsLookProfiles = lookProfileIds.length > 0 && autoReference !== null;
+  useEffect(() => {
+    if (!needsLookProfiles) {
+      setLookProfileStatus("idle");
+      return;
+    }
+    let active = true;
+    setLookProfileStatus("loading");
+    Promise.all(
+      lookProfileIds.map((id) =>
+        api.getLookProfile(id).catch((cause) => {
+          // 削除済みのProfileは見つからない扱いで外す。それ以外の失敗は取得失敗として扱う。
+          if (cause instanceof ApiError && cause.status === 404) return null;
+          throw cause;
+        }),
+      ),
+    )
+      .then((items) => {
+        if (!active) return;
+        setLookProfileList(items.filter((item): item is LookProfile => item !== null));
+        setLookProfileStatus("ok");
+      })
+      .catch(() => {
+        // 取れなければ、合うか判断できないProfileは外して投入し、その旨を表示する。
+        if (!active) return;
+        // 古い一覧で判定すると表示と外す集合が食い違うため、一覧も空にする。
+        setLookProfileList([]);
+        setLookProfileStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [needsLookProfiles, lookProfileIds]);
+
   const referenceLookProfiles = useMemo(
     () =>
       autoReference && referenceRecipe
@@ -1264,7 +1273,7 @@ export function GenerationForm({
                     <p className="muted">
                       {lookProfileStatus === "error"
                         ? "LookProfileを取得できず外しました: "
-                        : "参照Recipeに合わない、または一覧に無いため、次のLookProfileは外して投入します: "}
+                        : "参照Recipeに合わない、または見つからないため、次のLookProfileは外して投入します: "}
                       {referenceLookProfiles.dropped.join(", ")}
                     </p>
                   )}
