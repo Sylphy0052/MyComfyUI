@@ -85,9 +85,9 @@
 - GPUを使う処理（ComfyUI、MiniMax H3、TTSなど）はWSLで実行しない。計算機サーバ`g18`（`g18.heroz.co.jp`）だけで実行する。g23はGPUを長期ジョブが占有しているため使わない。
 - g18上の作業は必ずDockerコンテナ上で行う。コンテナのポートはホストの`127.0.0.1`にだけ公開し、手元からは`ssh.exe -L`で転送して繋ぐ。`0.0.0.0`では公開しない。
 - WSLの`ssh g18`は届かないため、`ssh.exe -o BatchMode=yes g18 "<cmd>"`で入る。host keyは`StrictHostKeyChecking`を緩めて自動登録しない。
-- ファイルを置いてよいのは`/ssdnas2/data/kfuruhashi`とホームディレクトリ（`~`）だけ。`/raid`、`/tmp`、`/ssdnas2/kfuruhashi`など、ほかの場所へは置かない。`/raid`は各サーバのローカルディスクで、サーバ間で共有されない。
+- ファイルを置いてよいのは`/ssdnas2/data/kfuruhashi`とホームディレクトリ（`~`）だけ。`/raid`、`/tmp`、`/ssdnas2/kfuruhashi`など、ほかの場所へは置かない。`/ssdnas2`の下では`/ssdnas2/data/kfuruhashi`だけを使い、`/ssdnas2/kfuruhashi`のように名前が似ていてもほかの場所は不可とする。`/raid`は各サーバのローカルディスクで、サーバ間で共有されない。
 - ComfyUI本体、venv、モデル、大きな生成物は`/ssdnas2/data/kfuruhashi`に置く。ホームは全サーバ共通のNFSで空きが少ない（使用率97%）ので、小さいスクリプトと設定だけにする。
-- 計算機サーバは他ユーザーと共有する。GPUは使う前に`nvidia-smi`で空きを確認し、`CUDA_VISIBLE_DEVICES`で空いているGPUだけを指定する。常駐させず、使い終えたらプロセスを止める。
+- 計算機サーバは他ユーザーと共有する。GPUは使う前に`nvidia-smi`で空きを確認し、`CUDA_VISIBLE_DEVICES`で空いているGPUだけを指定する。常駐させず、自分が起動したプロセスは使い終えたら止める。
 - `/ssdnas2/data/kfuruhashi`には別のセッションが作業している場合がある。ここにある既存ファイルとプロセスは、確認せずに変更・停止・削除しない。
 
 ## 引き継ぎ
