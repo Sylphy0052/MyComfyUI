@@ -124,17 +124,42 @@ class NormalizePromptTagsTest(unittest.TestCase):
         )
         return output["natural_text"]
 
+    def _canonicalize_unknown(
+        self, natural_text: str, style: str | None = None, tag: str = "glowing_sword"
+    ) -> tuple[dict[str, Any], list[str], list[str]]:
+        """未知タグ1件を含む案を正規化し、案と、移したタグ、外したタグを返す。"""
+        result, (_, moved, removed) = _canonicalize_body_tags(
+            _body(general_tags=[tag], natural_text=natural_text),
+            CANONICAL,
+            style,
+            frozenset(),
+        )
+        return result, moved, removed
+
+    def _assert_removed(
+        self, natural_text: str, style: str | None = None, tag: str = "glowing_sword"
+    ) -> None:
+        """未知タグが自然文へ移らず、`general_tags`から外れて`removed`に載る。"""
+        result, moved, removed = self._canonicalize_unknown(natural_text, style, tag)
+
+        self.assertEqual(result["natural_text"], natural_text)
+        self.assertEqual(result["general_tags"], [])
+        self.assertEqual(moved, [])
+        self.assertEqual(removed, [tag.replace("_", " ")])
+
+    def test_unknown_tag_is_recorded_as_removed_when_style_is_tags(self) -> None:
+        self._assert_removed(_words(10), style="tags")
+
     def test_move_switches_to_removal_at_word_limit(self) -> None:
         # 移す句`glowing sword`は2語。60語ちょうどなら移し、61語になるなら外す。
         fits = _words(NATURAL_TEXT_MAX_WORDS - 2)
         over = _words(NATURAL_TEXT_MAX_WORDS - 1)
 
         moved = self._natural_text_after_move(fits)
-        removed = self._natural_text_after_move(over)
 
         self.assertEqual(len(moved.split()), NATURAL_TEXT_MAX_WORDS)
         self.assertTrue(moved.endswith("glowing sword."))
-        self.assertEqual(removed, over)
+        self._assert_removed(over)
 
     def test_move_switches_to_removal_at_sentence_limit(self) -> None:
         three = " ".join(["She runs."] * NATURAL_TEXT_MAX_SENTENCES)
@@ -144,13 +169,45 @@ class NormalizePromptTagsTest(unittest.TestCase):
         self.assertTrue(
             self._natural_text_after_move(three).endswith(", glowing sword.")
         )
-        self.assertEqual(self._natural_text_after_move(four), four)
+        self._assert_removed(four)
 
-    def test_move_is_removal_beyond_schema_length(self) -> None:
-        # 2000字の上限は、60語の判定とは別に残している。
-        long_text = "w" * proposals.MAX_NATURAL_TEXT_LENGTH + "."
+    def test_move_switches_to_removal_at_schema_length(self) -> None:
+        # 2000字の上限は、60語の判定とは別に残している。足した後が2000字ちょうどなら移す。
+        # 足す部分は`, glowing sword`の15字。
+        phrase_length = len(", glowing sword")
+        fits = "w" * (proposals.MAX_NATURAL_TEXT_LENGTH - phrase_length - 1) + "."
+        over = "w" * (proposals.MAX_NATURAL_TEXT_LENGTH - phrase_length) + "."
 
-        self.assertEqual(self._natural_text_after_move(long_text), long_text)
+        moved = self._natural_text_after_move(fits)
+
+        self.assertEqual(len(moved), proposals.MAX_NATURAL_TEXT_LENGTH)
+        self.assertTrue(moved.endswith(", glowing sword."))
+        self._assert_removed(over)
+
+    def test_empty_natural_text_becomes_a_single_sentence_of_the_tag(self) -> None:
+        # 移す前から最小2文を満たさない案は、移したあとも`natural_length`違反のまま。
+        result, moved, removed = self._canonicalize_unknown("")
+
+        self.assertEqual(result["natural_text"], "glowing sword.")
+        self.assertEqual(moved, ["glowing sword"])
+        self.assertEqual(removed, [])
+        self.assertLess(
+            len(proposals.split_natural_sentences(result["natural_text"])),
+            proposals.NATURAL_TEXT_MIN_SENTENCES,
+        )
+
+    def test_tag_with_period_is_never_moved_or_removed(self) -> None:
+        # 終止符を含むタグ(`mr. x`)は`tag_preflight.is_excluded`が自然文とみなして
+        # 実在確認の対象外にする。そのため移す経路へ入らず、移して文数が増える
+        # ことは起こらない。タグ行へそのまま残る。
+        three = " ".join(["She runs."] * NATURAL_TEXT_MAX_SENTENCES)
+
+        result, moved, removed = self._canonicalize_unknown(three, tag="mr. x")
+
+        self.assertEqual(result["general_tags"], ["mr. x"])
+        self.assertEqual(result["natural_text"], three)
+        self.assertEqual((moved, removed), ([], []))
+
 
 
 class CanonicalizeBodyTagsTest(unittest.TestCase):
@@ -164,7 +221,9 @@ class CanonicalizeBodyTagsTest(unittest.TestCase):
 
         self.assertEqual(body, original)
         self.assertEqual(result["general_tags"], ["solo", "smile"])
-        self.assertEqual((renamed, moved, removed), (["alone → solo"], ["glowing sword"], []))
+        self.assertEqual(
+            (renamed, moved, removed), (["alone → solo"], ["glowing sword"], [])
+        )
         self.assertIsNot(result["general_tags"], body["general_tags"])
 
     def test_unknown_tag_outside_general_tags_is_kept(self) -> None:
@@ -208,6 +267,35 @@ class CanonicalTagNamesTest(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs(ROUTERS_LOGGER_NAME, level="WARNING"),
             ):
                 self.assertEqual(await routers._canonical_tag_names(), {})
+
+    async def test_broken_dictionary_returns_empty_and_warns(self) -> None:
+        # 行の形が壊れたCSVと、UTF-8として読めないバイト列は、どちらも
+        # `TagDictionaryError`に包まれて`{}`へ戻る。
+        for name, content in (
+            ("short_row.csv", b"smile,0\n"),
+            ("bad_count.csv", b"smile,0,many\n"),
+            ("not_utf8.csv", b"smile,0,500\n\xff\xfe\n"),
+        ):
+            with self.subTest(name), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / name
+                path.write_bytes(content)
+                with (
+                    self._settings(path),
+                    self.assertLogs(ROUTERS_LOGGER_NAME, level="WARNING"),
+                ):
+                    self.assertEqual(await routers._canonical_tag_names(), {})
+
+    async def test_fixed_dictionary_is_reloaded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "danbooru.csv"
+            path.write_text("smile,0\n", encoding="utf-8")
+            with self._settings(path):
+                with self.assertLogs(ROUTERS_LOGGER_NAME, level="WARNING"):
+                    self.assertEqual(await routers._canonical_tag_names(), {})
+                path.write_text("smile,0,500,smiling\n", encoding="utf-8")
+                names = await routers._canonical_tag_names()
+
+        self.assertEqual(names["smiling"], "smile")
 
     async def test_readable_dictionary_maps_alias_to_canonical_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
