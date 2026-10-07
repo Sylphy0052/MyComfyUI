@@ -431,7 +431,11 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const [outfitSkipped, setOutfitSkipped] = useState(0);
   const [extractingOutfitTags, setExtractingOutfitTags] = useState(false);
   const [outfitTagProgress, setOutfitTagProgress] = useState<string | null>(null);
-  const [outfitTagResult, setOutfitTagResult] = useState<{ filled: number; failures: { name: string; reason: string }[] } | null>(null);
+  const [outfitTagResult, setOutfitTagResult] = useState<{
+    filled: number;
+    failures: { name: string; reason: string }[];
+    interrupted: boolean;
+  } | null>(null);
   const refImportInput = useRef<HTMLInputElement>(null);
   const [refImportProgress, setRefImportProgress] = useState<string | null>(null);
   const [refImportReport, setRefImportReport] = useState<ReferenceImportReport | null>(null);
@@ -443,6 +447,9 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   // 取り込み中は編集フォームを開かせない。開いた下書きの保存で衣装一覧が古い内容に戻るため。
   const importing = refImportProgress !== null;
   const projectIdRef = useRef(projectId);
+  // タグ抽出の応答待ちの間に編集中のキャラクターが替わったかを見る (#486)。
+  const draftIdRef = useRef<string | null>(null);
+  draftIdRef.current = draft?.id ?? null;
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<AgentProvider[]>([]);
 
@@ -746,17 +753,30 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const outfitSourceImage = (outfit: ProjectCharacterOutfit): ProjectReferenceImage | null =>
     outfit.image ?? (selectedCharacter ? characterReferenceImage(selectedCharacter, outfit.id)?.image ?? null : null);
 
+  /**
+   * 抽出したタグを衣装の`prompt`へ入れる。応答待ちの間に編集中のキャラクターが替わっていれば
+   * 何もしない。`onlyIfEmpty`なら、待つ間に利用者が入力した`prompt`を上書きしない (#486)。
+   */
+  const fillOutfitPrompt = (draftId: string, outfitId: string, prompt: string, onlyIfEmpty: boolean) => {
+    setDraft((current) => current && current.id === draftId ? {
+      ...current,
+      outfits: current.outfits.map((item) =>
+        item.id === outfitId && (!onlyIfEmpty || !item.prompt.trim()) ? { ...item, prompt } : item),
+    } : current);
+  };
+
   /** 衣装1件の元画像からTaggerでタグを取り直し、`prompt`欄へ入れる。保存は利用者が行う (#486)。 */
   const extractOutfitTags = async (outfit: ProjectCharacterOutfit) => {
     const image = outfitSourceImage(outfit);
-    if (!image) return;
+    if (!image || !draft) return;
+    const draftId = draft.id;
     if (outfit.prompt.trim() && !window.confirm(`「${outfit.name}」のプロンプトを抽出したタグで置き換えますか？`)) return;
     setExtractingOutfitTags(true);
     setError(null);
     setOutfitTagResult(null);
     try {
       const extracted = await api.extractStoredImageTags(image.relative_path, image.media_type);
-      updateOutfit(outfit.id, { prompt: extracted.tags.join(", ") });
+      fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), false);
     } catch (cause) {
       setError(describe(cause));
     } finally {
@@ -772,24 +792,30 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       return image ? [{ outfit, image }] : [];
     });
     if (targets.length === 0) return;
+    const draftId = draft.id;
     setExtractingOutfitTags(true);
     setError(null);
     setOutfitTagResult(null);
     let filled = 0;
+    let interrupted = false;
     const failures: { name: string; reason: string }[] = [];
     for (let index = 0; index < targets.length; index += 1) {
       const { outfit, image } = targets[index];
       setOutfitTagProgress(`抽出中 ${index + 1}/${targets.length}`);
       try {
         const extracted = await api.extractStoredImageTags(image.relative_path, image.media_type);
-        updateOutfit(outfit.id, { prompt: extracted.tags.join(", ") });
+        if (draftIdRef.current !== draftId) {
+          interrupted = true;
+          break;
+        }
+        fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), true);
         filled += 1;
       } catch (cause) {
         failures.push({ name: outfit.name, reason: describe(cause) });
       }
     }
     setOutfitTagProgress(null);
-    setOutfitTagResult({ filled, failures });
+    setOutfitTagResult({ filled, failures, interrupted });
     setExtractingOutfitTags(false);
   };
 
@@ -1185,6 +1211,7 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
               {outfitTagResult && (
                 <p className={outfitTagResult.failures.length > 0 ? "error" : "muted"}>
                   {outfitTagResult.filled}件を抽出しました。保存すると反映されます。
+                  {outfitTagResult.interrupted && " 編集中のキャラクターが替わったため、残りは抽出していません。"}
                   {outfitTagResult.failures.length > 0 &&
                     ` 失敗${outfitTagResult.failures.length}件: ${outfitTagResult.failures.map((item) => `${item.name} (${item.reason})`).join(", ")}`}
                 </p>

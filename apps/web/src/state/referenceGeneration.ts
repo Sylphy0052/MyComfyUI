@@ -66,24 +66,24 @@ export function toReferenceInputs(
   kept.source_image = { relative_path: image.relative_path, sha256: image.sha256 };
   if ("reference_strength" in schema) kept.reference_strength = strength;
   if (typeof kept.negative_prompt === "string") {
-    kept.negative_prompt = withReferenceNegative(kept.negative_prompt, referenceRecipe);
+    kept.negative_prompt = withReferenceNegative(kept.negative_prompt);
   }
   return { inputs: kept, dropped };
 }
 
-function splitPromptTerms(text: string): string[] {
-  return text.split(",").map((term) => term.trim()).filter(Boolean);
-}
+/**
+ * 参照付き生成のnegativeに必ず入れる語。APIの`IMAGE_REF_SAFETY_NEGATIVE` (bootstrap.py) と
+ * 同じ語を持つ。参照は同一性だけを運び、衣装タグが欠けると裸体で出力されることがある (#484)。
+ */
+export const REFERENCE_SAFETY_NEGATIVE_TERMS = ["nsfw", "nude", "nipples"] as const;
 
 /**
- * 参照Recipeの既定negativeの語のうち、入力のnegativeに無いものを先頭に足す。元Recipeの
- * negativeで上書きすると、参照Recipeが既定で持つnsfw除けの語が落ちるため (#486)。
+ * 安全語のうち、入力のnegativeに無いものを先頭に足す。元Recipeのnegativeで参照Recipeの
+ * 既定を上書きすると、参照Recipeが既定で持つ安全語が落ちるため (#486)。
  */
-export function withReferenceNegative(negative: string, referenceRecipe: Recipe): string {
-  const base = (referenceRecipe.defaults as SchemaMap).negative_prompt;
-  if (typeof base !== "string") return negative;
-  const present = new Set(splitPromptTerms(negative));
-  const missing = splitPromptTerms(base).filter((term) => !present.has(term));
+export function withReferenceNegative(negative: string): string {
+  const present = new Set(negative.split(",").map((term) => term.trim()));
+  const missing = REFERENCE_SAFETY_NEGATIVE_TERMS.filter((term) => !present.has(term));
   if (missing.length === 0) return negative;
   return [...missing, negative.trim()].filter(Boolean).join(", ");
 }

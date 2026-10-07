@@ -4309,13 +4309,24 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
 
 @router.post("/image-tags", response_model=schemas.ImageTagExtractRead)
 async def extract_image_tags(payload: schemas.ImageTagExtractRequest, request: Request):
-    """画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。"""
+    """画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。
+
+    画像は`content_base64`か、入力cacheを指す`relative_path`のどちらか一方で受け取る
+    (排他はスキーマで検証済み)。後者は登録済みの衣装・参照画像の読み直しに使う (#486)。
+    """
     settings = get_settings()
     if payload.relative_path is not None:
         try:
             path = storage.resolve_input(payload.relative_path, settings)
+            byte_size = path.stat().st_size
+            if byte_size > settings.max_image_bytes:
+                raise _validation_error(
+                    "画像が上限を超えています。",
+                    {"byte_size": byte_size, "limit": settings.max_image_bytes},
+                )
             data = await run_in_threadpool(path.read_bytes)
-        except (storage.StorageError, OSError) as error:
+        except (storage.StorageError, OSError, ValueError) as error:
+            # ValueErrorはNULを含むパスで`Path.resolve()`が送出する。
             raise _validation_error("入力cacheの画像を読み込めません。") from error
         content_base64 = base64.b64encode(data).decode("ascii")
     else:
