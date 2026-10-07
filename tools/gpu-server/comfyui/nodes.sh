@@ -1,7 +1,9 @@
 #!/bin/bash
 # g18上のこのディレクトリで実行 (bash nodes.sh): ComfyUIのカスタムノードをコンテナ内で導入する
 set -Eeuo pipefail
-. "$(dirname "${BASH_SOURCE[0]}")/revisions.sh"
+# ファイルとして実行したときだけ隣のrevisions.shを読む。stdin経由 (bash -s) では隣が無いので、revisions.shを先頭に連結して流す
+[ -f "${BASH_SOURCE[0]:-}" ] && . "$(dirname "${BASH_SOURCE[0]}")/revisions.sh"
+: "${INCONTEXT_REV:?revisionが未設定。stdinで流すときは cat revisions.sh nodes.sh | ssh.exe g18 'bash -s' のように連結する}"
 D=/ssdnas2/data/kfuruhashi
 docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HF_HOME=/tmp/hf -e INCONTEXT_REV \
   -v "$D/ComfyUI:/ComfyUI" kfuruhashi-comfyui:cu130 bash -Eeuo pipefail -c '
