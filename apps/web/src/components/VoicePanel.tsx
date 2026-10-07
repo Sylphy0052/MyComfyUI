@@ -430,12 +430,11 @@ export function VoicePanel({
         generation === bindingsGeneration.current &&
         sameIds(latest.characterIds, characterIds) &&
         latest.relativePath === relativePath;
-      // 取り込み中に書き起こしを手で編集していたら、その編集を残す。候補の再取得で
-      // 自動入力された書き起こしは別の録音のものなので使わない。
+      // 取り込み中に書き起こしを手で編集していたら、その編集を残す。編集して開始時と
+      // 同じ文面へ戻した場合も手入力として扱う。候補の再取得で自動入力された
+      // 書き起こしは別の録音のものなので使わない。
       const finalTranscript =
-        !applies ||
-        latest.transcriptInherited ||
-        latest.transcript === transcript
+        !applies || latest.transcriptInherited
           ? ownTranscript
           : latest.transcript;
       if (applies) {
@@ -501,6 +500,18 @@ export function VoicePanel({
   const matchedCanon = (characterIds: string[]) => {
     const matches = canonMatches(characterIds);
     return matches.length === 1 ? matches[0] : null;
+  };
+
+  // 手で選ぶプルダウンの表示。同じdisplay_nameが複数あると見分けられないため、
+  // そのときはcanon_idを添える。
+  const canonLabel = (item: CanonDescriptor) => {
+    if (item.display_name === null) return item.canon_id;
+    const sameName = canon.filter(
+      (other) => other.display_name === item.display_name,
+    );
+    return sameName.length > 1
+      ? `${item.display_name} (${item.canon_id})`
+      : item.display_name;
   };
 
   // Canonを自動で選べない理由。手で選ぶプルダウンの前に出す。
@@ -870,7 +881,7 @@ export function VoicePanel({
                     <option value="">Voice Canonを選ぶ</option>
                     {canon.map((item) => (
                       <option key={item.canon_id} value={item.canon_id}>
-                        {item.display_name ?? item.canon_id}
+                        {canonLabel(item)}
                       </option>
                     ))}
                   </select>
