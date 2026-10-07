@@ -220,7 +220,7 @@ export function SceneDetailsEditor({
   return (
     <section className="panel stack">
       <h2>Sceneの詳細</h2>
-      {external && <p className="muted">未設定の項目には外部原文 (ai-media) の値を表示します。保存すると、変えた項目だけMyComfyUI側の値として記録します。空欄にして保存した項目は外部原文の値に戻ります。</p>}
+      {external && <p className="muted">未設定の項目には外部原文 (ai-media) の値を表示します。保存すると、変えた項目だけMyComfyUI側の値として記録します。場所・時間帯・季節は、空欄にして保存すると外部原文の値に戻ります。</p>}
       <form className="stack" onSubmit={submit}>
         <fieldset className="stack">
           <legend>登場キャラクターと服装</legend>
