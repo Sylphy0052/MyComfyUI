@@ -26,9 +26,8 @@ runner 自身の venv には FastAPI と Uvicorn と PyYAML しか入れない�
 ## 設定
 
 `engines.yaml` に engine ごとの Python path、`model_id`、`model_revision`、
-`sample_rate`、`needs_katakana` を書く。値の出典は novel-writer の
-`tools/ai-media/config/local-tools.yaml` の `voice` と `asr`。
-ai-media 側は参照専用の契約のため、MyComfyUI からは書き換えない。
+`sample_rate`、`needs_katakana` を書く。TTS の engine は irodori だけで、Python path は
+`docker/Dockerfile` のイメージ内の venv を指す。ASR (whisper) も同じ venv で動かす。
 
 別の場所の設定を読ませるときは環境変数 `VOICE_RUNNER_CONFIG` にパスを渡す。
 
@@ -90,11 +89,9 @@ fallback しない**。
 
 ## seed の再現
 
-qwen3-tts-clone / voxcpm2-prompt / cosyvoice3 は `seed` 引数を持たない。生成の直前に `torch.manual_seed` /
-`torch.cuda.manual_seed_all` / `np.random.seed` を呼べば波形が再現することが
-novel-writer の `検証_tts/06_seed固定` で 3 engine とも確認されている。worker が
-生成直前にこれらを呼び、使用した seed を応答へ含める。irodori は `SamplingRequest.seed`
-にも同じ値を渡す。
+worker は生成の直前に `torch.manual_seed` / `torch.cuda.manual_seed_all` /
+`np.random.seed` を呼び、irodori の `SamplingRequest.seed` にも同じ値を渡す。
+使用した seed は応答へ含める。
 
 ## 参照テキスト
 

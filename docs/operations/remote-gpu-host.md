@@ -2,6 +2,8 @@
 
 生成Backendを動かすRemote PCの準備手順。構成と判断の根拠は[ADR 0002](../adr/0002-remote-gpu-host.md)に記録する。
 
+> 現在のGPU処理は計算機サーバg18のDockerコンテナで動かしている。手順は[tools/gpu-server/README.md](../../tools/gpu-server/README.md)と[tools/voice-runner/README.md](../../tools/voice-runner/README.md)を参照する。TTSはIrodori-TTSだけを使うため、本書の音声venv (Qwen3-TTS、VoxCPM2、CosyVoice3) の節は旧構成の記録として残している。
+
 手元PC側で必要な設定は接続先URLの変更だけとする。Application APIのコードは変更しない。変えるのはComfyUIを指す`MYCOMFYUI_COMFYUI_BASE_URL`と、`voice-runner`を指す`MYCOMFYUI_VOICE_RUNNER_BASE_URL`である。値は手順7にまとめる。
 
 Remote PCで常駐させるのもComfyUIだけではない。`voice-runner`(既定8770)も常駐させる(手順3)。ComfyUIだけを起動した状態では、画像・動画・音楽は生成できる一方、音声Jobだけが`BACKEND_UNAVAILABLE`で失敗する。

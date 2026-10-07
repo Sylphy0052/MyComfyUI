@@ -31,11 +31,8 @@ logger = logging.getLogger(__name__)
 
 STUB_BASE_URL = "stub://voice-runner"
 
-#: engineごとの出力sample rate。`ai-media/config/local-tools.yaml`の実測に合わせる。
+#: engineごとの出力sample rate。voice-runnerの`engines.yaml`に合わせる。
 SAMPLE_RATES = {
-    "qwen3-tts-clone": 24000,
-    "voxcpm2-prompt": 48000,
-    "cosyvoice3": 24000,
     "irodori": 48000,
 }
 

@@ -11,17 +11,9 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 #: 音声Backendのengine識別子。Recipeの`engine`にそのまま入る。
-ENGINE_QWEN3_TTS = "qwen3-tts-clone"
-ENGINE_VOXCPM2 = "voxcpm2-prompt"
-ENGINE_COSYVOICE3 = "cosyvoice3"
 ENGINE_IRODORI = "irodori"
 
-VOICE_ENGINES: tuple[str, ...] = (
-    ENGINE_QWEN3_TTS,
-    ENGINE_VOXCPM2,
-    ENGINE_COSYVOICE3,
-    ENGINE_IRODORI,
-)
+VOICE_ENGINES: tuple[str, ...] = (ENGINE_IRODORI,)
 
 
 class VoiceError(Exception):
