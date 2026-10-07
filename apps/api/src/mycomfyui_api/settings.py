@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     agent_approval_ttl_seconds: int = Field(default=1800, gt=0)
     #: stub Providerを常に失敗させる。Provider障害が他機能を止めないことの確認に使う。
     agent_stub_failure: bool = False
+    #: 画像prompt案に規則の違反か応答の形の崩れがあれば、1回だけ作り直させる。偽なら
+    #: Providerを1回だけ呼ぶ。
+    agent_prompt_retry_enabled: bool = True
     #: 音声とASRのBackendを束ねるvoice-runnerの接続先。ローカル構成でもリモート構成でも
     #: この値だけが変わり、実行経路は分岐しない。
     voice_runner_base_url: str = "http://127.0.0.1:8770"

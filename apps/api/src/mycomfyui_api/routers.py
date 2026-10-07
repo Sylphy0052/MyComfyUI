@@ -41,7 +41,7 @@ from mycomfyui_api import (
 from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters import tag_preflight
 from mycomfyui_api.adapters.agent import base as agent_base
-from mycomfyui_api.adapters.agent import prompt_assets, proposals
+from mycomfyui_api.adapters.agent import prompt_assets, prompt_retry, proposals
 from mycomfyui_api.adapters.agent.base import AgentProvider
 from mycomfyui_api.adapters.aimedia.client import (
     AiMediaNotFound,
@@ -5101,34 +5101,41 @@ async def create_agent_proposal(
         context=context,
         guidance=guidance,
     )
-    try:
-        result = await provider.propose(request)
-        # 辞書の読み込みは、正規化の対象になるprompt案のときだけ行う。
+    # 辞書の読み込みは、正規化の対象になるprompt案のときだけ行う。
+    canonical_tags = (
+        await _canonical_tag_names()
+        if payload.kind in proposals.PROMPT_STYLE_KINDS
+        else None
+    )
+
+    async def postprocess(result: agent_base.ProposalResult) -> dict[str, Any]:
         output = proposals.normalize_prompt_tags(
-            payload.kind,
-            result.output,
-            (
-                await _canonical_tag_names()
-                if payload.kind in proposals.PROMPT_STYLE_KINDS
-                else None
-            ),
-            context.get("prompt_style"),
+            payload.kind, result.output, canonical_tags, context.get("prompt_style")
         )
         output = proposals.apply_prompt_style(
             payload.kind, output, context.get("prompt_style")
         )
+        return proposals.restrict_output(
+            payload.kind,
+            output,
+            artifact_ids=_context_artifact_ids(context),
+            shot_ids=_context_shot_ids(context),
+            recipe_input_names=_context_recipe_input_names(context),
+        )
+
+    try:
+        checked = await prompt_retry.propose_checked(
+            provider,
+            request,
+            postprocess,
+            enabled=get_settings().agent_prompt_retry_enabled,
+        )
     except agent_base.AgentError as error:
         await _record_proposal_failure(session, proposal, error)
         raise _agent_error(error) from error
-    proposal.output = proposals.restrict_output(
-        payload.kind,
-        output,
-        artifact_ids=_context_artifact_ids(context),
-        shot_ids=_context_shot_ids(context),
-        recipe_input_names=_context_recipe_input_names(context),
-    )
-    proposal.usage = result.usage or None
-    proposal.model = result.model
+    proposal.output = checked.output
+    proposal.usage = checked.usage or None
+    proposal.model = checked.model
     session.add(proposal)
     await _commit(session)
     return _proposal_read(proposal)
@@ -5242,15 +5249,15 @@ async def _assist_image_prompt(
         images=images,
         guidance=guidance,
     )
-    result = await _propose_assist(provider, request)
-    # Providerは検証とtag_line、positive_promptの組み立てを済ませて返す。ここで検証し
-    # 直すと、組み立てた派生項目が余計なキーとして拒否される。
-    output = result.output
-    try:
+
+    async def postprocess(result: agent_base.ProposalResult) -> dict[str, Any]:
+        # Providerは検証とtag_line、positive_promptの組み立てを済ませて返す。ここで検証
+        # し直すと、組み立てた派生項目が余計なキーとして拒否される。
+        output = result.output
         if current_positive_prompt.strip() and not images:
             # 画像を添えたときは画像から直す点を探すため、タグの増減を画像に任せる。
             # 書き方の整形より先に行う。消えたタグを戻す前に、内容のタグが無いとして
-            # 弾かないためである。
+            # 弾かないためである。作り直させた回も、利用者の元の指示で照らし合わせる。
             output = proposals.revise_current_prompt(
                 output,
                 current_positive_prompt,
@@ -5268,13 +5275,24 @@ async def _assist_image_prompt(
                 for tag in tag_preflight.split_prompt(current_positive_prompt)
             },
         )
-        output = proposals.apply_prompt_style(
+        return proposals.apply_prompt_style(
             "image_prompt", output, context["prompt_style"]
+        )
+
+    try:
+        checked = await prompt_retry.propose_checked(
+            provider,
+            request,
+            postprocess,
+            enabled=get_settings().agent_prompt_retry_enabled,
         )
     except agent_base.AgentError as error:
         raise _agent_error(error) from error
+    if checked.retry is not None:
+        # 補完は提案の履歴を作らないため、作り直させたことはログにだけ残す。
+        logger.info("画像promptの補完を作り直させた: %s", checked.retry)
     # 書き方の整形で自然文が落ちることもあるため、整形後の案で差分を取る。
-    output = proposals.describe_prompt_changes(output, current_positive_prompt)
+    output = proposals.describe_prompt_changes(checked.output, current_positive_prompt)
     confidence_blocks = proposals.build_tag_confidence_blocks(output)
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],
@@ -5290,7 +5308,7 @@ async def _assist_image_prompt(
             **confidence_blocks
         ),
         provider_id=provider.id,
-        model=result.model,
+        model=checked.model,
     )
 
 
