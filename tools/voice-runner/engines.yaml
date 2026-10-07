@@ -39,6 +39,17 @@ engines:
     needs_katakana: true
     timeout_sec: 300
 
+  irodori:
+    # tools/voice-runner/docker/Dockerfile のイメージ内の venv。
+    python: /opt/irodori/.venv/bin/python
+    # venvへパッケージとして入らないため、workerがimport pathへ足す。
+    home: /opt/irodori
+    model_id: Aratako/Irodori-TTS-v4.1-Small
+    sample_rate: 48000
+    # 参照音声だけで声質を写す。参照テキストは使わない。
+    needs_katakana: false
+    timeout_sec: 300
+
 asr:
   python: /home/sylphy/qwen-tts/.venv/bin/python
   model_id: openai/whisper-large-v3-turbo

@@ -90,16 +90,46 @@ fallback しない**。
 
 ## seed の再現
 
-3 つの engine はいずれも `seed` 引数を持たない。生成の直前に `torch.manual_seed` /
+qwen3-tts-clone / voxcpm2-prompt / cosyvoice3 は `seed` 引数を持たない。生成の直前に `torch.manual_seed` /
 `torch.cuda.manual_seed_all` / `np.random.seed` を呼べば波形が再現することが
 novel-writer の `検証_tts/06_seed固定` で 3 engine とも確認されている。worker が
-生成直前にこれらを呼び、使用した seed を応答へ含める。
+生成直前にこれらを呼び、使用した seed を応答へ含める。irodori は `SamplingRequest.seed`
+にも同じ値を渡す。
 
 ## 参照テキスト
 
 `reference_transcript` には参照音声の正しい書き起こしを渡す。**嘘を渡すと生成が
 破綻する** (検証_minimax/18 で 655 秒の暴走)。書き起こしを持たない Voice Canon は
 実行対象にしない。
+
+## Irodori-TTS を Docker で動かす
+
+`irodori` engine は [Irodori-TTS](https://github.com/Aratako/Irodori-TTS) を使う。
+参照音声だけで声質を写すため、`reference_transcript` は受け取るが生成には使わない。
+入力は漢字かな交じりのままでよい。
+
+計算機サーバでは `docker/Dockerfile` のイメージで runner ごと動かす。イメージには
+runner 本体の venv (`/opt/runner`) と Irodori-TTS の venv (`/opt/irodori/.venv`) を
+分けて入れてあり、`engines.yaml` の `irodori.python` は後者を指す。ほかの engine の
+venv はイメージに無いため、`GET /v1/health` では `available: false` になる。
+
+```bash
+# tools/voice-runner をサーバへ置き、そのディレクトリで実行する
+docker build -f docker/Dockerfile -t kfuruhashi-voice-runner:irodori .
+nvidia-smi                 # 空いている GPU を確かめる
+docker/run.sh <gpu_index>  # 127.0.0.1:18770 で待ち受ける
+docker stop kfuruhashi-voice-runner  # 使い終えたら止める
+```
+
+モデル (`Aratako/Irodori-TTS-v4.1-Small` とコーデック
+`Aratako/Semantic-DACVAE-Japanese-32dim`) は初回の生成時に
+`/ssdnas2/data/kfuruhashi/hf-cache` へ取得する。手元の Application API からは
+`ssh.exe -L 8770:127.0.0.1:18770 <server>` で転送し、
+`MYCOMFYUI_VOICE_RUNNER_BASE_URL=http://127.0.0.1:8770` で接続する。
+
+2026-10-07 に g18 (A100 1 枚) で `POST /v1/speech` が 200 を返し、48kHz の wav を得た
+ことを確認した。7 秒の台詞で生成は約 22 秒 (モデル読み込み込み)、VRAM のピークは約 4.5GB。
+同じ参照音声・本文・seed で 2 回生成した wav はバイト単位で一致した。
 
 ## 実機での確認
 

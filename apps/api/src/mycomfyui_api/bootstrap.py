@@ -28,6 +28,7 @@ from mycomfyui_api.adapters.compose import plan as compose_plan
 from mycomfyui_api.adapters.voice import plan as voice_plan
 from mycomfyui_api.adapters.voice.base import (
     ENGINE_COSYVOICE3,
+    ENGINE_IRODORI,
     ENGINE_QWEN3_TTS,
     ENGINE_VOXCPM2,
 )
@@ -229,6 +230,7 @@ VOICE_RECIPES: tuple[tuple[str, str], ...] = (
     ("音声 Qwen3-TTS (Primary)", ENGINE_QWEN3_TTS),
     ("音声 VoxCPM2 (Secondary)", ENGINE_VOXCPM2),
     ("音声 CosyVoice3 (比較用)", ENGINE_COSYVOICE3),
+    ("音声 Irodori-TTS", ENGINE_IRODORI),
 )
 
 
