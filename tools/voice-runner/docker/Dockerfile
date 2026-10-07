@@ -5,13 +5,13 @@
 #
 # runner 本体と Irodori-TTS は venv を分ける (pyproject.toml の方針)。
 # engines.yaml の irodori.python はこのイメージの /opt/irodori/.venv/bin/python を指す。
-FROM python:3.12-slim
+FROM python:3.12.15-slim
 
 # torchcodec (torchaudio の読み込み) が FFmpeg の共有ライブラリを使う。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ffmpeg libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.8.24 /uv /usr/local/bin/uv
 # Irodori-TTS は .python-version で 3.10 を指定しているため uv に取得させる。
 # run.sh は --user で動かすので、/root ではなく全員が読める場所へ置く。
 ENV UV_LINK_MODE=copy UV_PYTHON_INSTALL_DIR=/opt/uv-python
