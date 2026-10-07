@@ -182,10 +182,20 @@ export function SceneDetailsEditor({
       const sceneDetails = { ...(latest.scene_details ?? {}) };
       if (Object.values(detail).every((value) => value == null)) delete sceneDetails[sceneId];
       else sceneDetails[sceneId] = detail;
-      // 登場キャラクターから外したキャラクターの衣装指定は残さない。
-      const forScene = Object.fromEntries(
-        Object.entries(outfits).filter(([characterId, outfitId]) => outfitId && selected.includes(characterId)),
-      );
+      // 衣装指定は制作計画からも書かれるため、最新の指定を基にする。変えるのは、今回登場
+      // キャラクターから外したキャラクターの指定と、この画面で服装を変えたキャラクターの指定だけ。
+      const loadedOutfits = overrides?.scene_outfits?.[sceneId] ?? {};
+      const loadedCharacters = overrides?.scene_details?.[sceneId]?.characters ?? defaults.characters;
+      const forScene: Record<string, string> = { ...(latest.scene_outfits?.[sceneId] ?? {}) };
+      for (const characterId of loadedCharacters) {
+        if (!selected.includes(characterId)) delete forScene[characterId];
+      }
+      for (const characterId of selected) {
+        const outfitId = outfits[characterId] ?? "";
+        if (outfitId === (loadedOutfits[characterId] ?? "")) continue;
+        if (outfitId) forScene[characterId] = outfitId;
+        else delete forScene[characterId];
+      }
       const sceneOutfits = { ...(latest.scene_outfits ?? {}) };
       if (Object.keys(forScene).length > 0) sceneOutfits[sceneId] = forScene;
       else delete sceneOutfits[sceneId];
@@ -210,7 +220,7 @@ export function SceneDetailsEditor({
   return (
     <section className="panel stack">
       <h2>Sceneの詳細</h2>
-      {external && <p className="muted">未設定の項目には外部原文 (ai-media) の値を表示します。保存すると、変えた項目だけMyComfyUI側の値として記録します。</p>}
+      {external && <p className="muted">未設定の項目には外部原文 (ai-media) の値を表示します。保存すると、変えた項目だけMyComfyUI側の値として記録します。空欄にして保存した項目は外部原文の値に戻ります。</p>}
       <form className="stack" onSubmit={submit}>
         <fieldset className="stack">
           <legend>登場キャラクターと服装</legend>

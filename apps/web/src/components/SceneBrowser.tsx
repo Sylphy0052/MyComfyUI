@@ -510,7 +510,7 @@ function StructureEditor({ kind, initial, onCancel, onSave }: {
   const [notes, setNotes] = useState(initial?.notes ?? "");
   // Sceneのタグは自然文と読点を含められるため1行に1個、Shotのタグはカンマ区切りで入力する。
   const tagSeparator = kind === "scene" ? "\n" : ",";
-  const [tags, setTags] = useState((initial?.tags ?? []).join(kind === "scene" ? "\n" : ", "));
+  const [tags, setTags] = useState((initial?.tags ?? []).join(kind === "scene" ? tagSeparator : ", "));
   const [productionStatus, setProductionStatus] = useState<ProductionStatus>(initial?.production_status ?? "not_started");
   const [todo, setTodo] = useState(initial?.todo ?? "");
   const [dueDate, setDueDate] = useState(initial?.due_date ?? "");
