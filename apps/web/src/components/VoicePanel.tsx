@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import type {
   GenerationJob,
   GenerationPreview,
+  MediaItem,
   MediaRole,
   Recipe,
   VoiceBackendHealth,
@@ -111,6 +112,9 @@ export function VoicePanel({
   const [useInheritedDefaults, setUseInheritedDefaults] = useState(false);
   usePlanPresetDefaults(planPreset, shotId, recipes, setRecipeId, setUseInheritedDefaults);
   const [canon, setCanon] = useState<CanonDescriptor[]>([]);
+  // 登録済みの参照音声(voice_reference)の候補。取込・タグ付けのたびに引き直す。
+  const [refCandidates, setRefCandidates] = useState<MediaItem[]>([]);
+  const [refReload, setRefReload] = useState(0);
   const characters = useProjectCharacters(projectId);
   const [health, setHealth] = useState<VoiceBackendHealth | null>(null);
   const [bindings, setBindings] = useState<Record<string, VoiceBinding>>({});
@@ -204,6 +208,30 @@ export function VoicePanel({
     };
   }, [projectId]);
 
+  useEffect(() => {
+    if (!projectId) {
+      setRefCandidates([]);
+      return;
+    }
+    let active = true;
+    (async () => {
+      try {
+        const list = await api.listMediaItems({
+          projectId,
+          role: "voice_reference",
+          source: "registered_input",
+          limit: 200,
+        });
+        if (active) setRefCandidates(list);
+      } catch (cause) {
+        if (active) setError(describe(cause));
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [projectId, refReload]);
+
   // Shot が変わったら指定をやり直す。別 Shot の参照音声を引き継がない。
   useEffect(() => {
     setBindings(
@@ -283,7 +311,8 @@ export function VoicePanel({
   const upload = async (voiceId: string, file: File) => {
     setError(null);
     update(voiceId, { roleTagError: null });
-    const { role, characterIds } = bindings[voiceId] ?? EMPTY_BINDING;
+    const { role, characterIds, transcript } =
+      bindings[voiceId] ?? EMPTY_BINDING;
     try {
       const stored = await api.createVoiceReference(
         file.name,
@@ -304,9 +333,11 @@ export function VoicePanel({
           media_type: stored.media_type,
           role,
           character_ids: characterIds,
+          reference_transcript: transcript.trim() ? transcript : null,
           project_id: projectId ?? undefined,
           scene_id: sceneId ?? undefined,
         });
+        setRefReload((count) => count + 1);
       } catch (cause) {
         // 取込は済んでいるため参照音声の指定は残し、役割が付かなかった声を示す。
         // 他の声の取込で消えないよう、全体のエラーでなくbindingに持たせる。
@@ -317,6 +348,21 @@ export function VoicePanel({
     } catch (cause) {
       setError(describe(cause));
     }
+  };
+
+  // 登録済みの参照音声を選ぶ。書き起こしは入れた後も手で直せる。
+  const selectRegisteredReference = (voiceId: string, key: string) => {
+    const item = refCandidates.find((candidate) => candidate.key === key);
+    if (!item) return;
+    update(voiceId, {
+      relativePath: item.relative_path,
+      sha256: item.sha256,
+      fileName: item.label ?? item.relative_path,
+      transcript: item.reference_transcript ?? "",
+      role: "voice_reference",
+      characterIds: item.character_ids,
+      roleTagError: null,
+    });
   };
 
   const buildInputs = (): Record<string, unknown> | null => {
@@ -612,6 +658,34 @@ export function VoicePanel({
                     update(voiceId, { characterIds })
                   }
                 />
+                {projectId && (
+                  <select
+                    aria-label={`${voiceId}の登録済みの参照音声`}
+                    value={
+                      refCandidates.find(
+                        (item) => item.relative_path === binding.relativePath,
+                      )?.key ?? ""
+                    }
+                    onChange={(event) =>
+                      selectRegisteredReference(voiceId, event.target.value)
+                    }
+                  >
+                    <option value="">登録済みの参照音声を選ぶ</option>
+                    {refCandidates
+                      .filter(
+                        (item) =>
+                          binding.characterIds.length === 0 ||
+                          item.character_ids.some((id) =>
+                            binding.characterIds.includes(id),
+                          ),
+                      )
+                      .map((item) => (
+                        <option key={item.key} value={item.key}>
+                          {item.label ?? item.relative_path}
+                        </option>
+                      ))}
+                  </select>
+                )}
                 <input
                   id={`reference-${voiceId}`}
                   type="file"
