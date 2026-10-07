@@ -811,6 +811,10 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
         fillOutfitPrompt(draftId, outfit.id, extracted.tags.join(", "), true);
         filled += 1;
       } catch (cause) {
+        if (draftIdRef.current !== draftId) {
+          interrupted = true;
+          break;
+        }
         failures.push({ name: outfit.name, reason: describe(cause) });
       }
     }
