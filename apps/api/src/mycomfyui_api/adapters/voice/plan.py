@@ -17,6 +17,7 @@ from mycomfyui_api import provenance, storage
 from mycomfyui_api.adapters.aimedia.client import AiMediaError
 from mycomfyui_api.adapters.voice.base import (
     VOICE_ENGINES,
+    caption_problem,
     uses_reference_transcript,
 )
 from mycomfyui_api.execution import (
@@ -149,8 +150,10 @@ def _binding(
             f"{voice_id}のvoice設定に未知の項目があります。", {"unknown": unknown}
         )
     caption = raw.get("caption")
-    if caption is not None and (not isinstance(caption, str) or not caption.strip()):
-        raise PreparationError(f"{voice_id}のcaptionは空でない文字列で指定します。")
+    if caption is not None and not isinstance(caption, str):
+        raise PreparationError(f"{voice_id}のcaptionは文字列で指定します。")
+    if caption is not None and (problem := caption_problem(caption)):
+        raise PreparationError(f"{voice_id}のcaption: {problem}。")
     has_reference = any(raw.get(name) not in (None, "") for name in _REFERENCE_NAMES)
     canon_id = raw.get("canon_id")
     if canon_id not in (None, "") and not _is_sha256(canon_id):
@@ -474,7 +477,8 @@ async def prepare(
             "pad_to_duration": pad_to_duration,
             "target_duration_sec": duration_sec,
             "snapshot_version": SNAPSHOT_VERSION,
-            # 参照を持たないvoiceは、captionとseedだけが再現の入力になる。
+            # 参照を持たないvoiceは、captionとseedだけが再現の入力になる。captionが
+            # 無いJobでも`{}`で付ける。キーの有無で読み手が分岐しなくて済む。
             "captions": {
                 voice_id: binding["caption"]
                 for voice_id, binding in bindings.items()
