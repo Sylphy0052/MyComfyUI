@@ -27,6 +27,7 @@ from mycomfyui_api.adapters.voice.base import (
     VoicePayloadTooLarge,
     VoiceTimeout,
     VoiceUnavailable,
+    caption_problem,
     uses_reference_transcript,
 )
 from mycomfyui_api.adapters.voice.factory import create_voice_backend
@@ -576,15 +577,23 @@ def _load_binding(
             f"{voice_id}のcaptionの形式が想定外です。",
             retryable=False,
         )
-    if "reference" not in raw:
+    if "reference" not in raw and not caption:
         # 参照の無い分岐を先に取る。空文字のcaptionも「無い」として扱い、参照音声の
         # 設定不足とは別の文言で止める。
-        if not caption:
-            raise _PreflightError(
-                FAILURE_CODE_INPUT_UNRESOLVED,
-                f"{voice_id}には参照音声もcaptionもありません。",
-                retryable=False,
-            )
+        raise _PreflightError(
+            FAILURE_CODE_INPUT_UNRESOLVED,
+            f"{voice_id}には参照音声もcaptionもありません。",
+            retryable=False,
+        )
+    # 旧Snapshotや直接作ったJobの再実行でも、runnerの422 (voice_idの無い生detail) に
+    # 任せず、planと同じ判定でvoice_id付きで止める。
+    if caption is not None and (problem := caption_problem(caption)):
+        raise _PreflightError(
+            FAILURE_CODE_INPUT_UNRESOLVED,
+            f"{voice_id}のcaption: {problem}。",
+            retryable=False,
+        )
+    if "reference" not in raw:
         return _VoiceBinding(voice_id=voice_id, caption=caption)
     reference = raw.get("reference")
     transcript = raw.get("reference_transcript")

@@ -7,6 +7,7 @@ wavと参照音声はHTTP bodyのJSONへbase64で載せる。リモート構成�
 ファイルシステムに参照音声が存在せず、パスでは渡せないためである。
 """
 
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -19,6 +20,24 @@ VOICE_ENGINES: tuple[str, ...] = (ENGINE_IRODORI,)
 #: 足りる。Snapshot・`parameters.captions`・`resolved_inputs`の3か所へ複製されるため
 #: 上限を置く。voice-runnerの`SpeechRequest.caption`の`max_length`と同じ値にする。
 MAX_CAPTION_CHARS = 500
+
+
+def caption_problem(caption: str) -> str | None:
+    """captionが不正なら理由を、問題が無ければNoneを返す。
+
+    Snapshotを作る`plan.py`と、実行時に読み直すexecutorが同じ判定を使う。voice-runnerは
+    別パッケージで、同じ条件を自分のschemaに持つ。
+
+    制御文字はUnicodeカテゴリ`Cc` (改行・タブを含む) を拒む。U+2028/U+2029
+    (カテゴリ`Zl`/`Zp`) は通す。ここで拒む対象を変えるときは、runner側も揃える。
+    """
+    if not caption.strip():
+        return "空白だけにはできません"
+    if len(caption) > MAX_CAPTION_CHARS:
+        return f"{MAX_CAPTION_CHARS}文字以内で指定します"
+    if any(unicodedata.category(char) == "Cc" for char in caption):
+        return "改行などの制御文字は使えません"
+    return None
 
 #: 参照音声の書き起こしを生成に使うengine。ここに含むengineでは、参照音声と書き起こしを
 #: 組で必須にする。Irodoriは参照音声とcaptionだけで声質を決め、書き起こしを使わない。
@@ -87,9 +106,10 @@ class SpeechRequest:
     `reference_transcript`は書き起こしを使うengineでだけ参照音声と組で必須になる。
 
     この型は値を検査しない。「参照は組で空でない」「参照もcaptionも無ければ不正」
-    「captionは`MAX_CAPTION_CHARS`以内で制御文字を含まない」の保証は、Snapshotを作る
-    `plan.py`の`_binding`と、実行時に読み直すexecutorの`_load_binding`が持つ。runnerも
-    同じ条件を自分のschemaで検査するため、ここで重ねて検査しない。
+    「captionが空白だけでなく、`MAX_CAPTION_CHARS`以内で、制御文字を含まない」の保証は、
+    Snapshotを作る`plan.py`の`_binding`と、実行時に読み直すexecutorの`_load_binding`が
+    持つ。captionの判定は`caption_problem`に集約している。runnerも同じ条件を自分の
+    schemaで検査するため、ここで重ねて検査しない。
     """
 
     engine: str

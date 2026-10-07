@@ -11,14 +11,13 @@ Shot 1件をJob 1件とし、Shot内の台詞ごとに音声を1件ずつ生成�
 """
 
 import random
-import unicodedata
 from typing import Any
 
 from mycomfyui_api import provenance, storage
 from mycomfyui_api.adapters.aimedia.client import AiMediaError
 from mycomfyui_api.adapters.voice.base import (
-    MAX_CAPTION_CHARS,
     VOICE_ENGINES,
+    caption_problem,
     uses_reference_transcript,
 )
 from mycomfyui_api.execution import (
@@ -151,18 +150,10 @@ def _binding(
             f"{voice_id}のvoice設定に未知の項目があります。", {"unknown": unknown}
         )
     caption = raw.get("caption")
-    if caption is not None and (not isinstance(caption, str) or not caption.strip()):
-        raise PreparationError(f"{voice_id}のcaptionは空でない文字列で指定します。")
-    if caption is not None:
-        if len(caption) > MAX_CAPTION_CHARS:
-            raise PreparationError(
-                f"{voice_id}のcaptionは{MAX_CAPTION_CHARS}文字以内で指定します。"
-            )
-        # 改行・タブを含む制御文字は拒む。captionは1行の声質指定で、Web UIも1行入力。
-        if any(unicodedata.category(char) == "Cc" for char in caption):
-            raise PreparationError(
-                f"{voice_id}のcaptionに改行などの制御文字は使えません。"
-            )
+    if caption is not None and not isinstance(caption, str):
+        raise PreparationError(f"{voice_id}のcaptionは文字列で指定します。")
+    if caption is not None and (problem := caption_problem(caption)):
+        raise PreparationError(f"{voice_id}のcaption: {problem}。")
     has_reference = any(raw.get(name) not in (None, "") for name in _REFERENCE_NAMES)
     canon_id = raw.get("canon_id")
     if canon_id not in (None, "") and not _is_sha256(canon_id):
