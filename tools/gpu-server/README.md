@@ -14,7 +14,7 @@ g18上の配置は次のとおり。`/ssdnas2`はNFSで、ほかの計算機サ�
 `comfyui/`を`/ssdnas2/data/kfuruhashi/docker/comfyui`へ置き、g18上で実行する。
 
 1. イメージを作る: `docker build -t kfuruhashi-comfyui:cu130 .`。python:3.12-slimにCUDA 13.0版のtorchとComfyUIの依存を入れる。tritonがカーネルをビルドするため`gcc`と`libc6-dev`が要る。WD14 Taggerのため`onnxruntime`も入れる
-2. カスタムノードを入れる: `bash nodes.sh`。各ノードのcommit (40桁) は`nodes.sh`で固定している。`darask0/Anima-InContext-Character`のrevisionは`models.sh`と共有するので`revisions.sh`に置く。両スクリプトは`revisions.sh`を読むため、`comfyui/`を置いたディレクトリで実行する
+2. カスタムノードを入れる: `bash nodes.sh`。各ノードのcommit (40桁) は`nodes.sh`で固定している。`darask0/Anima-InContext-Character`のrevisionは`models.sh`と共有するので`revisions.sh`に置く。両スクリプトは`revisions.sh`を読むため、`comfyui/`を置いたディレクトリで実行する。手元から流すなら、`revisions.sh`を先頭に連結する (`cd tools/gpu-server/comfyui && cat revisions.sh nodes.sh | ssh.exe g18 'bash -s'`)。`models.sh`も同じ。連結せずにstdinへ流すと、`INCONTEXT_REV`が未設定のエラーで止まる
    - `ComfyUI-Anima_IP-Adapter`
    - `ComfyUI-WD14-Tagger`
    - `comfyui-anima-incontext` (HF `darask0/Anima-InContext-Character`に同梱)
