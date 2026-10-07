@@ -42,7 +42,7 @@ class SpeechRequest(RunnerModel):
     text: str = Field(min_length=1)
     reading: str | None = None
     language: str = "ja"
-    #: 参照音声のwav(base64)。書き起こしと組で渡すか、組ごと省く。
+    #: 参照音声のwav(base64)。書き起こしを使うengineでは書き起こしと組で渡す。
     reference_audio: str | None = Field(default=None, min_length=1)
     reference_transcript: str | None = Field(default=None, min_length=1)
     #: 声質の文章指定。参照が無いときはこれだけで声を作る。
@@ -52,10 +52,8 @@ class SpeechRequest(RunnerModel):
 
     @model_validator(mode="after")
     def _require_voice_source(self) -> "SpeechRequest":
-        if (self.reference_audio is None) != (self.reference_transcript is None):
-            raise ValueError(
-                "reference_audioとreference_transcriptは組で渡してください。"
-            )
+        if self.reference_audio is None and self.reference_transcript is not None:
+            raise ValueError("reference_transcriptはreference_audioと組で渡してください。")
         if self.reference_audio is None and self.caption is None:
             raise ValueError("参照音声かcaptionの少なくとも一方が必要です。")
         return self
@@ -192,6 +190,15 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 engine.detail or "engineが使えません。",
+            )
+        if (
+            engine.uses_reference_transcript
+            and payload.reference_audio is not None
+            and payload.reference_transcript is None
+        ):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"{engine.id}は参照音声の書き起こし (reference_transcript) が必要です。",
             )
         reference = (
             _decode(payload.reference_audio, "参照音声")
