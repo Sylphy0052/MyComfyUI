@@ -3420,10 +3420,9 @@ export interface components {
              * @enum {string}
              */
             provider_id: "claude_code" | "codex" | "qwen" | "stub";
-            /** Rationale */
-            rationale: string;
             /** Tag Changes */
             tag_changes?: components["schemas"]["ImagePromptTagChange"][];
+            tag_confidence_blocks?: components["schemas"]["ImagePromptTagConfidenceBlocks"];
             /** Tag Glosses */
             tag_glosses?: components["schemas"]["ImagePromptTagGloss"][];
             /**
@@ -3434,7 +3433,7 @@ export interface components {
         };
         /**
          * ImagePromptNaturalTextChange
-         * @description 現在のpromptを直した案で、自然文をどう変えたかと、その理由。
+         * @description 現在のpromptを直した案で、自然文をどう変えたか。
          */
         ImagePromptNaturalTextChange: {
             /**
@@ -3443,15 +3442,10 @@ export interface components {
              * @enum {string}
              */
             change: "unchanged" | "added" | "removed" | "modified";
-            /**
-             * Reason
-             * @default
-             */
-            reason: string;
         };
         /**
          * ImagePromptTagChange
-         * @description 現在のpromptを直した案で、足したか消したタグ1つと、その理由。
+         * @description 現在のpromptを直した案で、足したか消したタグ1つ。
          */
         ImagePromptTagChange: {
             /**
@@ -3459,13 +3453,39 @@ export interface components {
              * @enum {string}
              */
             change: "added" | "removed";
-            /**
-             * Reason
-             * @default
-             */
-            reason: string;
             /** Tag */
             tag: string;
+        };
+        /**
+         * ImagePromptTagConfidence
+         * @description prompt補完結果のタグ1つと、そのタグを残すべき確信度(0〜1)、日本語訳 (#407)。
+         *
+         *     件数の上限は設けない。しきい値を下回るタグの扱いはクライアント側のスライダーで
+         *     利用者が選ぶ。
+         */
+        ImagePromptTagConfidence: {
+            /** Confidence */
+            confidence: number;
+            /** Ja */
+            ja: string;
+            /** Tag */
+            tag: string;
+        };
+        /**
+         * ImagePromptTagConfidenceBlocks
+         * @description ブロックごとの確信度付きタグ一覧。各ブロックは確信度の降順で並ぶ (#407)。
+         */
+        ImagePromptTagConfidenceBlocks: {
+            /** Artist Tags */
+            artist_tags?: components["schemas"]["ImagePromptTagConfidence"][];
+            /** Character Tags */
+            character_tags?: components["schemas"]["ImagePromptTagConfidence"][];
+            /** General Tags */
+            general_tags?: components["schemas"]["ImagePromptTagConfidence"][];
+            /** Quality Tags */
+            quality_tags?: components["schemas"]["ImagePromptTagConfidence"][];
+            /** Subject Tags */
+            subject_tags?: components["schemas"]["ImagePromptTagConfidence"][];
         };
         /**
          * ImagePromptTagGloss

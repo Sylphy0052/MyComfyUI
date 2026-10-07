@@ -3252,17 +3252,15 @@
             "title": "Provider Id",
             "type": "string"
           },
-          "rationale": {
-            "maxLength": 2000,
-            "title": "Rationale",
-            "type": "string"
-          },
           "tag_changes": {
             "items": {
               "$ref": "#/components/schemas/ImagePromptTagChange"
             },
             "title": "Tag Changes",
             "type": "array"
+          },
+          "tag_confidence_blocks": {
+            "$ref": "#/components/schemas/ImagePromptTagConfidenceBlocks"
           },
           "tag_glosses": {
             "items": {
@@ -3281,7 +3279,6 @@
         "required": [
           "positive_prompt",
           "negative_prompt",
-          "rationale",
           "provider_id",
           "model"
         ],
@@ -3290,7 +3287,7 @@
       },
       "ImagePromptNaturalTextChange": {
         "additionalProperties": false,
-        "description": "現在のpromptを直した案で、自然文をどう変えたかと、その理由。",
+        "description": "現在のpromptを直した案で、自然文をどう変えたか。",
         "properties": {
           "change": {
             "default": "unchanged",
@@ -3302,12 +3299,6 @@
             ],
             "title": "Change",
             "type": "string"
-          },
-          "reason": {
-            "default": "",
-            "maxLength": 500,
-            "title": "Reason",
-            "type": "string"
           }
         },
         "title": "ImagePromptNaturalTextChange",
@@ -3315,7 +3306,7 @@
       },
       "ImagePromptTagChange": {
         "additionalProperties": false,
-        "description": "現在のpromptを直した案で、足したか消したタグ1つと、その理由。",
+        "description": "現在のpromptを直した案で、足したか消したタグ1つ。",
         "properties": {
           "change": {
             "enum": [
@@ -3323,12 +3314,6 @@
               "removed"
             ],
             "title": "Change",
-            "type": "string"
-          },
-          "reason": {
-            "default": "",
-            "maxLength": 500,
-            "title": "Reason",
             "type": "string"
           },
           "tag": {
@@ -3341,6 +3326,76 @@
           "change"
         ],
         "title": "ImagePromptTagChange",
+        "type": "object"
+      },
+      "ImagePromptTagConfidence": {
+        "additionalProperties": false,
+        "description": "prompt補完結果のタグ1つと、そのタグを残すべき確信度(0〜1)、日本語訳 (#407)。\n\n件数の上限は設けない。しきい値を下回るタグの扱いはクライアント側のスライダーで\n利用者が選ぶ。",
+        "properties": {
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "ja": {
+            "title": "Ja",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag",
+          "confidence",
+          "ja"
+        ],
+        "title": "ImagePromptTagConfidence",
+        "type": "object"
+      },
+      "ImagePromptTagConfidenceBlocks": {
+        "additionalProperties": false,
+        "description": "ブロックごとの確信度付きタグ一覧。各ブロックは確信度の降順で並ぶ (#407)。",
+        "properties": {
+          "artist_tags": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePromptTagConfidence"
+            },
+            "title": "Artist Tags",
+            "type": "array"
+          },
+          "character_tags": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePromptTagConfidence"
+            },
+            "title": "Character Tags",
+            "type": "array"
+          },
+          "general_tags": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePromptTagConfidence"
+            },
+            "title": "General Tags",
+            "type": "array"
+          },
+          "quality_tags": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePromptTagConfidence"
+            },
+            "title": "Quality Tags",
+            "type": "array"
+          },
+          "subject_tags": {
+            "items": {
+              "$ref": "#/components/schemas/ImagePromptTagConfidence"
+            },
+            "title": "Subject Tags",
+            "type": "array"
+          }
+        },
+        "title": "ImagePromptTagConfidenceBlocks",
         "type": "object"
       },
       "ImagePromptTagGloss": {

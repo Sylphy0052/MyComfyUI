@@ -466,12 +466,13 @@ prompt 案を出す種別は `image_prompt` と `batch_generation_plan` の 2 �
 
 | 定数 | 値 | 根拠 |
 | --- | --- | --- |
-| `MAX_PROMPT_TAGS` | 30 | 1 ブロックあたりのタグ数。general_tags でも 30 を超えると 5 節の目安を外れる |
 | `MAX_PROMPT_TAG_LENGTH` | 100 | タグ 1 件の長さ。重み括弧を付けても収まる |
 | `MAX_NATURAL_TEXT_LENGTH` | 2000 | 自然文のみの形式で 3〜5 文を書ける長さ |
 | `MAX_POSITIVE_PROMPT_LENGTH` | 4000 | 連結後の上限。API 契約の `positive_prompt` と同じ値 |
 | `MAX_NEGATIVE_PROMPT_LENGTH` | 3000 | 提案が書ける negative の上限 |
 | `MAX_MERGED_NEGATIVE_LENGTH` | 4000 | baseline を足したあとの上限。API 契約の `negative_prompt` と同じ値 |
+
+1 ブロックあたりのタグ数の上限 (`MAX_PROMPT_TAGS`、30) は #407 で撤廃した。`revise_current_prompt` が現在の prompt から戻したタグで上限を超え、レビューが失敗していたためである。代わりに `image_prompt` の各タグへ確信度 (`conf`) を付けさせ、どこまで残すかは利用者がしきい値スライダーで選ぶ。
 
 ブロックごとの上限をすべて使い切ると連結後が `MAX_POSITIVE_PROMPT_LENGTH` を超えるため、連結したあとに改めて長さを検査し、超過は `AgentInvalidResponse` にする。API 応答の組み立てで `ValidationError` を起こして 500 を返す経路を塞ぐためである。
 

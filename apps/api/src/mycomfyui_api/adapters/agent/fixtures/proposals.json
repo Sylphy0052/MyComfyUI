@@ -1,21 +1,27 @@
 {
   "image_prompt": {
-    "quality_tags": ["masterpiece", "best quality", "safe"],
-    "subject_tags": ["1girl", "1boy"],
+    "quality_tags": [
+      { "tag": "masterpiece", "ja": "傑作", "conf": 1.0 },
+      { "tag": "best quality", "ja": "最高品質", "conf": 1.0 },
+      { "tag": "safe", "ja": "全年齢向け", "conf": 1.0 }
+    ],
+    "subject_tags": [
+      { "tag": "1girl", "ja": "女の子1人", "conf": 1.0 },
+      { "tag": "1boy", "ja": "男の子1人", "conf": 1.0 }
+    ],
     "character_tags": [],
     "artist_tags": [],
     "general_tags": [
-      "school darkroom",
-      "red safelight",
-      "developing tray",
-      "bust shot",
-      "eye level",
-      "autumn evening",
-      "cinematic lighting"
+      { "tag": "school darkroom", "ja": "学校の暗室", "conf": 0.95 },
+      { "tag": "red safelight", "ja": "赤いセーフライト", "conf": 0.9 },
+      { "tag": "developing tray", "ja": "現像バット", "conf": 0.9 },
+      { "tag": "bust shot", "ja": "バストショット", "conf": 0.85 },
+      { "tag": "eye level", "ja": "目線の高さ", "conf": 0.5 },
+      { "tag": "autumn evening", "ja": "秋の夕方", "conf": 0.4 },
+      { "tag": "cinematic lighting", "ja": "映画的な照明", "conf": 0.3 }
     ],
     "natural_text": "A girl and a boy stand on opposite sides of a developing tray in a school darkroom. The girl holds a wet print above the tray while the boy watches the print from across the tray. Red safelight from the ceiling falls on both faces from above.",
-    "negative_prompt": "lowres, bad anatomy, extra fingers, watermark, text",
-    "rationale": "Shotの暗室と赤色光、バストショットの指定をタグと自然文へ分けた固定応答。"
+    "negative_prompt": "lowres, bad anatomy, extra fingers, watermark, text"
   },
   "shot_breakdown": {
     "shots": [

@@ -10,11 +10,12 @@ Providerへ流れないようにするためである。
 
 import json
 import logging
+import math
 import re
 from collections.abc import Collection, Iterable, Mapping
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from mycomfyui_api.adapters import tag_preflight
 from mycomfyui_api.adapters.agent.base import (
@@ -47,9 +48,6 @@ MAX_PLAN_DEFAULTS = 20
 #: 資産整理案が指定できる移動先ディレクトリの長さ上限。
 MAX_PLAN_DESTINATION_LENGTH = 500
 
-#: prompt案の1ブロックが持てるタグの上限。
-MAX_PROMPT_TAGS = 30
-
 #: prompt案のタグ1件の長さ上限。重み括弧を付けても収まる長さにする。
 MAX_PROMPT_TAG_LENGTH = 100
 
@@ -57,7 +55,7 @@ MAX_PROMPT_TAG_LENGTH = 100
 MAX_NATURAL_TEXT_LENGTH = 2000
 
 #: 連結したpositive promptの長さ上限。API契約の`positive_prompt`と同じ値にする。
-#: ブロックごとの上限を全て使うとこの値を超えるため、連結後に改めて当てる。
+#: タグの件数には上限を設けない (#407) ため、連結後に当てる。
 MAX_POSITIVE_PROMPT_LENGTH = 4000
 
 #: BGM条件案のmoodとgenreそれぞれの長さ上限。連結してpositive promptの上限に収める。
@@ -125,36 +123,45 @@ class PromptBody(ProposalOutput):
     """
 
     #: 品質、meta、year、ratingのタグ。
-    quality_tags: list[PromptTag] = Field(
-        default_factory=list, max_length=MAX_PROMPT_TAGS
-    )
+    quality_tags: list[PromptTag] = Field(default_factory=list)
     #: 人数を示すタグ。
-    subject_tags: list[PromptTag] = Field(
-        default_factory=list, max_length=MAX_PROMPT_TAGS
-    )
+    subject_tags: list[PromptTag] = Field(default_factory=list)
     #: キャラクター名と作品名のタグ。
-    character_tags: list[PromptTag] = Field(
-        default_factory=list, max_length=MAX_PROMPT_TAGS
-    )
+    character_tags: list[PromptTag] = Field(default_factory=list)
     #: 絵師のタグ。
-    artist_tags: list[PromptTag] = Field(
-        default_factory=list, max_length=MAX_PROMPT_TAGS
-    )
+    artist_tags: list[PromptTag] = Field(default_factory=list)
     #: 外見、ポーズ、カメラ、背景、光のタグ。
-    general_tags: list[PromptTag] = Field(
-        default_factory=list, max_length=MAX_PROMPT_TAGS
-    )
+    general_tags: list[PromptTag] = Field(default_factory=list)
     #: タグでは表せない関係を書く自然文。
     natural_text: str = Field(default="", max_length=MAX_NATURAL_TEXT_LENGTH)
     #: そのショット固有の避けたい要素だけ。基準値は`DEFAULT_NEGATIVE_PROMPT`が持つ。
     negative_prompt: str = Field(default="", max_length=MAX_NEGATIVE_PROMPT_LENGTH)
 
 
-class TagGloss(ProposalOutput):
-    """prompt案のタグ1つと、その日本語訳。利用者がタグの意味を確かめるのに使う。"""
+# タグ、訳、確信度を別々の配列で返させると、タグが3回出力されて応答が長くなり、
+# コンテキスト長の小さいProviderで応答が途中で切れた(#407)。1つのobjectにまとめて
+# タグの出力を1回にし、`validate_output`で内部の形へ展開する。docstringは出力
+# Schemaの説明としてProviderへ渡るため短く保つ。
+class ScoredTag(ProposalOutput):
+    """prompt案のタグ1つと、その日本語訳と確信度。"""
 
     tag: PromptTag
-    ja: str = Field(max_length=100)
+    #: タグの意味を短い日本語で書いたもの。生成には使わず、表示だけに使う。
+    ja: str = Field(default="", max_length=100)
+    #: そのタグを残すべき確信度。しきい値は利用者がクライアント側のスライダーで選ぶ。
+    conf: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    @field_validator("conf", mode="before")
+    @classmethod
+    def _clamp_conf(cls, value: Any) -> float:
+        # 確信度の誤りだけで案全体を拒否しない。範囲外は0〜1へ丸め、数でなければ1.0にする。
+        try:
+            conf = float(value)
+        except (TypeError, ValueError):
+            return 1.0
+        if math.isnan(conf):
+            return 1.0
+        return min(max(conf, 0.0), 1.0)
 
 
 TagChangeKind = Literal["added", "removed"]
@@ -162,40 +169,39 @@ NaturalTextChangeKind = Literal["unchanged", "added", "removed", "modified"]
 TagBlockField = Literal[
     "quality_tags", "subject_tags", "character_tags", "artist_tags", "general_tags"
 ]
-#: 変更1件の理由の長さの上限。
-MAX_CHANGE_REASON_LENGTH = 500
 
 
 class TagChange(ProposalOutput):
-    """現在のpromptを直したときに足した、または消したタグ1つと、その理由。"""
+    """現在のpromptを直したときに足した、または消したタグ1つ。"""
 
     tag: PromptTag
     change: TagChangeKind
     #: タグが属する(消したときは属していた)ブロック。消すタグの検証に使う。
     field: TagBlockField
-    reason: str = Field(default="", max_length=MAX_CHANGE_REASON_LENGTH)
 
 
 class NaturalTextChange(ProposalOutput):
-    """現在のpromptを直したときの自然文の変更と、その理由。自然文は1段落として扱う。"""
+    """現在のpromptを直したときの自然文の変更。自然文は1段落として扱う。"""
 
     change: NaturalTextChangeKind = "unchanged"
-    reason: str = Field(default="", max_length=MAX_CHANGE_REASON_LENGTH)
 
 
-class ImagePromptOutput(PromptBody):
+#: ブロックの並びと役割は`PromptBody`と同じだが、各タグを`ScoredTag`で受け取る。
+#: `validate_output`がタグ配列、`tag_glosses`、`tag_confidences`へ展開するため、
+#: 以降の処理は`PromptBody`と同じ形を扱う。件数の上限は設けない(#407)。
+class ImagePromptOutput(ProposalOutput):
     """画像生成のprompt案。承認後の生成Job投入に使う。"""
 
-    rationale: str = Field(default="", max_length=2000)
-    #: タグ配列の全タグの日本語訳。生成には使わず、表示だけに使う。
-    tag_glosses: list[TagGloss] = Field(
-        default_factory=list, max_length=MAX_PROMPT_TAGS * len(TAG_BLOCK_FIELDS)
-    )
+    quality_tags: list[ScoredTag] = Field(default_factory=list)
+    subject_tags: list[ScoredTag] = Field(default_factory=list)
+    character_tags: list[ScoredTag] = Field(default_factory=list)
+    artist_tags: list[ScoredTag] = Field(default_factory=list)
+    general_tags: list[ScoredTag] = Field(default_factory=list)
+    natural_text: str = Field(default="", max_length=MAX_NATURAL_TEXT_LENGTH)
+    negative_prompt: str = Field(default="", max_length=MAX_NEGATIVE_PROMPT_LENGTH)
     #: 現在のpromptを直したときに、足したタグと消したタグ。消したタグに無いタグは
     #: `revise_current_prompt`が残す。
-    tag_changes: list[TagChange] = Field(
-        default_factory=list, max_length=MAX_PROMPT_TAGS * len(TAG_BLOCK_FIELDS) * 2
-    )
+    tag_changes: list[TagChange] = Field(default_factory=list)
     natural_text_change: NaturalTextChange = Field(default_factory=NaturalTextChange)
 
 
@@ -367,11 +373,15 @@ KIND_DIRECTIVES: dict[ProposalKind, str] = {
     "image_prompt": (
         "与えたShotまたは利用者説明に沿う画像生成promptを1件提案する。\n"
         + PROMPT_DIRECTIVE
-        + "\ntag_glossesには、タグ配列に入れた全てのタグについて、tagにタグをそのまま、"
+        + "\nタグ配列の要素は、tag、ja、confを持つobjectにする。tagにタグ、"
         "jaにその意味を短い日本語で書く。jaへタグの英語をそのまま写さない。"
-        '例: {"tag": "school uniform", "ja": "制服"}、'
-        '{"tag": "holding umbrella", "ja": "傘を持つ"}。\n'
-        "rationaleは日本語で書く。"
+        "confには、そのタグをpromptに残すべき確信度を0〜1で書く。"
+        "指示やShotに書かれた要素と、ratingと人数のタグは0.9以上にする。"
+        "書かれていないが強く推測できる要素は0.6〜0.8にする。"
+        "画を整えるために足した光、画風、背景の細部などは0.2〜0.5にする。"
+        "全てのタグを同じ値にしない。件数の上限は無いため、迷うタグは削らず低いconfで書く。"
+        '例: {"tag": "school uniform", "ja": "制服", "conf": 0.95}、'
+        '{"tag": "cinematic lighting", "ja": "映画的な照明", "conf": 0.3}。\n'
         "tag_changesとnatural_text_changeは現在のpromptを直すときだけ使う。"
         "それ以外はtag_changesを空配列、natural_text_changeのchangeをunchangedにする。"
     ),
@@ -546,6 +556,54 @@ def compose_positive_prompt(tag_line: str, natural_text: str) -> str:
     return "\n\n".join(parts)
 
 
+def build_tag_confidence_blocks(
+    data: Mapping[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    """ブロックごとの最終タグへ確信度と日本語訳を添え、確信度の降順で返す (#407)。
+
+    `revise_current_prompt`が現在のpromptから戻したタグや、補ったratingタグは
+    モデルの`tag_confidences`に無いため確信度1.0として扱う。ratingは必ず1つ残す
+    タグなので、モデルが確信度を付けていても1.0に揃える。件数の上限は設けず、
+    しきい値で残すか外すかは利用者がクライアント側のスライダーで選ぶ。
+    """
+    confidences: dict[str, float] = {}
+    for item in data.get("tag_confidences") or []:
+        if not isinstance(item, dict):
+            continue
+        key = _dedupe_key(_normalize_tag(item.get("tag")))
+        if key:
+            # 同じタグが複数回あれば、高い方を採る。画面は先に出た位置のタグを残すため。
+            confidence = float(item.get("confidence", 1.0))
+            confidences[key] = max(confidence, confidences.get(key, confidence))
+    glosses: dict[str, str] = {}
+    for gloss in data.get("tag_glosses") or []:
+        if not isinstance(gloss, dict):
+            continue
+        key = _dedupe_key(_normalize_tag(gloss.get("tag")))
+        if key:
+            glosses[key] = str(gloss.get("ja") or "")
+
+    blocks: dict[str, list[dict[str, Any]]] = {}
+    for field_name in TAG_BLOCK_FIELDS:
+        items = []
+        for raw_tag in data.get(field_name) or []:
+            tag = _normalize_tag(raw_tag)
+            if not tag:
+                continue
+            key = _dedupe_key(tag)
+            confidence = 1.0 if key in RATING_TAGS else confidences.get(key, 1.0)
+            items.append(
+                {
+                    "tag": tag,
+                    "confidence": confidence,
+                    "ja": glosses.get(key, ""),
+                }
+            )
+        items.sort(key=lambda item: item["confidence"], reverse=True)
+        blocks[field_name] = items
+    return blocks
+
+
 def merge_negative_prompt(baseline: str, extra: str) -> str:
     """negative promptの基準値へ、ショット固有の追加分を重複なく足す。"""
     values = [_normalize_tag(value) for value in f"{baseline},{extra}".split(",")]
@@ -654,17 +712,6 @@ def _drop_untranslated_glosses(body: dict[str, Any]) -> None:
     body["tag_glosses"] = kept
 
 
-def _warn_untranslated_rationale(body: dict[str, Any]) -> None:
-    """`rationale`が日本語になっていなければwarningを残す。表示する内容は変えない。
-
-    英語でも変更の理由は伝わるため捨てない。指示では日本語で書かせている (#355)
-    ので、モデルが英語で返すようになったことに運用側で気付けるようにする。
-    """
-    rationale = str(body.get("rationale") or "")
-    if rationale.strip() and not JAPANESE_CHARACTER.search(rationale):
-        logger.warning("prompt案の説明が日本語になっていません。")
-
-
 def _attach_prompt_text(body: dict[str, Any]) -> None:
     """タグ行と連結済みpositive promptを派生項目として足す。
 
@@ -744,6 +791,26 @@ def _append_rationale_note(data: dict[str, Any], note: str) -> None:
     data["rationale"] = f"{body}\n{note}" if body else note
 
 
+def _expand_scored_tags(data: Mapping[str, Any]) -> dict[str, Any]:
+    """`ScoredTag`で受け取ったタグ配列を、タグ配列と`tag_glosses`、`tag_confidences`へ
+    展開する。以降の処理と履歴は、展開後の形だけを扱う。
+    """
+    expanded = dict(data)
+    glosses: list[dict[str, str]] = []
+    confidences: list[dict[str, Any]] = []
+    for field_name in TAG_BLOCK_FIELDS:
+        tags: list[str] = []
+        for item in data.get(field_name) or []:
+            tags.append(item["tag"])
+            if item["ja"]:
+                glosses.append({"tag": item["tag"], "ja": item["ja"]})
+            confidences.append({"tag": item["tag"], "confidence": item["conf"]})
+        expanded[field_name] = tags
+    expanded["tag_glosses"] = glosses
+    expanded["tag_confidences"] = confidences
+    return expanded
+
+
 def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
     """Providerの応答を期待する形へ検証する。
 
@@ -760,11 +827,11 @@ def validate_output(kind: ProposalKind, payload: Any) -> dict[str, Any]:
         raise AgentInvalidResponse(f"提案の形が期待と異なります: {error}") from error
     data = validated.model_dump()
     if kind == "image_prompt":
+        data = _expand_scored_tags(data)
         # 補ったratingの訳は日本語のため除かれない。先に除くと、全訳が写しだったときに
         # 訳の一覧が空になり、補ったratingの訳も足されなくなる。
         _attach_prompt_text(data)
         _drop_untranslated_glosses(data)
-        _warn_untranslated_rationale(data)
     elif kind == "batch_generation_plan":
         original = data.get("items", [])
         items = [
@@ -859,7 +926,8 @@ def normalize_prompt_tags(
         )
         if tags
     ]
-    if notes:
+    # image_promptは理由を返さない (#407) ため、注記はrationaleを持つバッチ計画だけに足す。
+    if notes and kind != "image_prompt":
         # 1件ずつ足すと、後の注記の分だけ先の注記が切られる。まとめて1回で足す。
         _append_rationale_note(data, "\n".join(notes))
     return data
@@ -917,6 +985,10 @@ def _canonicalize_body_tags(
         result["tag_glosses"] = _rename_glosses(
             body["tag_glosses"], renamed, set(unknown)
         )
+    if isinstance(body.get("tag_confidences"), list) and (renamed or unknown):
+        result["tag_confidences"] = _rename_confidences(
+            body["tag_confidences"], renamed, set(unknown)
+        )
     changes = [f"{old} → {new}" for old, new in renamed.items()]
     return result, (changes, moved, removed)
 
@@ -960,6 +1032,29 @@ def _rename_glosses(
             continue
         seen.add(canonical)
         result.append({**gloss, "tag": canonical} if key in renamed else gloss)
+    return result
+
+
+def _rename_confidences(
+    confidences: list[Any], renamed: Mapping[str, str], dropped: set[str]
+) -> list[Any]:
+    """確信度のタグ名を正規のタグ名へ直し、タグ行から外したタグの確信度を除く (#407)。
+
+    直さないと、正規名へ直したタグが`build_tag_confidence_blocks`で確信度を引けず、
+    1.0として扱われてしきい値で外せなくなる。
+    """
+    result: list[Any] = []
+    for item in confidences:
+        if not isinstance(item, dict) or not isinstance(item.get("tag"), str):
+            result.append(item)
+            continue
+        key = tag_preflight.normalize_tag(item["tag"])
+        if key in dropped:
+            continue
+        if key in renamed:
+            # タグ行と同じく括弧をエスケープした綴りにしないと、確信度を引くときに一致しない。
+            item = {**item, "tag": _escape_parens(renamed[key])}
+        result.append(item)
     return result
 
 
@@ -1099,8 +1194,8 @@ def revise_current_prompt(
     - `natural_text_change`で消したと挙げずに自然文を空にしたら、現在の自然文を戻す
     - ratingは指示に綴りが無ければ現在のpromptの値を使い、無ければ`safe`にする
 
-    戻した結果がブロックの件数上限(`MAX_PROMPT_TAGS`)を超えたときは拒否する。文の
-    一部とみなして戻さなかった区切りは、案から消えていればwarningへ残す。
+    件数の上限は設けない。文の一部とみなして戻さなかった区切りは、案から消えて
+    いればwarningへ残す。
     """
     current, current_sentences = _current_tags(current_positive_prompt)
     current_keys = {_dedupe_key(tag) for tag in current}
@@ -1212,18 +1307,6 @@ def revise_current_prompt(
             if dropped_natural_text
             else "いいえ",
         )
-    # 上限を超えたブロックはすべて報告する。1つずつ直して再実行させないため (#378)。
-    over_limit = [
-        f"{name}が{len(data[name])}件 (うち現在のpromptから戻したタグ: "
-        f"{sum(1 for _, field in restored if field == name)}件)"
-        for name in TAG_BLOCK_FIELDS
-        if len(data[name]) > MAX_PROMPT_TAGS
-    ]
-    if over_limit:
-        raise AgentInvalidResponse(
-            f"レビュー案のタグが多すぎます。上限の{MAX_PROMPT_TAGS}件を超えるブロック: "
-            f"{'、'.join(over_limit)}。"
-        )
     final_keys = {_dedupe_key(tag) for name in TAG_BLOCK_FIELDS for tag in data[name]}
     glosses = [
         gloss
@@ -1236,6 +1319,17 @@ def revise_current_prompt(
     ):
         glosses.append({"tag": FALLBACK_RATING_TAG, "ja": FALLBACK_RATING_GLOSS})
     data["tag_glosses"] = glosses
+    # 最終的なタグに残らなかった確信度は捨てる。戻したタグやratingの補完値は
+    # ここに無いため、`build_tag_confidence_blocks`側で確信度1.0として扱う。
+    # 案が残した現在のタグも捨てて1.0にする。指示に関わらないタグは消さないため、
+    # 低い確信度を付けられても既定のしきい値で外れないようにする。
+    data["tag_confidences"] = [
+        confidence
+        for confidence in data.get("tag_confidences") or []
+        if isinstance(confidence, dict)
+        and (key := _dedupe_key(_normalize_tag(confidence.get("tag")))) in final_keys
+        and key not in current_keys
+    ]
     _attach_prompt_text(data)
     return data
 
@@ -1253,25 +1347,16 @@ def describe_prompt_changes(
     """`tag_changes`と`natural_text_change`を、案と現在のpromptの実際の差分で組み直す。
 
     モデルの申告は、戻したタグや書き方の整形と食い違う。変更の有無は最終的な案との
-    差分で決め、理由だけをモデルの出力からタグのキーで引く。理由が無い変更は空文字に
-    する。現在のpromptが無ければ直した案ではないため、変更なしとして返す。
+    差分だけで決める。現在のpromptが無ければ直した案ではないため、変更なしとして返す。
     """
     data = dict(output)
     if not current_positive_prompt.strip():
         data["tag_changes"] = []
-        data["natural_text_change"] = {"change": "unchanged", "reason": ""}
+        data["natural_text_change"] = {"change": "unchanged"}
         return data
 
-    reasons: dict[tuple[str, str], str] = {}
-    for change in data.get("tag_changes") or []:
-        if isinstance(change, dict):
-            key = _dedupe_key(_normalize_tag(change.get("tag"))).removesuffix("s")
-            reason = str(change.get("reason") or "").strip()
-            reasons.setdefault((str(change.get("change")), key), reason)
-
     def tag_change(tag: str, kind: str) -> dict[str, str]:
-        key = _dedupe_key(tag).removesuffix("s")
-        return {"tag": tag, "change": kind, "reason": reasons.get((kind, key), "")}
+        return {"tag": tag, "change": kind}
 
     before = _tag_line_items(current_positive_prompt.strip().split("\n\n", 1)[0])
     after = _tag_line_items(str(data.get("tag_line") or ""))
@@ -1295,13 +1380,7 @@ def describe_prompt_changes(
         kind = "removed"
     else:
         kind = "modified"
-    declared = data.get("natural_text_change")
-    reason = (
-        str(declared.get("reason") or "").strip()
-        if kind != "unchanged" and isinstance(declared, dict)
-        else ""
-    )
-    data["natural_text_change"] = {"change": kind, "reason": reason}
+    data["natural_text_change"] = {"change": kind}
     return data
 
 
@@ -1326,7 +1405,7 @@ IMAGE_DIRECTIVE = (
     "## 添付画像\n"
     "添付した画像は、対象の情報にある現在のpromptで生成した結果か、利用者が持ち込んだ"
     "画像である。画像を見て利用者の指示と食い違う箇所を特定し、現在のpromptを土台に"
-    "その箇所だけを直したpromptを返す。直した理由はrationaleに書く。"
+    "その箇所だけを直したpromptを返す。"
 )
 
 
@@ -1344,12 +1423,10 @@ REVISION_DIRECTIVE = (
     "tag_changesには、足したタグ(置き換えた先を含む)をchange=added、"
     "current_positive_promptから消したタグ(置き換えた元を含む)をchange=removedとして"
     "1件ずつ書く。tagはタグをそのまま、fieldはそのタグが属する(消したタグは属していた)"
-    "ブロック名、reasonには利用者の指示のどこに対応する変更かを日本語で書く。"
+    "ブロック名を書く。"
     "current_positive_promptの2段落目が現在の自然文である。natural_text_changeのchangeには、"
     "自然文を変えなければunchanged、新しく書けばadded、消せばremoved、書き換えれば"
-    "modifiedを入れ、reasonに理由を日本語で書く。指示に関わらない自然文は"
-    "そのままnatural_textへ写す。"
-    "rationaleには実際に変えたタグだけを書き、変えていない点を変えたと書かない。"
+    "modifiedを入れる。指示に関わらない自然文はそのままnatural_textへ写す。"
 )
 
 

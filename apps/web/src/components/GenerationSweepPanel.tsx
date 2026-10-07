@@ -10,7 +10,7 @@ import type {
   Recipe,
 } from "../api/client";
 import { LookProfileManager } from "./LookProfileManager";
-import { AssistNotes, PromptAssist } from "./PromptAssist";
+import { AssistNotes, PromptAssist, useTagThresholdDiff } from "./PromptAssist";
 import { PromptDiffReview } from "./PromptDiffReview";
 import type { PromptDiffState } from "./PromptDiffReview";
 import { EmptyState } from "./ui/EmptyState";
@@ -66,6 +66,8 @@ export function GenerationSweepPanel({
   const [negative, setNegative] = useState("");
   const [providers, setProviders] = useState<AgentProvider[]>([]);
   const [promptDiff, setPromptDiff] = useState<PromptDiffState | null>(null);
+  // 確信度のしきい値スライダーに合わせてpositive promptの提案文を組み直す (#407)。
+  const { diff: reviewDiff, panel: tagThresholdPanel } = useTagThresholdDiff(promptDiff);
   const [seedAxis, setSeedAxis] = useState("-1");
   const [cfgAxis, setCfgAxis] = useState("4,5");
   const [stepsAxis, setStepsAxis] = useState("20,30");
@@ -296,9 +298,9 @@ export function GenerationSweepPanel({
           <label>実験名<input value={name} onChange={(event) => setName(event.target.value)} /></label>
           <label>ベース (Recipe)<select value={recipeId} onChange={(event) => { setRecipeId(event.target.value); setPromptDiff(null); }}>{recipes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label>展開方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="cartesian">直積</option><option value="zip">zip</option></select></label>
-          {promptDiff ? (
+          {reviewDiff ? (
             <PromptDiffReview
-              fields={promptDiff.fields}
+              fields={reviewDiff.fields}
               onCancel={() => setPromptDiff(null)}
               onAccept={(result) => {
                 if ("positive_prompt" in result) setPrompt(result.positive_prompt);
@@ -306,7 +308,8 @@ export function GenerationSweepPanel({
                 setPromptDiff(null);
               }}
             >
-              {promptDiff.notes && <AssistNotes result={promptDiff.notes} />}
+              {reviewDiff.notes && <AssistNotes result={reviewDiff.notes} />}
+              {tagThresholdPanel}
             </PromptDiffReview>
           ) : (
             <PromptAssist
@@ -326,7 +329,6 @@ export function GenerationSweepPanel({
                       current: prompt,
                       proposed: result.positive,
                       acceptRemovals: result.review,
-                      reasons: result.notes,
                     },
                     { key: "negative_prompt", label: "ネガティブプロンプト", current: negative, proposed: result.negative },
                   ],
