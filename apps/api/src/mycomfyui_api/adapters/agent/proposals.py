@@ -864,10 +864,10 @@ def _canonicalize_body_tags(
         kept: list[str] = []
         for value in values:
             key = tag_preflight.normalize_tag(value) if isinstance(value, str) else ""
-            # 強調・重みの括弧付きと、実在確認の対象外のタグ(`@`や自然文)は触らない。
+            # 強調・重みの括弧(`(` `[`)付きと、実在確認の対象外のタグ(`@`や自然文)は触らない。
             if (
                 not key
-                or value.strip().startswith("(")
+                or value.strip().startswith(("(", "["))
                 or tag_preflight.is_excluded(key)
             ):
                 kept.append(value)
@@ -880,7 +880,7 @@ def _canonicalize_body_tags(
                     kept.append(value)
             elif canonical != key:
                 renamed[key] = canonical
-                kept.append(_spell_like(value, canonical))
+                kept.append(_escape_parens(canonical))
             else:
                 kept.append(value)
         result[field_name] = _dedupe(kept)
@@ -903,9 +903,13 @@ def _canonicalize_body_tags(
     return result, (changes, moved, removed)
 
 
-def _spell_like(original: str, canonical: str) -> str:
-    """正規のタグ名を、元のタグと同じ括弧の書き方へ揃える。"""
-    if "\\(" in original:
+def _escape_parens(canonical: str) -> str:
+    """正規のタグ名の括弧をエスケープする。
+
+    素の括弧は強調の構文として読まれるため、元のタグに括弧が無くても、正規のタグ名
+    (`ai`の正規名`hoshino ai (oshi no ko)`など) に括弧があればエスケープする。
+    """
+    if "(" in canonical or ")" in canonical:
         return canonical.replace("(", "\\(").replace(")", "\\)")
     return canonical
 
