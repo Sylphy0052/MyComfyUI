@@ -25,8 +25,9 @@ from typing import Any
 def set_seed(seed: int) -> None:
     """生成の直前に乱数を固定する。
 
-    3つのengineはいずれも`seed`引数を持たない。生成直前にここを呼べば波形が再現する
-    ことが`検証_tts/06_seed固定`で3engineとも確認されている。
+    qwen3-tts-clone / voxcpm2-prompt / cosyvoice3は`seed`引数を持たない。生成直前に
+    ここを呼べば波形が再現することが`検証_tts/06_seed固定`で3engineとも確認されている。
+    irodoriは`SamplingRequest.seed`にも同じ値を渡す。
     """
     import numpy as np
     import torch
@@ -156,7 +157,7 @@ def run_irodori(request: dict[str, Any]) -> tuple[Any, int]:
     Irodori-TTSはvenvへパッケージとして入らないため、cloneした`home`を
     import pathへ足す。
     """
-    home = request.get("katakana_home")
+    home = request.get("home")
     if home:
         sys.path.insert(0, home)
     from irodori_tts.inference_runtime import (

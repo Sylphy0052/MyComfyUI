@@ -5,6 +5,7 @@
 # USER を先に読むため、USER を渡して passwd の参照を避ける。
 set -eu
 GPU=${1:?gpu index}
+[[ $GPU =~ ^[0-9]+$ ]] || { echo "gpu index must be a number: $GPU" >&2; exit 2; }
 D=/ssdnas2/data/kfuruhashi
 mkdir -p "$D/hf-cache"
 docker run -d --rm --init --name kfuruhashi-voice-runner --gpus "device=${GPU}" \

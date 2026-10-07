@@ -200,6 +200,7 @@ def create_app() -> FastAPI:
                 "sample_rate": engine.sample_rate,
                 "needs_katakana": engine.needs_katakana,
                 "katakana_home": str(engine.home) if engine.home else None,
+                "home": str(engine.home) if engine.home else None,
                 "mode": engine.mode,
                 "text": payload.text,
                 "reading": payload.reading,

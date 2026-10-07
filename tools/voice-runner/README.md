@@ -90,10 +90,11 @@ fallback しない**。
 
 ## seed の再現
 
-3 つの engine はいずれも `seed` 引数を持たない。生成の直前に `torch.manual_seed` /
+qwen3-tts-clone / voxcpm2-prompt / cosyvoice3 は `seed` 引数を持たない。生成の直前に `torch.manual_seed` /
 `torch.cuda.manual_seed_all` / `np.random.seed` を呼べば波形が再現することが
 novel-writer の `検証_tts/06_seed固定` で 3 engine とも確認されている。worker が
-生成直前にこれらを呼び、使用した seed を応答へ含める。
+生成直前にこれらを呼び、使用した seed を応答へ含める。irodori は `SamplingRequest.seed`
+にも同じ値を渡す。
 
 ## 参照テキスト
 
@@ -128,6 +129,7 @@ docker stop kfuruhashi-voice-runner  # 使い終えたら止める
 
 2026-10-07 に g18 (A100 1 枚) で `POST /v1/speech` が 200 を返し、48kHz の wav を得た
 ことを確認した。7 秒の台詞で生成は約 22 秒 (モデル読み込み込み)、VRAM のピークは約 4.5GB。
+同じ参照音声・本文・seed で 2 回生成した wav はバイト単位で一致した。
 
 ## 実機での確認
 
