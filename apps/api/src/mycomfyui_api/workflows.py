@@ -430,6 +430,10 @@ async def _get_or_create_workflow(
     )
     workflow = result.scalar_one_or_none()
     if workflow is not None:
+        # enginesは版を持たないので、定義に合わせて上書きする。撤去したengineが残ると、
+        # engineで絞り込んだ一覧に実行できないWorkflowが混ざる。
+        if workflow.engines != list(definition.engines):
+            workflow.engines = list(definition.engines)
         return workflow
     workflow = Workflow(
         id=schemas.new_id(),
