@@ -185,6 +185,36 @@ interface MediaImpact {
 
 const VOICE_REFERENCE_PAGE_SIZE = 200;
 
+/** 参照音声の書き起こしの表示・編集。空欄で保存するとnullに戻す。 */
+function TranscriptEditor({
+  item,
+  disabled,
+  onSave,
+}: {
+  item: MediaItem;
+  disabled: boolean;
+  onSave: (transcript: string | null) => void;
+}) {
+  const saved = item.reference_transcript ?? "";
+  const [draft, setDraft] = useState(saved);
+  // 保存後の再取得で書き起こしが変わったら、入力欄も合わせる。
+  useEffect(() => setDraft(saved), [saved]);
+  return (
+    <div className="stack">
+      <textarea
+        aria-label="参照音声の書き起こし"
+        placeholder="参照音声の書き起こし"
+        maxLength={2000}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <Button disabled={disabled || draft === saved} onClick={() => onSave(draft.trim() ? draft : null)}>
+        書き起こしを保存
+      </Button>
+    </div>
+  );
+}
+
 /**
  * 選んだキャラクターに`voice_reference`で紐付いた参照音声の確認・追加・解除 (#287)。
  * 専用endpointは作らず、既存の`listMediaItems`と`upsertMediaRoleTag`で足りる範囲へ絞る。
@@ -229,13 +259,15 @@ function VoiceReferenceSection({
     };
   }, [projectId, reloadToken]);
 
-  const toggle = async (item: MediaItem, attach: boolean) => {
+  // 上書き更新のため、付け外しでも書き起こしを送り直して消さない。
+  const save = async (
+    item: MediaItem,
+    characterIds: string[],
+    referenceTranscript: string | null,
+  ) => {
     setBusyKey(item.key);
     setError(null);
     try {
-      const characterIds = attach
-        ? [...new Set([...(item.character_ids ?? []), character.id])]
-        : (item.character_ids ?? []).filter((id) => id !== character.id);
       await api.upsertMediaRoleTag({
         artifact_id: item.artifact_id ?? undefined,
         relative_path: item.artifact_id ? undefined : item.relative_path,
@@ -245,6 +277,7 @@ function VoiceReferenceSection({
         media_type: item.media_type,
         role: "voice_reference",
         character_ids: characterIds,
+        reference_transcript: referenceTranscript,
         project_id: projectId,
         // 上書き更新のため、既存の場面の紐付けを送り直して消さない。
         scene_id:
@@ -258,6 +291,15 @@ function VoiceReferenceSection({
     }
   };
 
+  const toggle = (item: MediaItem, attach: boolean) =>
+    save(
+      item,
+      attach
+        ? [...new Set([...(item.character_ids ?? []), character.id])]
+        : (item.character_ids ?? []).filter((id) => id !== character.id),
+      item.reference_transcript ?? null,
+    );
+
   const linked = items.filter((item) => (item.character_ids ?? []).includes(character.id));
   const unlinked = items.filter((item) => !(item.character_ids ?? []).includes(character.id));
 
@@ -269,14 +311,23 @@ function VoiceReferenceSection({
       {linked.length === 0 && !loading && <p className="muted">紐付いた参照音声はありません。</p>}
       <ul className="list">
         {linked.map((item) => (
-          <li key={item.key} className="row spread">
-            <span>{item.label ?? item.relative_path}</span>
-            {item.artifact_id && (
-              <audio src={api.artifactContentUrl(item.artifact_id)} controls />
-            )}
-            <Button variant="danger" disabled={busyKey !== null} onClick={() => void toggle(item, false)}>
-              解除
-            </Button>
+          <li key={item.key} className="stack">
+            <div className="row spread">
+              <span>{item.label ?? item.relative_path}</span>
+              {item.artifact_id && (
+                <audio src={api.artifactContentUrl(item.artifact_id)} controls />
+              )}
+              <Button variant="danger" disabled={busyKey !== null} onClick={() => void toggle(item, false)}>
+                解除
+              </Button>
+            </div>
+            <TranscriptEditor
+              item={item}
+              disabled={busyKey !== null}
+              onSave={(transcript) =>
+                void save(item, item.character_ids ?? [], transcript)
+              }
+            />
           </li>
         ))}
       </ul>
