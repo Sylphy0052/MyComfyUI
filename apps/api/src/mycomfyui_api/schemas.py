@@ -1,5 +1,6 @@
 import json
 import math
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
@@ -156,17 +157,17 @@ def normalize_scene_tag(value: str) -> str:
     """Sceneのタグとして受け付ける値だけを通す。
 
     Sceneのタグはパスセグメントに載らないため、`normalize_tag`と違って`/`を許す。
-    前後の空白を落とし、改行とタブを含む制御文字は拒否する。
+    前後の空白を落とし、改行とタブを含む制御文字は拒否する。自然文を入れるため、
+    全角空白などの空白文字は通す。
     """
     candidate = value.strip()
     if not candidate:
         raise ValueError("タグを空にできません。")
     if len(candidate) > MAX_SCENE_TAG_LENGTH:
         raise ValueError(f"Sceneのタグは{MAX_SCENE_TAG_LENGTH}文字以内で指定してください。")
-    if any(character.isspace() and character != " " for character in candidate):
-        raise ValueError("タグに改行とタブを含められません。")
-    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in candidate):
-        raise ValueError("タグに制御文字を含められません。")
+    # Ccは改行・タブ・C0/C1制御文字、Zl/ZpはU+2028/U+2029の行・段落区切り。
+    if any(unicodedata.category(character) in {"Cc", "Zl", "Zp"} for character in candidate):
+        raise ValueError("タグに改行・タブ・制御文字を含められません。")
     return candidate
 
 
