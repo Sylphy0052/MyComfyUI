@@ -190,6 +190,7 @@ class ProjectGenerationDefaultWarning(ApiModel):
     code: Literal[
         "RECIPE_NOT_FOUND",
         "RECIPE_KIND_MISMATCH",
+        "ENGINE_UNSUPPORTED",
         "WORKFLOW_NOT_FOUND",
         "INPUT_NOT_SUPPORTED",
         "INPUT_VALUE_UNAVAILABLE",
@@ -1642,6 +1643,7 @@ class MediaRoleTagUpsert(MediaRoleTagTarget):
 
     role: MediaRole
     character_ids: list[ResourceId] = Field(default_factory=list, max_length=50)
+    reference_transcript: str | None = Field(default=None, max_length=2_000)
     project_id: AiMediaId | None = None
     scene_id: AiMediaId | None = None
 
@@ -1667,6 +1669,7 @@ class MediaRoleTagRead(ApiModel):
     media_type: str | None
     role: str
     character_ids: list[str] = Field(default_factory=list)
+    reference_transcript: str | None = None
     assigned_project_id: str | None
     assigned_scene_id: str | None
     created_at: str
@@ -1701,6 +1704,7 @@ class MediaItemRead(ApiModel):
     label: str | None = None
     role: str | None = None
     character_ids: list[str] = Field(default_factory=list)
+    reference_transcript: str | None = None
     artifact_id: str | None = None
     assigned_project_id: str | None = None
     assigned_scene_id: str | None = None

@@ -527,8 +527,13 @@ async def list_recipes(
 
     Recipeは作成後に書き換えず、更新時は`supersedes_recipe_id`で後継を作る。既定では
     後継に置き換えられたRecipeを除き、選択肢に古い版が並ばないようにする。
+    撤去したengineのRecipeはDBに残っていても実行できないため、選択肢に出さない。
     """
-    query = select(Recipe).order_by(Recipe.created_at.desc(), Recipe.id.asc())
+    query = (
+        select(Recipe)
+        .where(Recipe.engine.in_(SUPPORTED_ENGINES))
+        .order_by(Recipe.created_at.desc(), Recipe.id.asc())
+    )
     if kind is not None:
         query = query.where(Recipe.kind == kind)
     if engine is not None:
@@ -870,6 +875,23 @@ async def _character_tags() -> frozenset[str]:
     except tag_preflight.TagDictionaryError as error:
         logger.warning("タグ辞書を読めずキャラクターの判定に使わない: %s", error)
         return frozenset()
+
+
+async def _canonical_tag_names() -> dict[str, str]:
+    """タグ辞書の別名から正規のタグ名への対応。辞書が未設定か読めなければ空とする。
+
+    空のときは、prompt案のタグを正規化しない(#395より前の挙動)。
+    """
+    path = get_settings().tag_dictionary_path
+    if path is None:
+        return {}
+    dictionary = _tag_dictionaries.setdefault(path, tag_preflight.TagDictionary(path))
+    try:
+        # 初回は数MBのCSVを読むため、イベントループを塞がない。
+        return await run_in_threadpool(dictionary.canonical_names)
+    except tag_preflight.TagDictionaryError as error:
+        logger.warning("タグ辞書を読めずprompt案のタグを正規化しない: %s", error)
+        return {}
 
 
 async def _load_recipe_version(
@@ -2801,6 +2823,7 @@ async def upsert_media_role_tag(
             media_type=payload.media_type,
             role=payload.role,
             character_ids=list(payload.character_ids),
+            reference_transcript=payload.reference_transcript,
             assigned_project_id=payload.project_id,
             assigned_scene_id=payload.scene_id,
             created_at=now,
@@ -2814,6 +2837,10 @@ async def upsert_media_role_tag(
         existing.media_type = payload.media_type
         existing.role = payload.role
         existing.character_ids = list(payload.character_ids)
+        # 書き起こしを知らない呼び出し元 (画像の役割付けなど) が消さないよう、
+        # 項目を送ったときだけ更新する。消すときは明示的にnullを送る。
+        if "reference_transcript" in payload.model_fields_set:
+            existing.reference_transcript = payload.reference_transcript
         existing.assigned_project_id = payload.project_id
         existing.assigned_scene_id = payload.scene_id
         existing.updated_at = now
@@ -3023,6 +3050,7 @@ async def list_media_items(
                 label=artifact.relative_path.rsplit("/", 1)[-1],
                 role=tag.role if tag else None,
                 character_ids=list(tag.character_ids) if tag else [],
+                reference_transcript=tag.reference_transcript if tag else None,
                 artifact_id=artifact.id,
                 assigned_project_id=artifact.assigned_project_id,
                 assigned_scene_id=artifact.assigned_scene_id,
@@ -3085,6 +3113,7 @@ async def list_media_items(
                 label=tag.file_name,
                 role=tag.role,
                 character_ids=list(tag.character_ids),
+                reference_transcript=tag.reference_transcript,
                 artifact_id=None,
                 assigned_project_id=tag.assigned_project_id,
                 assigned_scene_id=tag.assigned_scene_id,
@@ -5074,8 +5103,19 @@ async def create_agent_proposal(
     )
     try:
         result = await provider.propose(request)
+        # 辞書の読み込みは、正規化の対象になるprompt案のときだけ行う。
+        output = proposals.normalize_prompt_tags(
+            payload.kind,
+            result.output,
+            (
+                await _canonical_tag_names()
+                if payload.kind in proposals.PROMPT_STYLE_KINDS
+                else None
+            ),
+            context.get("prompt_style"),
+        )
         output = proposals.apply_prompt_style(
-            payload.kind, result.output, context.get("prompt_style")
+            payload.kind, output, context.get("prompt_style")
         )
     except agent_base.AgentError as error:
         await _record_proposal_failure(session, proposal, error)
@@ -5217,6 +5257,17 @@ async def _assist_image_prompt(
                 instruction,
                 await _character_tags(),
             )
+        # 現在のpromptにあった辞書外のタグは、利用者が付けたものとして外さない。
+        output = proposals.normalize_prompt_tags(
+            "image_prompt",
+            output,
+            await _canonical_tag_names(),
+            context["prompt_style"],
+            keep_tags={
+                tag_preflight.normalize_tag(tag)
+                for tag in tag_preflight.split_prompt(current_positive_prompt)
+            },
+        )
         output = proposals.apply_prompt_style(
             "image_prompt", output, context["prompt_style"]
         )

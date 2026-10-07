@@ -15,7 +15,10 @@ from typing import Any
 
 from mycomfyui_api import provenance, storage
 from mycomfyui_api.adapters.aimedia.client import AiMediaError
-from mycomfyui_api.adapters.voice.base import VOICE_ENGINES
+from mycomfyui_api.adapters.voice.base import (
+    VOICE_ENGINES,
+    uses_reference_transcript,
+)
 from mycomfyui_api.execution import (
     PreparationContext,
     PreparationError,
@@ -24,7 +27,9 @@ from mycomfyui_api.execution import (
 from mycomfyui_api.models import Recipe
 
 #: スナップショットの版。読み込み側は値を見て解釈を決める。
-SNAPSHOT_VERSION = 2
+#: 3でvoice設定へ`caption`を足し、参照音声を任意にした。2のスナップショットは
+#: 全voiceが参照を持つ形として、そのまま読める。
+SNAPSHOT_VERSION = 3
 
 #: seedの自動採番を指示する値。
 AUTO_SEED = -1
@@ -65,7 +70,15 @@ VOICE_BINDING_NAMES = frozenset(
         "reference_sha256",
         "reference_transcript",
         "leading_silence_sec",
+        "caption",
     }
+)
+
+#: 参照音声の組を成す項目。どれか1つでもあれば参照ありとして全部を要求する。
+_REFERENCE_NAMES = (
+    "reference_relative_path",
+    "reference_sha256",
+    "reference_transcript",
 )
 
 _HEX_DIGITS = frozenset("0123456789abcdef")
@@ -115,12 +128,18 @@ def _cached_input_path(value: Any, voice_id: str) -> str:
     return candidate
 
 
-def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
-    """1つのVoice Canonに対応する実行用の値を組み立てる。
+def _binding(
+    voice_id: str, raw: Any, *, transcript_required: bool
+) -> dict[str, Any]:
+    """1つのvoice_idに対応する実行用の値を組み立てる。
 
-    参照テキストを持たないVoice Canonは実行対象にしない。嘘の参照テキストを渡すと
-    生成が破綻することが`ai-media/検証_minimax/18`で確認されており、空文字を黙って
-    渡すのは同じ結果を招くためである。
+    声質は参照音声 (取り込んだwavとsha256) か`caption`の少なくとも一方で決める。
+    両方あれば両方を使う。
+
+    書き起こしを使うengine (`transcript_required`) では、参照テキストを持たない参照
+    音声を実行対象にしない。嘘の参照テキストを渡すと生成が破綻することが
+    `ai-media/検証_minimax/18`で確認されており、空文字を黙って渡すのは同じ結果を
+    招くためである。書き起こしを使わないengineでは任意とし、入力があれば記録に残す。
     """
     if not isinstance(raw, dict):
         raise PreparationError(f"{voice_id}のvoice設定がobjectではありません。")
@@ -129,21 +148,46 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
         raise PreparationError(
             f"{voice_id}のvoice設定に未知の項目があります。", {"unknown": unknown}
         )
+    caption = raw.get("caption")
+    if caption is not None and (not isinstance(caption, str) or not caption.strip()):
+        raise PreparationError(f"{voice_id}のcaptionは空でない文字列で指定します。")
+    has_reference = any(raw.get(name) not in (None, "") for name in _REFERENCE_NAMES)
+    canon_id = raw.get("canon_id")
+    if canon_id not in (None, "") and not _is_sha256(canon_id):
+        raise PreparationError(
+            f"{voice_id}のcanon_idは小文字16進数64桁で指定します。"
+        )
+    if not has_reference:
+        if caption is None:
+            raise PreparationError(
+                f"{voice_id}には参照音声かcaptionの少なくとも一方が必要です。"
+            )
+        # Voice Canonは参照音声の出典を表す。参照を使わない生成へ付けると、
+        # Canonの声で作ったように見える履歴が残る。
+        if canon_id not in (None, ""):
+            raise PreparationError(
+                f"{voice_id}のVoice Canonは参照音声と組で指定します。"
+            )
+        return {
+            "voice_id": voice_id,
+            "caption": caption,
+            "leading_silence_sec": 0.0,
+            "trim_leading_silence": False,
+        }
     transcript = raw.get("reference_transcript")
-    if not isinstance(transcript, str) or not transcript.strip():
+    if transcript is not None and not isinstance(transcript, str):
+        raise PreparationError(f"{voice_id}のreference_transcriptは文字列で指定します。")
+    if transcript is not None and not transcript.strip():
+        transcript = None
+    if transcript is None and transcript_required:
         raise PreparationError(
             f"{voice_id}のreference_transcriptがありません。"
-            "参照テキストを持たないVoice Canonは実行できません。"
+            "このengineは参照テキストを持たない参照音声で実行できません。"
         )
     sha256 = raw.get("reference_sha256")
     if not _is_sha256(sha256):
         raise PreparationError(
             f"{voice_id}のreference_sha256は小文字16進数64桁で指定します。"
-        )
-    canon_id = raw.get("canon_id")
-    if canon_id not in (None, "") and not _is_sha256(canon_id):
-        raise PreparationError(
-            f"{voice_id}のcanon_idは小文字16進数64桁で指定します。"
         )
     leading_silence = raw.get("leading_silence_sec", 0.0)
     if isinstance(leading_silence, bool) or not isinstance(
@@ -160,13 +204,16 @@ def _binding(voice_id: str, raw: Any) -> dict[str, Any]:
             ),
             "sha256": str(sha256).lower(),
         },
-        "reference_transcript": transcript,
         "leading_silence_sec": float(leading_silence),
         # 先頭無音を切るかどうかはAdapterが決める。判断結果をManifestへ残す。
         "trim_leading_silence": (
             float(leading_silence) >= LEADING_SILENCE_TRIM_THRESHOLD_SEC
         ),
     }
+    if transcript is not None:
+        binding["reference_transcript"] = transcript
+    if caption is not None:
+        binding["caption"] = caption
     if canon_id:
         binding["canon_id"] = str(canon_id).lower()
     return binding
@@ -258,14 +305,15 @@ async def _canon_refs(
     """Voice Canon descriptorを参照APIから引き、不変参照として記録する。
 
     Canon本文は取得しない。Project配下の音声はCanonを不変参照として記録し、未所属
-    音声は取り込んだ参照音声のhashだけで再現性を担保する。
+    音声は取り込んだ参照音声のhashだけで再現性を担保する。参照音声を持たない
+    (captionだけの) voiceはCanonを要求しない。
     """
     source = context.canon_lookup
     entries: list[dict[str, Any]] = []
     for voice_id, binding in bindings.items():
         canon_id = binding.get("canon_id")
         if canon_id is None:
-            if context.project_id is not None:
+            if context.project_id is not None and "reference" in binding:
                 raise PreparationError(
                     f"{voice_id}のVoice Canonを指定してください。"
                 )
@@ -339,9 +387,15 @@ async def prepare(
 
     raw_voices = values.get("voices")
     if not isinstance(raw_voices, dict) or not raw_voices:
-        raise PreparationError("voicesに、台詞が参照するVoice Canonの設定が必要です。")
+        raise PreparationError(
+            "voicesに、台詞が参照するvoiceの設定 (参照音声かcaption) が必要です。"
+        )
     bindings = {
-        str(voice_id): _binding(str(voice_id), raw)
+        str(voice_id): _binding(
+            str(voice_id),
+            raw,
+            transcript_required=uses_reference_transcript(recipe.engine),
+        )
         for voice_id, raw in raw_voices.items()
     }
 
@@ -398,6 +452,7 @@ async def prepare(
             "note": f"voice reference: {voice_id}",
         }
         for voice_id, binding in bindings.items()
+        if "reference" in binding
     ]
     return PreparedExecution(
         snapshot=snapshot,
@@ -419,6 +474,12 @@ async def prepare(
             "pad_to_duration": pad_to_duration,
             "target_duration_sec": duration_sec,
             "snapshot_version": SNAPSHOT_VERSION,
+            # 参照を持たないvoiceは、captionとseedだけが再現の入力になる。
+            "captions": {
+                voice_id: binding["caption"]
+                for voice_id, binding in bindings.items()
+                if "caption" in binding
+            },
             "leading_silence": {
                 voice_id: {
                     "declared_sec": binding["leading_silence_sec"],

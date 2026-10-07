@@ -1878,6 +1878,7 @@ export interface paths {
          *
          *     Recipeは作成後に書き換えず、更新時は`supersedes_recipe_id`で後継を作る。既定では
          *     後継に置き換えられたRecipeを除き、選択肢に古い版が並ばないようにする。
+         *     撤去したengineのRecipeはDBに残っていても実行できないため、選択肢に出さない。
          */
         get: operations["list_recipes_api_v1_recipes_get"];
         put?: never;
@@ -3677,6 +3678,8 @@ export interface components {
             label?: string | null;
             /** Media Type */
             media_type: string;
+            /** Reference Transcript */
+            reference_transcript?: string | null;
             /** Relative Path */
             relative_path: string;
             /** Role */
@@ -3719,6 +3722,8 @@ export interface components {
             id: string;
             /** Media Type */
             media_type: string | null;
+            /** Reference Transcript */
+            reference_transcript?: string | null;
             /** Relative Path */
             relative_path: string | null;
             /** Role */
@@ -3745,6 +3750,8 @@ export interface components {
             media_type?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Reference Transcript */
+            reference_transcript?: string | null;
             /** Relative Path */
             relative_path?: string | null;
             /**
@@ -4113,7 +4120,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "RECIPE_NOT_FOUND" | "RECIPE_KIND_MISMATCH" | "WORKFLOW_NOT_FOUND" | "INPUT_NOT_SUPPORTED" | "INPUT_VALUE_UNAVAILABLE";
+            code: "RECIPE_NOT_FOUND" | "RECIPE_KIND_MISMATCH" | "ENGINE_UNSUPPORTED" | "WORKFLOW_NOT_FOUND" | "INPUT_NOT_SUPPORTED" | "INPUT_VALUE_UNAVAILABLE";
             /** Field */
             field?: string | null;
             /**

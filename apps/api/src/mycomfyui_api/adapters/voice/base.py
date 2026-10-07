@@ -11,15 +11,20 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 #: 音声Backendのengine識別子。Recipeの`engine`にそのまま入る。
-ENGINE_QWEN3_TTS = "qwen3-tts-clone"
-ENGINE_VOXCPM2 = "voxcpm2-prompt"
-ENGINE_COSYVOICE3 = "cosyvoice3"
+ENGINE_IRODORI = "irodori"
 
-VOICE_ENGINES: tuple[str, ...] = (
-    ENGINE_QWEN3_TTS,
-    ENGINE_VOXCPM2,
-    ENGINE_COSYVOICE3,
-)
+VOICE_ENGINES: tuple[str, ...] = (ENGINE_IRODORI,)
+
+#: 参照音声の書き起こしを生成に使うengine。ここに含むengineでは、参照音声と書き起こしを
+#: 組で必須にする。Irodoriは参照音声とcaptionだけで声質を決め、書き起こしを使わない。
+#: engineを足すときは、voice-runnerの`engines.yaml`の`uses_reference_transcript`と
+#: Webの`VoicePanel.tsx`の同名の集合も同時に更新する。
+REFERENCE_TRANSCRIPT_ENGINES: frozenset[str] = frozenset()
+
+
+def uses_reference_transcript(engine: str) -> bool:
+    """engineが参照音声の書き起こしを生成に使うかを返す。"""
+    return engine in REFERENCE_TRANSCRIPT_ENGINES
 
 
 class VoiceError(Exception):
@@ -71,13 +76,18 @@ class RunnerHealth:
 
 @dataclass(frozen=True)
 class SpeechRequest:
-    """1台詞ぶんの生成要求。"""
+    """1台詞ぶんの生成要求。
+
+    声質は参照音声か`caption`の少なくとも一方で決める。両方あれば両方を使う。
+    `reference_transcript`は書き起こしを使うengineでだけ参照音声と組で必須になる。
+    """
 
     engine: str
     text: str
-    reference_audio: bytes
-    reference_transcript: str
     seed: int
+    reference_audio: bytes | None = None
+    reference_transcript: str | None = None
+    caption: str | None = None
     reading: str | None = None
     language: str = "ja"
     timeout_sec: float | None = None

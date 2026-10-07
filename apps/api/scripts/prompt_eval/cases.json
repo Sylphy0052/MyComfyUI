@@ -1,0 +1,178 @@
+{
+  "cases": [
+    {
+      "id": "solo_character",
+      "kind": "image_prompt",
+      "prompt_style": "anima",
+      "instruction": "夕方の教室で、女子生徒が一人で窓際に立って外を眺めているカットにしたい。制服姿で、寂しさよりは穏やかな余韻を感じさせる表情にしてほしい。",
+      "scene": {
+        "id": "scene-solo",
+        "sequence": 1,
+        "summary": "放課後の教室で一人になった生徒が窓の外を眺める。",
+        "goal": "静かな余韻を見せる。",
+        "time_of_day": "evening",
+        "season": "autumn",
+        "location": { "display_name": "高校の教室", "canon_refs": [] },
+        "characters": []
+      },
+      "expect": { "person_count": 1 }
+    },
+    {
+      "id": "two_person",
+      "kind": "image_prompt",
+      "prompt_style": "anima",
+      "instruction": "屋上で二人の女子生徒が並んで話しているカット。片方は笑いながら話し、もう片方は少し困った顔で聞いている。二人の見分けがつくように、片方は髪が長く、もう片方は短めのポニーテールにしてほしい。",
+      "scene": {
+        "id": "scene-two",
+        "sequence": 2,
+        "summary": "屋上で二人の生徒が立ち話をしている。",
+        "goal": "二人の関係性の温度差を見せる。",
+        "time_of_day": "noon",
+        "season": "summer",
+        "location": { "display_name": "校舎の屋上", "canon_refs": [] },
+        "characters": []
+      },
+      "expect": { "person_count": 2 }
+    },
+    {
+      "id": "three_person",
+      "kind": "image_prompt",
+      "prompt_style": "anima",
+      "instruction": "駅前の広場で三人組が集合写真のように並んでいるカット。三人とも制服姿で、カメラ目線でまとまって立っている。",
+      "scene": {
+        "id": "scene-three",
+        "sequence": 3,
+        "summary": "駅前で三人が並んで記念撮影のように立つ。",
+        "goal": "三人の仲の良さを一枚で見せる。",
+        "time_of_day": "afternoon",
+        "season": "spring",
+        "location": { "display_name": "駅前広場", "canon_refs": [] },
+        "characters": []
+      },
+      "expect": { "person_count": 3 }
+    },
+    {
+      "id": "named_character_with_work_title",
+      "kind": "image_prompt",
+      "prompt_style": "anima",
+      "instruction": "アニメ『ぼっち・ざ・ろっく!』の後藤ひとりが、ライブハウスのステージでギターを構えて演奏しているカットにしたい。既存キャラクターとして正しく参照してほしい。",
+      "scene": {
+        "id": "scene-named",
+        "sequence": 4,
+        "summary": "ライブハウスのステージで後藤ひとりが演奏する。",
+        "goal": "既存キャラクターの参照が正しく効くか確認する。",
+        "time_of_day": "night",
+        "season": null,
+        "location": { "display_name": "ライブハウスのステージ", "canon_refs": [] },
+        "characters": [{ "id": "char-hitori", "display_name": "後藤ひとり" }]
+      },
+      "expect": { "person_count": 1, "required_tags": ["gotoh hitori", "bocchi the rock!"] }
+    },
+    {
+      "id": "rating_sensitive",
+      "kind": "image_prompt",
+      "prompt_style": "anima",
+      "instruction": "夏の海辺で女子生徒が水着姿でビーチに座っているカット。過度な露出表現ではないが、全年齢向けの safe より上の sensitive 相当のレーティングにしたい。",
+      "scene": {
+        "id": "scene-rating",
+        "sequence": 5,
+        "summary": "海辺で水着姿の生徒がくつろいでいる。",
+        "goal": "rating引き上げの指示が正しく効くか確認する。",
+        "time_of_day": "noon",
+        "season": "summer",
+        "location": { "display_name": "海水浴場", "canon_refs": [] },
+        "characters": []
+      },
+      "expect": { "person_count": 1, "min_rating": "sensitive" }
+    },
+    {
+      "id": "people_less_background",
+      "kind": "image_prompt",
+      "prompt_style": "anima",
+      "instruction": "人物を入れず、雨上がりの商店街のアーケードだけを写した背景カットにしてほしい。水たまりに街灯の光が反射している様子を見せたい。",
+      "scene": {
+        "id": "scene-background",
+        "sequence": 6,
+        "summary": "雨上がりの商店街を写す背景だけのカット。",
+        "goal": "人物なしの背景カットとして成立するか確認する。",
+        "time_of_day": "night",
+        "season": "autumn",
+        "location": { "display_name": "商店街のアーケード", "canon_refs": [] },
+        "characters": []
+      },
+      "expect": { "person_count": 0 }
+    },
+    {
+      "id": "in_image_text",
+      "kind": "image_prompt",
+      "prompt_style": "anima",
+      "instruction": "教室の黒板に『文化祭 実行委員会』という文字がはっきり書かれているカットにしたい。黒板の文字が読めることを重視してほしい。生徒は写さなくてよい。",
+      "scene": {
+        "id": "scene-text",
+        "sequence": 7,
+        "summary": "黒板に文化祭実行委員会の文字が書かれている教室。",
+        "goal": "画像内テキストの指示が扱われるか確認する。",
+        "time_of_day": "afternoon",
+        "season": null,
+        "location": { "display_name": "高校の教室", "canon_refs": [] },
+        "characters": []
+      },
+      "expect": { "person_count": 0 }
+    },
+    {
+      "id": "combined_non_taggable_action",
+      "kind": "image_prompt",
+      "prompt_style": "anima",
+      "instruction": "雨の中、傘を差しながら振り返って微笑む女子生徒のカット。振り返る動作と傘を差す動作、微笑む表情が同時に成立していることを見せたい。単純な一つのタグでは表せない組み合わせの動作にしてほしい。",
+      "scene": {
+        "id": "scene-combined",
+        "sequence": 8,
+        "summary": "雨の中で傘を差しながら振り返る生徒。",
+        "goal": "タグ化しにくい複合動作の扱いを確認する。",
+        "time_of_day": "evening",
+        "season": "summer",
+        "location": { "display_name": "通学路", "canon_refs": [] },
+        "characters": []
+      },
+      "expect": { "person_count": 1 }
+    },
+    {
+      "id": "tags_style",
+      "kind": "image_prompt",
+      "prompt_style": "tags",
+      "instruction": "図書室で本を読んでいる女子生徒一人のカット。タグだけで出力してほしい。自然文の説明は不要。",
+      "scene": {
+        "id": "scene-tags",
+        "sequence": 9,
+        "summary": "図書室で本を読む生徒。",
+        "goal": "prompt_style=tagsでnatural_textが空になるか確認する。",
+        "time_of_day": "afternoon",
+        "season": null,
+        "location": { "display_name": "図書室", "canon_refs": [] },
+        "characters": []
+      },
+      "expect": { "person_count": 1 }
+    },
+    {
+      "id": "batch_plan_two_shots",
+      "kind": "batch_generation_plan",
+      "prompt_style": "anima",
+      "instruction": "教室の窓際で生徒が立ち上がり、廊下へ歩き出すまでの一連の流れを2カットのバッチ計画にしてほしい。1カット目は窓際で立ち上がる様子、2カット目は廊下へ出ていく後ろ姿にしてほしい。",
+      "scene": {
+        "id": "scene-batch",
+        "sequence": 10,
+        "summary": "生徒が教室から廊下へ移動する一連の流れ。",
+        "goal": "batch_generation_planでshot_idの割り当てが正しく効くか確認する。",
+        "time_of_day": "afternoon",
+        "season": null,
+        "location": { "display_name": "高校の教室と廊下", "canon_refs": [] },
+        "characters": []
+      },
+      "shots": [
+        { "id": "shot-batch-1", "sequence": 1, "summary": "窓際で生徒が立ち上がる。", "duration_sec": 3.0 },
+        { "id": "shot-batch-2", "sequence": 2, "summary": "生徒が廊下へ歩き出す後ろ姿。", "duration_sec": 3.0 }
+      ],
+      "expect": { "item_count": 2 }
+    }
+  ]
+}

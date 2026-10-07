@@ -99,6 +99,8 @@ import {
   readPaneLayoutState,
 } from "./state/layoutState";
 import type { PaneId, PaneLayoutState } from "./state/layoutState";
+import { usePanelCollapsed } from "./state/panelCollapseState";
+import { PanelCollapseToggle } from "./components/ui/PanelCollapseToggle";
 
 /** WebSocketは再取得トリガーだけに使い、RESTで得られる状態を正本とする。 */
 const POLL_INTERVAL_MS = 2000;
@@ -602,6 +604,9 @@ export function App() {
     : generationTab;
   const shownImageSubTab: ImageSubTab =
     isProduction && !PRODUCTION_IMAGE_SUBTABS.has(imageSubTab) ? "generate" : imageSubTab;
+  // 右列(最新の生成画像+候補)を丸ごと畳み、左カラムを最大幅まで広げる。
+  const [resultColumnCollapsed, toggleResultColumn] =
+    usePanelCollapsed("resultColumn");
   // ラボでは工程を使わないので、判定用の一覧取得も走らせない。
   const pipelineReadiness = usePipelineReadiness(
     isProduction ? projectId : null,
@@ -1922,7 +1927,22 @@ export function App() {
                 ))}
               </nav>
 
-              <div className="image-workspace">
+              <div className="row image-result-column-toggle-row">
+                <PanelCollapseToggle
+                  collapsed={resultColumnCollapsed}
+                  onToggle={toggleResultColumn}
+                  controls="image-result-column"
+                  label="結果パネル"
+                />
+              </div>
+
+              <div
+                className={
+                  resultColumnCollapsed
+                    ? "image-workspace result-collapsed"
+                    : "image-workspace"
+                }
+              >
                 <div className="image-input-column">
                   <div
                     id="image-subpanel-generate"
@@ -2022,7 +2042,11 @@ export function App() {
                   </div>
                 </div>
 
-                <div className="image-result-column">
+                <div
+                  id="image-result-column"
+                  className="image-result-column"
+                  hidden={resultColumnCollapsed}
+                >
                   {promotionCandidate && !isProduction && (
                     <PresetPromotionPanel
                       key={promotionCandidate.artifact.id}

@@ -221,8 +221,15 @@ async def ensure_workflows(session: AsyncSession) -> dict[str, WorkflowVersion]:
     """
     latest: dict[str, WorkflowVersion] = {}
     created = 0
+    synced = 0
     for definition in definitions():
         workflow = await _get_or_create_workflow(session, definition)
+        # enginesは版を持たないので、定義に合わせて上書きする。撤去したengineが残ると、
+        # engineで絞り込んだ一覧に実行できないWorkflowが混ざる。
+        engines = list(definition.engines)
+        if workflow.engines != engines:
+            workflow.engines = engines
+            synced += 1
         version = await _get_version(session, workflow.id, definition.version)
         if version is None:
             version = WorkflowVersion(
@@ -239,9 +246,12 @@ async def ensure_workflows(session: AsyncSession) -> dict[str, WorkflowVersion]:
             session.add(version)
             created += 1
         latest[definition.name] = version
-    if created:
+    if created or synced:
         await session.commit()
+    if created:
         logger.info("Workflowの版を%d件登録しました。", created)
+    if synced:
+        logger.info("Workflowのenginesを%d件、定義に合わせました。", synced)
     backfilled = await backfill_recipe_versions(session)
     if backfilled:
         logger.info("既存Recipeへ%d件のWorkflow版を結びました。", backfilled)

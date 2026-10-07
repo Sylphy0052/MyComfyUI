@@ -3914,6 +3914,17 @@
             "title": "Media Type",
             "type": "string"
           },
+          "reference_transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Transcript"
+          },
           "relative_path": {
             "title": "Relative Path",
             "type": "string"
@@ -4076,6 +4087,17 @@
             ],
             "title": "Media Type"
           },
+          "reference_transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Transcript"
+          },
           "relative_path": {
             "anyOf": [
               {
@@ -4198,6 +4220,18 @@
               }
             ],
             "title": "Project Id"
+          },
+          "reference_transcript": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Transcript"
           },
           "relative_path": {
             "anyOf": [
@@ -5363,6 +5397,7 @@
             "enum": [
               "RECIPE_NOT_FOUND",
               "RECIPE_KIND_MISMATCH",
+              "ENGINE_UNSUPPORTED",
               "WORKFLOW_NOT_FOUND",
               "INPUT_NOT_SUPPORTED",
               "INPUT_VALUE_UNAVAILABLE"
@@ -15179,7 +15214,7 @@
     },
     "/api/v1/recipes": {
       "get": {
-        "description": "画面のプリセット選択用。\n\nRecipeは作成後に書き換えず、更新時は`supersedes_recipe_id`で後継を作る。既定では\n後継に置き換えられたRecipeを除き、選択肢に古い版が並ばないようにする。",
+        "description": "画面のプリセット選択用。\n\nRecipeは作成後に書き換えず、更新時は`supersedes_recipe_id`で後継を作る。既定では\n後継に置き換えられたRecipeを除き、選択肢に古い版が並ばないようにする。\n撤去したengineのRecipeはDBに残っていても実行できないため、選択肢に出さない。",
         "operationId": "list_recipes_api_v1_recipes_get",
         "parameters": [
           {

@@ -8,8 +8,7 @@ transformers も入っていない。runnerが
 の形で起動し、終わったらプロセスごと落としてVRAMを返す。
 
 request.json の項目は voice_runner.app が組み立てる。engine名で分岐し、選んだ
-engineのライブラリだけをimportする。呼び出し仕様の出典は novel-writer の
-`tools/ai-media/docs/tts-backends.md`。
+engineのライブラリだけをimportする。
 """
 
 from __future__ import annotations
@@ -23,11 +22,7 @@ from typing import Any
 
 
 def set_seed(seed: int) -> None:
-    """生成の直前に乱数を固定する。
-
-    3つのengineはいずれも`seed`引数を持たない。生成直前にここを呼べば波形が再現する
-    ことが`検証_tts/06_seed固定`で3engineとも確認されている。
-    """
+    """生成の直前に乱数を固定する。irodoriは`SamplingRequest.seed`にも同じ値を渡す。"""
     import numpy as np
     import torch
 
@@ -48,19 +43,6 @@ def vram_peak_mb() -> float | None:
         return None
 
 
-def to_katakana(text: str, home: str | None) -> str:
-    """CosyVoice3へ渡す前にカタカナの分かち書きへ変換する。
-
-    変換器は`home`(novel-writer側のcosyvoiceディレクトリ)に置かれた`jp_kana.py`を
-    借りる。MyComfyUI側では複製せず、ai-media側のファイルも書き換えない。
-    """
-    if home:
-        sys.path.insert(0, home)
-    from jp_kana import to_katakana as convert
-
-    return convert(text)
-
-
 def write_wav(path: Path, samples: Any, sample_rate: int) -> None:
     """(1, N)または1次元のndarrayを16bit PCM wavとして書き出す。"""
     import numpy as np
@@ -77,80 +59,51 @@ def write_wav(path: Path, samples: Any, sample_rate: int) -> None:
         sink.writeframes(pcm.tobytes())
 
 
-def run_qwen3(request: dict[str, Any]) -> tuple[Any, int]:
-    """Qwen3-TTS (Primary)。入力は漢字かな交じりのままでよい。"""
-    import torch
-    from qwen_tts import Qwen3TTSModel
+def run_irodori(request: dict[str, Any]) -> tuple[Any, int]:
+    """Irodori-TTS。参照音声とcaption (声質の文章指定) で声を作り、参照テキストは使わない。
 
-    model = Qwen3TTSModel.from_pretrained(
-        request["model_id"],
-        device_map="cuda:0",
-        dtype=torch.bfloat16,
-        attn_implementation="sdpa",
-    )
-    set_seed(int(request["seed"]))
-    wav, sample_rate = model.generate_voice_clone(
-        text=request["text"],
-        language="Japanese",
-        ref_audio=request["reference_audio"],
-        # 参照テキストに嘘を渡すと生成が破綻する (検証_minimax/18)。
-        ref_text=request["reference_transcript"],
-    )
-    return wav, int(sample_rate)
+    参照が無ければ`no_ref=True`でcaptionだけから作る。参照とcaptionが両方あれば両方を渡す。
 
+    入力は漢字かな交じりのままでよい。`model_id`はHugging Faceのrepo idで、
+    `model.safetensors`とtokenizerをHFのキャッシュへ取得してから読む。
 
-def run_voxcpm2(request: dict[str, Any]) -> tuple[Any, int]:
-    """VoxCPM2 (Secondary)。continuation modeを使う。
-
-    `reference_wav_path`のみの方式は抑揚は写るが読みが崩れる
-    (検証_tts/05: 完全一致 12/15 対 7/15)。セリフ用途では`prompt_wav_path`を使う。
+    Irodori-TTSはvenvへパッケージとして入らないため、cloneした`home`を
+    import pathへ足す。
     """
-    from voxcpm import VoxCPM
-
-    model = VoxCPM.from_pretrained(request["model_id"])
-    sample_rate = int(model.tts_model.sample_rate)
-    set_seed(int(request["seed"]))
-    if request.get("mode") == "reference_wav_path":
-        wav = model.generate(
-            text=request["text"], reference_wav_path=request["reference_audio"]
-        )
-    else:
-        wav = model.generate(
-            text=request["text"],
-            prompt_wav_path=request["reference_audio"],
-            prompt_text=request["reference_transcript"],
-        )
-    return wav, sample_rate
-
-
-def run_cosyvoice3(request: dict[str, Any]) -> tuple[Any, int]:
-    """CosyVoice3 (比較用)。日本語はカタカナの分かち書きで渡す。"""
-    home = request.get("katakana_home")
+    home = request.get("home")
     if home:
         sys.path.insert(0, home)
-    from cosyvoice.cli.cosyvoice import CosyVoice2
-    from cosyvoice.utils.file_utils import load_wav
+    from irodori_tts.inference_runtime import (
+        InferenceRuntime,
+        RuntimeKey,
+        SamplingRequest,
+        download_hf_checkpoint,
+    )
 
-    model = CosyVoice2(request["model_id"])
-    sample_rate = int(request.get("sample_rate") or 24000)
-    prompt = load_wav(request["reference_audio"], 16000)
-    text = request["text"]
-    if request.get("needs_katakana"):
-        text = to_katakana(text, home)
-        prompt_text = to_katakana(request["reference_transcript"], home)
-    else:
-        prompt_text = request["reference_transcript"]
+    runtime = InferenceRuntime.from_key(
+        RuntimeKey(
+            checkpoint=download_hf_checkpoint(request["model_id"]),
+            model_device="cuda",
+            codec_device="cuda",
+        )
+    )
+    reference = request.get("reference_audio")
     set_seed(int(request["seed"]))
-    chunks = list(model.inference_zero_shot(text, prompt_text, prompt, stream=False))
-    if not chunks:
-        raise RuntimeError("CosyVoice3が音声を返しませんでした。")
-    return chunks[0]["tts_speech"], sample_rate
+    result = runtime.synthesize(
+        SamplingRequest(
+            text=request["text"],
+            ref_wav=reference,
+            no_ref=reference is None,
+            caption=request.get("caption"),
+            seed=int(request["seed"]),
+        )
+    )
+    wav = result.audio.detach().to(device="cpu").float().numpy()
+    return wav, int(result.sample_rate)
 
 
 RUNNERS = {
-    "qwen3-tts-clone": run_qwen3,
-    "voxcpm2-prompt": run_voxcpm2,
-    "cosyvoice3": run_cosyvoice3,
+    "irodori": run_irodori,
 }
 
 
