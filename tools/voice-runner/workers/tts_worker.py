@@ -80,11 +80,40 @@ def run_irodori(request: dict[str, Any]) -> tuple[Any, int]:
         download_hf_checkpoint,
     )
 
+    revision = request.get("model_revision")
+    if revision:
+        # download_hf_checkpointはrevisionを受けないため、同じ取得内容を固定revisionで行う。
+        from huggingface_hub import snapshot_download
+
+        snapshot_dir = Path(
+            snapshot_download(
+                repo_id=request["model_id"],
+                revision=revision,
+                allow_patterns=["model.safetensors", "tokenizer/*"],
+            )
+        )
+        checkpoint = str(snapshot_dir / "model.safetensors")
+    else:
+        checkpoint = download_hf_checkpoint(request["model_id"])
+    key_args: dict[str, Any] = {}
+    codec_repo = request.get("codec_repo")
+    if codec_repo:
+        codec_revision = request.get("codec_revision")
+        if codec_revision:
+            # コーデックはrepo idだと最新を取得するため、固定revisionで取得した
+            # weights.pthのパスを渡す (codec.pyはローカルパスをそのまま読む)。
+            from huggingface_hub import hf_hub_download
+
+            codec_repo = hf_hub_download(
+                repo_id=codec_repo, filename="weights.pth", revision=codec_revision
+            )
+        key_args["codec_repo"] = codec_repo
     runtime = InferenceRuntime.from_key(
         RuntimeKey(
-            checkpoint=download_hf_checkpoint(request["model_id"]),
+            checkpoint=checkpoint,
             model_device="cuda",
             codec_device="cuda",
+            **key_args,
         )
     )
     reference = request.get("reference_audio")

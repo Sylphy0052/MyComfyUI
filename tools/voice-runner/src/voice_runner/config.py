@@ -36,6 +36,9 @@ class EngineConfig:
     needs_katakana: bool
     timeout_sec: float
     home: Path | None = None
+    #: コーデックのHF repo idと固定revision。無ければIrodori-TTS側の既定repoを最新で取得する。
+    codec_repo: str | None = None
+    codec_revision: str | None = None
     #: 参照音声の書き起こしを生成に使うか。使うengineでは参照音声と組で必須にする。
     uses_reference_transcript: bool = False
 
@@ -93,6 +96,8 @@ def _engine(engine_id: str, raw: Any) -> EngineConfig:
         raise ConfigError(f"{engine_id}のsample_rateが不正です。")
     revision = raw.get("model_revision")
     home = raw.get("home")
+    codec_repo = raw.get("codec_repo")
+    codec_revision = raw.get("codec_revision")
     return EngineConfig(
         id=engine_id,
         python=Path(python),
@@ -102,6 +107,8 @@ def _engine(engine_id: str, raw: Any) -> EngineConfig:
         needs_katakana=bool(raw.get("needs_katakana")),
         timeout_sec=_float(raw.get("timeout_sec"), DEFAULT_TIMEOUT_SEC),
         home=Path(home) if isinstance(home, str) else None,
+        codec_repo=codec_repo if isinstance(codec_repo, str) else None,
+        codec_revision=codec_revision if isinstance(codec_revision, str) else None,
         uses_reference_transcript=bool(raw.get("uses_reference_transcript")),
     )
 

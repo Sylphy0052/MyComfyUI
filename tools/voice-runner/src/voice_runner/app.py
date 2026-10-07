@@ -222,6 +222,8 @@ def create_app() -> FastAPI:
                 "engine": engine.id,
                 "model_id": engine.model_id,
                 "model_revision": engine.model_revision,
+                "codec_repo": engine.codec_repo,
+                "codec_revision": engine.codec_revision,
                 "sample_rate": engine.sample_rate,
                 "home": str(engine.home) if engine.home else None,
                 "text": payload.text,

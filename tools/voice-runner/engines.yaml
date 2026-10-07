@@ -13,6 +13,12 @@ engines:
     # venvへパッケージとして入らないため、workerがimport pathへ足す。
     home: /opt/irodori
     model_id: Aratako/Irodori-TTS-v4.1-Small
+    # HFのcommit sha。省くと最新を取得する。更新するときは
+    # curl -s https://huggingface.co/api/models/<repo> | jq -r .sha で取り直す。
+    model_revision: 2b28324dc263ed5e6638b3cf3dd94c82ead07b4b
+    # Irodori-TTSが既定で使うコーデック。revisionを固定するためworkerが取得して渡す。
+    codec_repo: Aratako/Semantic-DACVAE-Japanese-32dim
+    codec_revision: 47376ee24834d7a05a48ebabfe3cde29b3c5e214
     sample_rate: 48000
     # 参照音声かcaption (声質の文章指定) で声質を決める。参照テキストは使わない。
     needs_katakana: false
