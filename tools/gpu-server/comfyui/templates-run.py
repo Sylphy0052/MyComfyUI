@@ -17,6 +17,9 @@ import wave
 BASE = os.environ.get("COMFY", "http://127.0.0.1:18188")
 INPUT_DIR = os.environ.get("INPUT_DIR", "/input")
 TEMPLATES_DIR = os.environ.get("TEMPLATES_DIR", "templates")
+# 1本あたりの完了待ちの上限(秒)。実測の最長はminimax_h3_ref2vの172s (README参照)。モデルの
+# 初回ロードや動画の長尺化を見込んで約5倍の900sを既定とする。伸ばすときは環境変数で上書きする。
+WAIT_TIMEOUT = float(os.environ.get("WAIT_TIMEOUT", "900"))
 IMAGE = "example.png"
 AUDIO = "g18_test_tone.wav"
 ORDER = sys.argv[1:] or [
@@ -68,8 +71,10 @@ def patch_inputs(workflow: dict) -> None:
             inputs["audio"] = AUDIO
 
 
-def wait_history(pid: str) -> dict:
-    while True:
+def wait_history(pid: str, timeout: float = WAIT_TIMEOUT) -> dict | None:
+    """履歴が完了(またはerror)になるまで待つ。timeout秒を超えたらNoneを返す。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         time.sleep(3)
         hist = call(f"/history/{pid}").get(pid)
         if not hist:
@@ -77,6 +82,7 @@ def wait_history(pid: str) -> dict:
         status = hist.get("status", {})
         if status.get("completed") or status.get("status_str") == "error":
             return hist
+    return None
 
 
 def output_names(hist: dict) -> list[str]:
@@ -103,6 +109,9 @@ def run(name: str) -> None:
         )
         return
     hist = wait_history(res["prompt_id"])
+    if hist is None:
+        print(f"{name}: TIMEOUT {WAIT_TIMEOUT:.0f}s prompt_id={res['prompt_id']}", flush=True)
+        return
     status = hist["status"]
     outs = output_names(hist)
     errors = [m for m in status.get("messages", []) if m[0] == "execution_error"]
