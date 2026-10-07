@@ -49,8 +49,11 @@ interface VoiceBinding {
    * 値の一致では、自動入力と同じ文面を手で入れた場合と区別できない。
    */
   transcriptInherited: boolean;
-  /** アップロードした参照音声を取り込んだ時点のキャラクター。登録の有無によらず切替の判定に使う。 */
-  uploadedCharacterIds: string[];
+  /**
+   * 参照音声が結び付いたキャラクター。登録済みの参照音声は選んだ時点の、アップロードした
+   * wavは取り込んだ時点のものを持つ。候補の取得前や失敗時にも切替の判定に使う。
+   */
+  referenceCharacterIds: string[];
   /** 取込は済んだが役割を付けられなかったときの理由。次にこの声を取り込むまで残す。 */
   roleTagError: string | null;
 }
@@ -71,7 +74,7 @@ const referencePatch = (item: MediaItem): Partial<VoiceBinding> => ({
   fileName: item.label ?? item.relative_path,
   transcript: item.reference_transcript ?? "",
   transcriptInherited: true,
-  uploadedCharacterIds: [],
+  referenceCharacterIds: item.character_ids ?? [],
   role: "voice_reference",
   roleTagError: null,
 });
@@ -101,7 +104,7 @@ const EMPTY_BINDING: VoiceBinding = {
   role: "voice_reference",
   characterIds: [],
   transcriptInherited: false,
-  uploadedCharacterIds: [],
+  referenceCharacterIds: [],
   roleTagError: null,
 };
 
@@ -441,7 +444,7 @@ export function VoicePanel({
           fileName: file.name,
           transcript: finalTranscript,
           transcriptInherited: false,
-          uploadedCharacterIds: characterIds,
+          referenceCharacterIds: characterIds,
         });
       } else {
         // 役割タグは取り込みを始めた時点の指定で付ける。wavはその時点のキャラクターの
@@ -473,9 +476,26 @@ export function VoicePanel({
       } catch (cause) {
         // 取込は済んでいるため参照音声の指定は残し、役割が付かなかった声を示す。
         // 他の声の取込で消えないよう、全体のエラーでなくbindingに持たせる。
-        update(voiceId, {
-          roleTagError: `役割を付けられませんでした: ${describe(cause)}`,
-        });
+        // 声へ入れなかったwavなら、その声に出すと入れていない声のエラーに見えるため、
+        // 取り込みの通知へ出す。
+        // 役割の登録を待つ間に指定が変わることもあるため、失敗した時点で取り込んだwavが
+        // まだ指定されているかを確かめ直す。
+        const reason = `役割を付けられませんでした: ${describe(cause)}`;
+        const current = bindingsRef.current[voiceId] ?? EMPTY_BINDING;
+        const stillApplies =
+          applies &&
+          generation === bindingsGeneration.current &&
+          sameIds(current.characterIds, characterIds) &&
+          current.relativePath === stored.relative_path;
+        if (stillApplies) update(voiceId, { roleTagError: reason });
+        else if (applies)
+          setError(
+            `「${file.name}」は役割の登録中に${voiceId}の指定が変わったため、${voiceId}のエラーとしては表示しません。${reason}`,
+          );
+        else
+          setError(
+            `「${file.name}」は取り込み中に指定が変わったため${voiceId}には入れておらず、${reason}`,
+          );
       }
     } catch (cause) {
       setError(describe(cause));
@@ -537,13 +557,13 @@ export function VoicePanel({
     const current = refCandidates.find(
       (item) => item.relative_path === binding.relativePath,
     );
-    // 登録の有無によらず、参照音声が結び付いたキャラクターで判定する。
-    // 取り込んだだけで未登録のwavは、取り込んだ時点のキャラクターを使う。
+    // 登録の有無によらず、参照音声が結び付いたキャラクターで判定する。候補に見つからない
+    // (取得前・取得失敗・未登録のwav) ときは、選んだ・取り込んだ時点のキャラクターを使う。
     const ownCharacterIds =
       current !== undefined
         ? (current.character_ids ?? [])
         : binding.relativePath
-          ? binding.uploadedCharacterIds
+          ? binding.referenceCharacterIds
           : [];
     const stale =
       ownCharacterIds.length > 0 &&
@@ -558,7 +578,7 @@ export function VoicePanel({
             fileName: null,
             transcript: "",
             transcriptInherited: false,
-            uploadedCharacterIds: [],
+            referenceCharacterIds: [],
           }
         : {}),
     });

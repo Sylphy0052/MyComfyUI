@@ -28,6 +28,8 @@ runner 自身の venv には FastAPI と Uvicorn と PyYAML しか入れない�
 `engines.yaml` に engine ごとの Python path、`model_id`、`model_revision`、
 `sample_rate`、`needs_katakana` を書く。TTS の engine は irodori だけで、Python path は
 `docker/Dockerfile` のイメージ内の venv を指す。ASR (whisper) も同じ venv で動かす。
+`needs_katakana` と `uses_reference_transcript` は省略すると `false` で、`true` / `false`
+以外 (文字列の `"false"` など) を書くと起動時に設定エラーにする。
 
 別の場所の設定を読ませるときは環境変数 `VOICE_RUNNER_CONFIG` にパスを渡す。
 
