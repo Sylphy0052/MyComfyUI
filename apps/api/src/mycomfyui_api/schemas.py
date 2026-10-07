@@ -2517,10 +2517,26 @@ class ImageReferenceRead(ApiModel):
 
 
 class ImageTagExtractRequest(ApiModel):
-    """画像タグ抽出へ渡す画像。画像だけを受け付ける。"""
+    """画像タグ抽出へ渡す画像。画像だけを受け付ける。
 
-    content_base64: str = Field(min_length=1)
+    中身は`content_base64`か、入力cache(`inputs/`配下)を指す`relative_path`の
+    どちらか一方で渡す。後者は登録済みの衣装・参照画像を読み直すために使う (#486)。
+    """
+
+    content_base64: str | None = Field(default=None, min_length=1)
+    relative_path: str | None = None
     media_type: str = Field(min_length=1)
+
+    @field_validator("relative_path")
+    @classmethod
+    def _validate_relative_path(cls, value: str | None) -> str | None:
+        return None if value is None else input_cache_relative_path(value)
+
+    @model_validator(mode="after")
+    def _require_one_source(self) -> "ImageTagExtractRequest":
+        if (self.content_base64 is None) == (self.relative_path is None):
+            raise ValueError("content_base64とrelative_pathはどちらか一方だけ指定してください。")
+        return self
 
     @field_validator("media_type")
     @classmethod

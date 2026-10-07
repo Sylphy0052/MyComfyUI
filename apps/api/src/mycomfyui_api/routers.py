@@ -4311,15 +4311,24 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
 async def extract_image_tags(payload: schemas.ImageTagExtractRequest, request: Request):
     """画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。"""
     settings = get_settings()
-    encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
-    if len(payload.content_base64) > encoded_limit:
-        raise _validation_error(
-            "画像が上限を超えています。", {"limit": settings.max_image_bytes}
-        )
-    try:
-        data = base64.b64decode(payload.content_base64, validate=True)
-    except (binascii.Error, ValueError) as error:
-        raise _validation_error("content_base64を復号できません。") from error
+    if payload.relative_path is not None:
+        try:
+            path = storage.resolve_input(payload.relative_path, settings)
+            data = await run_in_threadpool(path.read_bytes)
+        except (storage.StorageError, OSError) as error:
+            raise _validation_error("入力cacheの画像を読み込めません。") from error
+        content_base64 = base64.b64encode(data).decode("ascii")
+    else:
+        content_base64 = payload.content_base64 or ""
+        encoded_limit = (settings.max_image_bytes + 2) // 3 * 4
+        if len(content_base64) > encoded_limit:
+            raise _validation_error(
+                "画像が上限を超えています。", {"limit": settings.max_image_bytes}
+            )
+        try:
+            data = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise _validation_error("content_base64を復号できません。") from error
     if not data:
         raise _validation_error("空の画像は解析できません。")
     if len(data) > settings.max_image_bytes:
@@ -4328,9 +4337,7 @@ async def extract_image_tags(payload: schemas.ImageTagExtractRequest, request: R
             {"byte_size": len(data), "limit": settings.max_image_bytes},
         )
     try:
-        tags = await ComfyUITagger(settings).extract(
-            payload.content_base64, payload.media_type
-        )
+        tags = await ComfyUITagger(settings).extract(content_base64, payload.media_type)
     except ImageTaggerError as error:
         raise ApiError(
             "IMAGE_TAGGER_ERROR", str(error), status_code=status.HTTP_503_SERVICE_UNAVAILABLE
