@@ -18,10 +18,11 @@ export interface PromptDiffField {
    */
   acceptRemovals?: boolean;
   /**
-   * 別のUIで採否を決める記述か。前後どちらかの記述が該当するhunkは一覧に出さず、常に
-   * 採用する。確信度パネルのON/OFFと二重にならないようにする (#441)。
+   * 別のUIで採否を決めるhunkか。該当するhunkは一覧に出さず、常に採用する。確信度パネルの
+   * ON/OFFと二重にならないようにする (#441)。タグを足す・消すだけのhunkに限り、重複を
+   * 畳む削除や強調だけの変更は、利用者が選べるよう該当させない (#443)。
    */
-  managed?: (text: string) => boolean;
+  managed?: (hunk: DiffHunk) => boolean;
 }
 
 /**
@@ -164,9 +165,7 @@ function badgeKind(kind: DiffHunk["kind"]): string {
 
 /** 別のUIが採否を決めるhunkか (`PromptDiffField.managed`)。 */
 function isManaged(field: PromptDiffField, hunk: DiffHunk): boolean {
-  const { managed } = field;
-  if (!managed) return false;
-  return [hunk.before?.text, hunk.after?.text].some((text) => text !== undefined && managed(text));
+  return field.managed?.(hunk) ?? false;
 }
 
 /** 既定で採用するhunkか。削除は`acceptRemovals`を立てた欄だけ採用する。 */
