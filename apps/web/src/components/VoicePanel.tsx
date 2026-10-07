@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, api } from "../api/client";
+import { ApiError, VOICE_REFERENCE_PAGE_SIZE, api } from "../api/client";
 import type {
   GenerationJob,
   GenerationPreview,
@@ -54,9 +54,6 @@ interface VoiceBinding {
   /** 取込は済んだが役割を付けられなかったときの理由。次にこの声を取り込むまで残す。 */
   roleTagError: string | null;
 }
-
-// listMediaItemsの1回あたりの取得件数。APIの`limit`上限と同じ。
-const REFERENCE_PAGE_SIZE = 200;
 
 // キャラクターを選んでいなければ全件、選んでいればいずれかに紐付く参照音声だけを候補にする。
 const linkedToAny = (item: MediaItem, characterIds: string[]) =>
@@ -281,17 +278,17 @@ export function VoicePanel({
         // APIのlimit上限(200)で切れないよう、1ページに満たなくなるまで辿る。
         // 候補は複数の声で共有し、声ごとにキャラクターが違うため全件を持つ。
         const list: MediaItem[] = [];
-        for (let offset = 0; ; offset += REFERENCE_PAGE_SIZE) {
+        for (let offset = 0; ; offset += VOICE_REFERENCE_PAGE_SIZE) {
           const page = await api.listMediaItems({
             projectId,
             role: "voice_reference",
             source: "registered_input",
-            limit: REFERENCE_PAGE_SIZE,
+            limit: VOICE_REFERENCE_PAGE_SIZE,
             offset,
           });
           list.push(...page);
           // アンマウント後は残りのページを取りに行かない。
-          if (!active || page.length < REFERENCE_PAGE_SIZE) break;
+          if (!active || page.length < VOICE_REFERENCE_PAGE_SIZE) break;
         }
         if (active) setRefCandidates(list);
       } catch (cause) {
