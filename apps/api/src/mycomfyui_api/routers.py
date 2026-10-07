@@ -1162,11 +1162,15 @@ async def _resolve_generation_defaults(
         for name, value in payload.inputs.items():
             inputs[name] = value
             input_origins[name] = "runtime"
-    negative = inputs.get("negative_prompt")
+    # 入力に無ければRecipe既定を見る。利用者が編集した既定から安全語が落ちていることがある。
+    recipe_defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
+    negative = inputs.get(
+        "negative_prompt", recipe_defaults.get("negative_prompt") or ""
+    )
     if isinstance(negative, str):
-        inputs["negative_prompt"] = bootstrap.with_reference_safety_negative(
-            recipe, negative
-        )
+        safe_negative = bootstrap.with_reference_safety_negative(recipe, negative)
+        if safe_negative != negative:
+            inputs["negative_prompt"] = safe_negative
 
     return (
         payload.model_copy(
