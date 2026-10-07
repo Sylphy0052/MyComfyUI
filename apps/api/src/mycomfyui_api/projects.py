@@ -20,6 +20,7 @@ from mycomfyui_api.adapters.aimedia.client import (
     ReferenceSource,
 )
 from mycomfyui_api.db import get_session
+from mycomfyui_api.engines import is_supported
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
     Artifact,
@@ -808,6 +809,15 @@ async def _generation_default_warnings(
                     kind=kind,
                     code="RECIPE_KIND_MISMATCH",
                     message=f"{kind}用ではないRecipeが設定されています。",
+                    field="recipe_id",
+                )
+            )
+        if not is_supported(recipe.engine):
+            warnings.append(
+                schemas.ProjectGenerationDefaultWarning(
+                    kind=kind,
+                    code="ENGINE_UNSUPPORTED",
+                    message=f"Recipeのengine {recipe.engine} は実行できません。",
                     field="recipe_id",
                 )
             )

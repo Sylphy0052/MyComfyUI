@@ -168,8 +168,9 @@ Canon が更新された状態や参照が失われた状態を手元で再現�
 これにより、UI からモデルファイルや ComfyUI のノードを指定できない。
 
 音声側も同じ仕組みで、`kind: "voice"` の Recipe を engine ごとに 1 件ずつ登録する
-(`qwen3-tts-clone` / `voxcpm2-prompt` / `cosyvoice3` / `irodori`)。model ID と sample rate は voice-runner
-側の設定が正本のため Recipe には持たせず、`defaults` には `profile` と検証の既定値だけを置く。
+(現在は `irodori` だけ)。model ID と sample rate は voice-runner 側の設定が正本のため Recipe には
+持たせず、`defaults` には `profile` と検証の既定値だけを置く。撤去した engine の Recipe は、DB に
+残っていても `GET /recipes` に出さない。
 
 動画・音楽・合成も同じ仕組みで登録する。
 
@@ -449,9 +450,8 @@ TTS/ASR のライブラリを持たず、`POST /v1/speech`、`POST /v1/transcrib
 呼ぶ。Backend を同じ PC で動かすか別 PC で動かすかの違いは
 `MYCOMFYUI_VOICE_RUNNER_BASE_URL` の値だけで、Application API 側の分岐は無い。
 
-engine は Recipe の `engine` で決まる。`qwen3-tts-clone`(Primary)、`voxcpm2-prompt`(Secondary)、
-`cosyvoice3`(比較用)、`irodori`(Irodori-TTS)の 4 種とし、実行中に別 engine へ自動で切り替えない。engine ごとの
-Python 環境は voice-runner 側で分けて持ち、Application API の venv へは混ぜない。
+engine は Recipe の `engine` で決まる。TTS は `irodori`(Irodori-TTS)だけを使う。engine の
+Python 環境は voice-runner 側で持ち、Application API の venv へは混ぜない。
 
 Job の単位は Shot 1 件とする。Shot 内の台詞ごとに音声を 1 件ずつ生成し、まとめて 1 Job で扱う。
 台詞単位で Job を分けないのは、モデルのロードが 29〜67 秒かかるのに対し生成そのものは

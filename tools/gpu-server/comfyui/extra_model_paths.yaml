@@ -1,0 +1,13 @@
+nas:
+  base_path: /models
+  checkpoints: checkpoints
+  diffusion_models: diffusion_models
+  vae: vae
+  loras: loras
+  text_encoders: text_encoders
+  clip_vision: clip_vision
+  model_patches: model_patches
+  style_models: style_models
+  ipadapter: ipadapter
+  upscale_models: upscale_models
+  controlnet: controlnet

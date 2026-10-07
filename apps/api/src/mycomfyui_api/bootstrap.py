@@ -27,10 +27,7 @@ from mycomfyui_api.adapters.comfyui.executor import ENGINE_COMFYUI
 from mycomfyui_api.adapters.compose import plan as compose_plan
 from mycomfyui_api.adapters.voice import plan as voice_plan
 from mycomfyui_api.adapters.voice.base import (
-    ENGINE_COSYVOICE3,
     ENGINE_IRODORI,
-    ENGINE_QWEN3_TTS,
-    ENGINE_VOXCPM2,
 )
 from mycomfyui_api.models import Recipe, WorkflowVersion
 from mycomfyui_api.workflows import VOICE_TEMPLATE_NAME
@@ -225,13 +222,8 @@ VOICE_DEFAULTS: dict[str, Any] = {
     "pad_to_duration": True,
 }
 
-#: 既定で登録する音声Recipe。採否の根拠は`ai-media/検証_tts/05_tts比較/REPORT.md`。
-VOICE_RECIPES: tuple[tuple[str, str], ...] = (
-    ("音声 Qwen3-TTS (Primary)", ENGINE_QWEN3_TTS),
-    ("音声 VoxCPM2 (Secondary)", ENGINE_VOXCPM2),
-    ("音声 CosyVoice3 (比較用)", ENGINE_COSYVOICE3),
-    ("音声 Irodori-TTS", ENGINE_IRODORI),
-)
+#: 既定で登録する音声Recipe。TTSはIrodori-TTSだけを使う。
+VOICE_RECIPES: tuple[tuple[str, str], ...] = (("音声 Irodori-TTS", ENGINE_IRODORI),)
 
 
 async def ensure_voice_recipes(
