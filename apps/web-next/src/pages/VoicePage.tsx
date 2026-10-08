@@ -1,4 +1,4 @@
-import { Alert, Button, Grid, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Alert, Button, Grid, Group, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -20,11 +20,12 @@ import {
   type LineSkip,
 } from "../voice/SceneLineList";
 import {
+  VOICE_STORAGE_KEYS,
   restoreVoiceFromJob,
   useStoredVoiceInput,
   useSubmitVoiceJob,
-  useVoiceRecipe,
   useVoiceResultEntries,
+  type VoiceStorageKeys,
 } from "../voice/useVoice";
 import { VoiceLineFields, VoiceParamsFields, VoiceSourceFields } from "../voice/VoiceFields";
 import { VoiceResultPanel } from "../voice/VoiceResultPanel";
@@ -37,6 +38,7 @@ import {
   type VoiceReferenceFile,
   type VoiceTarget,
 } from "../voice/voiceForm";
+import { WithVoiceRecipe } from "../voice/WithVoiceRecipe";
 
 /** URLのクエリ名。 */
 const PROJECT_PARAM = "project";
@@ -92,16 +94,26 @@ function lineOptions(
   });
 }
 
-function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
-  const [stored, setStored] = useStoredVoiceInput(recipe);
-  const [searchParams, setSearchParams] = useSearchParams();
+export type VoiceWorkspaceProps = {
+  recipe: Recipe;
+  target: VoiceTarget;
+  /** 対象を変えられる画面 (`/voice`) だけが渡す。省略すると対象を固定し、選択欄は変えられず、前回の対象も戻さない。 */
+  onTargetChange?: (next: VoiceTarget) => void;
+  /** 入力欄と結果欄の保存キー。 */
+  storageKeys: VoiceStorageKeys;
+  /** `?from_artifact=`の生成物ID。あれば、開いたときにその生成設定を入力欄へ戻す。 */
+  fromArtifact?: string | null;
+};
+
+/** 音声の入力欄・台詞の一覧・結果欄。`/voice`とシーン生成の音声の工程が使う。 */
+export function VoiceWorkspace({ recipe, target, onTargetChange, storageKeys, fromArtifact = null }: VoiceWorkspaceProps) {
+  const [stored, setStored] = useStoredVoiceInput(recipe, storageKeys.input);
   const client = useQueryClient();
-  const results = useVoiceResultEntries();
+  const results = useVoiceResultEntries(storageKeys.results);
   const submit = useSubmitVoiceJob();
   const [lineNotice, setLineNotice] = useState<LineNotice | null>(null);
   const [bulkRunning, setBulkRunning] = useState(false);
 
-  const target = targetFromParams(searchParams);
   const targetKey = paramsFromTarget(target).toString();
   const form = stored.form ?? defaultVoiceForm(recipe);
 
@@ -137,10 +149,18 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
           (name): name is string => name !== null,
         );
 
+  // 対象を固定した画面は、入力欄を更新するときに対象も同じ更新で残す。
+  // 別々に更新すると、後の更新が先の更新を打ち消すことがある。
+  const fixed = !onTargetChange;
+  const { projectId: fixedProjectId, sceneId: fixedSceneId } = target;
   const updateForm = useCallback(
     (update: Partial<VoiceForm>) =>
-      setStored((current) => ({ ...current, form: { ...(current.form ?? defaultVoiceForm(recipe)), ...update } })),
-    [setStored, recipe],
+      setStored((current) => ({
+        ...current,
+        ...(fixed ? { target: { projectId: fixedProjectId, sceneId: fixedSceneId } } : {}),
+        form: { ...(current.form ?? defaultVoiceForm(recipe)), ...update },
+      })),
+    [setStored, recipe, fixed, fixedProjectId, fixedSceneId],
   );
   // 話者にキャラを選んだら、そのキャラの声の参照をCloneに入れる。キャラを外したら、キャラの声を参照にしている状態を戻す。
   const changeForm = (update: Partial<VoiceForm>) => {
@@ -151,8 +171,8 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
   };
   // URLを書き換える。対象の変更で、前の対象に属する選択 (話者・台詞の行) は外す。
   const applyTarget = useCallback(
-    (next: VoiceTarget) => setSearchParams(paramsFromTarget(next), { replace: true }),
-    [setSearchParams],
+    (next: VoiceTarget) => onTargetChange?.(next),
+    [onTargetChange],
   );
   const changeTarget = (next: VoiceTarget) => {
     if (next.projectId !== target.projectId || next.sceneId !== target.sceneId) setLineNotice(null);
@@ -169,25 +189,27 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
   };
 
   // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
-  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
+  const [restoring, setRestoring] = useState(() => fromArtifact !== null);
 
-  // URLの対象を、次に開いたときの復元用に残す。初回の復元を決めるまでは、空の対象で上書きしない。
+  // 対象を変えられる画面 (`/voice`) だけ、URLの対象を次に開いたときの復元用に残す。初回の復元を決めるまでは、空の対象で上書きしない。
   // 2つのeffectは宣言順に走る順序に依存する。初回は、ここが`initialized`がfalseのため何もせず、
   // 次のeffectが`true`にして復元する。復元でURLが変わると`targetKey`が変わり、ここが保存する。
   // 2つの順序を入れ替えると、初回に空の対象を保存して前回の対象を失う。
   const initialized = useRef(false);
   useEffect(() => {
-    if (!initialized.current) return;
+    // 対象を固定した画面は、`updateForm`が対象も残すので、ここでは残さない。
+    if (!initialized.current || fixed) return;
     setStored((current) => ({ ...current, target: targetFromParams(new URLSearchParams(targetKey)) }));
-  }, [targetKey, setStored]);
+  }, [targetKey, setStored, fixed]);
   // 開いたときに一度だけ、`from_artifact`の生成設定か、最後に使った対象を戻す。
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    const fromArtifact = searchParams.get(FROM_ARTIFACT_PARAM);
     if (fromArtifact === null) {
-      const restored = initialTarget(target, stored.target);
-      if (restored) applyTarget(restored);
+      if (onTargetChange) {
+        const restored = initialTarget(target, stored.target);
+        if (restored) applyTarget(restored);
+      }
       return;
     }
     void restoreFromArtifactParam({
@@ -301,8 +323,8 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
     <Grid gap="lg">
       <Grid.Col span={{ base: 12, lg: 5 }}>
         <Stack gap="md" inert={restoring}>
-          <Group justify="space-between">
-            <Title order={2}>音声</Title>
+          <Group justify={onTargetChange ? "space-between" : "flex-end"}>
+            {onTargetChange ? <Title order={2}>音声</Title> : null}
             <Button
               variant="default"
               size="xs"
@@ -323,7 +345,7 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
               data={withCurrent(projectOptions, target.projectId, projects.isError)}
               value={target.projectId}
               onChange={(projectId) => changeTarget({ projectId, sceneId: null })}
-              disabled={bulkRunning}
+              disabled={bulkRunning || !onTargetChange}
               searchable
               clearable
               error={projects.error?.message}
@@ -338,7 +360,7 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
               )}
               value={target.sceneId}
               onChange={(next) => changeTarget({ ...target, sceneId: next })}
-              disabled={target.projectId === null || bulkRunning}
+              disabled={target.projectId === null || bulkRunning || !onTargetChange}
               clearable
               error={scenes.error?.message}
             />
@@ -412,21 +434,18 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
 
 /** `/voice`。台詞1行・話者・声の入力欄と、この画面から投入した生成の結果欄。 */
 export function VoicePage() {
-  const recipe = useVoiceRecipe();
-  if (recipe.isPending) return <Loader size="sm" />;
-  if (recipe.error) {
-    return (
-      <Alert color="red" title="Recipeを読めません">
-        {recipe.error.message}
-      </Alert>
-    );
-  }
-  if (recipe.data === null) {
-    return (
-      <Alert color="yellow" title="音声生成のRecipeがありません">
-        音声のRecipeを登録してから開いてください。
-      </Alert>
-    );
-  }
-  return <VoiceWorkspace recipe={recipe.data} />;
+  const [searchParams, setSearchParams] = useSearchParams();
+  return (
+    <WithVoiceRecipe>
+      {(recipe) => (
+        <VoiceWorkspace
+          recipe={recipe}
+          target={targetFromParams(searchParams)}
+          onTargetChange={(next) => setSearchParams(paramsFromTarget(next), { replace: true })}
+          storageKeys={VOICE_STORAGE_KEYS}
+          fromArtifact={searchParams.get(FROM_ARTIFACT_PARAM)}
+        />
+      )}
+    </WithVoiceRecipe>
+  );
 }
