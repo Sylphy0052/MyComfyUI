@@ -11,7 +11,6 @@ import type {
   ProjectLocalOverrides,
   ProjectReferenceImage,
 } from "../api/client";
-import type { SceneEnvelope, SceneSummary } from "../api/aimedia";
 import { MediaPicker, mediaTypeOf, readPickedImage, toBase64, toReferenceImage } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
 import { applyReferenceImport, planReferenceImport } from "../state/referenceImport";
@@ -198,13 +197,6 @@ function pruneSceneDetails(
   );
 }
 
-interface MediaImpact {
-  total: number;
-  /** null = updated_atが無く判定できない。 */
-  before: number | null;
-  unknownTime: number;
-}
-
 /** 参照音声の書き起こしの表示・編集。空欄で保存するとnullに戻す。 */
 function TranscriptEditor({
   item,
@@ -372,10 +364,8 @@ function VoiceReferenceSection({
 
 interface Props {
   projectId: string | null;
-  /** この画面が表示中かどうか。非表示中は場面本文・生成物件数を取り直さない。 */
+  /** この画面が表示中かどうか。 */
   active: boolean;
-  /** 選択中Projectの場面一覧 (要約)。登場場面の判定に本文を別途取得して使う。 */
-  scenes: SceneSummary[];
   /** キャラクター定義・scene_outfitsを保存したら呼ぶ。他画面 (制作計画等) の再取得を促す。 */
   onChanged: () => void;
   /** 他画面 (生成フォーム等) でキャラクター定義を保存したら増やす。一覧を取り直す (#316)。 */
@@ -417,7 +407,7 @@ function RefImportSummary({ report }: { report: ReferenceImportReport }) {
   );
 }
 
-export function CharacterManager({ projectId, active, scenes, onChanged, reloadToken = 0 }: Props) {
+export function CharacterManager({ projectId, active, onChanged, reloadToken = 0 }: Props) {
   const [overrides, setOverrides] = useState<ProjectLocalOverrides | null>(null);
   const [draft, setDraft] = useState<CharacterDraft | null>(null);
   const [pickedReference, setPickedReference] = useState<PickedMedia[]>([]);
@@ -441,9 +431,6 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
   const [refImportProgress, setRefImportProgress] = useState<string | null>(null);
   const [refImportReport, setRefImportReport] = useState<ReferenceImportReport | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sceneData, setSceneData] = useState<Record<string, SceneEnvelope>>({});
-  const [mediaImpact, setMediaImpact] = useState<MediaImpact | null>(null);
-  const [impactError, setImpactError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // 取り込み中は編集フォームを開かせない。開いた下書きの保存で衣装一覧が古い内容に戻るため。
   const importing = refImportProgress !== null;
@@ -494,34 +481,6 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
     };
   }, [active, projectId, overrides]);
 
-  // 登場場面の判定にScene本文 (characters) が要る。要約一覧には無いため別途取る。
-  useEffect(() => {
-    if (!active || !projectId || scenes.length === 0) {
-      setSceneData({});
-      return;
-    }
-    let alive = true;
-    Promise.all(
-      scenes.map((item) =>
-        api
-          .getScene(projectId, item.id)
-          .then((envelope): [string, SceneEnvelope] => [item.id, envelope])
-          .catch(() => null),
-      ),
-    ).then((results) => {
-      if (!alive) return;
-      const map: Record<string, SceneEnvelope> = {};
-      for (const entry of results) {
-        if (entry) map[entry[0]] = entry[1];
-      }
-      setSceneData(map);
-    });
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, projectId, scenes]);
-
   const characters = overrides?.characters ?? [];
   const selectedCharacter = characters.find((item) => item.id === selectedId) ?? null;
 
@@ -546,55 +505,6 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
       current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]
     ));
   };
-
-  const scenesFeaturing = useMemo(() => {
-    if (!selectedCharacter) return [];
-    return scenes.filter((scene) => {
-      const data = sceneData[scene.id];
-      if (!data) return false;
-      return (data.data.characters ?? []).some(
-        (item) =>
-          item.id === selectedCharacter.id ||
-          (item.display_name && item.display_name === selectedCharacter.name),
-      );
-    });
-  }, [scenes, sceneData, selectedCharacter]);
-
-  const scenesWithOutfit = useMemo(() => {
-    if (!selectedCharacter) return [];
-    return scenes.filter((scene) => Boolean(overrides?.scene_outfits?.[scene.id]?.[selectedCharacter.id]));
-  }, [scenes, overrides?.scene_outfits, selectedCharacter]);
-
-  // 選んだキャラクターに関連付けた生成物の件数と、定義変更 (updated_at) より前の件数。
-  useEffect(() => {
-    setMediaImpact(null);
-    setImpactError(null);
-    if (!active || !projectId || !selectedCharacter) return;
-    let alive = true;
-    api
-      .listMediaItems({ projectId, characterId: selectedCharacter.id })
-      .then((items) => {
-        if (!alive) return;
-        // character_reference は本人の参照画像そのもの (生成物ではない) なので除く。
-        const generated = items.filter((item) => item.source !== "character_reference");
-        const updatedAt = selectedCharacter.updated_at ?? null;
-        let before = updatedAt ? 0 : null;
-        let unknownTime = 0;
-        for (const item of generated) {
-          if (!item.created_at) {
-            unknownTime += 1;
-            continue;
-          }
-          // 時差表記が混ざっても比べられるよう、文字列ではなく時刻で比べる。
-          if (updatedAt && Date.parse(item.created_at) < Date.parse(updatedAt)) before = (before ?? 0) + 1;
-        }
-        setMediaImpact({ total: generated.length, before, unknownTime });
-      })
-      .catch((cause) => alive && setImpactError(describe(cause)));
-    return () => {
-      alive = false;
-    };
-  }, [active, projectId, selectedCharacter]);
 
   // 全体置換のPUTのため、保存直前に最新を読み直してから変更を当てる。制作計画での
   // 衣装選択や場面プロンプトの編集を、手元の古い値で巻き戻さないようにする。
@@ -1093,20 +1003,6 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
                 ))}
               </ul>
             )}
-            <h4>影響範囲</h4>
-            <ul className="list">
-              <li>登場する場面: {scenesFeaturing.length}件 ({scenesFeaturing.map((item) => item.summary).join("、") || "なし"})</li>
-              <li>衣装を指定した場面: {scenesWithOutfit.length}件</li>
-              <li>
-                {impactError
-                  ? `生成物の件数を取得できませんでした: ${impactError}`
-                  : mediaImpact
-                    ? `関連付けた生成物: ${mediaImpact.total}件`
-                      + (mediaImpact.before !== null ? ` (うち定義変更前: ${mediaImpact.before}件)` : " (定義変更の記録なしのため定義変更前の判定は不可)")
-                      + (mediaImpact.unknownTime > 0 ? ` / 時刻不明 ${mediaImpact.unknownTime}件` : "")
-                    : "生成物の件数を取得中..."}
-              </li>
-            </ul>
             <Button disabled={busy || importing} onClick={() => openDraft(selectedCharacter)}>編集</Button>
             <ReferenceSetPanel
               key={`reference-set:${selectedCharacter.id}`}
@@ -1327,12 +1223,6 @@ export function CharacterManager({ projectId, active, scenes, onChanged, reloadT
               ))}
             </ul>
 
-            {selectedCharacter && (
-              <p className="muted">
-                保存すると、登場する場面{scenesFeaturing.length}件・関連付けた生成物
-                {mediaImpact ? `${mediaImpact.total}件` : "取得中"}に影響します。
-              </p>
-            )}
             {error && <p className="error">{error}</p>}
             <div className="row">
               <Button disabled={busy} onClick={() => setDraft(null)}>キャンセル</Button>
