@@ -154,6 +154,7 @@ export function PromptFields({
         <Text size="xs" c="dimmed">
           投入するプロンプト
         </Text>
+        {/* 複数人はキャラごとに改行で区切るので、改行をそのまま見せる。 */}
         <Text size="xs" data-testid="composed-positive" style={{ wordBreak: "break-word", whiteSpace: "pre-line" }}>
           {composedPositive || "(空)"}
         </Text>

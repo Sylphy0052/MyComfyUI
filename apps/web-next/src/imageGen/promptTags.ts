@@ -53,6 +53,8 @@ export function composePrompt(supplement: readonly string[], excluded: readonly 
  * 投入するポジティブ。`groups`が無ければ`composePrompt`と同じ。
  * `groups`があるときは「先頭行・キャラごとの行・自由欄」を改行で連結し、行の中はカンマ区切りにする。
  * 重複は行の中だけで除き、外したタグは全行から除く。自由欄は補完タグのどれかと重なるタグを除く。空の行は出さない。
+ * 行をまたぐ重複を残すのは、同じタグ (例: `long hair`) を持つキャラがそれぞれの行に書かれている必要があるため。
+ * 自由欄はキャラに属さないので、どの行にあるタグも書き足す意味が無い。
  */
 export function composePositive(supplement: SupplementTags, excluded: readonly string[], free: string): string {
   if (supplement.groups === null) return composePrompt(supplement.positive, excluded, free);
@@ -143,6 +145,7 @@ const HEADCOUNT_KINDS = [
   { single: "1girl", plural: "girls" },
   { single: "1other", plural: "others" },
 ] as const;
+/** Danbooruの人数タグは`6+girls`のように6人で頭打ちになる。 */
 const HEADCOUNT_CAP = 6;
 
 /** 各キャラの固定タグにある`1girl` / `1boy` / `1other`を数えて、`2girls`のような人数タグにする。無ければ空。 */

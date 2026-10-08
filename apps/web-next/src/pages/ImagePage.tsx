@@ -63,7 +63,15 @@ const TARGET_PARAMS: ["projectId" | "sceneId" | "characterId" | "costumeId", str
   ["costumeId", "outfit"],
 ];
 
+/**
+ * 2人目以降のキャラ。1人ごとに`cast=<キャラID>:<衣装ID>`を繰り返す。衣装が無ければ`<キャラID>:`。
+ * IDはUUIDで`:`を含まないため、最初の`:`で分ける。
+ */
 const CAST_PARAM = "cast";
+
+function castToParam(member: CastMember): string {
+  return `${member.characterId}:${member.costumeId ?? ""}`;
+}
 
 function castFromParam(value: string): CastMember[] {
   const at = value.indexOf(":");
@@ -85,7 +93,7 @@ function paramsFromTarget(target: ImageTarget): URLSearchParams {
     const value = target[field];
     if (value) params.set(name, value);
   }
-  for (const member of target.extraCast) params.append(CAST_PARAM, `${member.characterId}:${member.costumeId ?? ""}`);
+  for (const member of target.extraCast) params.append(CAST_PARAM, castToParam(member));
   return params;
 }
 
