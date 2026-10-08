@@ -10,8 +10,11 @@ const INSTRUCTION_MAX = 2000;
 /** `ImagePromptAssistCreate.context_tags`の上限件数と、1件の上限文字数。 */
 const CONTEXT_TAGS_MAX = 200;
 const CONTEXT_TAG_MAX = 200;
+/** `ImagePromptAssistCreate.current_positive_prompt`の上限。超えると「直す」は422になる。 */
+const CURRENT_PROMPT_MAX = 4000;
 
-type Pending = { mode: "convert" | "revise"; result: ImagePromptAssist };
+/** `basis`は依頼した時点の入力。今の入力と違えば、結果は古い前提のものなので適用させない。 */
+type Pending = { mode: "convert" | "revise"; result: ImagePromptAssist; basis: string };
 
 /**
  * 日本語からプロンプトへの変換と「直す」。結果は自由欄との差分で出し、「適用」で自由欄だけを置き換える。
@@ -34,7 +37,12 @@ export function PromptAssistPanel({
   const assist = useImagePromptAssist("プロンプトの変換に失敗しました");
 
   const hasInstruction = instruction.trim() !== "";
-  const run = (mode: Pending["mode"]) =>
+  const freeTooLong = positiveFree.length > CURRENT_PROMPT_MAX;
+  // 変換は自由欄を土台にしないので、自由欄の編集では古くならない
+  const basisOf = (mode: Pending["mode"]) =>
+    JSON.stringify([recipeId, contextTags, mode === "revise" ? positiveFree : null]);
+  const run = (mode: Pending["mode"]) => {
+    const basis = basisOf(mode);
     assist.mutate(
       {
         instruction: instruction.trim(),
@@ -42,10 +50,12 @@ export function PromptAssistPanel({
         current_positive_prompt: mode === "revise" ? positiveFree : "",
         context_tags: contextTags.filter((tag) => tag.length <= CONTEXT_TAG_MAX).slice(0, CONTEXT_TAGS_MAX),
       },
-      { onSuccess: (result) => setPending({ mode, result }) },
+      { onSuccess: (result) => setPending({ mode, result, basis }) },
     );
+  };
 
   const diff = pending ? diffTags(positiveFree, pending.result.positive_prompt) : [];
+  const stale = pending !== null && pending.basis !== basisOf(pending.mode);
 
   return (
     <Stack gap="xs" data-testid="prompt-assist">
@@ -72,13 +82,18 @@ export function PromptAssistPanel({
         <Button
           size="xs"
           variant="light"
-          disabled={!hasInstruction || positiveFree.trim() === "" || assist.isPending}
+          disabled={!hasInstruction || positiveFree.trim() === "" || freeTooLong || assist.isPending}
           loading={assist.isPending && assist.variables?.current_positive_prompt !== ""}
           onClick={() => run("revise")}
         >
           直す
         </Button>
       </Group>
+      {freeTooLong ? (
+        <Text size="xs" c="dimmed">
+          自由欄が{CURRENT_PROMPT_MAX}文字を超えているため「直す」は使えません。
+        </Text>
+      ) : null}
       {pending ? (
         <Paper withBorder p="sm" data-testid="assist-diff">
           <Stack gap="xs">
@@ -108,12 +123,18 @@ export function PromptAssistPanel({
             )}
             {pending.result.positive_prompt === "" ? (
               <Text size="xs" c="dimmed">
-                提案のタグはすべて補完タグにあるため、自由欄に足すものはありません。
+                提案のタグはすべて補完タグにあります。適用すると自由欄は空になります。
+              </Text>
+            ) : null}
+            {stale ? (
+              <Text size="xs" c="yellow">
+                依頼した後でレシピ・補完タグ・自由欄が変わりました。もう一度実行してください。
               </Text>
             ) : null}
             <Group gap="xs">
               <Button
                 size="xs"
+                disabled={stale}
                 onClick={() => {
                   onApply(pending.result.positive_prompt);
                   setPending(null);

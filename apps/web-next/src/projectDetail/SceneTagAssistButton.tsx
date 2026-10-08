@@ -5,7 +5,7 @@ import { splitPrompt, tagKey, uniqueTags } from "../imageGen/promptTags";
 import { useImagePromptAssist } from "../imageGen/usePromptAssist";
 import { TAG_MAX, TAGS_MAX } from "./limits";
 
-/** `ImagePromptAssistCreate.instruction`の上限。指示文の頭に付ける説明の分を除いて日本語を切る。 */
+/** `ImagePromptAssistCreate.instruction`の上限。頭に付ける説明と日本語をつないだ全体をこの長さで切る。 */
 const INSTRUCTION_MAX = 2000;
 
 /**
