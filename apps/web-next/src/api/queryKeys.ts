@@ -3,6 +3,9 @@ export const queryKeys = {
   jobs: ["generation-jobs"] as const,
   // `jobs`の無効化に巻き込まれないよう、Job一覧とは別の系統に置く。
   jobProgress: (jobId: string) => ["generation-job-progress", jobId] as const,
+  // シーン生成画面の状態用。Jobの状態が変わったイベントで取り直すため`jobs`の下に置く。
+  sceneProduceJobs: (projectId: string, sceneId: string) =>
+    ["generation-jobs", "scene-produce", projectId, sceneId] as const,
   // 1件のJobとその生成物は`jobs`の下に置き、Jobの状態が変わったイベントで一緒に取り直す。
   job: (jobId: string) => ["generation-jobs", "detail", jobId] as const,
   jobImages: (jobId: string) => ["generation-jobs", "detail", jobId, "images"] as const,
@@ -40,6 +43,9 @@ export const queryKeys = {
   sourceImages: (query: string) => ["media-items", "source-images", query] as const,
   // /videoのguide_audioに選べる最近の台詞音声。
   voiceAudio: (query: string) => ["media-items", "voice-audio", query] as const,
+  // シーン生成画面の状態用。シーンの生成物と、キャラクターの参照候補。
+  sceneProduceMedia: (sceneId: string) => ["media-items", "scene-produce", sceneId] as const,
+  sceneProduceCharacterMedia: (projectId: string) => ["media-items", "scene-produce-characters", projectId] as const,
   rejectedArtifactIds: (query: string) => ["media-items", "rejected-ids", query] as const,
   artifactLists: ["artifact-lists"] as const,
   trashedArtifacts: ["artifact-lists", "trashed"] as const,

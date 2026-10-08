@@ -1,6 +1,6 @@
 import { Button, Group, Select, TagsInput, Text, Textarea, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconPhotoSearch } from "@tabler/icons-react";
+import { IconMovie, IconPhotoSearch } from "@tabler/icons-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
@@ -134,6 +134,16 @@ export function SceneEditor({
         <Button onClick={submit} loading={save.isPending} disabled={!isSavable(draft) || !dirty}>
           {scene ? "保存" : "作成"}
         </Button>
+        {scene ? (
+          <Button
+            component={Link}
+            to={`/scenes/${encodeURIComponent(scene.id)}/produce?${new URLSearchParams({ project: projectId })}`}
+            variant="default"
+            leftSection={<IconMovie size={16} />}
+          >
+            シーン生成へ
+          </Button>
+        ) : null}
         {scene ? (
           <Button
             component={Link}
