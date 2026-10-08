@@ -661,7 +661,7 @@ class ProjectLocalOverrides(ApiModel):
         if size > MAX_LOCAL_OVERRIDES_BYTES:
             raise ValueError(
                 "Projectの人物・場面の設定が大きすぎます "
-                f"({MAX_LOCAL_OVERRIDES_BYTES // (1024 * 1024)} MiBまで)。"
+                f"(UTF-8のJSONで{MAX_LOCAL_OVERRIDES_BYTES // (1024 * 1024)} MiBまで)。"
             )
         return self
 
