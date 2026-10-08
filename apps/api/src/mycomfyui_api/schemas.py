@@ -24,6 +24,7 @@ from mycomfyui_api.adapters.agent.proposals import (
     MAX_INSTRUCTION_LENGTH,
     MAX_PLAN_STEPS,
 )
+from mycomfyui_api.adapters.voice.base import MAX_CAPTION_CHARS
 from mycomfyui_api.approvals import OperationEffect
 from mycomfyui_api.settings import AgentProviderId
 from mycomfyui_api.storage import ARTIFACTS_DIR_NAME, INPUTS_DIR_NAME
@@ -2455,7 +2456,7 @@ class VoiceCaptionAssistCreate(ApiModel):
 class VoiceCaptionAssistRead(ApiModel):
     """構造化検証済みの声質の文章。/voiceのcaption欄へそのまま入れる。"""
 
-    caption: str = Field(min_length=1, max_length=500)
+    caption: str = Field(min_length=1, max_length=MAX_CAPTION_CHARS)
     rationale: str = Field(max_length=2000)
     provider_id: AgentProviderId
     model: str | None

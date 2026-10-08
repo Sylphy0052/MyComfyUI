@@ -5724,17 +5724,24 @@ async def assist_voice_caption(
     """
     context: dict[str, Any] = {}
     if payload.story_character_id is not None:
+        character = await session.get(StoryCharacter, payload.story_character_id)
+        if character is None:
+            raise ApiError(
+                "STORY_CHARACTER_NOT_FOUND",
+                "紐づけ先のキャラクターがありません。",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                details={"story_character_id": payload.story_character_id},
+            )
+        # ゴミ箱のProjectのキャラを弾く。存在は上で確かめ済み。
         await story_links.validate_story_links(
             session,
-            character_id=payload.story_character_id,
+            character_id=character.id,
             costume_id=None,
             scene_id=None,
         )
-        character = await session.get(StoryCharacter, payload.story_character_id)
-        if character is not None:
-            context["character"] = {"name": character.name}
-            if character.profile.strip():
-                context["character"]["profile"] = character.profile
+        context["character"] = {"name": character.name}
+        if character.profile.strip():
+            context["character"]["profile"] = character.profile
     provider = _resolve_agent_provider(providers, payload.provider_id)
     result = await _propose_assist(
         provider,
