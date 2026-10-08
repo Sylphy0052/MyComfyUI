@@ -9,7 +9,7 @@ import type {
   ProjectProgress,
   ProjectRecord,
 } from "../api/client";
-import type { SceneSummary } from "../api/aimedia";
+import type { ProductionStatus, SceneSummary } from "../api/aimedia";
 import type { ProjectTab } from "../state/uiState";
 import { CharacterManager } from "./CharacterManager";
 import { ProjectGenerationDefaultsEditor } from "./ProjectGenerationDefaultsEditor";
@@ -101,7 +101,7 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   completed: "完了",
 };
 
-const PROGRESS_STAGES: { key: string; label: string }[] = [
+const PROGRESS_STAGES: { key: ProductionStatus; label: string }[] = [
   { key: "not_started", label: "未着手" },
   { key: "in_progress", label: "制作中" },
   { key: "has_candidates", label: "候補あり" },
@@ -134,9 +134,11 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString("ja-JP");
 }
 
-/** formatDate から秒を省いた日時。一覧と最近の生成物で使う。 */
+/** formatDate から秒を省いた日時。一覧と最近の生成物で使う。解釈できない値は元の文字列を出す。 */
 function formatMinute(value: string): string {
-  return new Date(value).toLocaleString("ja-JP", {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("ja-JP", {
     year: "numeric",
     month: "numeric",
     day: "numeric",
@@ -185,7 +187,9 @@ export function ProjectWorkspace({
   // 読み込めなかった画像のArtifact ID。サムネイルの代わりにプレースホルダや1行表示へ落とす。
   const [brokenImageIds, setBrokenImageIds] = useState<ReadonlySet<string>>(new Set());
   const markImageBroken = (artifactId: string) =>
-    setBrokenImageIds((current) => new Set(current).add(artifactId));
+    setBrokenImageIds((current) =>
+      current.has(artifactId) ? current : new Set(current).add(artifactId),
+    );
   const moreMenuRef = useRef<HTMLDetailsElement>(null);
 
   const selected = useMemo(
@@ -466,8 +470,8 @@ export function ProjectWorkspace({
     artifact.kind === "image" &&
     artifact.availability === "complete" &&
     !brokenImageIds.has(artifact.id);
-  const recentImages = home?.artifacts.filter(isRecentImage) ?? [];
-  const recentOthers = home?.artifacts.filter((artifact) => !isRecentImage(artifact)) ?? [];
+  const imageArtifacts = home?.artifacts.filter(isRecentImage) ?? [];
+  const otherArtifacts = home?.artifacts.filter((artifact) => !isRecentImage(artifact)) ?? [];
 
   return (
     <main className="full project-workspace" hidden={hidden}>
@@ -794,9 +798,9 @@ export function ProjectWorkspace({
                     {home.artifacts.length === 0 && (
                       <p className="muted">このProjectの生成物はまだありません。</p>
                     )}
-                    {recentImages.length > 0 && (
+                    {imageArtifacts.length > 0 && (
                       <ul className="recent-artifact-grid">
-                        {recentImages.map((artifact) => (
+                        {imageArtifacts.map((artifact) => (
                           <li key={artifact.id}>
                             <a
                               href={api.artifactContentUrl(artifact.id)}
@@ -815,12 +819,15 @@ export function ProjectWorkspace({
                         ))}
                       </ul>
                     )}
-                    {recentOthers.length > 0 && (
+                    {otherArtifacts.length > 0 && (
                       <ul className="recent-artifacts">
-                        {recentOthers.map((artifact) => (
+                        {otherArtifacts.map((artifact) => (
                           <li key={artifact.id}>
                             <span className="badge">{artifact.kind}</span>
                             <span>{formatMinute(artifact.created_at)}</span>
+                            {brokenImageIds.has(artifact.id) && (
+                              <span className="muted">画像を読み込めませんでした</span>
+                            )}
                             <a href={api.artifactContentUrl(artifact.id)} target="_blank" rel="noreferrer">
                               開く
                             </a>
@@ -836,6 +843,7 @@ export function ProjectWorkspace({
 
                 {selected.lifecycle !== "trashed" && (
                   <ProjectPortabilityPanel
+                    key={selected.id}
                     project={selected}
                     onCreated={async (project) => {
                       setLifecycle("active");
