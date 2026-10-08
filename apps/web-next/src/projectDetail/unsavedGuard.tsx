@@ -104,7 +104,8 @@ export function UnsavedGuardProvider({ children }: { children: ReactNode }) {
   return (
     <GuardContext.Provider value={{ setDirty, runGuarded }}>
       {children}
-      <Modal opened={opened} onClose={keepEditing} title="未保存の変更があります" centered>
+      {/* 衣装ドロワー (z-index 200) の上に出す。同じ値だと先に開いたドロワーの下に隠れ、押せなくなる。 */}
+      <Modal opened={opened} onClose={keepEditing} title="未保存の変更があります" centered zIndex={300}>
         <Text size="sm">保存していない変更は、移動すると失われます。</Text>
         <Group justify="flex-end" mt="md">
           <Button variant="default" onClick={keepEditing}>
