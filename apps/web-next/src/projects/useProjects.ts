@@ -11,22 +11,32 @@ export type ProjectDraft = {
 };
 
 /** `GET /projects`の`limit`の上限。 */
-const LIST_LIMIT = 200;
+const PAGE_LIMIT = 200;
 
 /**
- * 一覧は更新日時の降順に並べる。APIの`sort=updated`はお気に入りを先頭に寄せるため、ここで並べ直す。
+ * APIの`sort=updated`はお気に入りを先頭に寄せるため、1ページで切ると更新が新しいProjectが漏れる。
+ * 全ページを取ってから更新日時の降順に並べ直す。
  */
+async function fetchAllProjects(lifecycle: ProjectTab): Promise<ProjectRecord[]> {
+  const items: ProjectRecord[] = [];
+  for (let offset = 0; ; offset += PAGE_LIMIT) {
+    const params = new URLSearchParams({
+      lifecycle,
+      sort: "updated",
+      limit: String(PAGE_LIMIT),
+      offset: String(offset),
+    });
+    const page = await apiRequest<ProjectList>(`/projects?${params}`);
+    items.push(...page.items);
+    if (page.items.length < PAGE_LIMIT) return items;
+  }
+}
+
 export function useProjectList(tab: ProjectTab) {
   return useQuery({
     queryKey: queryKeys.projectList(tab),
-    queryFn: () =>
-      apiRequest<ProjectList>(
-        `/projects?${new URLSearchParams({ lifecycle: tab, sort: "updated", limit: String(LIST_LIMIT) })}`,
-      ),
-    select: (list) => ({
-      items: [...list.items].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
-      truncated: list.items.length >= LIST_LIMIT,
-    }),
+    queryFn: () => fetchAllProjects(tab),
+    select: (items) => [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
   });
 }
 
@@ -79,6 +89,7 @@ export function useRestoreProject() {
 export function usePurgeProject() {
   const invalidate = useInvalidateProjects();
   return useMutation({
+    // 取り消せない操作なので、画面の確認ダイアログを経てから呼ぶ。
     mutationFn: (id: string) =>
       apiRequest<ProjectPurgeResult>(`/projects/${encodeURIComponent(id)}/permanent?confirm=true`, {
         method: "DELETE",

@@ -32,6 +32,7 @@ import {
   type ProjectTab,
 } from "../projects/useProjects";
 
+/** API (`schemas.py`の`ProjectName`と`ProjectCreate.description`) の上限に合わせる。 */
 const NAME_MAX = 120;
 const DESCRIPTION_MAX = 10_000;
 
@@ -112,7 +113,15 @@ function ProjectForm({ project, onDone }: { project: ProjectRecord | null; onDon
   );
 }
 
-function PurgeModal({ project, onClose }: { project: ProjectRecord | null; onClose: () => void }) {
+function PurgeModal({
+  opened,
+  project,
+  onClose,
+}: {
+  opened: boolean;
+  project: ProjectRecord | null;
+  onClose: () => void;
+}) {
   const purge = usePurgeProject();
   const close = () => {
     purge.reset();
@@ -132,7 +141,7 @@ function PurgeModal({ project, onClose }: { project: ProjectRecord | null; onClo
   };
 
   return (
-    <Modal opened={project !== null} onClose={close} title="Projectを完全に削除">
+    <Modal opened={opened} onClose={close} title="Projectを完全に削除">
       <Stack>
         <Text size="sm">「{project?.name}」を完全に削除します。この操作は取り消せません。</Text>
         <Text size="sm">
@@ -254,22 +263,15 @@ function ProjectGrid({
   const { data, error, isPending } = useProjectList(tab);
   if (isPending) return <Loader size="sm" />;
   if (error) return <Alert color="red" title="Projectを取得できません">{error.message}</Alert>;
-  if (data.items.length === 0) {
+  if (data.length === 0) {
     return <Text c="dimmed">{tab === "active" ? "Projectがありません" : "ゴミ箱は空です"}</Text>;
   }
   return (
-    <Stack>
-      {data.truncated ? (
-        <Text size="sm" c="dimmed">
-          表示は{data.items.length}件までです
-        </Text>
-      ) : null}
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
-        {data.items.map((project) => (
-          <ProjectCard key={project.id} project={project} tab={tab} onEdit={onEdit} onPurge={onPurge} />
-        ))}
-      </SimpleGrid>
-    </Stack>
+    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
+      {data.map((project) => (
+        <ProjectCard key={project.id} project={project} tab={tab} onEdit={onEdit} onPurge={onPurge} />
+      ))}
+    </SimpleGrid>
   );
 }
 
@@ -279,7 +281,11 @@ export function ProjectsPage() {
     opened: false,
     project: null,
   });
-  const [purgeTarget, setPurgeTarget] = useState<ProjectRecord | null>(null);
+  // 閉じるアニメーションの間も名前を出し続けるため、開閉とは別に対象を残す。
+  const [purge, setPurge] = useState<{ opened: boolean; project: ProjectRecord | null }>({
+    opened: false,
+    project: null,
+  });
 
   const openEdit = (project: ProjectRecord) => setForm({ opened: true, project });
 
@@ -297,13 +303,17 @@ export function ProjectsPage() {
           <Tabs.Tab value="trashed">ゴミ箱</Tabs.Tab>
         </Tabs.List>
       </Tabs>
-      <ProjectGrid tab={tab} onEdit={openEdit} onPurge={setPurgeTarget} />
+      <ProjectGrid tab={tab} onEdit={openEdit} onPurge={(project) => setPurge({ opened: true, project })} />
       <ProjectFormModal
         opened={form.opened}
         project={form.project}
         onClose={() => setForm((current) => ({ ...current, opened: false }))}
       />
-      <PurgeModal project={purgeTarget} onClose={() => setPurgeTarget(null)} />
+      <PurgeModal
+        opened={purge.opened}
+        project={purge.project}
+        onClose={() => setPurge((current) => ({ ...current, opened: false }))}
+      />
     </Stack>
   );
 }
