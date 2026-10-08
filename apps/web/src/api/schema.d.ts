@@ -3656,6 +3656,8 @@ export interface components {
          *     `image`を渡すと、画像と現在のpromptを突き合わせて直した案を返す。
          */
         ImagePromptAssistCreate: {
+            /** Context Tags */
+            context_tags?: string[];
             /**
              * Current Negative Prompt
              * @default
@@ -3706,7 +3708,10 @@ export interface components {
             natural_text_change?: components["schemas"]["ImagePromptNaturalTextChange"];
             /** Negative Prompt */
             negative_prompt: string;
-            /** Positive Prompt */
+            /**
+             * Positive Prompt
+             * @default
+             */
             positive_prompt: string;
             /**
              * Provider Id

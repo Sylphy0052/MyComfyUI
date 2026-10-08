@@ -85,6 +85,9 @@ REJECTED_MEDIA_TYPES = frozenset({"image/svg+xml", "image/svg"})
 #: タグの最大長。表示と絞り込みに使う短いラベルだけを想定する。
 MAX_TAG_LENGTH = 64
 
+#: プロンプト補完へ文脈として渡す補完タグの上限件数。
+MAX_PROMPT_ASSIST_CONTEXT_TAGS = 200
+
 
 def new_id() -> str:
     return str(uuid4())
@@ -2302,6 +2305,11 @@ class ImagePromptAssistCreate(ApiModel):
     #: 直す対象の現在のprompt。空なら新しく組み立てる。
     current_positive_prompt: str = Field(default="", max_length=4000)
     current_negative_prompt: str = Field(default="", max_length=4000)
+    #: 別の欄から既に入るタグ (/imageの補完タグ)。文脈としてLLMへ渡し、結果から
+    #: 同じタグをサーバー側でも確実に除く。比較は小文字化、`_`と空白の同一視で行う。
+    context_tags: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
+        default_factory=list, max_length=MAX_PROMPT_ASSIST_CONTEXT_TAGS
+    )
 
 
 class ImagePromptTagGloss(ApiModel):
@@ -2357,7 +2365,8 @@ class ImagePromptAssistRead(ApiModel):
     名前でも中身が違う。
     """
 
-    positive_prompt: str = Field(min_length=1, max_length=4000)
+    #: 補完タグと重なるタグを除くと空になり得る (全タグが補完タグに既にあるとき)。
+    positive_prompt: str = Field(default="", max_length=4000)
     #: 決められたブロック順で連結済みのタグ行。
     tag_line: str = Field(default="", max_length=4000)
     #: タグでは結び付けられない関係を書いた自然文。
