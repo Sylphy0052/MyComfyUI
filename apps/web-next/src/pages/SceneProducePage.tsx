@@ -18,6 +18,7 @@ import {
   type StepId,
   type StepStatus,
 } from "../sceneProduce/steps";
+import { VideoStep } from "../sceneProduce/VideoStep";
 import {
   useActiveJobs,
   useCharacterCandidates,
@@ -147,6 +148,8 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
           </Group>
           {step === "character" ? (
             <CharacterStep projectId={projectId} scene={scene} />
+          ) : step === "video" ? (
+            <VideoStep key={scene.id} projectId={projectId} scene={scene} />
           ) : (
             <Text c="dimmed" size="sm" mt="sm">
               この工程の画面はまだありません。
