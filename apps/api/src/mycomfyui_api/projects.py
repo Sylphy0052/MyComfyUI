@@ -8,6 +8,8 @@ from typing import Annotated, Any, Awaitable, Callable
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -695,6 +697,14 @@ async def update_local_overrides(
         schemas.ProjectLocalOverrides.model_validate(project.local_overrides or {}),
         payload,
     )
+    # `model_copy`は検証しない。時刻を足した分で大きさの上限を超えたまま保存すると、
+    # 次の読み込みで検証に落ちる。
+    try:
+        payload = schemas.ProjectLocalOverrides.model_validate(
+            payload.model_dump(mode="json")
+        )
+    except ValidationError as error:
+        raise RequestValidationError(error.errors()) from error
     project.local_overrides = payload.model_dump(mode="json")
     project.updated_at = schemas.now_iso()
     await _commit(session)

@@ -156,10 +156,10 @@ def _request_limit(path: str) -> int:
         return encoded + REQUEST_BODY_MARGIN_BYTES
     if path.startswith("/api/v1/projects/") and path.endswith("/local-overrides"):
         # 保存後の大きさの上限を超える本文は、パースする前に断る (Issue #494)。
-        # 非ASCII文字を`\uXXXX`で送るclientもあるため、2倍まで受ける。通常のclient
-        # (`JSON.stringify`) は非ASCIIをエスケープしないため足りる。制御文字や絵文字ばかりを
-        # エスケープした本文は2倍を超えうる。
-        return MAX_LOCAL_OVERRIDES_BYTES * 2 + REQUEST_BODY_MARGIN_BYTES
+        # 非ASCII文字を`\uXXXX`で送るclient (Pythonの`json.dumps`既定など) もあるため、
+        # エスケープで最も膨らむ倍率まで受ける。1バイトの制御文字が`\u0001`の6バイトになる
+        # のが最大で、絵文字 (4バイト→12バイト) は3倍、CJK (3バイト→6バイト) は2倍になる。
+        return MAX_LOCAL_OVERRIDES_BYTES * 6 + REQUEST_BODY_MARGIN_BYTES
     return _max_request_bytes()
 
 
