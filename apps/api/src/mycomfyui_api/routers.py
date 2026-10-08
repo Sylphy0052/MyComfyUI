@@ -3477,6 +3477,7 @@ async def get_artifact_content(
         media_type=artifact.media_type,
         filename=path.name,
         content_disposition_type="attachment" if download else "inline",
+        headers={"X-Content-Type-Options": "nosniff"},
     )
 
 
