@@ -3,9 +3,9 @@ import { createBrowserRouter, Navigate } from "react-router";
 import { AppLayout } from "./layout/AppLayout";
 import { ImagePage } from "./pages/ImagePage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
-import { VideoPage } from "./pages/VideoPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { VideoPage } from "./pages/VideoPage";
 import { ViewerPage } from "./pages/ViewerPage";
 
 export const router = createBrowserRouter([

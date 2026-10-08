@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
 
 import type { SourceImage } from "../imageGen/deriveForm";
-import { EMPTY_TARGET, type ImageTarget } from "../imageGen/imageForm";
+import { type ImageTarget } from "../imageGen/imageForm";
 import { TargetPicker } from "../imageGen/TargetPicker";
 import { initialTarget, paramsFromTarget, targetFromParams } from "../imageGen/targetParams";
 import { useProjectStory, useSubmitImageJob } from "../imageGen/useImageGen";
@@ -153,7 +153,7 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
 
   // ---- Projectからの補完 ----
 
-  const { sceneMotion, insertMotion } = useSceneFill({
+  const { sceneMotion, insertMotion, adoptionsError } = useSceneFill({
     projectId: target.projectId,
     sceneId: target.sceneId,
     scene,
@@ -214,6 +214,11 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
           {projectsError ? (
             <Alert color="red" title="Project一覧を読めません" data-testid="projects-error">
               {projectsError.message}
+            </Alert>
+          ) : null}
+          {adoptionsError ? (
+            <Alert color="yellow" title="Sceneの採用画像を取得できませんでした" data-testid="adoptions-error">
+              先頭フレームは手で選んでください。({adoptionsError.message})
             </Alert>
           ) : null}
           <Tabs

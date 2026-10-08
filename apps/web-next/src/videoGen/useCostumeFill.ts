@@ -41,7 +41,11 @@ export function useCostumeFill({ costume, filledCostumeId, referencesRef, setDra
     const resolveKey = async (key: string): Promise<VideoImage | null> => {
       const artifactId = artifactIdOf(key);
       if (artifactId !== null) return videoImage({ artifact_id: artifactId }, "衣装の参照画像", true);
-      if (!key.startsWith(INPUT_PREFIX)) return null;
+      if (!key.startsWith(INPUT_PREFIX)) {
+        // 補完済みとして記録する (failedにしない)。選び直さない限り再実行されず、通知は繰り返されない。
+        notifyError("衣装の参照画像の形式が未対応のため入れられませんでした", key);
+        return null;
+      }
       try {
         const reference = await reimportInputImage(key.slice(INPUT_PREFIX.length), upload.mutateAsync);
         return videoImage({ relative_path: reference.relative_path, sha256: reference.sha256 }, "衣装の参照画像", true);

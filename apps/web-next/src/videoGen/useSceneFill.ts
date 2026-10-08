@@ -54,5 +54,5 @@ export function useSceneFill({ projectId, sceneId, scene, filledSceneId, setDraf
   /** 「Sceneの動きを入れ直す」。自由欄をSceneの動きに置き換える。 */
   const insertMotion = () =>
     setDraft((current) => ({ ...current, prompt: sceneMotion, filled: { ...current.filled, motion: sceneMotion } }));
-  return { sceneMotion, insertMotion };
+  return { sceneMotion, insertMotion, adoptionsError: adoptions.error };
 }
