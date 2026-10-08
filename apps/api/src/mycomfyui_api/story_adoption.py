@@ -3,7 +3,9 @@
 シーンの枠(`scene_image` / `voice` / `bgm` / `video` / `compose`)ごとに、採用する
 生成物を1つ決める。`voice`だけ台詞1行ごとに別の枠になる。採用すると生成物の採否は
 `accepted`になり、外れた(置き換えられた)生成物は他の枠で採用されていなければ
-`undecided`へ戻る。`rejected`は不採用の印として利用者が付けたまま残す。
+`undecided`へ戻る。外れた生成物の`rejected`は不採用の印として利用者が付けたまま残す。
+`rejected`の生成物は採用できない (採否を変えてから採用する)。採用前に利用者が`accepted`に
+していた生成物も、外すと`undecided`へ戻る (採用前の採否は持たない)。
 既存の採否API(`PATCH /artifacts/{id}/decision`)は変えない。
 """
 
@@ -178,6 +180,19 @@ async def adopt_story_scene_artifact(
             "STORY_ADOPTION_ARTIFACT_UNAVAILABLE",
             "ゴミ箱にある、または未完了の生成物は採用できません。",
             {"artifact_id": artifact.id, "availability": artifact.availability},
+        )
+    if artifact.decision == "rejected":
+        raise _unprocessable(
+            "STORY_ADOPTION_ARTIFACT_REJECTED",
+            "不採用の生成物は採用できません。採否を変えてから採用してください。",
+            {"artifact_id": artifact.id},
+        )
+    # Project無しの生成物は採用でき、他Projectの生成物は採用できない。
+    if artifact.assigned_project_id not in (None, project_id):
+        raise _unprocessable(
+            "STORY_ADOPTION_ARTIFACT_PROJECT_MISMATCH",
+            "他のProjectの生成物は採用できません。",
+            {"artifact_id": artifact.id, "project_id": artifact.assigned_project_id},
         )
     await _check_slot_accepts(session, slot, artifact)
 

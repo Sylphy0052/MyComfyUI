@@ -16,6 +16,7 @@ from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
     Artifact,
     GenerationJob,
+    Project,
     Recipe,
     StoryCharacter,
     StoryCostume,
@@ -107,7 +108,7 @@ async def validate_story_links(
     """紐づけ先が存在し、互いに矛盾しないことを確かめる。
 
     衣装はキャラクターのものに限る。キャラクターとシーンは同じProjectに属し、
-    `project_id`を渡したときはそのProjectとも一致させる。
+    `project_id`を渡したときはそのProjectとも一致させる。ゴミ箱のProjectへは紐づけない。
     """
     character = None
     if character_id is not None:
@@ -169,6 +170,15 @@ async def validate_story_links(
                 "story_scene_id": scene_id,
             },
         )
+    for owner in project_ids:
+        project = await session.get(Project, owner)
+        if project is not None and project.lifecycle == "trashed":
+            raise ApiError(
+                "PROJECT_TRASHED",
+                "ゴミ箱のProjectは復元してから更新してください。",
+                status_code=status.HTTP_409_CONFLICT,
+                details={"project_id": owner},
+            )
 
 
 async def revert_adoption_decisions(

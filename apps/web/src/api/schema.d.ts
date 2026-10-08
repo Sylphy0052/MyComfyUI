@@ -349,7 +349,7 @@ export interface paths {
          * @description 生成物のv2紐づけ(キャラクター・衣装・シーン)とメモを更新する。
          *
          *     渡した項目だけ変え、`null`を渡すと外す。紐づけ先は更新後の組み合わせで検証する
-         *     (衣装はそのキャラクターのもの、キャラクターとシーンは同じProject)。
+         *     (衣装はそのキャラクターのもの、キャラクターとシーンと生成物のProjectは同じ)。
          *     旧UIの`assigned_*`と採否は変えない。
          */
         patch: operations["update_artifact_links_api_v1_artifacts__artifact_id__patch"];

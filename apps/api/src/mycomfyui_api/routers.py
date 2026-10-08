@@ -3005,17 +3005,19 @@ def _parse_period_bound(name: str, value: str, *, is_end: bool) -> tuple[str, bo
     (`to=2026-10-08`)はその日の終わりまでを含める意味で、翌日0時を超えない(排他)境界にする。
     戻り値は(境界のUTC表記, 境界を含めるか)。
     """
+    inclusive = True
     try:
         parsed = datetime.fromisoformat(value)
-    except ValueError:
+        if is_end and len(value) == 10:
+            parsed += timedelta(days=1)
+            inclusive = False
+        bound = parsed.astimezone().astimezone(UTC).isoformat()
+    except (ValueError, OverflowError):
+        # 0001-01-01や9999-12-31のように、翌日やUTCへ直すと範囲外になる値もここで弾く。
         raise _validation_error(
             f"{name}はISO 8601形式で指定してください。", {"value": value}
         ) from None
-    inclusive = True
-    if is_end and len(value) == 10:
-        parsed += timedelta(days=1)
-        inclusive = False
-    return parsed.astimezone().astimezone(UTC).isoformat(), inclusive
+    return bound, inclusive
 
 
 async def _story_media_conditions(
@@ -3627,7 +3629,7 @@ async def update_artifact_links(
     """生成物のv2紐づけ(キャラクター・衣装・シーン)とメモを更新する。
 
     渡した項目だけ変え、`null`を渡すと外す。紐づけ先は更新後の組み合わせで検証する
-    (衣装はそのキャラクターのもの、キャラクターとシーンは同じProject)。
+    (衣装はそのキャラクターのもの、キャラクターとシーンと生成物のProjectは同じ)。
     旧UIの`assigned_*`と採否は変えない。
     """
     artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
@@ -3644,6 +3646,7 @@ async def update_artifact_links(
             character_id=merged["story_character_id"],
             costume_id=merged["story_costume_id"],
             scene_id=merged["story_scene_id"],
+            project_id=artifact.assigned_project_id,
         )
         for field, value in merged.items():
             setattr(artifact, field, value)
