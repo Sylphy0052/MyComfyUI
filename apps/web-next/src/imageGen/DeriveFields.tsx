@@ -131,7 +131,7 @@ export function EditFields({
               key={state.source.previewUrl}
               sourceUrl={state.source.previewUrl}
               mask={state.mask}
-              onChange={onChange}
+              onClearMask={() => onChange({ mask: null })}
               reserveMask={reserveMask}
             />
           )}
