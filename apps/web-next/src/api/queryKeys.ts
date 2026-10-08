@@ -15,6 +15,8 @@ export const queryKeys = {
   // 後続Jobの予約。Jobの状態イベントでは変わらないので、`jobs`の外に置き、予約自身を取り直す。
   followup: (followupId: string) => ["generation-job-followups", followupId] as const,
   manifest: (manifestId: string) => ["generation-manifests", manifestId] as const,
+  // Manifestが指すWorkflowのスナップショット (JSON)。生成設定を入力欄へ戻すときに読む。
+  workflowSnapshot: (artifactId: string) => ["workflow-snapshots", artifactId] as const,
   qwenSettings: ["settings", "qwen"] as const,
   recipes: (kind: string) => ["recipes", kind] as const,
   modelOptions: (workflowVersionId: string) => ["workflow-versions", workflowVersionId, "models"] as const,
@@ -36,6 +38,8 @@ export const queryKeys = {
   viewerMediaItems: (query: string) => ["media-items", "viewer-list", query] as const,
   // 元画像の選択に出す最近の生成物。
   sourceImages: (query: string) => ["media-items", "source-images", query] as const,
+  // /videoのguide_audioに選べる最近の台詞音声。
+  voiceAudio: (query: string) => ["media-items", "voice-audio", query] as const,
   rejectedArtifactIds: (query: string) => ["media-items", "rejected-ids", query] as const,
   artifactLists: ["artifact-lists"] as const,
   trashedArtifacts: ["artifact-lists", "trashed"] as const,

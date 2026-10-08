@@ -1,16 +1,18 @@
 import { useLocalStorage } from "@mantine/hooks";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
   apiRequest,
   type ArtifactRecord,
   type GenerationJobFollowup,
+  type MediaItem,
   type PromptOnlyVideoJob,
   type PromptOnlyVideoJobBody,
   type Recipe,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+import { fetchJobSettings } from "../imageGen/artifactRestore";
 import { isRecord, normalizeTarget, type ImageTarget } from "../imageGen/imageForm";
 import {
   defaultDraft,
@@ -19,6 +21,8 @@ import {
   type VideoDraft,
   type VideoMode,
   type VideoRecipes,
+  type VideoRestored,
+  videoRestoredFromManifest,
 } from "./videoForm";
 
 const enc = encodeURIComponent;
@@ -152,4 +156,27 @@ export function useFollowup(followupId: string) {
       return settling ? FOLLOWUP_POLL_MS : false;
     },
   });
+}
+
+// ---- 台詞音声 (guide_audio) ----
+
+const VOICE_AUDIO_LIMIT = 24;
+
+/** guide_audioに選べる最近の台詞音声 (BGMは含めない)。入力cacheも同じ一覧で返るので、生成物 (Artifact) だけを出す。 */
+export function useRecentVoiceAudio(enabled: boolean) {
+  const query = new URLSearchParams({ kind: "audio", audio_class: "voice", limit: String(VOICE_AUDIO_LIMIT) });
+  return useQuery({
+    queryKey: queryKeys.voiceAudio(query.toString()),
+    queryFn: () => apiRequest<MediaItem[]>(`/media-items?${query}`),
+    select: (items) => items.filter((item) => item.source === "generated" && item.artifact_id),
+    enabled,
+  });
+}
+
+// ---- 生成物からの復元 ----
+
+/** `/video?from_artifact=`で開いたとき、生成物を作った動画Jobの設定を入力欄の内容にする。 */
+export async function restoreVideoFromJob(client: QueryClient, jobId: string, recipes: VideoRecipes): Promise<VideoRestored> {
+  const { job, manifest } = await fetchJobSettings(client, jobId, "video", "動画");
+  return videoRestoredFromManifest(defaultDraft(recipes), job, manifest);
 }

@@ -1,7 +1,9 @@
 import { Alert, Button, Grid, Group, Loader, Stack, Tabs, Text, Textarea, Title } from "@mantine/core";
 import { useCallback, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 
+import { FROM_ARTIFACT_PARAM, restoreFromArtifactParam } from "../imageGen/artifactRestore";
 import type { SourceImage } from "../imageGen/deriveForm";
 import { type ImageTarget } from "../imageGen/imageForm";
 import { TargetPicker } from "../imageGen/TargetPicker";
@@ -10,10 +12,12 @@ import { buildSupplementTags } from "../imageGen/promptTags";
 import { useProjectStory, useSubmitImageJob, useTxt2ImgRecipe } from "../imageGen/useImageGen";
 import { notifyError } from "../notifications";
 import { useProjectList } from "../projects/useProjects";
+import { GuideAudioField } from "../videoGen/GuideAudioField";
 import { notifyDroppedReferences } from "../videoGen/referenceNotice";
 import { useCostumeFill } from "../videoGen/useCostumeFill";
 import { useSceneFill } from "../videoGen/useSceneFill";
 import {
+  restoreVideoFromJob,
   useStoredVideoInput,
   useSubmitPromptOnlyVideo,
   useVideoRecipes,
@@ -46,6 +50,7 @@ function videoTargetFromParams(params: URLSearchParams): ImageTarget {
 function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   const [stored, setStored] = useStoredVideoInput(recipes);
   const [searchParams, setSearchParams] = useSearchParams();
+  const client = useQueryClient();
   const results = useVideoResultEntries();
   // Jobの投入は画像と同じ。投入後にJob一覧を取り直す。
   const submit = useSubmitImageJob();
@@ -112,15 +117,30 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
     setStored((current) => ({ ...current, target: videoTargetFromParams(new URLSearchParams(targetKey)) }));
   }, [targetKey, setStored]);
 
-  // 開いたときに一度だけ、最後に使った対象を戻す。
+  // 開いたときに一度だけ、`from_artifact`の生成設定か、最後に使った対象を戻す。
   // 依存配列を`[]`にするのは、開いた時点の`target`・`stored.target`だけを使い、その後の変更で戻し直さないため
   // (`initialized`でも二重実行を防ぐ)。web-nextにはESLint設定が無く、`ImagePage`の`[]`のeffectにも抑止コメントは無いため、
   // `react-hooks/exhaustive-deps`の抑止コメントは付けない。
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    const restored = initialTarget(target, stored.target);
-    if (restored) changeTarget({ ...restored, extraCast: [] });
+    const fromArtifact = searchParams.get(FROM_ARTIFACT_PARAM);
+    if (fromArtifact === null) {
+      const restored = initialTarget(target, stored.target);
+      if (restored) changeTarget({ ...restored, extraCast: [] });
+      return;
+    }
+    // 入力欄と対象を保存値へ入れてからURLを替える。Scene・衣装の補完は、戻した草稿が補完済みの対象を持つので上書きしない。
+    void restoreFromArtifactParam({
+      client,
+      artifactId: fromArtifact,
+      restore: (jobId) => restoreVideoFromJob(client, jobId, recipes),
+      apply: (restored) => {
+        setStored({ draft: restored.draft, target: restored.target });
+        setSearchParams(paramsFromTarget(restored.target), { replace: true });
+      },
+      onFail: () => changeTarget(target),
+    });
   }, []);
 
   // ---- 画像の選択 ----
@@ -314,6 +334,14 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
               </Stack>
             </Tabs.Panel>
           </Tabs>
+          <GuideAudioField
+            recipe={recipe}
+            audio={draft.guideAudio}
+            onChange={(guideAudio) => setDraft((current) => ({ ...current, guideAudio }))}
+            projectId={target.projectId}
+            scene={scene}
+            characters={characterList}
+          />
           <Stack gap={4}>
             <Textarea
               label={draft.mode === "prompt" ? "動画のプロンプト" : "プロンプト"}
