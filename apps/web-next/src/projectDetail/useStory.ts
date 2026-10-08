@@ -44,10 +44,12 @@ function upsertById<T extends { id: string }>(list: T[], item: T): T[] {
 
 // ---- キャラクター・衣装 ----
 
-export function useCharacters(projectId: string) {
+/** `projectId`が`null`のときは取らない。 */
+export function useCharacters(projectId: string | null, enabled = true) {
   return useQuery({
-    queryKey: queryKeys.projectCharacters(projectId),
-    queryFn: () => apiRequest<StoryCharacter[]>(`/projects/${enc(projectId)}/characters`),
+    queryKey: queryKeys.projectCharacters(projectId ?? ""),
+    queryFn: () => apiRequest<StoryCharacter[]>(`/projects/${enc(projectId ?? "")}/characters`),
+    enabled: enabled && projectId !== null,
   });
 }
 
@@ -161,11 +163,13 @@ export function useUploadVoiceReference() {
 
 // ---- シーン ----
 
-export function useScenes(projectId: string) {
+/** `projectId`が`null`のときは取らない。 */
+export function useScenes(projectId: string | null, enabled = true) {
   return useQuery({
-    queryKey: queryKeys.projectScenes(projectId),
-    queryFn: () => apiRequest<StoryScene[]>(`/projects/${enc(projectId)}/story-scenes`),
+    queryKey: queryKeys.projectScenes(projectId ?? ""),
+    queryFn: () => apiRequest<StoryScene[]>(`/projects/${enc(projectId ?? "")}/story-scenes`),
     select: (items) => [...items].sort((a, b) => a.sequence - b.sequence),
+    enabled: enabled && projectId !== null,
   });
 }
 
