@@ -1459,6 +1459,52 @@ def _tag_line_items(tag_line: str) -> list[str]:
     )
 
 
+def _context_tag_key(value: Any) -> str:
+    """補完タグとの重複判定に使うキー。重み括弧を外し、小文字化し、`_`と空白を同一視する。"""
+    if not isinstance(value, str):
+        return ""
+    return tag_preflight.normalize_tag(_dedupe_key(_normalize_tag(value)))
+
+
+def drop_context_tags(
+    output: dict[str, Any], context_tags: Collection[str]
+) -> dict[str, Any]:
+    """補完タグ(別の欄から既に入るタグ)と重なるタグを、案から決定的に除く。
+
+    LLMへの指示だけでは守られないため、タグのブロック、`tag_glosses`、
+    `tag_confidences`、`tag_changes`、`tag_line`から同じタグを落とし、`positive_prompt`を
+    組み直す。比較は小文字化、`_`と空白の同一視、前後空白と重み括弧の除去で行う。
+    """
+    keys = {key for key in (_context_tag_key(tag) for tag in context_tags) if key}
+    if not keys:
+        return output
+    data = dict(output)
+
+    def kept(value: Any) -> bool:
+        return _context_tag_key(value) not in keys
+
+    for field_name in TAG_BLOCK_FIELDS:
+        values = data.get(field_name)
+        if isinstance(values, list):
+            data[field_name] = [value for value in values if kept(value)]
+    for field_name in ("tag_glosses", "tag_confidences", "tag_changes"):
+        items = data.get(field_name)
+        if isinstance(items, list):
+            data[field_name] = [
+                item
+                for item in items
+                if not isinstance(item, dict) or kept(item.get("tag"))
+            ]
+    tag_line = ", ".join(
+        tag for tag in _tag_line_items(str(data.get("tag_line") or "")) if kept(tag)
+    )
+    data["tag_line"] = tag_line
+    data["positive_prompt"] = compose_positive_prompt(
+        tag_line, str(data.get("natural_text") or "")
+    )
+    return data
+
+
 def describe_prompt_changes(
     output: dict[str, Any], current_positive_prompt: str
 ) -> dict[str, Any]:
@@ -1548,6 +1594,16 @@ REVISION_DIRECTIVE = (
 )
 
 
+#: 補完タグを文脈として渡したときに本文へ足す説明。
+CONTEXT_TAGS_DIRECTIVE = (
+    "## 補完タグ\n"
+    "対象の情報のcontext_tagsは、別の欄から既にpromptへ入るタグである。"
+    "どのブロックの配列にも、tag_changesにも、これらのタグ(大文字小文字、"
+    "アンダースコアと空白の違いを無視して同じもの)を出さない。"
+    "補完タグが表す内容は、重ねて書かずに前提として扱う。"
+)
+
+
 def build_prompt(request: ProposalRequest) -> str:
     """Providerへ渡す本文。コマンド行ではなく標準入力へ流す。"""
     sections = [KIND_DIRECTIVES[request.kind], ""]
@@ -1571,6 +1627,8 @@ def build_prompt(request: ProposalRequest) -> str:
         "current_positive_prompt"
     ):
         sections.extend(["", REVISION_DIRECTIVE])
+    if request.kind == "image_prompt" and request.context.get("context_tags"):
+        sections.extend(["", CONTEXT_TAGS_DIRECTIVE])
     if request.images:
         sections.extend(["", IMAGE_DIRECTIVE])
     return "\n".join(sections)

@@ -1,5 +1,6 @@
 import { ActionIcon, Badge, Button, Group, Stack, Text, Textarea } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
+import type { ReactNode } from "react";
 
 import { isExcluded } from "./promptTags";
 
@@ -75,6 +76,7 @@ export function PromptFields({
   negativeFree,
   composedPositive,
   composedNegative,
+  assist,
   onChange,
 }: {
   supplementPositive: string[];
@@ -85,6 +87,8 @@ export function PromptFields({
   negativeFree: string;
   composedPositive: string;
   composedNegative: string;
+  /** 自由欄の下に置く、日本語からの変換と「直す」。 */
+  assist?: ReactNode;
   onChange: (
     update: Partial<{
       excludedPositive: string[];
@@ -111,6 +115,7 @@ export function PromptFields({
         minRows={3}
         maxRows={10}
       />
+      {assist}
       <SupplementTagList
         label="補完ネガティブ"
         tags={supplementNegative}

@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router";
 
 import type { Recipe } from "../api/client";
 import { ParamsFields } from "../imageGen/ParamsFields";
+import { PromptAssistPanel } from "../imageGen/PromptAssistPanel";
 import { PromptFields } from "../imageGen/PromptFields";
 import { ResultPanel } from "../imageGen/ResultPanel";
 import { TargetPicker } from "../imageGen/TargetPicker";
@@ -245,6 +246,14 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
                   negativeFree={form.negativeFree}
                   composedPositive={composed.positive}
                   composedNegative={composed.negative}
+                  assist={
+                    <PromptAssistPanel
+                      recipeId={recipe.id}
+                      contextTags={supplement.positive.filter((tag) => !isExcluded(tag, form.excludedPositive))}
+                      positiveFree={form.positiveFree}
+                      onApply={(positiveFree) => updateForm({ positiveFree })}
+                    />
+                  }
                   onChange={updateForm}
                 />
                 <ParamsFields form={form} onChange={updateForm} recipe={recipe} />

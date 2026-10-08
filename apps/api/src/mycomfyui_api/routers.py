@@ -5507,6 +5507,7 @@ async def assist_image_prompt(
         payload.current_positive_prompt,
         payload.current_negative_prompt,
         images,
+        payload.context_tags,
     )
 
 
@@ -5517,8 +5518,12 @@ async def _assist_image_prompt(
     current_positive_prompt: str,
     current_negative_prompt: str,
     images: tuple[agent_base.ProposalImage, ...],
+    context_tags: Sequence[str] = (),
 ) -> schemas.ImagePromptAssistRead:
-    """画像promptの補完・修正を1回実行する。"""
+    """画像promptの補完・修正を1回実行する。
+
+    `context_tags`は別の欄から既に入るタグ。LLMへ文脈として渡し、結果からも決定的に除く。
+    """
     context: dict[str, Any] = {
         key: value
         for key, value in (
@@ -5527,6 +5532,8 @@ async def _assist_image_prompt(
         )
         if value.strip()
     }
+    if context_tags:
+        context["context_tags"] = list(context_tags)
     context["prompt_style"] = _prompt_style(recipe)
     guidance = await _prompt_guidance("image_prompt", instruction, context)
     request = agent_base.ProposalRequest(
@@ -5578,8 +5585,12 @@ async def _assist_image_prompt(
     if checked.retry is not None:
         # 補完は提案の履歴を作らないため、作り直させたことはログにだけ残す。
         logger.info("画像promptの補完を作り直させた: %s", checked.retry)
+    # 補完タグと重なるタグはLLM任せにせず除く。差分は除いたあとの案で取る。
     # 書き方の整形で自然文が落ちることもあるため、整形後の案で差分を取る。
-    output = proposals.describe_prompt_changes(checked.output, current_positive_prompt)
+    output = proposals.describe_prompt_changes(
+        proposals.drop_context_tags(checked.output, context_tags),
+        current_positive_prompt,
+    )
     confidence_blocks = proposals.build_tag_confidence_blocks(output)
     return schemas.ImagePromptAssistRead(
         positive_prompt=output["positive_prompt"],

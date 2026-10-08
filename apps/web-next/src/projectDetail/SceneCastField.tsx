@@ -3,6 +3,7 @@ import { IconPlus, IconTrash } from "@tabler/icons-react";
 
 import type { StoryCharacter } from "../api/client";
 import { TAG_MAX, TAGS_MAX, TEXT_MAX } from "./limits";
+import { SceneTagAssistButton } from "./SceneTagAssistButton";
 import { emptyCast, type CastDraft } from "./sceneDraft";
 
 /** 登場キャラ。衣装は、選んだキャラの衣装だけから選べる。 */
@@ -92,6 +93,13 @@ export function SceneCastField({
                     maxLength={TAG_MAX}
                     onChange={(pose_tags) => patch(entry.uid, { pose_tags })}
                   />
+                  <Group>
+                    <SceneTagAssistButton
+                      subject="ポーズ"
+                      text={entry.pose_text}
+                      onTags={(pose_tags) => patch(entry.uid, { pose_tags })}
+                    />
+                  </Group>
                 </Stack>
                 <Stack gap="xs">
                   <Textarea
@@ -109,6 +117,13 @@ export function SceneCastField({
                     maxLength={TAG_MAX}
                     onChange={(expression_tags) => patch(entry.uid, { expression_tags })}
                   />
+                  <Group>
+                    <SceneTagAssistButton
+                      subject="表情"
+                      text={entry.expression_text}
+                      onTags={(expression_tags) => patch(entry.uid, { expression_tags })}
+                    />
+                  </Group>
                 </Stack>
               </SimpleGrid>
             </Stack>

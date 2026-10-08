@@ -9,6 +9,7 @@ import { NAME_MAX, TAG_MAX, TAGS_MAX, TEXT_MAX } from "./limits";
 import { EditFieldset, useReadOnly } from "./readOnly";
 import { SceneAdoptions } from "./SceneAdoptions";
 import { SceneCastField } from "./SceneCastField";
+import { SceneTagAssistButton } from "./SceneTagAssistButton";
 import { SceneDialogueField } from "./SceneDialogueField";
 import { isSavable, TIME_OF_DAY_OPTIONS, toBody, toDraft, type SceneDraft, type TimeOfDay } from "./sceneDraft";
 import { useReportDirty } from "./unsavedGuard";
@@ -84,6 +85,13 @@ export function SceneEditor({
         maxLength={TAG_MAX}
         onChange={(background_tags) => update({ background_tags })}
       />
+      <Group>
+        <SceneTagAssistButton
+          subject="背景"
+          text={draft.background_text}
+          onTags={(background_tags) => update({ background_tags })}
+        />
+      </Group>
       <Select
         label="時間帯"
         placeholder="指定なし"
