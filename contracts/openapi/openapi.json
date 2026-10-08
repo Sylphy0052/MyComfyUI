@@ -2762,6 +2762,19 @@
             ],
             "title": "Story Costume Id"
           },
+          "story_dialogue_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Dialogue Id"
+          },
           "story_scene_id": {
             "anyOf": [
               {
@@ -2966,6 +2979,17 @@
               }
             ],
             "title": "Story Costume Id"
+          },
+          "story_dialogue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Dialogue Id"
           },
           "story_scene_id": {
             "anyOf": [
@@ -3217,6 +3241,19 @@
               }
             ],
             "title": "Story Costume Id"
+          },
+          "story_dialogue_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Dialogue Id"
           },
           "story_scene_id": {
             "anyOf": [
