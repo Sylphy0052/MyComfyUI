@@ -21,6 +21,7 @@ import { notifyError } from "../notifications";
 import { NAME_MAX, TAG_MAX, TAGS_MAX, TEXT_MAX } from "./limits";
 import { MediaThumb } from "./MediaThumb";
 import { EditFieldset, useReadOnly } from "./readOnly";
+import { TagExtractor } from "./TagExtractor";
 import { useReportDirty } from "./unsavedGuard";
 import { inputMediaKey, useSaveCharacter, useUploadImageReference, useUploadVoiceReference } from "./useStory";
 
@@ -310,6 +311,13 @@ export function CharacterEditor({
           maxTags={TAGS_MAX}
           maxLength={TAG_MAX}
           onChange={(fixed_tags) => update({ fixed_tags })}
+        />
+        <TagExtractor
+          imageKeys={draft.portrait_media_key === null ? [] : [draft.portrait_media_key]}
+          tags={draft.fixed_tags}
+          onChange={(fixed_tags) => update({ fixed_tags })}
+          emptyHint="代表画像を設定すると、画像から固定タグを抽出できます。"
+          targetLabel="固定タグ"
         />
         <TagsInput
           label="ネガティブタグ"
