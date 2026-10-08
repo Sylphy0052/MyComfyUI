@@ -135,7 +135,7 @@ export function VideoWorkspace({
   // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
   const [restoring, setRestoring] = useState(() => fromArtifact !== null);
 
-  // URLの対象を、次に開いたときの復元用に残す。
+  // URLの対象を、次に開いたときの復元用に残す。埋め込み (`embedded`) では対象が固定なので残さない。
   // 下の復元effectより前に置くこと。順序は次の2点で効く。
   // - 初回の描画では`initialized`がまだfalseなので、ここは保存せずに抜ける。URLが空のまま、保存済みの対象を空で上書きしない。
   // - 復元effectが`initialized`をtrueにして`changeTarget`を呼ぶと、URLが変わって`targetKey`が変わり、

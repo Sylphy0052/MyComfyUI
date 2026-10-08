@@ -4,11 +4,11 @@ import { Link } from "react-router";
 
 import type { StoryScene } from "../api/client";
 import type { ImageTarget } from "../imageGen/imageForm";
-import { VideoWorkspace, WithVideoRecipes } from "../pages/VideoPage";
+import { type VideoStorageKeys, VideoWorkspace, WithVideoRecipes } from "../pages/VideoPage";
 import { useSceneAdoptions } from "../projectDetail/useStory";
 
 /** シーンごとに別の保存キーにする。`/video`の入力欄・結果欄とも、ほかのシーンとも混ざらない。 */
-function storageKeysOf(sceneId: string) {
+function storageKeysOf(sceneId: string): VideoStorageKeys {
   return {
     input: `web-next:scene-produce-video-input:${sceneId}`,
     results: `web-next:scene-produce-video-results:${sceneId}`,

@@ -54,7 +54,7 @@ export const VIDEO_INPUT_KEY = "web-next:video-input";
 /** `/video`が結果欄を残すlocalStorageのキー。 */
 export const VIDEO_RESULTS_KEY = "web-next:video-results";
 
-export function useStoredVideoInput(recipes: VideoRecipes, key: string = VIDEO_INPUT_KEY) {
+export function useStoredVideoInput(recipes: VideoRecipes, key = VIDEO_INPUT_KEY) {
   return useLocalStorage<StoredVideoInput>({
     key,
     defaultValue: { draft: defaultDraft(recipes), target: null },
@@ -72,7 +72,7 @@ export function useStoredVideoInput(recipes: VideoRecipes, key: string = VIDEO_I
   });
 }
 
-export function useVideoResultEntries(key: string = VIDEO_RESULTS_KEY) {
+export function useVideoResultEntries(key = VIDEO_RESULTS_KEY) {
   const [entries, setEntries] = useLocalStorage<VideoResultEntry[]>({
     key,
     defaultValue: [],
