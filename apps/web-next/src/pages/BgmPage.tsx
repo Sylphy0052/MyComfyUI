@@ -17,12 +17,14 @@ import {
   type BgmTarget,
 } from "../bgm/bgmForm";
 import {
+  BGM_STORAGE_KEYS,
   restoreBgmFromJob,
   useAdoptedVideoSeconds,
   useBgmRecipe,
   useBgmResultEntries,
   useStoredBgmInput,
   useSubmitBgmJobs,
+  type BgmStorageKeys,
 } from "../bgm/useBgm";
 import { notifyError } from "../notifications";
 import { useScenes } from "../projectDetail/useStory";
@@ -79,14 +81,24 @@ function secondsNote(
   return `Sceneの採用済み動画の長さ (${video.data}秒) が既定`;
 }
 
-function BgmWorkspace({ recipe }: { recipe: Recipe }) {
-  const [stored, setStored] = useStoredBgmInput(recipe);
-  const [searchParams, setSearchParams] = useSearchParams();
+export type BgmWorkspaceProps = {
+  recipe: Recipe;
+  target: BgmTarget;
+  /** 対象を変えられる画面 (`/bgm`) だけが渡す。省略すると対象を固定し、選択欄は変えられず、前回の対象も戻さない。 */
+  onTargetChange?: (next: BgmTarget) => void;
+  /** 入力欄と結果欄の保存キー。 */
+  storageKeys: BgmStorageKeys;
+  /** `?from_artifact=`の生成物ID。あれば、開いたときにその生成設定を入力欄へ戻す。 */
+  fromArtifact?: string | null;
+};
+
+/** BGMの入力欄と結果欄。`/bgm`とシーン生成のBGMの工程が使う。 */
+export function BgmWorkspace({ recipe, target, onTargetChange, storageKeys, fromArtifact = null }: BgmWorkspaceProps) {
+  const [stored, setStored] = useStoredBgmInput(recipe, storageKeys.input);
   const client = useQueryClient();
-  const results = useBgmResultEntries();
+  const results = useBgmResultEntries(storageKeys.results);
   const submit = useSubmitBgmJobs();
 
-  const target = targetFromParams(searchParams);
   const targetKey = paramsFromTarget(target).toString();
   const form = stored.form ?? defaultBgmForm(recipe);
 
@@ -110,18 +122,26 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
         (name): name is string => name !== null,
       );
 
+  // 対象を固定した画面は、入力欄を更新するときに対象も同じ更新で残す。
+  // 別々に更新すると、後の更新が先の更新を打ち消すことがある。
+  const fixed = !onTargetChange;
+  const { projectId: fixedProjectId, sceneId: fixedSceneId } = target;
   const updateForm = useCallback(
     (update: Partial<BgmForm>) =>
-      setStored((current) => ({ ...current, form: { ...(current.form ?? defaultBgmForm(recipe)), ...update } })),
-    [setStored, recipe],
+      setStored((current) => ({
+        ...current,
+        ...(fixed ? { target: { projectId: fixedProjectId, sceneId: fixedSceneId } } : {}),
+        form: { ...(current.form ?? defaultBgmForm(recipe)), ...update },
+      })),
+    [setStored, recipe, fixed, fixedProjectId, fixedSceneId],
   );
   const changeTarget = useCallback(
-    (next: BgmTarget) => setSearchParams(paramsFromTarget(next), { replace: true }),
-    [setSearchParams],
+    (next: BgmTarget) => onTargetChange?.(next),
+    [onTargetChange],
   );
 
   // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
-  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
+  const [restoring, setRestoring] = useState(() => fromArtifact !== null);
 
   // URLの対象を、次に開いたときの復元用に残す。初回の復元を決めるまでは、空の対象で上書きしない。
   // 2つのeffectは宣言順に走る順序に依存する。初回は、ここが`initialized`がfalseのため何もせず、
@@ -129,17 +149,19 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
   // 2つの順序を入れ替えると、初回に空の対象を保存して前回の対象を失う。
   const initialized = useRef(false);
   useEffect(() => {
-    if (!initialized.current) return;
+    // 対象を固定した画面は、`updateForm`が対象も残すので、ここでは残さない。
+    if (!initialized.current || fixed) return;
     setStored((current) => ({ ...current, target: targetFromParams(new URLSearchParams(targetKey)) }));
-  }, [targetKey, setStored]);
+  }, [targetKey, setStored, fixed]);
   // 開いたときに一度だけ、`from_artifact`の生成設定か、最後に使った対象を戻す。
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    const fromArtifact = searchParams.get(FROM_ARTIFACT_PARAM);
     if (fromArtifact === null) {
-      const restored = initialTarget(target, stored.target);
-      if (restored) changeTarget(restored);
+      if (onTargetChange) {
+        const restored = initialTarget(target, stored.target);
+        if (restored) changeTarget(restored);
+      }
       return;
     }
     void restoreFromArtifactParam({
@@ -199,7 +221,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
       <Grid.Col span={{ base: 12, lg: 5 }}>
         <Stack gap="md" inert={restoring}>
           <Group justify="space-between">
-            <Title order={2}>BGM</Title>
+            {onTargetChange ? <Title order={2}>BGM</Title> : <span />}
             <Button
               variant="default"
               size="xs"
@@ -220,6 +242,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
               data={withCurrent(projectOptions, target.projectId, projects.isError)}
               value={target.projectId}
               onChange={(projectId) => changeTarget({ projectId, sceneId: null })}
+              disabled={!onTargetChange}
               searchable
               clearable
               error={projects.error?.message}
@@ -234,7 +257,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
               )}
               value={target.sceneId}
               onChange={(next) => changeTarget({ ...target, sceneId: next })}
-              disabled={target.projectId === null}
+              disabled={target.projectId === null || !onTargetChange}
               clearable
               error={scenes.error?.message}
             />
@@ -277,6 +300,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
 /** `/bgm`。タグ・歌詞・長さの入力欄と、この画面から投入した生成の結果欄。 */
 export function BgmPage() {
   const recipe = useBgmRecipe();
+  const [searchParams, setSearchParams] = useSearchParams();
   if (recipe.isPending) return <Loader size="sm" />;
   if (recipe.error) {
     return (
@@ -292,5 +316,13 @@ export function BgmPage() {
       </Alert>
     );
   }
-  return <BgmWorkspace recipe={recipe.data} />;
+  return (
+    <BgmWorkspace
+      recipe={recipe.data}
+      target={targetFromParams(searchParams)}
+      onTargetChange={(next) => setSearchParams(paramsFromTarget(next), { replace: true })}
+      storageKeys={BGM_STORAGE_KEYS}
+      fromArtifact={searchParams.get(FROM_ARTIFACT_PARAM)}
+    />
+  );
 }
