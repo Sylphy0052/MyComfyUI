@@ -91,7 +91,7 @@ export function ImageChangePanel({
     return characterReferenceImage(character, characterSelection.outfitId);
   }, [characters, characterSelection]);
   // 参照セットの画像はArtifactの有無に関わらず、生成タブの`toReferenceInputs`と同じ形で送る。
-  // キャラクター一覧を読み直しても同じ画像なら同じオブジェクトを保つ。説明欄を残すかは`key` (sha256) で判定する。
+  // キャラクター一覧を読み直しても、パス・sha256・ファイル名が同じなら同じオブジェクトを保つ。説明欄を残すかは`key` (sha256) で判定する。
   const referenceRelativePath = characterReference?.image.relative_path ?? null;
   const referenceSha256 = characterReference?.image.sha256 ?? null;
   const referenceFileName = characterReference?.image.file_name ?? "";
