@@ -16,11 +16,14 @@ import type { Recipe } from "../api/client";
 import { acceptsInput } from "../imageGen/imageForm";
 import { useModelOptions } from "../imageGen/useImageGen";
 import {
+  CFG_MAX,
+  CFG_MIN,
   composeBgmTags,
   COUNT_MAX,
   INSTRUMENTAL_TAG,
   SECONDS_MAX,
   SEED_INPUT_MAX,
+  STEPS_MAX,
   type BgmForm,
 } from "./bgmForm";
 
@@ -98,41 +101,47 @@ function DetailFields({ form, onChange, recipe }: { form: BgmForm; onChange: Upd
               value={form.ckptName}
               data={ckptOptions}
               onChange={(ckptName) => onChange({ ckptName })}
+              data-testid="bgm-ckpt"
             />
             <Textarea
               label="避けたい要素"
-              description="歌詞を入れるときは、vocals / singing を外してください。"
+              description="歌詞を入れるときは、vocals / singing を外してください。空にすると何も避けません。"
               size="xs"
               autosize
               minRows={1}
               maxRows={4}
               value={form.negative}
               onChange={(event) => onChange({ negative: event.currentTarget.value })}
+              data-testid="bgm-negative"
             />
             <SimpleGrid cols={2} spacing="xs">
               <NumberInput
                 label="steps"
                 size="xs"
                 min={1}
-                max={1000}
+                max={STEPS_MAX}
+                allowDecimal={false}
                 value={form.steps}
                 onChange={(value) => onChange({ steps: asNumber(value, form.steps) })}
+                data-testid="bgm-steps"
               />
               <NumberInput
                 label="cfg"
                 size="xs"
-                min={0.1}
-                max={100}
+                min={CFG_MIN}
+                max={CFG_MAX}
                 step={0.5}
                 decimalScale={2}
                 value={form.cfg}
                 onChange={(value) => onChange({ cfg: asNumber(value, form.cfg) })}
+                data-testid="bgm-cfg"
               />
               <TextInput
                 label="sampler"
                 size="xs"
                 value={form.samplerName}
                 onChange={(event) => onChange({ samplerName: event.currentTarget.value })}
+                data-testid="bgm-sampler"
                 disabled={!acceptsInput(recipe, "sampler_name")}
                 description={lockedNote("sampler_name")}
               />
@@ -141,6 +150,7 @@ function DetailFields({ form, onChange, recipe }: { form: BgmForm; onChange: Upd
                 size="xs"
                 value={form.scheduler}
                 onChange={(event) => onChange({ scheduler: event.currentTarget.value })}
+                data-testid="bgm-scheduler"
                 disabled={!acceptsInput(recipe, "scheduler")}
                 description={lockedNote("scheduler")}
               />
@@ -208,6 +218,7 @@ export function BgmParamsFields({
             ]}
             value={form.seedMode}
             onChange={(seedMode) => onChange({ seedMode: seedMode as BgmForm["seedMode"] })}
+            data-testid="bgm-seed-mode"
           />
         </Stack>
         {form.seedMode === "fixed" ? (
@@ -219,6 +230,7 @@ export function BgmParamsFields({
             allowDecimal={false}
             value={form.seed}
             onChange={(value) => onChange({ seed: asNumber(value, form.seed) })}
+            data-testid="bgm-seed"
           />
         ) : null}
       </Group>
