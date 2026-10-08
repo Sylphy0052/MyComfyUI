@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { StoryScene } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import {
+  abortError,
   fetchAdoptions,
   fetchCharacters,
   initialRunStates,
@@ -23,6 +24,8 @@ export type RunAllState = {
   phase: RunPhase;
   /** 実行中の工程。 */
   current: StepId | null;
+  /** 実行中の工程を始めた時刻 (`Date.now()`)。経過時間の表示に使う。 */
+  startedAt: number | null;
   steps: Record<StepId, RunStepState> | null;
   /** 止まった工程と、その理由。 */
   failedStep: StepId | null;
@@ -31,7 +34,15 @@ export type RunAllState = {
   notices: string[];
 };
 
-const IDLE: RunAllState = { phase: "idle", current: null, steps: null, failedStep: null, message: null, notices: [] };
+const IDLE: RunAllState = {
+  phase: "idle",
+  current: null,
+  startedAt: null,
+  steps: null,
+  failedStep: null,
+  message: null,
+  notices: [],
+};
 
 /**
  * 「残りを一括実行」。画面がJobの終了を待って次の工程を投入するので、画面を閉じると止まる (Jobは取り消さない)。
@@ -81,13 +92,11 @@ export function useRunAll(projectId: string, scene: StoryScene) {
     const abort = new AbortController();
     controller.current = abort;
     cancelOnAbort.current = false;
-    const jobs = new Set<string>();
     const ctx: RunContext = {
       client,
       projectId,
       scene,
       signal: abort.signal,
-      jobs,
       cancelOnAbort,
       notice: (text) => update((current) => (current.notices.includes(text) ? current : { ...current, notices: [...current.notices, text] })),
     };
@@ -98,17 +107,25 @@ export function useRunAll(projectId: string, scene: StoryScene) {
         fetchAdoptions(client, projectId, scene.id),
       ]);
       const steps = initialRunStates(scene, characters, adoptions);
-      update(() => ({ phase: "running", current: null, steps, failedStep: null, message: null, notices: [] }));
+      update(() => ({
+        phase: "running",
+        current: null,
+        startedAt: null,
+        steps,
+        failedStep: null,
+        message: null,
+        notices: [],
+      }));
       for (const id of stepsToRun(scene, characters, adoptions)) {
-        if (abort.signal.aborted) throw new DOMException("aborted", "AbortError");
+        if (abort.signal.aborted) throw abortError();
         running = id;
-        setStep(id, "running", { current: id });
+        setStep(id, "running", { current: id, startedAt: Date.now() });
         const outcome = await executeStep(id, ctx);
         running = null;
-        setStep(id, outcome, { current: null });
+        setStep(id, outcome, { current: null, startedAt: null });
         await refresh();
       }
-      update((current) => ({ ...current, phase: "completed", current: null }));
+      update((current) => ({ ...current, phase: "completed", current: null, startedAt: null }));
     } catch (error) {
       if (isAbortError(error) || abort.signal.aborted) {
         // 利用者の中止だけ画面に残す。画面を閉じたときは、もう描かない。
@@ -117,6 +134,7 @@ export function useRunAll(projectId: string, scene: StoryScene) {
           ...current,
           phase: "aborted",
           current: null,
+          startedAt: null,
           message: running !== null ? `${stepLabel(running)}の実行中に中止しました。` : "中止しました。",
         }));
       } else {
@@ -126,6 +144,7 @@ export function useRunAll(projectId: string, scene: StoryScene) {
           ...current,
           phase: "failed",
           current: null,
+          startedAt: null,
           failedStep: failed,
           message: messageOf(error),
         }));

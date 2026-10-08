@@ -50,18 +50,19 @@ export function composeResultsKeyOf(sceneId: string): string {
   return `web-next:scene-produce-compose-results:${sceneId}`;
 }
 
-/** 結果欄に残すJobの数。各工程のフックの上限と合わせる。 */
-const RESULTS_MAX = 30;
-
-/** `@mantine/hooks`の`useLocalStorage`が、同じ画面内の別のフックへ値の変更を知らせるイベント名。 */
-const LOCAL_STORAGE_EVENT = "mantine-local-storage";
+/**
+ * `@mantine/hooks`の`useLocalStorage`が、同じ画面内の別のフックへ値の変更を知らせるイベント名。
+ * Mantineの公開APIではなく内部の実装に依存している。出典は`@mantine/hooks`の`use-local-storage/create-storage`
+ * (`type === "localStorage" ? "mantine-local-storage" : ...`)。Mantineを上げたときは、結果欄が一括実行の追記で更新されるか確かめる。
+ */
+const MANTINE_LOCAL_STORAGE_EVENT = "mantine-local-storage";
 
 /**
  * 結果欄のlocalStorageの先頭へ1件足す。開いている結果欄は、`useLocalStorage`と同じイベントで更新される。
- * 結果欄の各フックと同じく、同じ`jobId`の古い要素は取り除き、`RESULTS_MAX`件を超えた分は古い方から落とす。
- * 壊れた保存値は空として扱う。
+ * 結果欄の各フックと同じく、同じ`jobId`の古い要素は取り除き、`max`件を超えた分は古い方から落とす。
+ * `max`には、書き込み先の結果欄のフックが持つ`RESULTS_MAX`を渡す。壊れた保存値は空として扱う。
  */
-export function appendResultEntry<T extends { jobId: string }>(key: string, entry: T): void {
+export function appendResultEntry<T extends { jobId: string }>(key: string, entry: T, max: number): void {
   let current: T[] = [];
   try {
     const raw: unknown = JSON.parse(window.localStorage.getItem(key) ?? "[]");
@@ -74,7 +75,12 @@ export function appendResultEntry<T extends { jobId: string }>(key: string, entr
   } catch {
     current = [];
   }
-  const next = [entry, ...current.filter((item) => item.jobId !== entry.jobId)].slice(0, RESULTS_MAX);
-  window.localStorage.setItem(key, JSON.stringify(next));
-  window.dispatchEvent(new CustomEvent(LOCAL_STORAGE_EVENT, { detail: { key, value: next } }));
+  const next = [entry, ...current.filter((item) => item.jobId !== entry.jobId)].slice(0, max);
+  try {
+    window.localStorage.setItem(key, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent(MANTINE_LOCAL_STORAGE_EVENT, { detail: { key, value: next } }));
+  } catch {
+    // 結果欄への追記は付随機能で、書けなくても採用は別に書かれる。容量超過などで`setItem`が投げても、
+    // 投入済みのJobを孤児にして一括実行を止める理由にならないので、握って先へ進める。
+  }
 }

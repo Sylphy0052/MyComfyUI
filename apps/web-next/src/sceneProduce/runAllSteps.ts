@@ -1,12 +1,11 @@
-import { artifactContentUrl, type MusicPromptAssist } from "../api/client";
-import { fetchAdoptedVideoSeconds } from "../bgm/useBgm";
+import { apiRequest, artifactContentUrl, type MusicPromptAssist } from "../api/client";
+import { fetchAdoptedVideoSeconds, RESULTS_MAX as BGM_RESULTS_MAX } from "../bgm/useBgm";
 import { suggestedBgmTags } from "../bgm/BgmTagAssist";
 import { BGM_TEMPLATE, bgmJobBody, buildBgmInputs, defaultBgmForm, defaultSeconds } from "../bgm/bgmForm";
-import { apiRequest } from "../api/client";
 import { resultCountOf } from "../imageGen/deriveForm";
 import { buildInputs, composedPrompts, defaultForm, imageJobBody, TXT2IMG_TEMPLATE } from "../imageGen/imageForm";
 import { buildCastSupplementTags, castEntriesOf } from "../imageGen/promptTags";
-import { addCostumeReference, putAdoption } from "../imageGen/useImageGen";
+import { addCostumeReference, putAdoption, RESULTS_MAX as IMAGE_RESULTS_MAX } from "../imageGen/useImageGen";
 import { INSTRUCTION_MAX } from "../promptAssist/useInstructionAssist";
 import {
   buildVideoInputs,
@@ -16,7 +15,9 @@ import {
   videoJobBody,
   VIDEO_TEMPLATES,
 } from "../videoGen/videoForm";
+import { RESULTS_MAX as VIDEO_RESULTS_MAX } from "../videoGen/useVideoGen";
 import { LINE_SKIP_REASONS, lineLabel, lineSkipOf, speakerNameOf, voicedSpeakerOf } from "../voice/SceneLineList";
+import { RESULTS_MAX as VOICE_RESULTS_MAX, TEXT_PREVIEW_MAX as VOICE_TEXT_PREVIEW_MAX } from "../voice/useVoice";
 import { buildVoiceBody, defaultVoiceForm, formForLine } from "../voice/voiceForm";
 import {
   buildComposeInputs,
@@ -56,9 +57,6 @@ import type { StepId } from "./steps";
 
 // 一括実行の工程ごとの中身。各工程の画面の既定の入力 (Projectから埋めた値) で1回だけ生成し、最初の候補を採用する。
 // 入力の組み立ては画面と同じ関数 (`imageJobBody`・`buildInputs`・`bgmJobBody`・`videoJobBody`・`composeJobBody`など) を使う。
-
-/** 音声の結果欄に添える台詞文の長さ。`useVoiceResultEntries`と同じ。 */
-const VOICE_TEXT_PREVIEW_MAX = 80;
 
 type StepOutcome = "done" | "skipped";
 
@@ -113,7 +111,12 @@ async function runCharacter(ctx: RunContext): Promise<StepOutcome> {
       ctx,
       imageJobBody(recipe, target, buildInputs(form, supplement, recipe)),
       "image",
-      (job) => appendResultEntry(characterKeysOf(characterId, costumeId).results, { jobId: job.id, count: resultCountOf(recipe, form) }),
+      (job) =>
+        appendResultEntry(
+          characterKeysOf(characterId, costumeId).results,
+          { jobId: job.id, count: resultCountOf(recipe, form) },
+          IMAGE_RESULTS_MAX,
+        ),
     );
     await addCostumeReference(client, projectId, costume, artifact.id);
   }
@@ -135,7 +138,12 @@ async function runSceneImage(ctx: RunContext): Promise<StepOutcome> {
     ctx,
     imageJobBody(recipe, target, buildInputs(form, supplement, recipe)),
     "image",
-    (job) => appendResultEntry(sceneImageKeysOf(scene.id).results, { jobId: job.id, count: resultCountOf(recipe, form) }),
+    (job) =>
+      appendResultEntry(
+        sceneImageKeysOf(scene.id).results,
+        { jobId: job.id, count: resultCountOf(recipe, form) },
+        IMAGE_RESULTS_MAX,
+      ),
   );
   await putAdoption(projectId, scene.id, "scene_image", artifact.id);
   return "done";
@@ -165,11 +173,11 @@ async function runVoice(ctx: RunContext): Promise<StepOutcome> {
       buildVoiceBody(lineForm, recipe, { projectId, sceneId: scene.id }, speaker, lineForm.dialogueId),
       "audio",
       (job) =>
-        appendResultEntry(voiceKeysOf(scene.id).results, {
-          jobId: job.id,
-          text: line.text.trim().slice(0, VOICE_TEXT_PREVIEW_MAX),
-          line: label,
-        }),
+        appendResultEntry(
+          voiceKeysOf(scene.id).results,
+          { jobId: job.id, text: line.text.trim().slice(0, VOICE_TEXT_PREVIEW_MAX), line: label },
+          VOICE_RESULTS_MAX,
+        ),
     );
     await putAdoption(projectId, scene.id, "voice", artifact.id, line.id ?? null);
     submitted += 1;
@@ -206,7 +214,7 @@ async function runBgm(ctx: RunContext): Promise<StepOutcome> {
     ctx,
     bgmJobBody(recipe, { projectId, sceneId: scene.id }, inputs),
     "audio",
-    (job) => appendResultEntry(bgmKeysOf(scene.id).results, { jobId: job.id }),
+    (job) => appendResultEntry(bgmKeysOf(scene.id).results, { jobId: job.id }, BGM_RESULTS_MAX),
   );
   await putAdoption(projectId, scene.id, "bgm", artifact.id);
   return "done";
@@ -244,7 +252,7 @@ async function runVideo(ctx: RunContext): Promise<StepOutcome> {
     buildVideoInputs(draft, recipe),
   );
   const { artifact } = await submitAndWait(ctx, body, "video", (job) =>
-    appendResultEntry(videoKeysOf(scene.id).results, { jobId: job.id }),
+    appendResultEntry(videoKeysOf(scene.id).results, { jobId: job.id }, VIDEO_RESULTS_MAX),
   );
   await putAdoption(projectId, scene.id, "video", artifact.id);
   return "done";
@@ -300,7 +308,7 @@ async function runCompose(ctx: RunContext): Promise<StepOutcome> {
     ctx,
     composeJobBody({ recipeId: recipe.id, projectId, sceneId: scene.id, inputs }),
     "video",
-    (job) => appendResultEntry(composeResultsKeyOf(scene.id), { jobId: job.id }),
+    (job) => appendResultEntry(composeResultsKeyOf(scene.id), { jobId: job.id }, VIDEO_RESULTS_MAX),
   );
   await putAdoption(projectId, scene.id, "compose", artifact.id);
   return "done";

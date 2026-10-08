@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import {
+  ApiError,
   apiRequest,
   type ArtifactRecord,
   type GenerationJob,
@@ -13,8 +14,7 @@ import {
 import { queryKeys } from "../api/queryKeys";
 import { cancelJob } from "../jobs/useJobs";
 import { DURATION_LOAD_TIMEOUT_MS } from "./composeForm";
-import { hasAllReferenceImages, STEPS, type StepId } from "./steps";
-import { lineSkipOf } from "../voice/SceneLineList";
+import { hasAllReferenceImages, isStepAdopted, STEPS, type StepId } from "./steps";
 
 // 「残りを一括実行」の土台。画面がJobの終了を待ち、次の工程を投入する。工程ごとの中身は`runAllSteps.ts`。
 
@@ -52,8 +52,6 @@ export type RunContext = {
   projectId: string;
   scene: StoryScene;
   signal: AbortSignal;
-  /** 投入して、まだ終わっていないJobのID。中止のときに取り消す。 */
-  jobs: Set<string>;
   /** 利用者の「中止」で止めたとき`true`。画面を閉じて止めたときは`false` (Jobは取り消さない)。 */
   cancelOnAbort: { current: boolean };
   /** 続けるが知らせたいこと (生成できないキャラ、音声を飛ばした台詞など)。 */
@@ -62,7 +60,7 @@ export type RunContext = {
 
 // ---- 待機 ----
 
-function abortError(): Error {
+export function abortError(): Error {
   return new DOMException("aborted", "AbortError");
 }
 
@@ -70,7 +68,7 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-/** 中止で途中で起きる待機。 */
+/** 中止されると途中で打ち切る待機。 */
 export function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
@@ -89,20 +87,57 @@ export function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** Jobが成功で終わるまで数秒おきに取り直す。失敗・取り消しは理由つきで`RunBlocked`にする。 */
+/** Jobの状態を取れなくても待ち続ける連続回数。これを超えて続けて取れなかったら止める。 */
+export const MAX_POLL_FAILURES = 3;
+
+/** `promise`を待つ。ただし`signal`が中止されたら、結果を待たずにすぐ中止の例外にする。 */
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(abortError());
+      return;
+    }
+    const onAbort = () => reject(abortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+/**
+ * Jobが成功で終わるまで数秒おきに取り直す。失敗・取り消しは理由つきで`RunBlocked`にする。
+ * 状態の取得が一時的に失敗しても、連続`MAX_POLL_FAILURES`回までは待ち続ける。全体の時間切れは設けない (動画のJobは長い)。
+ */
 export async function waitForJob(
   client: QueryClient,
   jobId: string,
   signal: AbortSignal,
   intervalMs: number = POLL_INTERVAL_MS,
 ): Promise<GenerationJob> {
+  let failures = 0;
   for (;;) {
     if (signal.aborted) throw abortError();
-    const job = await client.fetchQuery({
-      queryKey: queryKeys.job(jobId),
-      queryFn: () => apiRequest<GenerationJob>(`/generation-jobs/${enc(jobId)}`),
-      staleTime: 0,
-    });
+    let job: GenerationJob;
+    try {
+      job = await raceAbort(
+        client.fetchQuery({
+          queryKey: queryKeys.job(jobId),
+          queryFn: () => apiRequest<GenerationJob>(`/generation-jobs/${enc(jobId)}`),
+          staleTime: 0,
+        }),
+        signal,
+      );
+      failures = 0;
+    } catch (error) {
+      if (signal.aborted) throw abortError();
+      failures += 1;
+      if (failures > MAX_POLL_FAILURES) {
+        throw new RunBlocked(
+          `Jobの状態を${failures}回続けて取れませんでした (${messageOf(error)})。Jobは動いている可能性があります。ヘッダーのJob一覧で確かめてください`,
+        );
+      }
+      await sleep(intervalMs, signal);
+      continue;
+    }
     if (job.state === "succeeded") return job;
     if (job.state === "failed") throw new RunBlocked(job.failure_message ?? "Jobが失敗しました");
     if (job.state === "cancelled") throw new RunBlocked("Jobが取り消されました");
@@ -129,19 +164,29 @@ export async function submitAndWait(
   const submitted = await apiRequest<GenerationJob>("/generation-jobs", { method: "POST", body: JSON.stringify(body) });
   ctx.client.setQueryData(queryKeys.job(submitted.id), submitted);
   void ctx.client.invalidateQueries({ queryKey: queryKeys.jobs });
-  ctx.jobs.add(submitted.id);
-  onSubmitted?.(submitted);
   try {
+    onSubmitted?.(submitted);
     const job = await waitForJob(ctx.client, submitted.id, ctx.signal);
     const artifacts = await apiRequest<ArtifactRecord[]>(`/generation-jobs/${enc(job.id)}/artifacts`);
     const artifact = pickArtifact(artifacts, artifactKind);
     if (artifact === null) throw new RunBlocked("Jobは終わりましたが、使える生成物がありません");
     return { job, artifact };
   } catch (error) {
-    if (ctx.signal.aborted && ctx.cancelOnAbort.current) await cancelJob(submitted.id).catch(() => undefined);
+    if (ctx.signal.aborted && ctx.cancelOnAbort.current) await cancelWaitingJob(ctx, submitted.id);
     throw error;
-  } finally {
-    ctx.jobs.delete(submitted.id);
+  }
+}
+
+/**
+ * 利用者の中止で、待っているJobを取り消す。既に終わっていた (409) なら取り消すものが無いだけなので知らせない。
+ * それ以外の失敗は、Jobが動き続けている可能性があるので握りつぶさず、知らせとして画面に出す。
+ */
+async function cancelWaitingJob(ctx: RunContext, jobId: string): Promise<void> {
+  try {
+    await cancelJob(jobId);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) return;
+    ctx.notice(`Jobを取り消せませんでした (${messageOf(error)})。ヘッダーのJob一覧で確かめてください。`);
   }
 }
 
@@ -228,22 +273,10 @@ export async function fetchRecipe(
 
 // ---- 実行する工程の選び方 ----
 
-/** 音声で、まだ採用が無く、投入できる台詞の行。 */
-export function voiceTodoOf(
-  scene: StoryScene,
-  characters: StoryCharacter[],
-  adoptions: StorySceneAdoption[],
-): StoryScene["dialogues"] {
-  return scene.dialogues.filter(
-    (line) =>
-      lineSkipOf(characters, line) === null &&
-      !adoptions.some((item) => item.slot === "voice" && item.dialogue_id === line.id),
-  );
-}
-
 /**
- * 実行の対象にする工程。採用済み・スキップ (参照画像がそろっている、台詞が無い、投入できる行が残っていない) は含めない。
- * `computeStepStatus`の「採用済み」「スキップ」と同じ判定だが、音声は投入できない行があっても完了とみなす。
+ * 実行の対象にする工程。採用済み・スキップ (参照画像がそろっている、台詞が無い) は含めない。
+ * 判定は`computeStepStatus`と同じ (`hasAllReferenceImages`・`isStepAdopted`)。違いは音声だけで、台詞が無ければ対象にしない。
+ * 声の参照が無い話者の行は採用できず音声が採用済みにならないが、対象には残す。`runVoice`が、その行を飛ばした旨の注記を出す。
  */
 export function stepsToRun(
   scene: StoryScene,
@@ -252,8 +285,8 @@ export function stepsToRun(
 ): StepId[] {
   return STEPS.map(({ id }) => id).filter((id) => {
     if (id === "character") return !hasAllReferenceImages(scene, characters);
-    if (id === "voice") return voiceTodoOf(scene, characters, adoptions).length > 0;
-    return !adoptions.some((item) => item.slot === id);
+    if (id === "voice" && scene.dialogues.length === 0) return false;
+    return !isStepAdopted(id, scene, adoptions);
   });
 }
 

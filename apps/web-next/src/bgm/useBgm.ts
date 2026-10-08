@@ -34,7 +34,7 @@ const enc = encodeURIComponent;
 export type BgmResultEntry = { jobId: string };
 
 /** 結果欄に残すJobの数。古いものから落とす。 */
-const RESULTS_MAX = 30;
+export const RESULTS_MAX = 30;
 
 /** localStorageの文字列をJSONとして読む。読めなければ`undefined`。 */
 function parseStored(value: string | undefined): unknown {
