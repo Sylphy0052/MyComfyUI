@@ -17,6 +17,8 @@ export const AXIS_LABELS: Record<SweepAxisName, string> = {
 
 // backendの`GenerationSweepAxes`・`GenerationExperimentCreate`・`_expand_experiment`に合わせた上限。
 const AXIS_VALUES_MAX = 20;
+const CFG_MAX = 100;
+const STEPS_MAX = 1_000;
 const FRAGMENT_MAX_LENGTH = 2_000;
 const RAW_COMBINATIONS_MAX = 1_000;
 /** 重複を除いた後の投入件数の上限。 */
@@ -77,13 +79,13 @@ function parseAxes(form: ImageForm): { ok: true; axes: SweepAxes } | { ok: false
     "-1または0以上の整数で入れてください",
   );
   if (!seed.ok) return seed;
-  const cfg = parseNumbers(form.sweepCfg, "cfg", (value) => value > 0 && value <= 100, "0より大きく100以下で入れてください");
+  const cfg = parseNumbers(form.sweepCfg, "cfg", (value) => value > 0 && value <= CFG_MAX, `0より大きく${CFG_MAX}以下で入れてください`);
   if (!cfg.ok) return cfg;
   const steps = parseNumbers(
     form.sweepSteps,
     "steps",
-    (value) => isInteger(value) && value >= 1 && value <= 1000,
-    "1以上1000以下の整数で入れてください",
+    (value) => isInteger(value) && value >= 1 && value <= STEPS_MAX,
+    `1以上${STEPS_MAX}以下の整数で入れてください`,
   );
   if (!steps.ok) return steps;
   const fragments = splitFragments(form.sweepFragment);

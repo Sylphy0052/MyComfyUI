@@ -284,7 +284,6 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
     if (sweepOn) {
       if (!sweepPlan.ok) return;
       submitSweep.mutate(buildSweepBody(sweepPlan, form, supplement, recipe, target, new Date()), {
-        onSuccess: (experiment) => sweeps.add({ experimentId: experiment.id }),
         onError: (error) => notifyError("スイープを投入できませんでした", error),
       });
       return;

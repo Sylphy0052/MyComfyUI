@@ -22,6 +22,7 @@ down_revision: str | Sequence[str] | None = "e6a3c91d5b27"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# 71e4b8c20f65で作ったtriggerの定義と同一。
 _TRIGGER = (
     "CREATE TRIGGER trg_generation_experiment_limit "
     "BEFORE INSERT ON generation_experiment "

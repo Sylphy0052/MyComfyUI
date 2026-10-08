@@ -35,7 +35,7 @@ function CellBody({ item, actions }: { item: GenerationExperimentItem; actions: 
   const completed = item.state === "completed" && item.job_id !== null;
   const images = useJobImages(item.job_id ?? "", completed);
   const jobId = item.job_id;
-  if (item.state === "failed") return jobId === null ? <Alert color="red" p="xs">{item.planning_error}</Alert> : <FailureNote item={item} />;
+  if (item.state === "failed") return jobId === null ? <Alert color="red" p="xs">{item.planning_error ?? "理由は記録されていません"}</Alert> : <FailureNote item={item} />;
   if (item.state === "cancelled") {
     return (
       <Text size="sm" c="dimmed">

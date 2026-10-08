@@ -40,8 +40,7 @@ from mycomfyui_api.queue import (
 )
 from mycomfyui_api.projects import router as project_router
 from mycomfyui_api.portability import router as portability_router
-from mycomfyui_api.operations import experiment_router
-from mycomfyui_api.operations import router as operations_router
+from mycomfyui_api.operations import experiment_router, router as operations_router
 from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
 from mycomfyui_api.schemas import MAX_LOCAL_OVERRIDES_BYTES
