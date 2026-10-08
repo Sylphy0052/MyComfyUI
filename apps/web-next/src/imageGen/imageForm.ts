@@ -6,6 +6,9 @@ export const TXT2IMG_TEMPLATE = "anima_txt2img";
 
 export type SeedMode = "random" | "fixed";
 
+/** スイープの組み合わせ方。全組合せ (cartesian) か、位置を揃えた対 (zip)。 */
+export type SweepMode = "cartesian" | "zip";
+
 /** 入力欄の内容。対象 (Project/Scene/キャラ/衣装) はURLに持たせ、ここには入れない。 */
 export type ImageForm = {
   positiveFree: string;
@@ -29,6 +32,14 @@ export type ImageForm = {
   hiresScale: number;
   hiresSteps: number;
   hiresDenoise: number;
+  /** スイープのスイッチ。オンの間、投入は`POST /generation-experiments`へ送る。 */
+  sweepEnabled: boolean;
+  sweepMode: SweepMode;
+  /** 軸の値。カンマ区切りの入力欄の文字列のまま持つ。断片だけは`|`か改行区切り。 */
+  sweepSeed: string;
+  sweepCfg: string;
+  sweepSteps: string;
+  sweepFragment: string;
 };
 
 /** 生成対象。すべて任意で、Project無しでも生成できる。 */
@@ -95,6 +106,12 @@ export function defaultForm(recipe: Recipe): ImageForm {
     hiresScale: numberOr(d.hires_scale, 2),
     hiresSteps: numberOr(d.hires_steps, 0),
     hiresDenoise: numberOr(d.hires_denoise, 0.5),
+    sweepEnabled: false,
+    sweepMode: "cartesian",
+    sweepSeed: "",
+    sweepCfg: "",
+    sweepSteps: "",
+    sweepFragment: "",
   };
 }
 
@@ -117,7 +134,11 @@ export function normalizeForm(raw: Record<string, unknown>, base: ImageForm): Im
     if (sameKind(raw[key], fallback)) merged[key] = raw[key];
   }
   const form = merged as ImageForm;
-  return form.seedMode === "random" || form.seedMode === "fixed" ? form : { ...form, seedMode: base.seedMode };
+  return {
+    ...form,
+    seedMode: form.seedMode === "random" || form.seedMode === "fixed" ? form.seedMode : base.seedMode,
+    sweepMode: form.sweepMode === "cartesian" || form.sweepMode === "zip" ? form.sweepMode : base.sweepMode,
+  };
 }
 
 /** 保存してあった対象。各値は空でない文字列だけを使う。 */

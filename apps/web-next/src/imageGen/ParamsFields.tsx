@@ -84,11 +84,13 @@ function DetailFields({
   onChange,
   recipe,
   extra,
+  sweep,
 }: {
   form: ImageForm;
   onChange: Update;
   recipe: Recipe;
   extra?: ReactNode;
+  sweep?: ReactNode;
 }) {
   const [opened, setOpened] = useState<string | null>(null);
   // ComfyUIへ問い合わせるため、「詳細」を開いたときだけ取る。
@@ -202,6 +204,7 @@ function DetailFields({
                 />
               </SimpleGrid>
             ) : null}
+            {sweep}
           </Stack>
         </Accordion.Panel>
       </Accordion.Item>
@@ -218,11 +221,14 @@ export function ParamsFields({
   onChange,
   recipe,
   detailExtra,
+  detailSweep,
 }: {
   form: ImageForm;
   onChange: Update;
   recipe: Recipe;
   detailExtra?: ReactNode;
+  /** 「詳細」の末尾に足すスイープの入力欄。 */
+  detailSweep?: ReactNode;
 }) {
   return (
     <Stack gap="sm">
@@ -264,7 +270,7 @@ export function ParamsFields({
           />
         ) : null}
       </Group>
-      <DetailFields form={form} onChange={onChange} recipe={recipe} extra={detailExtra} />
+      <DetailFields form={form} onChange={onChange} recipe={recipe} extra={detailExtra} sweep={detailSweep} />
     </Stack>
   );
 }
