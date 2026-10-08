@@ -4356,13 +4356,20 @@ async def get_image_reference_content(
         if stat.st_size <= settings.max_image_bytes:
             # mtimeとサイズ由来の弱いETag。一致すれば読み込まずに304を返す。
             etag = f'W/"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
-            if request.headers.get("if-none-match") == etag:
+            candidates = {
+                value.strip().removeprefix("W/")
+                for value in request.headers.get("if-none-match", "").split(",")
+            }
+            if "*" in candidates or etag.removeprefix("W/") in candidates:
                 return Response(
                     status_code=status.HTTP_304_NOT_MODIFIED,
                     headers={"ETag": etag, "Cache-Control": "private, max-age=300"},
                 )
             # 判定と配信で別々にファイルを開くと差し替えに追従するため、1回の読み取りで両方を行う。
             data = await run_in_threadpool(path.read_bytes)
+            # 読み込み後のstatからETagを作り直し、古いETagと新しい内容の組を避ける。
+            stat = path.stat()
+            etag = f'W/"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
             if len(data) <= settings.max_image_bytes:
                 media_type = storage.detect_image_media_type(data[:32])
     except (storage.StorageError, OSError, ValueError):
@@ -4381,7 +4388,7 @@ async def get_image_reference_content(
             "X-Content-Type-Options": "nosniff",
             "ETag": etag,
             "Cache-Control": "private, max-age=300",
-            "Content-Disposition": f"inline; filename*=utf-8''{quote(path.name, safe='')}",
+            "Content-Disposition": f"inline; filename*=utf-8''{quote(path.name, safe='', errors='replace')}",
         },
     )
 
