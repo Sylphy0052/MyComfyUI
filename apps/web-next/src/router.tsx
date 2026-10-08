@@ -5,6 +5,7 @@ import { ImagePage } from "./pages/ImagePage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { VideoPage } from "./pages/VideoPage";
 import { ViewerPage } from "./pages/ViewerPage";
 
 export const router = createBrowserRouter([
@@ -16,7 +17,7 @@ export const router = createBrowserRouter([
       { path: "projects", Component: ProjectsPage },
       { path: "projects/:projectId", Component: ProjectDetailPage },
       { path: "image", Component: ImagePage },
-      { path: "video", element: <PlaceholderPage title="動画" /> },
+      { path: "video", Component: VideoPage },
       { path: "voice", element: <PlaceholderPage title="音声" /> },
       { path: "bgm", element: <PlaceholderPage title="BGM" /> },
       { path: "viewer", Component: ViewerPage },
