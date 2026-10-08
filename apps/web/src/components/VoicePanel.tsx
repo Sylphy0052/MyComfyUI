@@ -1123,9 +1123,10 @@ export function VoicePanel({
                 {item.expected_reading === null && item.match === false && (
                   <span className="badge cancelled">読みの追記候補</span>
                 )}
-                {item.audio_sec > item.target_duration_sec && (
-                  <span className="badge cancelled">尺超過</span>
-                )}
+                {item.target_duration_sec != null &&
+                  item.audio_sec > item.target_duration_sec && (
+                    <span className="badge cancelled">尺超過</span>
+                  )}
               </span>
               <audio
                 controls
@@ -1152,7 +1153,7 @@ export function VoicePanel({
                 {item.normalized_expected ?? "—"} / {item.normalized_asr ?? "—"}
               </span>
               <span className="muted">
-                {`尺 ${item.audio_sec}秒 → パディング後 ${item.padded_sec}秒 / Shot ${item.target_duration_sec}秒`}
+                {`尺 ${item.audio_sec}秒 → パディング後 ${item.padded_sec}秒 / Shot ${item.target_duration_sec == null ? "-" : `${item.target_duration_sec}秒`}`}
                 {item.diff_ratio !== null && item.diff_ratio !== undefined
                   ? ` / 差分率 ${item.diff_ratio}`
                   : ""}

@@ -182,7 +182,7 @@ ApprovalLogは追記専用とする。承認済みの記録を編集・再利用
 |`match`|任意|正規化後の完全一致可否。検証していない場合はNULL|不可|
 |`diff_ratio`|任意|不一致時の差分率。0.0で完全一致、1.0で共通部分なし|不可|
 |`audio_sec`、`padded_sec`|必須|生成音声の尺と、パディング後の尺|不可|
-|`target_duration_sec`|必須|Shotが求める尺|不可|
+|`target_duration_sec`|任意|Shotが求める尺。Shot無しのJobはNULL|不可|
 |`status`|必須|`verified`、`skipped`、`asr_failed`、`kana_unavailable`|不可|
 |`created_at`|必須|記録時刻|不可|
 

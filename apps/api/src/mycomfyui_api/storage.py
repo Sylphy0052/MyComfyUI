@@ -339,6 +339,20 @@ def write_artifact(
     )
 
 
+def plan_input(file_name: str, data: bytes) -> StoredFile:
+    """`write_input`が置く場所とhashを、ファイルを書かずに返す。
+
+    プレビューのように、入力cacheへ置かずに参照だけを組み立てたい呼び出しが使う。
+    """
+    digest = hashlib.sha256(data).hexdigest()
+    name = _safe_name(file_name)
+    return StoredFile(
+        relative_path=f"{INPUTS_DIR_NAME}/{digest}/{name}",
+        sha256=digest,
+        byte_size=len(data),
+    )
+
+
 def write_input(
     file_name: str, data: bytes, settings: Settings | None = None
 ) -> StoredFile:
@@ -349,21 +363,15 @@ def write_input(
     場合は書き直さない。
     """
     settings = settings or get_settings()
-    digest = hashlib.sha256(data).hexdigest()
-    name = _safe_name(file_name)
-    directory = settings.data_root / INPUTS_DIR_NAME / digest
+    stored = plan_input(file_name, data)
+    path = settings.data_root / stored.relative_path
     try:
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             path.write_bytes(data)
     except OSError as error:
         raise StorageError(f"入力cacheへ保存できません: {file_name}") from error
-    return StoredFile(
-        relative_path=f"{INPUTS_DIR_NAME}/{digest}/{name}",
-        sha256=digest,
-        byte_size=len(data),
-    )
+    return stored
 
 
 def discard_artifacts(
