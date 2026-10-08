@@ -1,9 +1,8 @@
 /**
  * 参照画像セットの役割枠 (F-16 #155)。
  *
- * novel-writer側の検証結果 (`検証_minimax/11_ref_images/必要な画像リスト.md`) に合わせた
- * 7枚構成の枠を定義し、キャラクターの参照セット検索・枠の生成プロンプト組立・場面で
- * 使う参照画像の抽出を行う。API・DBは変えない純関数。
+ * 衣装ごとに全身画像1枚だけを持つ (#493)。キャラクターの参照セット検索・枠の生成プロンプト
+ * 組立・場面で使う参照画像の抽出を行う。API・DBは変えない純関数。
  */
 import type { ProjectCharacterProfile, ProjectReferenceImage, ProjectReferenceSet } from "../api/client";
 import type { PickedMedia } from "../components/MediaPicker";
@@ -25,13 +24,7 @@ export interface ReferenceSlotDef {
  * openapi-typescriptで文字列dictへ落ちて生成型に残らない。枠を増やすときはAPI側も手で合わせる。
  */
 export const REFERENCE_SLOTS = [
-  { key: "face_closed", label: "閉口", hint: "face closeup, front view, closed mouth, smile" },
-  { key: "face_open", label: "開口", hint: "face closeup, front view, open mouth, showing teeth" },
-  { key: "face_angle", label: "斜め", hint: "face closeup, three-quarter view, closed mouth" },
-  { key: "bust", label: "バストアップ", hint: "bust shot, front view" },
   { key: "full_body", label: "全身", hint: "full body, standing, front view" },
-  { key: "pose", label: "ポーズ", hint: "full body, dynamic pose" },
-  { key: "background", label: "背景", hint: "background only, no humans" },
 ] as const satisfies readonly ReferenceSlotDef[];
 
 export type ReferenceSlotKey = (typeof REFERENCE_SLOTS)[number]["key"];
@@ -50,8 +43,7 @@ export function findReferenceSet(
 }
 
 /**
- * 枠の生成プロンプトを組む。人物を写さない背景枠は枠の補足だけを使う。
- * それ以外の枠は「名前, 外見, 衣装プロンプト, 枠の補足」を空要素を除いて連結する。
+ * 枠の生成プロンプトを組む。「名前, 外見, 衣装プロンプト, 枠の補足」を空要素を除いて連結する。
  */
 export function slotPrompt(
   character: ProjectCharacterProfile,
@@ -59,7 +51,6 @@ export function slotPrompt(
   slotKey: ReferenceSlotKey,
 ): string {
   const hint = REFERENCE_SLOTS.find((item) => item.key === slotKey)?.hint ?? "";
-  if (slotKey === "background") return hint;
   const outfitPrompt = outfitId
     ? (character.outfits ?? []).find((item) => item.id === outfitId)?.prompt ?? ""
     : "";
@@ -102,18 +93,8 @@ export function sceneReferenceImages(
   return result;
 }
 
-/**
- * 生成フォームが参照画像として自動で使う枠の優先順 (#474)。全身から顔の順で、最初に画像がある枠を使う。
- * 背景枠は人物を写さないため使わない。
- */
-export const AUTO_REFERENCE_SLOT_ORDER = [
-  "full_body",
-  "bust",
-  "pose",
-  "face_closed",
-  "face_angle",
-  "face_open",
-] as const satisfies readonly ReferenceSlotKey[];
+/** 生成フォームが参照画像として自動で使う枠の優先順 (#474)。枠は全身だけになった (#493)。 */
+export const AUTO_REFERENCE_SLOT_ORDER = ["full_body"] as const satisfies readonly ReferenceSlotKey[];
 
 export interface CharacterReferenceImage {
   slotKey: ReferenceSlotKey;
