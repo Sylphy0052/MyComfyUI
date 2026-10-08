@@ -8,7 +8,7 @@ import { useSceneAdoptions } from "../projectDetail/useStory";
 import { useFollowup, useJobVideos, type VideoResultEntry } from "./useVideoGen";
 
 /** 動画の採用枠。統合Jobの動画は`compose`枠、それ以外は`video`枠にだけ入る。 */
-export type VideoSlot = Extract<AdoptionSlot, "video" | "compose">;
+type VideoSlot = Extract<AdoptionSlot, "video" | "compose">;
 
 /** Sceneを指定して作った動画の、`slot`枠への採用と不採用の印。 */
 function VideoDecisionButtons({
