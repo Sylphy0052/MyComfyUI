@@ -33,7 +33,7 @@ const AUTO_SEED = -1;
 
 /** 入力欄の内容。対象 (Project/Scene) はURLに持たせ、ここには入れない。 */
 export type BgmForm = {
-  /** シーンの`bgm_mood`を入れる日本語の欄。タグへの変換は別Issue (#578) で足す。 */
+  /** シーンの`bgm_mood`を入れる日本語の欄。「タグに変換」(`BgmTagAssist`) の入力にもなる。 */
   moodJa: string;
   tags: string;
   negative: string;

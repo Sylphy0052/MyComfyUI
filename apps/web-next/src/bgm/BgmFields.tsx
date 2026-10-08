@@ -26,6 +26,7 @@ import {
   STEPS_MAX,
   type BgmForm,
 } from "./bgmForm";
+import { BgmTagAssist } from "./BgmTagAssist";
 
 type Update = (update: Partial<BgmForm>) => void;
 
@@ -42,7 +43,7 @@ export function BgmPromptFields({ form, onChange }: { form: BgmForm; onChange: U
     <Stack gap="sm">
       <Textarea
         label="雰囲気 (日本語)"
-        description="Sceneを選ぶと、Sceneの「BGMの雰囲気」が入ります。タグへの変換にはまだ対応していません。"
+        description="Sceneを選ぶと、Sceneの「BGMの雰囲気」が入ります。「タグに変換」で、この説明からタグ欄の案を作れます。"
         autosize
         minRows={2}
         maxRows={6}
@@ -50,6 +51,7 @@ export function BgmPromptFields({ form, onChange }: { form: BgmForm; onChange: U
         onChange={(event) => onChange({ moodJa: event.currentTarget.value })}
         data-testid="bgm-mood"
       />
+      <BgmTagAssist moodJa={form.moodJa} tags={form.tags} onApply={(tags) => onChange({ tags })} />
       <Textarea
         label="タグ *"
         description="mood、genre、楽器、テンポをカンマ区切りで並べる。"
