@@ -2396,6 +2396,9 @@ def _clear_reference_slots(overrides: Any, ids: set[str]) -> tuple[Any, int]:
     """キャラ参照セットの枠から、削除するArtifactへの表示用参照を外す。
 
     旧形式の値を検証で弾かないよう、スキーマを通さずに該当キーだけを書き換える。
+    書き換える参照セットからは、廃止した枠のキーも落とす (数には含めない)。
+    書き戻すのは削除対象を参照する枠が数えられたprojectだけで、廃止キーしか残らない
+    projectは書き換えない (読み込み時に`_drop_retired_slots`が捨てる)。
     """
     if not isinstance(overrides, dict):
         return overrides, 0
@@ -2408,6 +2411,8 @@ def _clear_reference_slots(overrides: Any, ids: set[str]) -> tuple[Any, int]:
             slots = reference_set.get("slots") if isinstance(reference_set, dict) else None
             if not isinstance(slots, dict):
                 continue
+            for key in schemas.RETIRED_REFERENCE_SLOT_KEYS:
+                slots.pop(key, None)
             for slot in slots.values():
                 if isinstance(slot, dict) and slot.get("artifact_id") in ids:
                     slot["artifact_id"] = None
