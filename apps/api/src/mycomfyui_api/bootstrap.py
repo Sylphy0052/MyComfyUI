@@ -489,10 +489,11 @@ def _effective_negative_term(term: str) -> str | None:
     name, _, weight = body.partition(":")
     if weight.strip():
         try:
-            if float(weight.strip().rstrip(")")) < 1:
+            # nanや数値でない重みは効かない側に倒す。
+            if not float(weight.strip().rstrip(")")) >= 1:
                 return None
         except ValueError:
-            pass
+            return None
     return name.strip().lower()
 
 
@@ -508,7 +509,9 @@ def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
         return negative
     # 大文字小文字と重み (`(nsfw:1.2)`) を無視して既存の語を判定する。
     present = {
-        name for term in negative.split(",") if (name := _effective_negative_term(term))
+        term_name
+        for term in negative.split(",")
+        if (term_name := _effective_negative_term(term))
     }
     missing = [
         term for term in IMAGE_REF_SAFETY_NEGATIVE.split(", ") if term not in present
