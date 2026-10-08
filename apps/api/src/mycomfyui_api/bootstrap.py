@@ -493,13 +493,19 @@ def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
     name = reference.get("name") if isinstance(reference, dict) else None
     if not isinstance(name, str) or name not in _IMAGE_REF_TEMPLATES:
         return negative
-    present = {term.strip() for term in negative.split(",")}
+    # 大文字小文字と重み (`(nsfw:1.2)`) を無視して既存の語を判定する。
+    present = {
+        term.strip().strip("()").split(":")[0].strip().lower()
+        for term in negative.split(",")
+    }
     missing = [
         term for term in IMAGE_REF_SAFETY_NEGATIVE.split(", ") if term not in present
     ]
     if not missing:
         return negative
-    return ", ".join([*missing, negative.strip()] if negative.strip() else missing)
+    # negativeが空なら、安全語だけにせずテンプレート既定の品質系の語を基底にする。
+    base = negative.strip() or DEFAULT_VALUES["negative_prompt"]
+    return ", ".join([*missing, base])
 
 
 _IMAGE_REF_DEFAULTS: dict[str, Any] = {

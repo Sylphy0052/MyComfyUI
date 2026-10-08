@@ -540,6 +540,7 @@ export function CharacterManager({ projectId, active, onChanged, reloadToken = 0
     setError(null);
     setDraft(next);
     setSelectedId(next.id);
+    setOutfitTagResult(null);
   };
 
   const handleReferencePicked = (next: PickedMedia[]) => {
