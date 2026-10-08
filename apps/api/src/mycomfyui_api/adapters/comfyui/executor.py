@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from mycomfyui_api import provenance, schemas, storage
+from mycomfyui_api import provenance, schemas, storage, story_links
 from mycomfyui_api.adapters.comfyui import workflow as workflow_module
 from mycomfyui_api.adapters.comfyui.client import (
     BackendDisconnected,
@@ -511,6 +511,7 @@ class ComfyUIExecutor:
                         assigned_project_id=assignment[0],
                         assigned_scene_id=assignment[1],
                         assigned_shot_id=assignment[2],
+                        **story_links.job_story_links(job),
                         created_at=created_at,
                         decision="undecided",
                         decision_at=None,

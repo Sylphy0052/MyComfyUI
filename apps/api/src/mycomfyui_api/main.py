@@ -46,6 +46,7 @@ from mycomfyui_api.routers import router
 from mycomfyui_api.schemas import MAX_LOCAL_OVERRIDES_BYTES
 from mycomfyui_api.settings import get_settings
 from mycomfyui_api.story import router as story_router
+from mycomfyui_api.story_adoption import router as story_adoption_router
 from mycomfyui_api.structure import router as structure_router
 from mycomfyui_api.workflows import ensure_workflows
 
@@ -192,6 +193,7 @@ def create_app() -> FastAPI:
     app.include_router(operations_router)
     app.include_router(structure_router)
     app.include_router(story_router)
+    app.include_router(story_adoption_router)
     app.include_router(reference_router)
     app.include_router(event_router)
     app.include_router(user_scripts.router)
