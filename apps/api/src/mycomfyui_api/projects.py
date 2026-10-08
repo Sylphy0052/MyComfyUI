@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -26,11 +26,24 @@ from mycomfyui_api.engines import is_supported
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
     Artifact,
+    GenerationBatch,
+    GenerationBatchItem,
+    GenerationExperiment,
+    GenerationExperimentItem,
     GenerationJob,
     Project,
+    ProjectScene,
+    ProjectShot,
     Recipe,
+    StoryCharacter,
+    StoryCostume,
+    StoryCostumeImage,
+    StoryScene,
+    StorySceneCast,
+    StorySceneDialogue,
     WorkflowVersion,
 )
+from mycomfyui_api.story import detach_assignments
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -1077,3 +1090,116 @@ async def trash_project(
     project.updated_at = now
     await _commit(session)
     return _read(project)
+
+
+@router.delete("/{project_id}/permanent", response_model=schemas.ProjectPurgeResult)
+async def purge_project(
+    project_id: schemas.AiMediaId,
+    session: SessionDep,
+    confirm: bool = False,
+):
+    """ゴミ箱にあるProjectの定義を完全に削除する。
+
+    消すのはProject・キャラクター・衣装・シーン (旧Scene・Shotを含む) と一括生成・
+    探索実験の計画だけである。生成物 (Artifact・Job・素材タグ) は消さず、Projectと
+    Sceneへの紐づけを外して「Project無し」の状態で残す。取り消せないため`confirm=true`
+    を必須とする。
+    """
+    project = await _require_project(session, project_id)
+    if project.lifecycle != "trashed":
+        raise ApiError(
+            "PROJECT_NOT_TRASHED",
+            "ゴミ箱に無いProjectは完全に削除できません。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"project_id": project.id, "lifecycle": project.lifecycle},
+        )
+    if not confirm:
+        raise ApiError(
+            "PURGE_NOT_CONFIRMED",
+            "完全削除は取り消せません。confirm=trueを指定してください。",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    impact = await _impact(session, project)
+    if impact.blockers:
+        raise ApiError(
+            "PROJECT_HAS_ACTIVE_JOBS",
+            impact.blockers[0],
+            status_code=status.HTTP_409_CONFLICT,
+            details=impact.model_dump(),
+        )
+
+    async def remove(statement: Any) -> int:
+        return int((await session.execute(statement)).rowcount or 0)
+
+    # FKにondeleteが無いため、参照する行から順に消す。
+    character_ids = select(StoryCharacter.id).where(
+        StoryCharacter.project_id == project_id
+    )
+    costume_ids = select(StoryCostume.id).where(
+        StoryCostume.character_id.in_(character_ids)
+    )
+    story_scene_ids = select(StoryScene.id).where(StoryScene.project_id == project_id)
+    await remove(
+        delete(StorySceneCast).where(StorySceneCast.scene_id.in_(story_scene_ids))
+    )
+    await remove(
+        delete(StorySceneDialogue).where(
+            StorySceneDialogue.scene_id.in_(story_scene_ids)
+        )
+    )
+    story_scene_count = await remove(
+        delete(StoryScene).where(StoryScene.project_id == project_id)
+    )
+    await remove(
+        delete(StoryCostumeImage).where(StoryCostumeImage.costume_id.in_(costume_ids))
+    )
+    costume_count = await remove(
+        delete(StoryCostume).where(StoryCostume.character_id.in_(character_ids))
+    )
+    character_count = await remove(
+        delete(StoryCharacter).where(StoryCharacter.project_id == project_id)
+    )
+    batch_ids = select(GenerationBatch.id).where(
+        GenerationBatch.project_id == project_id
+    )
+    await remove(
+        delete(GenerationBatchItem).where(GenerationBatchItem.batch_id.in_(batch_ids))
+    )
+    batch_count = await remove(
+        delete(GenerationBatch).where(GenerationBatch.project_id == project_id)
+    )
+    experiment_ids = select(GenerationExperiment.id).where(
+        GenerationExperiment.project_id == project_id
+    )
+    await remove(
+        delete(GenerationExperimentItem).where(
+            GenerationExperimentItem.experiment_id.in_(experiment_ids)
+        )
+    )
+    experiment_count = await remove(
+        delete(GenerationExperiment).where(GenerationExperiment.project_id == project_id)
+    )
+    legacy_shot_count = await remove(
+        delete(ProjectShot).where(ProjectShot.project_id == project_id)
+    )
+    legacy_scene_count = await remove(
+        delete(ProjectScene).where(ProjectScene.project_id == project_id)
+    )
+    artifacts, jobs, role_tags = await detach_assignments(
+        session, project_id=project_id
+    )
+    await session.delete(project)
+    await _commit(session)
+    return schemas.ProjectPurgeResult(
+        project_id=project_id,
+        character_count=character_count,
+        costume_count=costume_count,
+        story_scene_count=story_scene_count,
+        legacy_scene_count=legacy_scene_count,
+        legacy_shot_count=legacy_shot_count,
+        batch_count=batch_count,
+        experiment_count=experiment_count,
+        detached_artifact_count=artifacts,
+        detached_job_count=jobs,
+        detached_media_role_tag_count=role_tags,
+    )
