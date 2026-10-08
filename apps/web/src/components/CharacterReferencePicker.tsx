@@ -44,6 +44,7 @@ export function CharacterReferencePicker({
   let notice: string | null = null;
   if (!projectId) notice = "Projectを選ぶと、キャラクターから選べます。";
   else if (characters.length === 0) notice = "このProjectにはキャラクターが登録されていません。";
+  else if (value.characterId && !character) notice = "選んでいたキャラクターが見つかりません。選び直してください。";
   else if (character && outfits.length === 0) notice = "このキャラクターには衣装が登録されていません。";
   else if (character && !value.outfitId) notice = "衣装を選んでください。";
   else if (character && !reference) {

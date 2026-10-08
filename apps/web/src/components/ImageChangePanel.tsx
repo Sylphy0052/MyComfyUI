@@ -89,21 +89,35 @@ export function ImageChangePanel({
     return characterReferenceImage(character, characterSelection.outfitId);
   }, [characters, characterSelection]);
   // 参照セットの画像はArtifactの有無に関わらず、生成タブの`toReferenceInputs`と同じ形で送る。
+  // キャラクター一覧を読み直しても同じ画像なら同じオブジェクトを保ち、説明欄を空に戻さない。
+  const referenceRelativePath = characterReference?.image.relative_path ?? null;
+  const referenceSha256 = characterReference?.image.sha256 ?? null;
+  const referenceFileName = characterReference?.image.file_name ?? "";
   const characterMedia = useMemo<PickedMedia | null>(
     () =>
-      characterReference
+      referenceRelativePath && referenceSha256
         ? {
-          key: characterReference.image.sha256,
-          label: characterReference.image.file_name,
-          source: {
-            relative_path: characterReference.image.relative_path,
-            sha256: characterReference.image.sha256,
-          },
+          key: referenceSha256,
+          label: referenceFileName,
+          source: { relative_path: referenceRelativePath, sha256: referenceSha256 },
         }
         : null,
-    [characterReference],
+    [referenceRelativePath, referenceSha256, referenceFileName],
   );
   const sourceItem = sourceMode === "character" ? characterMedia : sourceMedia[0] ?? null;
+  const sourceModeRef = useRef(sourceMode);
+  sourceModeRef.current = sourceMode;
+
+  // Projectが変わったら、前のProjectのキャラクター・衣装の選択を残さない。
+  useEffect(() => {
+    setCharacterSelection({ characterId: "", outfitId: "" });
+  }, [projectId]);
+
+  const selectSourceMode = (mode: SourceMode) => {
+    setSourceMode(mode);
+    // 親の選択を外しておき、ギャラリーから同じ画像を送り直されたときも生成物・登録素材の選び方へ戻れるようにする。
+    if (mode === "character") onSourceArtifactChange(null);
+  };
 
   // 親から共有されるsourceArtifactIdが変わったら、pickerの選択をそれに合わせる。
   // ギャラリーの「この画像を変える」から渡された場合はここだけを経由する。
@@ -135,6 +149,8 @@ export function ImageChangePanel({
   useEffect(() => {
     let active = true;
     const item = sourceItem;
+    // キャラクター・衣装を選び終えるまでは元画像が決まっていないため、入力済みの説明を残す。
+    if (!item && sourceModeRef.current === "character") return;
     const artifactId = item && "artifact_id" in item.source ? item.source.artifact_id : null;
     if (!artifactId) {
       setPrompt("");
@@ -291,7 +307,7 @@ export function ImageChangePanel({
               className={sourceMode === mode ? "primary" : undefined}
               aria-pressed={sourceMode === mode}
               disabled={busy}
-              onClick={() => setSourceMode(mode)}
+              onClick={() => selectSourceMode(mode)}
             >
               {SOURCE_MODE_LABEL[mode]}
             </button>
