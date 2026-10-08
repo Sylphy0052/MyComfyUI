@@ -4,6 +4,7 @@
 旧シーンのAPIが`/scenes`を使っているため、v2のシーンは`/story-scenes`に置く。
 """
 
+import mimetypes
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
@@ -33,6 +34,13 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 ARTIFACT_KEY_PREFIX = "artifact:"
 INPUT_KEY_PREFIX = "input:"
+
+#: 名前の一意制約に当たったときのSQLiteのメッセージ。これ以外の`IntegrityError`は、
+#: 検証の後に別のリクエストが参照先を消したときのFK違反として扱う。
+_NAME_VIOLATIONS = (
+    "UNIQUE constraint failed: story_character.project_id, story_character.name",
+    "UNIQUE constraint failed: story_costume.character_id, story_costume.name",
+)
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -77,9 +85,15 @@ async def _commit(session: AsyncSession) -> None:
         await session.commit()
     except IntegrityError as error:
         await session.rollback()
+        if any(violation in str(error.orig) for violation in _NAME_VIOLATIONS):
+            raise ApiError(
+                "STORY_CONFLICT",
+                "同じ名前が既に存在します。",
+                status_code=status.HTTP_409_CONFLICT,
+            ) from error
         raise ApiError(
-            "STORY_CONFLICT",
-            "同じ名前が既に存在します。",
+            "STORY_REFERENCE_CHANGED",
+            "参照先が変更されました。再読み込みしてからやり直してください。",
             status_code=status.HTTP_409_CONFLICT,
         ) from error
 
@@ -112,6 +126,10 @@ async def _validate_media_key(
                     header = handle.read(32)
                 if storage.detect_image_media_type(header) is None:
                     raise ValueError("画像ではありません。")
+            elif kind == "audio":
+                media_type = mimetypes.guess_type(relative_path)[0] or ""
+                if not media_type.startswith("audio/"):
+                    raise ValueError("音声ではありません。")
         except (ValueError, storage.StorageError, OSError) as error:
             raise _unprocessable(
                 "MEDIA_NOT_FOUND", "参照先の素材を読み出せません。", details
