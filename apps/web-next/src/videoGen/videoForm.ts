@@ -8,7 +8,7 @@ import {
   type Recipe,
 } from "../api/client";
 import type { ImageRef, SourceImage } from "../imageGen/deriveForm";
-import { acceptsInput, buildInputs, defaultForm, isRecord, restorableSeed, type ImageTarget } from "../imageGen/imageForm";
+import { acceptsInput, buildInputs, defaultForm, isRecord, positiveNumber, restorableSeed, type ImageTarget } from "../imageGen/imageForm";
 import type { SupplementTags } from "../imageGen/promptTags";
 
 /**
@@ -174,10 +174,6 @@ function numberOr(value: unknown, fallback: number): number {
 
 function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
-}
-
-function positiveNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function round1(value: number): number {
@@ -455,7 +451,10 @@ export function videoRestoredFromManifest(
   const fps = fpsValue ?? prev.fps;
   let seconds = prev.seconds;
   if (fpsValue !== null && length !== null) seconds = round1(length / fpsValue);
-  else warnings.push("fpsまたは長さを読めなかったため、秒数は既定値にしました");
+  else if (parameters.fps !== undefined || parameters.length !== undefined) {
+    // 欄が丸ごと無い (Recipeがfps・長さを持たない) 場合は、読めなかったのではないので警告しない。
+    warnings.push("fpsまたは長さを読めなかったため、秒数は既定値にしました");
+  }
   const seed = restorableSeed(manifest.seed, SEED_MAX);
   if (seed === null) warnings.push("シードを読めなかったため、既定のシードにしました");
   const params: VideoParams = {

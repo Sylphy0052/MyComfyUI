@@ -168,12 +168,13 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
     applyTarget(next);
   };
 
+  // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
+  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
+
   // URLの対象を、次に開いたときの復元用に残す。初回の復元を決めるまでは、空の対象で上書きしない。
   // 2つのeffectは宣言順に走る順序に依存する。初回は、ここが`initialized`がfalseのため何もせず、
   // 次のeffectが`true`にして復元する。復元でURLが変わると`targetKey`が変わり、ここが保存する。
   // 2つの順序を入れ替えると、初回に空の対象を保存して前回の対象を失う。
-  // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
-  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
   const initialized = useRef(false);
   useEffect(() => {
     if (!initialized.current) return;

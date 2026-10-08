@@ -1,5 +1,5 @@
 import type { GenerationJob, GenerationManifest, Recipe } from "../api/client";
-import { acceptsInput, isRecord, restorableSeed, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
+import { acceptsInput, isRecord, positiveNumber, restorableSeed, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
 
 /** BGM生成に使うWorkflowテンプレート。 */
 export const BGM_TEMPLATE = "ace_step_bgm";
@@ -64,11 +64,6 @@ function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
 }
 
-/** 0より大きい有限の数。それ以外は`fallback`。 */
-function positiveNumberOr<T extends number | null>(value: unknown, fallback: T): number | T {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
 /** Recipeの既定値から作る初期値。「リセット」もこの値へ戻す。 */
 export function defaultBgmForm(recipe: Recipe): BgmForm {
   const d = recipe.defaults;
@@ -102,7 +97,7 @@ export function normalizeBgmForm(raw: Record<string, unknown>, base: BgmForm): B
   const form = merged as BgmForm;
   return {
     ...form,
-    seconds: positiveNumberOr(raw.seconds, null),
+    seconds: positiveNumber(raw.seconds),
     count: Math.min(COUNT_MAX, Math.max(1, Math.trunc(form.count))),
     seedMode: form.seedMode === "random" || form.seedMode === "fixed" ? form.seedMode : base.seedMode,
   };
@@ -141,8 +136,8 @@ export function defaultSeconds(videoSeconds: number | null): number {
 
 /** 動画のManifestから長さ (秒) を出す。`length / fps`を小数1桁に丸める。読めなければ`null`。 */
 export function videoSecondsOf(manifest: GenerationManifest): number | null {
-  const length = positiveNumberOr(manifest.parameters.length, null);
-  const fps = positiveNumberOr(manifest.parameters.fps, null);
+  const length = positiveNumber(manifest.parameters.length);
+  const fps = positiveNumber(manifest.parameters.fps);
   if (length === null || fps === null) return null;
   const seconds = Math.round((length / fps) * 10) / 10;
   return seconds > 0 ? seconds : null;
@@ -206,7 +201,7 @@ export function bgmRestoredFromManifest(
   const lyrics = stringOr(parameters.lyrics, base.lyrics);
   const allTags = splitTags(manifest.resolved_prompt);
   const tags = lyrics.trim() === "" ? dropTrailingInstrumental(allTags) : allTags;
-  const seconds = positiveNumberOr(parameters.seconds, null);
+  const seconds = positiveNumber(parameters.seconds);
   const seed = restorableSeed(manifest.seed, SEED_INPUT_MAX);
   return {
     form: {

@@ -106,13 +106,14 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
     [setSearchParams],
   );
 
+  // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
+  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
+
   // URLの対象を、次に開いたときの復元用に残す。
   // 下の復元effectより前に置くこと。順序は次の2点で効く。
   // - 初回の描画では`initialized`がまだfalseなので、ここは保存せずに抜ける。URLが空のまま、保存済みの対象を空で上書きしない。
   // - 復元effectが`initialized`をtrueにして`changeTarget`を呼ぶと、URLが変わって`targetKey`が変わり、
   //   次の描画でここが復元後の対象を保存する。入れ替えると、復元前の空の対象を保存してしまう。
-  // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
-  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
   const initialized = useRef(false);
   useEffect(() => {
     if (!initialized.current) return;

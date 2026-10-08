@@ -1,5 +1,5 @@
 import type { GenerationJob, GenerationManifest, Recipe, StoryCharacter, StorySceneDialogue } from "../api/client";
-import { acceptsInput, isRecord, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
+import { acceptsInput, isRecord, restorableSeed, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
 
 /** 声質の文章 (caption) の上限。backendの`MAX_CAPTION_CHARS`と揃える。 */
 export const CAPTION_MAX = 500;
@@ -219,7 +219,8 @@ export function voiceRestoredFromSnapshot(
   const line = lines[0];
   if (line === undefined) throw new Error("音声の生成設定ではありません");
   const voices = isRecord(snapshot.voices) ? snapshot.voices : {};
-  const voice = isRecord(voices[stringOrEmpty(line.voice_id)]) ? (voices[stringOrEmpty(line.voice_id)] as Record<string, unknown>) : {};
+  const voiceEntry = voices[stringOrEmpty(line.voice_id)];
+  const voice = isRecord(voiceEntry) ? voiceEntry : {};
   const reference = isRecord(voice.reference) ? voice.reference : null;
   const referencePath = reference === null ? "" : stringOrEmpty(reference.relative_path);
   const referenceSha = reference === null ? "" : stringOrEmpty(reference.sha256);
@@ -228,6 +229,8 @@ export function voiceRestoredFromSnapshot(
   const warnings: string[] = [];
   if (lines.length > 1) warnings.push("複数行の音声だったため、先頭の行だけ戻しました");
   const speakerId = job.story_character_id != null && characterIds.has(job.story_character_id) ? job.story_character_id : null;
+  const seed = restorableSeed(manifest.seed, SEED_MAX);
+  if (seed === null) warnings.push("シードを読めなかったため、既定のシードにしました");
   const verify = typeof snapshot.verify_with_asr === "boolean" ? snapshot.verify_with_asr : manifest.parameters.verify_with_asr;
 
   return {
@@ -243,8 +246,8 @@ export function voiceRestoredFromSnapshot(
       referenceSource: "file",
       reference: hasReference ? { relativePath: referencePath, sha256: referenceSha, label: referencePath.split("/").pop() || referencePath } : null,
       dialogueId: job.story_dialogue_id ?? null,
-      seedMode: "fixed",
-      seed: Math.min(SEED_MAX, Math.max(0, Math.trunc(manifest.seed))),
+      seedMode: seed === null ? base.seedMode : "fixed",
+      seed: seed ?? base.seed,
       verifyAsr: typeof verify === "boolean" ? verify : base.verifyAsr,
     },
     target: { projectId: job.assigned_project_id, sceneId: job.story_scene_id ?? null },
