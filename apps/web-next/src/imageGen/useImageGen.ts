@@ -15,6 +15,7 @@ import {
   type StoryCharacter,
   type StoryCostume,
   type StoryScene,
+  type StorySceneAdoption,
   type WorkflowModelOptions,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
@@ -256,16 +257,21 @@ export function useJobImages(jobId: string, enabled: boolean) {
 
 // ---- 結果のカードの操作 ----
 
-/** 生成物の応答を、そのJobの生成物一覧へ反映する。 */
-function putArtifact(client: QueryClient, saved: ArtifactRecord): void {
+/** 生成物の応答を、そのJobの生成物一覧 (`listKeyOf`のキー) へ反映する。 */
+function putArtifact(
+  client: QueryClient,
+  saved: ArtifactRecord,
+  listKeyOf: (jobId: string) => readonly unknown[],
+): void {
   if (saved.job_id === null) return;
-  client.setQueryData<ArtifactRecord[]>(queryKeys.jobImages(saved.job_id), (list) =>
+  client.setQueryData<ArtifactRecord[]>(listKeyOf(saved.job_id), (list) =>
     list?.map((item) => (item.id === saved.id ? saved : item)),
   );
   client.setQueryData(queryKeys.artifact(saved.id), saved);
 }
 
-export function useSaveArtifactMemo() {
+/** 生成物のメモを保存する。`listKeyOf`は、カードを出しているJobの生成物一覧のqueryKey (既定は画像)。 */
+export function useSaveArtifactMemo(listKeyOf: (jobId: string) => readonly unknown[] = queryKeys.jobImages) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ artifactId, memo }: { artifactId: string; memo: string }) =>
@@ -273,7 +279,7 @@ export function useSaveArtifactMemo() {
         method: "PATCH",
         body: JSON.stringify({ memo }),
       }),
-    onSuccess: (saved) => putArtifact(client, saved),
+    onSuccess: (saved) => putArtifact(client, saved, listKeyOf),
   });
 }
 
@@ -297,13 +303,16 @@ export async function secondStepOrUndo(
   }
 }
 
+/** Sceneの採用枠。 */
+export type AdoptionSlot = StorySceneAdoption["slot"];
+
 /**
- * Sceneのシーン画像枠への採用と、不採用の印。
+ * Sceneの`slot`枠への採用と、不採用の印。
  * 不採用の生成物は採用できないため、採用の前に採否を戻す。採用中のものを不採用にするときは先に枠から外す。
  */
-export function useSceneDecision(projectId: string, sceneId: string) {
+export function useSlotDecision(projectId: string, sceneId: string, slot: AdoptionSlot) {
   const client = useQueryClient();
-  const slotPath = `/projects/${enc(projectId)}/story-scenes/${enc(sceneId)}/adoptions/scene_image`;
+  const slotPath = `/projects/${enc(projectId)}/story-scenes/${enc(sceneId)}/adoptions/${slot}`;
   const setDecision = (artifactId: string, decision: ArtifactRecord["decision"]) =>
     apiRequest<ArtifactRecord>(`/artifacts/${enc(artifactId)}/decision`, {
       method: "PATCH",
@@ -319,7 +328,7 @@ export function useSceneDecision(projectId: string, sceneId: string) {
     }: {
       artifact: ArtifactRecord;
       action: SceneDecision;
-      /** 今この生成物がシーン画像枠に採用されているか。 */
+      /** 今この生成物が`slot`枠に採用されているか。 */
       adopted: boolean;
     }) => {
       if (action === "adopt") {
@@ -357,6 +366,11 @@ export function useSceneDecision(projectId: string, sceneId: string) {
         client.invalidateQueries({ queryKey: queryKeys.jobs }),
       ]),
   });
+}
+
+/** Sceneのシーン画像枠への採用と不採用の印。 */
+export function useSceneDecision(projectId: string, sceneId: string) {
+  return useSlotDecision(projectId, sceneId, "scene_image");
 }
 
 /** 生成物を衣装の参照画像の末尾へ足す。 */

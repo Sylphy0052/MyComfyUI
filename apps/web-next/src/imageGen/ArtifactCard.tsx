@@ -24,10 +24,17 @@ export function viewerPathOf(artifact: ArtifactRecord): string {
   return `/viewer?${params}`;
 }
 
-function MemoField({ artifact }: { artifact: ArtifactRecord }) {
+/** 生成物のメモ欄。`listKeyOf`は、カードを出しているJobの生成物一覧のqueryKey (既定は画像)。BGMのカードも使う。 */
+export function MemoField({
+  artifact,
+  listKeyOf,
+}: {
+  artifact: ArtifactRecord;
+  listKeyOf?: (jobId: string) => readonly unknown[];
+}) {
   const saved = artifact.memo ?? "";
   const [draft, setDraft] = useState(saved);
-  const save = useSaveArtifactMemo();
+  const save = useSaveArtifactMemo(listKeyOf);
   return (
     <Group gap={4} align="flex-end" wrap="nowrap">
       <Textarea

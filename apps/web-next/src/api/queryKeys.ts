@@ -6,6 +6,7 @@ export const queryKeys = {
   // 1件のJobとその生成物は`jobs`の下に置き、Jobの状態が変わったイベントで一緒に取り直す。
   job: (jobId: string) => ["generation-jobs", "detail", jobId] as const,
   jobImages: (jobId: string) => ["generation-jobs", "detail", jobId, "images"] as const,
+  jobAudio: (jobId: string) => ["generation-jobs", "detail", jobId, "audio"] as const,
   // スイープの実験も`jobs`の下に置く。Jobの状態が変わったイベントで、実験の各セルも取り直す。
   experiment: (experimentId: string) => ["generation-jobs", "experiment", experimentId] as const,
   manifest: (manifestId: string) => ["generation-manifests", manifestId] as const,

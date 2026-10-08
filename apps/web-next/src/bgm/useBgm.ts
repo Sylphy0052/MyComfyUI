@@ -13,7 +13,7 @@ import {
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { isRecord } from "../imageGen/imageForm";
-import { secondStepOrUndo, type SceneDecision } from "../imageGen/useImageGen";
+import { useSlotDecision } from "../imageGen/useImageGen";
 import {
   BGM_TEMPLATE,
   defaultBgmForm,
@@ -166,7 +166,7 @@ export function useSubmitBgmJobs() {
 /** Jobの音声の生成物。ゴミ箱のものは除く。Jobの状態が変わるイベントで取り直される。 */
 export function useJobAudio(jobId: string, enabled: boolean) {
   return useQuery({
-    queryKey: [...queryKeys.job(jobId), "audio"],
+    queryKey: queryKeys.jobAudio(jobId),
     queryFn: () => apiRequest<ArtifactRecord[]>(`/generation-jobs/${enc(jobId)}/artifacts`),
     select: (items) => items.filter((item) => item.kind === "audio" && item.deleted_at === null),
     enabled,
@@ -175,81 +175,10 @@ export function useJobAudio(jobId: string, enabled: boolean) {
 
 // ---- 結果のカードの操作 ----
 
-export function useSaveBgmMemo(jobId: string) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ artifactId, memo }: { artifactId: string; memo: string }) =>
-      apiRequest<ArtifactRecord>(`/artifacts/${enc(artifactId)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ memo }),
-      }),
-    onSuccess: (saved) => {
-      client.setQueryData<ArtifactRecord[]>([...queryKeys.job(jobId), "audio"], (list) =>
-        list?.map((item) => (item.id === saved.id ? saved : item)),
-      );
-      client.setQueryData(queryKeys.artifact(saved.id), saved);
-    },
-  });
-}
-
 /**
  * SceneのBGM枠への採用と、不採用の印。枠は1件だけなので、採用すると前のBGMは枠から外れる。
- * 不採用の生成物は採用できないため、採用の前に採否を戻す。採用中のものを不採用にするときは先に枠から外す。
+ * 手順は`useSlotDecision`と同じ。
  */
 export function useBgmDecision(projectId: string, sceneId: string) {
-  const client = useQueryClient();
-  const slotPath = `/projects/${enc(projectId)}/story-scenes/${enc(sceneId)}/adoptions/bgm`;
-  const setDecision = (artifactId: string, decision: ArtifactRecord["decision"]) =>
-    apiRequest<ArtifactRecord>(`/artifacts/${enc(artifactId)}/decision`, {
-      method: "PATCH",
-      body: JSON.stringify({ decision }),
-    });
-  const adopt = (artifactId: string) =>
-    apiRequest(slotPath, { method: "PUT", body: JSON.stringify({ artifact_id: artifactId }) });
-  return useMutation({
-    mutationFn: async ({
-      artifact,
-      action,
-      adopted,
-    }: {
-      artifact: ArtifactRecord;
-      action: SceneDecision;
-      /** 今この生成物がBGM枠に採用されているか。 */
-      adopted: boolean;
-    }) => {
-      if (action === "adopt") {
-        if (artifact.decision !== "rejected") {
-          await adopt(artifact.id);
-          return;
-        }
-        await setDecision(artifact.id, "undecided");
-        await secondStepOrUndo(
-          () => adopt(artifact.id),
-          () => setDecision(artifact.id, "rejected"),
-          "不採用の印だけが外れています",
-        );
-        return;
-      }
-      if (action === "release") {
-        await apiRequest(slotPath, { method: "DELETE" });
-        return;
-      }
-      if (action === "reject" && adopted) {
-        await apiRequest(slotPath, { method: "DELETE" });
-        await secondStepOrUndo(
-          () => setDecision(artifact.id, "rejected"),
-          () => adopt(artifact.id),
-          "採用だけが外れています",
-        );
-        return;
-      }
-      await setDecision(artifact.id, action === "reject" ? "rejected" : "undecided");
-    },
-    // 採用を差し替えると前の生成物の採否も変わるため、結果欄の生成物はまとめて取り直す。
-    onSettled: () =>
-      Promise.all([
-        client.invalidateQueries({ queryKey: queryKeys.sceneAdoptions(projectId, sceneId) }),
-        client.invalidateQueries({ queryKey: queryKeys.jobs }),
-      ]),
-  });
+  return useSlotDecision(projectId, sceneId, "bgm");
 }

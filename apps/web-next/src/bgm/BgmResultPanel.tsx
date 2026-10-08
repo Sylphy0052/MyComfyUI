@@ -1,53 +1,14 @@
-import { Alert, Anchor, Badge, Button, Card, CloseButton, Group, Loader, Stack, Text, Textarea, Title } from "@mantine/core";
-import { useState } from "react";
+import { Alert, Anchor, Badge, Button, Card, CloseButton, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { Link } from "react-router";
 
 import { artifactContentUrl, type ArtifactRecord } from "../api/client";
-import { viewerPathOf } from "../imageGen/ArtifactCard";
+import { queryKeys } from "../api/queryKeys";
+import { MemoField, viewerPathOf } from "../imageGen/ArtifactCard";
 import { useJob, type SceneDecision } from "../imageGen/useImageGen";
 import { STATE_LABELS } from "../jobs/JobDrawer";
 import { notifyError } from "../notifications";
 import { useSceneAdoptions } from "../projectDetail/useStory";
-import { useBgmDecision, useJobAudio, useSaveBgmMemo, type BgmResultEntry } from "./useBgm";
-
-/** `ARTIFACT_MEMO_MAX_LENGTH` (`schemas.py`) に合わせる。 */
-const MEMO_MAX = 2_000;
-
-function MemoField({ artifact, jobId }: { artifact: ArtifactRecord; jobId: string }) {
-  const saved = artifact.memo ?? "";
-  const [draft, setDraft] = useState(saved);
-  const save = useSaveBgmMemo(jobId);
-  return (
-    <Group gap={4} align="flex-end" wrap="nowrap">
-      <Textarea
-        aria-label="メモ"
-        placeholder="メモ"
-        size="xs"
-        autosize
-        minRows={1}
-        maxRows={4}
-        maxLength={MEMO_MAX}
-        value={draft}
-        onChange={(event) => setDraft(event.currentTarget.value)}
-        style={{ flex: 1 }}
-      />
-      <Button
-        size="compact-xs"
-        variant="light"
-        disabled={draft === saved}
-        loading={save.isPending}
-        onClick={() =>
-          save.mutate(
-            { artifactId: artifact.id, memo: draft },
-            { onError: (error) => notifyError("メモを保存できませんでした", error) },
-          )
-        }
-      >
-        メモを保存
-      </Button>
-    </Group>
-  );
-}
+import { useBgmDecision, useJobAudio, type BgmResultEntry } from "./useBgm";
 
 /** Sceneを指定して作った生成物の、BGM枠への採用と不採用の印。 */
 function BgmDecisionButtons({
@@ -65,7 +26,8 @@ function BgmDecisionButtons({
   const rejected = artifact.decision === "rejected";
   const run = (action: SceneDecision) =>
     decide.mutate({ artifact, action, adopted }, { onError: (error) => notifyError("採否を変えられませんでした", error) });
-  const busy = decide.isPending || adoptions.isPending;
+  // 採用一覧を読めないと採用中かどうかが分からず、採用中のものを「採用」と誤表示して操作させてしまう。
+  const busy = decide.isPending || adoptions.isPending || adoptions.isError;
   return (
     <>
       <Button
@@ -86,12 +48,17 @@ function BgmDecisionButtons({
       >
         {rejected ? "不採用を外す" : "不採用"}
       </Button>
+      {adoptions.isError ? (
+        <Text size="xs" c="red" data-testid="adoptions-error">
+          採用の状況を取得できません: {adoptions.error.message}
+        </Text>
+      ) : null}
     </>
   );
 }
 
 /** 完成したBGMのカード。その場で再生でき、メモ、採否 (Sceneを指定した場合)、Viewerで開くを持つ。 */
-function BgmCard({ artifact, jobId }: { artifact: ArtifactRecord; jobId: string }) {
+function BgmCard({ artifact }: { artifact: ArtifactRecord }) {
   const projectId = artifact.assigned_project_id;
   return (
     <Card withBorder padding="xs" data-testid="result-artifact" data-artifact-id={artifact.id}>
@@ -102,7 +69,7 @@ function BgmCard({ artifact, jobId }: { artifact: ArtifactRecord; jobId: string 
             {artifact.decision === "accepted" ? "採用" : "不採用"}
           </Badge>
         ) : null}
-        <MemoField artifact={artifact} jobId={jobId} />
+        <MemoField artifact={artifact} listKeyOf={queryKeys.jobAudio} />
         <Group gap={4}>
           {projectId && artifact.story_scene_id ? (
             <BgmDecisionButtons artifact={artifact} projectId={projectId} sceneId={artifact.story_scene_id} />
@@ -165,7 +132,7 @@ function JobResult({ entry, onRemove }: { entry: BgmResultEntry; onRemove: () =>
       return (
         <Stack gap="xs">
           {audio.data.map((artifact) => (
-            <BgmCard key={artifact.id} artifact={artifact} jobId={entry.jobId} />
+            <BgmCard key={artifact.id} artifact={artifact} />
           ))}
         </Stack>
       );
