@@ -2,7 +2,7 @@ import { ActionIcon, Button, Group, Paper, Select, SimpleGrid, Stack, TagsInput,
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 
 import type { StoryCharacter } from "../api/client";
-import { TAG_MAX, TAGS_MAX, TEXT_MAX } from "./CostumeDrawer";
+import { TAG_MAX, TAGS_MAX, TEXT_MAX } from "./limits";
 import { emptyCast, type CastDraft } from "./sceneDraft";
 
 /** 登場キャラ。衣装は、選んだキャラの衣装だけから選べる。 */

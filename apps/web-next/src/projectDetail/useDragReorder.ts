@@ -12,8 +12,9 @@ export function moveItem<T>(items: readonly T[], from: number, to: number): T[] 
 /**
  * HTML5のネイティブDnDで行を並べ替える。依存ライブラリは使わない。
  * 並び順は呼び出し側が持つので、ドロップで決まった新しい順序を`onReorder`へ渡すだけにする。
+ * `disabled`の間はドラッグを始めない。
  */
-export function useDragReorder(ids: readonly string[], onReorder: (ids: string[]) => void) {
+export function useDragReorder(ids: readonly string[], onReorder: (ids: string[]) => void, disabled = false) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   // 状態は再描画まで古いままなので、続けて発火するイベントの判定にはrefを使う。
@@ -26,10 +27,14 @@ export function useDragReorder(ids: readonly string[], onReorder: (ids: string[]
   };
 
   const rowProps = (id: string) => ({
-    draggable: true,
+    draggable: !disabled,
     "data-dragging": dragId === id ? "true" : undefined,
     "data-drop-target": overId === id && dragId !== id ? "true" : undefined,
     onDragStart: (event: DragEvent) => {
+      if (disabled) {
+        event.preventDefault();
+        return;
+      }
       event.dataTransfer.effectAllowed = "move";
       // Firefoxはデータを入れないとドラッグが始まらない。
       event.dataTransfer.setData("text/plain", id);

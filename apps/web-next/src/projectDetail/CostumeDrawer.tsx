@@ -3,16 +3,12 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
 import type { StoryCharacter, StoryCostume, StoryCostumeBody } from "../api/client";
+import { NAME_MAX, TAG_MAX, TAGS_MAX, TEXT_MAX } from "./limits";
 import { artifactIdOf } from "./MediaThumb";
+import { EditFieldset, useReadOnly } from "./readOnly";
 import { ReferenceImageList, type MemoEdits } from "./ReferenceImageList";
 import { useReportDirty } from "./unsavedGuard";
 import { useSaveCostume } from "./useStory";
-
-/** `schemas.py`の`StoryName`・`StoryTags`・`StoryText`の上限に合わせる。 */
-export const NAME_MAX = 120;
-export const TAG_MAX = 128;
-export const TAGS_MAX = 100;
-export const TEXT_MAX = 4_000;
 
 type CostumeDraft = {
   name: string;
@@ -39,18 +35,23 @@ function CostumeForm({
   projectId,
   character,
   costume,
+  onCreated,
   onSaved,
   onCancel,
 }: {
   projectId: string;
   character: StoryCharacter;
   costume: StoryCostume | null;
+  onCreated: (costume: StoryCostume) => void;
   onSaved: () => void;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<CostumeDraft>(() => toDraft(costume));
   const [memoEdits, setMemoEdits] = useState<MemoEdits>({});
   const save = useSaveCostume(projectId);
+  // 保存中に入力すると、保存後の取り込みで消えるので止める。
+  const readOnly = useReadOnly();
+  const locked = readOnly || save.isPending;
 
   // 外した画像のメモは保存しない。
   const liveMemoEdits = Object.fromEntries(
@@ -73,7 +74,7 @@ function CostumeForm({
   const submit = () => {
     const body: StoryCostumeBody = { ...draft, name };
     save.mutate(
-      { characterId: character.id, costumeId: costume?.id ?? null, body, memos: liveMemoEdits },
+      { characterId: character.id, costumeId: costume?.id ?? null, body, memos: liveMemoEdits, onCreated },
       {
         onSuccess: () => {
           notifications.show({ color: "green", message: "衣装を保存しました" });
@@ -85,42 +86,45 @@ function CostumeForm({
 
   return (
     <Stack>
-      <TextInput
-        label="名前"
-        required
-        value={draft.name}
-        maxLength={NAME_MAX}
-        onChange={(event) => update({ name: event.currentTarget.value })}
-      />
-      <TagsInput
-        label="衣装タグ"
-        value={draft.tags}
-        maxTags={TAGS_MAX}
-        maxLength={TAG_MAX}
-        onChange={(tags) => update({ tags })}
-      />
-      <TagsInput
-        label="ネガティブタグ"
-        value={draft.negative_tags}
-        maxTags={TAGS_MAX}
-        maxLength={TAG_MAX}
-        onChange={(negative_tags) => update({ negative_tags })}
-      />
-      <Textarea
-        label="説明"
-        autosize
-        minRows={2}
-        maxRows={8}
-        maxLength={TEXT_MAX}
-        value={draft.description}
-        onChange={(event) => update({ description: event.currentTarget.value })}
-      />
-      <ReferenceImageList
-        keys={draft.reference_images}
-        onChange={(reference_images) => update({ reference_images })}
-        memoEdits={memoEdits}
-        onMemoChange={changeMemo}
-      />
+      <EditFieldset disabled={locked}>
+        <TextInput
+          label="名前"
+          required
+          value={draft.name}
+          maxLength={NAME_MAX}
+          onChange={(event) => update({ name: event.currentTarget.value })}
+        />
+        <TagsInput
+          label="衣装タグ"
+          value={draft.tags}
+          maxTags={TAGS_MAX}
+          maxLength={TAG_MAX}
+          onChange={(tags) => update({ tags })}
+        />
+        <TagsInput
+          label="ネガティブタグ"
+          value={draft.negative_tags}
+          maxTags={TAGS_MAX}
+          maxLength={TAG_MAX}
+          onChange={(negative_tags) => update({ negative_tags })}
+        />
+        <Textarea
+          label="説明"
+          autosize
+          minRows={2}
+          maxRows={8}
+          maxLength={TEXT_MAX}
+          value={draft.description}
+          onChange={(event) => update({ description: event.currentTarget.value })}
+        />
+        <ReferenceImageList
+          keys={draft.reference_images}
+          onChange={(reference_images) => update({ reference_images })}
+          memoEdits={memoEdits}
+          onMemoChange={changeMemo}
+          disabled={locked}
+        />
+      </EditFieldset>
       {save.error ? (
         <Text c="red" size="sm">
           {save.error.message}
@@ -130,7 +134,7 @@ function CostumeForm({
         <Button variant="default" onClick={onCancel}>
           閉じる
         </Button>
-        <Button onClick={submit} loading={save.isPending} disabled={name === "" || !dirty}>
+        <Button onClick={submit} loading={save.isPending} disabled={readOnly || name === "" || !dirty}>
           保存
         </Button>
       </Group>
@@ -138,13 +142,17 @@ function CostumeForm({
   );
 }
 
-/** 衣装の編集ドロワー。`costume`が`null`なら新規。閉じている間はフォームを描画せず、開くたびに保存済みの値から始める。 */
+/**
+ * 衣装の編集ドロワー。`costume`が`null`なら新規。閉じている間はフォームを描画せず、開くたびに保存済みの値から始める。
+ * 新規の保存で`costume`が作成した衣装に切り替わっても、フォームは作り直さず入力 (メモの編集) を保つ。
+ */
 export function CostumeDrawer({
   opened,
   projectId,
   character,
   costume,
   onRequestClose,
+  onCreated,
   onSaved,
 }: {
   opened: boolean;
@@ -153,6 +161,8 @@ export function CostumeDrawer({
   costume: StoryCostume | null;
   /** 閉じる操作。未保存の確認は呼び出し側が挟む。 */
   onRequestClose: () => void;
+  /** 新規の衣装を作成できた (メモの更新はまだ)。以後の対象をこの衣装にする。 */
+  onCreated: (costume: StoryCostume) => void;
   /** 保存が済んだ。確認なしで閉じてよい。 */
   onSaved: () => void;
 }) {
@@ -166,10 +176,10 @@ export function CostumeDrawer({
     >
       {opened ? (
         <CostumeForm
-          key={costume?.id ?? "new"}
           projectId={projectId}
           character={character}
           costume={costume}
+          onCreated={onCreated}
           onSaved={onSaved}
           onCancel={onRequestClose}
         />

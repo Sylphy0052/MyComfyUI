@@ -1,11 +1,12 @@
-import { Button, Group, Select, Stack, TagsInput, Text, Textarea, TextInput } from "@mantine/core";
+import { Button, Group, Select, TagsInput, Text, Textarea, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconPhotoSearch } from "@tabler/icons-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
 import type { StoryScene } from "../api/client";
-import { NAME_MAX, TAG_MAX, TAGS_MAX, TEXT_MAX } from "./CostumeDrawer";
+import { NAME_MAX, TAG_MAX, TAGS_MAX, TEXT_MAX } from "./limits";
+import { EditFieldset, useReadOnly } from "./readOnly";
 import { SceneAdoptions } from "./SceneAdoptions";
 import { SceneCastField } from "./SceneCastField";
 import { SceneDialogueField } from "./SceneDialogueField";
@@ -26,6 +27,7 @@ export function SceneEditor({
   const [draft, setDraft] = useState<SceneDraft>(() => toDraft(scene));
   const characters = useCharacters(projectId).data ?? [];
   const save = useSaveScene(projectId);
+  const readOnly = useReadOnly();
 
   const dirty = JSON.stringify(toBody(draft)) !== JSON.stringify(toBody(toDraft(scene)));
   useReportDirty("scene", dirty);
@@ -48,7 +50,8 @@ export function SceneEditor({
   };
 
   return (
-    <Stack>
+    // 保存中に入力すると、保存後の取り込みで消えるので止める。Viewerへのリンクと採用済みの再生は止めない。
+    <EditFieldset disabled={readOnly || save.isPending}>
       <TextInput
         label="名前"
         required
@@ -135,6 +138,6 @@ export function SceneEditor({
         ) : null}
       </Group>
       {scene ? <SceneAdoptions projectId={projectId} scene={scene} /> : null}
-    </Stack>
+    </EditFieldset>
   );
 }

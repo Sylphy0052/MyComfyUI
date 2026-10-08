@@ -17,8 +17,10 @@ import { IconMicrophone, IconPlus, IconUpload } from "@tabler/icons-react";
 import { useState } from "react";
 
 import type { StoryCharacter, StoryCharacterBody, StoryCostume } from "../api/client";
-import { NAME_MAX, TAG_MAX, TAGS_MAX, TEXT_MAX } from "./CostumeDrawer";
+import { notifyError } from "../notifications";
+import { NAME_MAX, TAG_MAX, TAGS_MAX, TEXT_MAX } from "./limits";
 import { MediaThumb } from "./MediaThumb";
+import { EditFieldset, useReadOnly } from "./readOnly";
 import { useReportDirty } from "./unsavedGuard";
 import { inputMediaKey, useSaveCharacter, useUploadImageReference, useUploadVoiceReference } from "./useStory";
 
@@ -53,10 +55,6 @@ function toDraft(character: StoryCharacter | null): CharacterDraft {
     voice_media_key: character.voice_media_key,
     voice_transcript: character.voice_transcript ?? "",
   };
-}
-
-function notifyError(title: string, error: unknown) {
-  notifications.show({ color: "red", title, message: error instanceof Error ? error.message : String(error) });
 }
 
 function PortraitField({
@@ -189,9 +187,12 @@ function VoiceField({
 
 function CostumeCards({
   costumes,
+  readOnly,
   onOpen,
 }: {
   costumes: StoryCostume[];
+  /** 追加だけを止める。既存の衣装は開いて中身を見られる。 */
+  readOnly: boolean;
   /** `null`なら新規。 */
   onOpen: (costume: StoryCostume | null) => void;
 }) {
@@ -199,7 +200,13 @@ function CostumeCards({
     <Stack gap="xs">
       <Group justify="space-between">
         <Title order={5}>衣装</Title>
-        <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => onOpen(null)}>
+        <Button
+          size="xs"
+          variant="light"
+          leftSection={<IconPlus size={14} />}
+          disabled={readOnly}
+          onClick={() => onOpen(null)}
+        >
           衣装を追加
         </Button>
       </Group>
@@ -253,6 +260,7 @@ export function CharacterEditor({
 }) {
   const [draft, setDraft] = useState<CharacterDraft>(() => toDraft(character));
   const save = useSaveCharacter(projectId);
+  const readOnly = useReadOnly();
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(character));
   useReportDirty("character", dirty);
@@ -286,51 +294,54 @@ export function CharacterEditor({
 
   return (
     <Stack>
-      <TextInput
-        label="名前"
-        required
-        value={draft.name}
-        maxLength={NAME_MAX}
-        onChange={(event) => update({ name: event.currentTarget.value })}
-      />
-      <TagsInput
-        label="固定タグ"
-        description="どの衣装でも常にプロンプトへ入るタグ (髪型、髪色、目の色、体格など)"
-        value={draft.fixed_tags}
-        maxTags={TAGS_MAX}
-        maxLength={TAG_MAX}
-        onChange={(fixed_tags) => update({ fixed_tags })}
-      />
-      <TagsInput
-        label="ネガティブタグ"
-        value={draft.negative_tags}
-        maxTags={TAGS_MAX}
-        maxLength={TAG_MAX}
-        onChange={(negative_tags) => update({ negative_tags })}
-      />
-      <Textarea
-        label="性格・設定"
-        autosize
-        minRows={3}
-        maxRows={10}
-        maxLength={TEXT_MAX}
-        value={draft.profile}
-        onChange={(event) => update({ profile: event.currentTarget.value })}
-      />
-      <PortraitField draft={draft} candidates={candidates} onChange={(portrait_media_key) => update({ portrait_media_key })} />
-      <VoiceField draft={draft} onChange={update} />
-      {save.error ? (
-        <Text c="red" size="sm">
-          {save.error.message}
-        </Text>
-      ) : null}
-      <Group>
-        <Button onClick={submit} loading={save.isPending} disabled={name === "" || !dirty}>
-          {character ? "保存" : "作成"}
-        </Button>
-      </Group>
+      {/* 保存中に入力すると、保存後の取り込みで消えるので止める。 */}
+      <EditFieldset disabled={readOnly || save.isPending}>
+        <TextInput
+          label="名前"
+          required
+          value={draft.name}
+          maxLength={NAME_MAX}
+          onChange={(event) => update({ name: event.currentTarget.value })}
+        />
+        <TagsInput
+          label="固定タグ"
+          description="どの衣装でも常にプロンプトへ入るタグ (髪型、髪色、目の色、体格など)"
+          value={draft.fixed_tags}
+          maxTags={TAGS_MAX}
+          maxLength={TAG_MAX}
+          onChange={(fixed_tags) => update({ fixed_tags })}
+        />
+        <TagsInput
+          label="ネガティブタグ"
+          value={draft.negative_tags}
+          maxTags={TAGS_MAX}
+          maxLength={TAG_MAX}
+          onChange={(negative_tags) => update({ negative_tags })}
+        />
+        <Textarea
+          label="性格・設定"
+          autosize
+          minRows={3}
+          maxRows={10}
+          maxLength={TEXT_MAX}
+          value={draft.profile}
+          onChange={(event) => update({ profile: event.currentTarget.value })}
+        />
+        <PortraitField draft={draft} candidates={candidates} onChange={(portrait_media_key) => update({ portrait_media_key })} />
+        <VoiceField draft={draft} onChange={update} />
+        {save.error ? (
+          <Text c="red" size="sm">
+            {save.error.message}
+          </Text>
+        ) : null}
+        <Group>
+          <Button onClick={submit} loading={save.isPending} disabled={name === "" || !dirty}>
+            {character ? "保存" : "作成"}
+          </Button>
+        </Group>
+      </EditFieldset>
       {character ? (
-        <CostumeCards costumes={character.costumes} onOpen={onOpenCostume} />
+        <CostumeCards costumes={character.costumes} readOnly={readOnly} onOpen={onOpenCostume} />
       ) : (
         <Text size="sm" c="dimmed">
           キャラクターを作成すると、衣装を追加できます。

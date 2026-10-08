@@ -21,11 +21,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { ProjectRecord } from "../api/client";
+import { notifyError } from "../notifications";
 import {
   useCreateProject,
   usePurgeProject,
   useProjectList,
-  useRestoreProject,
+  useRestoreProjectWithNotice,
   useTrashProject,
   useUpdateProject,
   type ProjectDraft,
@@ -38,10 +39,6 @@ const DESCRIPTION_MAX = 10_000;
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("ja-JP");
-}
-
-function notifyError(title: string, error: Error) {
-  notifications.show({ color: "red", title, message: error.message });
 }
 
 /** 作成と編集で共用するフォーム。`project`があれば編集として開く。 */
@@ -174,7 +171,7 @@ function ProjectCard({
 }) {
   const navigate = useNavigate();
   const trash = useTrashProject();
-  const restore = useRestoreProject();
+  const restore = useRestoreProjectWithNotice();
   const active = tab === "active";
 
   const moveToTrash = () =>
@@ -182,11 +179,7 @@ function ProjectCard({
       onSuccess: () => notifications.show({ message: `「${project.name}」をゴミ箱へ移しました` }),
       onError: (error) => notifyError("ゴミ箱へ移せません", error),
     });
-  const restoreFromTrash = () =>
-    restore.mutate(project.id, {
-      onSuccess: () => notifications.show({ color: "green", message: `「${project.name}」を復元しました` }),
-      onError: (error) => notifyError("復元できません", error),
-    });
+  const restoreFromTrash = () => restore.run(project);
 
   return (
     <Card

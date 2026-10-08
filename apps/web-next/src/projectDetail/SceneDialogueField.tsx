@@ -2,7 +2,7 @@ import { ActionIcon, Button, Group, Paper, Select, Stack, Text, Textarea, Title,
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from "@tabler/icons-react";
 
 import type { StoryCharacter } from "../api/client";
-import { TEXT_MAX } from "./CostumeDrawer";
+import { TEXT_MAX } from "./limits";
 import { emptyDialogue, type DialogueDraft } from "./sceneDraft";
 import { moveItem } from "./useDragReorder";
 

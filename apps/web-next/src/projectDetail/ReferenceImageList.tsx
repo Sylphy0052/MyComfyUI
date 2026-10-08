@@ -1,7 +1,9 @@
 import { ActionIcon, Button, FileButton, Group, Paper, Stack, Text, Textarea, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconArrowDown, IconArrowUp, IconGripVertical, IconTrash, IconUpload } from "@tabler/icons-react";
+import { useEffect, useRef } from "react";
 
+import { notifyError } from "../notifications";
 import { artifactIdOf, MediaThumb } from "./MediaThumb";
 import { moveItem, useDragReorder } from "./useDragReorder";
 import { inputMediaKey, useArtifact, useUploadImageReference } from "./useStory";
@@ -48,35 +50,38 @@ export function ReferenceImageList({
   onChange,
   memoEdits,
   onMemoChange,
+  disabled,
 }: {
   keys: string[];
   onChange: (keys: string[]) => void;
   memoEdits: MemoEdits;
   onMemoChange: (artifactId: string, value: string | null) => void;
+  /** 並べ替えを止める。ボタンと入力は呼び出し側の`fieldset`で止める。 */
+  disabled: boolean;
 }) {
   const upload = useUploadImageReference();
-  const { rowProps } = useDragReorder(keys, onChange);
+  const { rowProps } = useDragReorder(keys, onChange, disabled);
+  // アップロードの待ちの間に並べ替え・削除されても上書きしないよう、追加は最新の並びに足す。
+  const latestKeys = useRef(keys);
+  useEffect(() => {
+    latestKeys.current = keys;
+  }, [keys]);
 
   const addFiles = async (files: File[]) => {
-    let next = keys;
     for (const file of files) {
       try {
         const reference = await upload.mutateAsync(file);
         const key = inputMediaKey(reference.relative_path);
-        if (next.includes(key)) {
+        if (latestKeys.current.includes(key)) {
           notifications.show({ color: "yellow", message: `${file.name}は既に追加されています` });
           continue;
         }
-        next = [...next, key];
+        latestKeys.current = [...latestKeys.current, key];
+        onChange(latestKeys.current);
       } catch (error) {
-        notifications.show({
-          color: "red",
-          title: `${file.name}を追加できません`,
-          message: error instanceof Error ? error.message : String(error),
-        });
+        notifyError(`${file.name}を追加できません`, error);
       }
     }
-    onChange(next);
   };
 
   return (
@@ -106,7 +111,7 @@ export function ReferenceImageList({
             withBorder
             p="xs"
             data-testid="reference-image"
-            style={{ cursor: "grab" }}
+            style={{ cursor: disabled ? undefined : "grab" }}
             {...rowProps(key)}
           >
             <Group wrap="nowrap" align="flex-start">

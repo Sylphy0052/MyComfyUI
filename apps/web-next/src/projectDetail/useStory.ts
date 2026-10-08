@@ -35,6 +35,13 @@ export function inputMediaKey(relativePath: string): string {
   return `input:${relativePath}`;
 }
 
+/** IDが同じ要素を差し替え、無ければ末尾へ足す。 */
+function upsertById<T extends { id: string }>(list: T[], item: T): T[] {
+  return list.some((entry) => entry.id === item.id)
+    ? list.map((entry) => (entry.id === item.id ? item : entry))
+    : [...list, item];
+}
+
 // ---- キャラクター・衣装 ----
 
 export function useCharacters(projectId: string) {
@@ -60,30 +67,35 @@ export function useSaveCharacter(projectId: string) {
     onSuccess: (saved) => {
       // 取り直しを待つ間も「保存済みの値」が最新になるよう、応答を先にキャッシュへ入れる。
       client.setQueryData<StoryCharacter[]>(queryKeys.projectCharacters(projectId), (list = []) =>
-        list.some((item) => item.id === saved.id)
-          ? list.map((item) => (item.id === saved.id ? saved : item))
-          : [...list, saved],
+        upsertById(list, saved),
       );
       return client.invalidateQueries({ queryKey: queryKeys.projectCharacters(projectId) });
     },
   });
 }
 
-/** メモは生成物そのものの項目なので、衣装の保存と同じ操作の中で一緒に更新する。 */
+/**
+ * メモは生成物そのものの項目なので、衣装の保存と同じ操作の中で一緒に更新する。
+ * メモで失敗しても衣装は保存済みなので、一覧は成否にかかわらず取り直す。
+ */
 export function useSaveCostume(projectId: string) {
   const client = useQueryClient();
+  const key = queryKeys.projectCharacters(projectId);
   return useMutation({
     mutationFn: async ({
       characterId,
       costumeId,
       body,
       memos,
+      onCreated,
     }: {
       characterId: string;
       costumeId: string | null;
       body: StoryCostumeBody;
       /** 変えたメモだけ。キーは生成物のID。 */
       memos: Record<string, string>;
+      /** 新規の衣装を作成できた。メモの更新より前に呼ぶので、呼び出し側は再試行をPATCHにできる。 */
+      onCreated?: (costume: StoryCostume) => void;
     }) => {
       const base = `/projects/${enc(projectId)}/characters/${enc(characterId)}/costumes`;
       const saved =
@@ -93,6 +105,16 @@ export function useSaveCostume(projectId: string) {
               method: "PATCH",
               body: JSON.stringify(body),
             });
+      if (costumeId === null) {
+        // 呼び出し側が対象を新しい衣装へ切り替えたときに一覧で見つかるよう、取り直しを待たずにキャッシュへ入れる。
+        await client.cancelQueries({ queryKey: key });
+        client.setQueryData<StoryCharacter[]>(key, (list = []) =>
+          list.map((character) =>
+            character.id === characterId ? { ...character, costumes: upsertById(character.costumes, saved) } : character,
+          ),
+        );
+        onCreated?.(saved);
+      }
       for (const [artifactId, memo] of Object.entries(memos)) {
         await apiRequest<ArtifactRecord>(`/artifacts/${enc(artifactId)}`, {
           method: "PATCH",
@@ -102,7 +124,7 @@ export function useSaveCostume(projectId: string) {
       }
       return saved;
     },
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.projectCharacters(projectId) }),
+    onSettled: () => client.invalidateQueries({ queryKey: key }),
   });
 }
 
@@ -161,11 +183,7 @@ export function useSaveScene(projectId: string) {
             body: JSON.stringify(body),
           }),
     onSuccess: (saved) => {
-      client.setQueryData<StoryScene[]>(queryKeys.projectScenes(projectId), (list = []) =>
-        list.some((item) => item.id === saved.id)
-          ? list.map((item) => (item.id === saved.id ? saved : item))
-          : [...list, saved],
-      );
+      client.setQueryData<StoryScene[]>(queryKeys.projectScenes(projectId), (list = []) => upsertById(list, saved));
       return client.invalidateQueries({ queryKey: queryKeys.projectScenes(projectId) });
     },
   });
