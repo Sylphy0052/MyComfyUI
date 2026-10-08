@@ -1,15 +1,19 @@
 import { Button, Group, Loader, Modal, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
 import { apiRequest, type QwenSettings, type QwenSettingsBody } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { notifyError } from "../notifications";
 
-/** `QwenSettingsUpdate`の上限 (`base_url` / `status_url`は2048文字、`model`は200文字)。 */
+/** `base_url` / `status_url`の上限。APIの`QwenSettingsUpdate`に合わせる。 */
 const URL_MAX = 2048;
+/** `model`の上限。APIの`QwenSettingsUpdate`に合わせる。 */
 const MODEL_MAX = 200;
+
+/** 保存中かをダイアログの外側から見るためのキー。 */
+const SAVE_MUTATION_KEY = ["settings", "qwen", "save"] as const;
 
 type FieldName = "base_url" | "model" | "status_url";
 type Draft = Record<FieldName, string>;
@@ -21,6 +25,8 @@ function parseUrl(raw: string): { value: string | null; error?: string } {
   if (value === "") return { value: null };
   if (value.length > URL_MAX) return { value: null, error: `${URL_MAX}文字以内で入力してください。` };
   if (/\s/.test(value)) return { value: null, error: "URLに空白を含められません。" };
+  // `new URL`は`http:/host`を`http://host/`へ直して通すが、APIは通さない。`://`を必須にして揃える。
+  if (!/^https?:\/\//i.test(value)) return { value: null, error: "http://またはhttps://で始まるURLを指定してください。" };
   try {
     const url = new URL(value);
     const valid = (url.protocol === "http:" || url.protocol === "https:") && url.hostname !== "" && url.port !== "0";
@@ -53,6 +59,7 @@ function initialDraft(settings: QwenSettings): Draft {
 function useSaveQwenSettings(onSaved: () => void) {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: SAVE_MUTATION_KEY,
     mutationFn: (body: QwenSettingsBody) =>
       apiRequest<QwenSettings>("/settings/qwen", { method: "PUT", body: JSON.stringify(body) }),
     onSuccess: () => {
@@ -65,9 +72,9 @@ function useSaveQwenSettings(onSaved: () => void) {
 }
 
 const FIELDS: { name: FieldName; label: string }[] = [
-  { name: "base_url", label: "base_url" },
-  { name: "model", label: "model" },
-  { name: "status_url", label: "status_url" },
+  { name: "base_url", label: "接続先URL (base_url)" },
+  { name: "model", label: "モデル (model)" },
+  { name: "status_url", label: "状態照会URL (status_url)" },
 ];
 
 /** `settings`は開いた時点の値。フォームの初期値にだけ使い、後から取り直されても入力中の値は変えない。 */
@@ -83,6 +90,7 @@ function QwenSettingsForm({ settings, onClose }: { settings: QwenSettings; onClo
     setErrors(parsed.errors);
     if (Object.keys(parsed.errors).length > 0) return;
     // supports_imagesはこのダイアログで変えない。開いた時点の保存値をそのまま送る (effectiveを送ると保存値ができてしまう)。
+    // 開いている間に別の画面で変えた値は戻るが、設定を変えるのは利用者1人なので許容する。
     save.mutate({ ...parsed.body, supports_images: settings.saved.supports_images ?? null });
   };
 
@@ -114,7 +122,7 @@ function QwenSettingsForm({ settings, onClose }: { settings: QwenSettings; onClo
           );
         })}
         <Group justify="flex-end">
-          <Button variant="default" onClick={onClose}>
+          <Button variant="default" onClick={onClose} disabled={save.isPending}>
             キャンセル
           </Button>
           <Button type="submit" loading={save.isPending}>
@@ -127,7 +135,7 @@ function QwenSettingsForm({ settings, onClose }: { settings: QwenSettings; onClo
 }
 
 /** 開いている間だけ置かれる。閉じると状態ごと消えるので、保存前に閉じた編集は捨てられ、開き直すたびに最新の値を取る。 */
-function QwenSettingsBody({ onClose }: { onClose: () => void }) {
+function QwenSettingsLoader({ onClose }: { onClose: () => void }) {
   const query = useQuery({
     queryKey: queryKeys.qwenSettings,
     queryFn: () => apiRequest<QwenSettings>("/settings/qwen"),
@@ -160,9 +168,19 @@ function QwenSettingsBody({ onClose }: { onClose: () => void }) {
 }
 
 export function QwenSettingsModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+  // 保存中は閉じさせない。閉じても要求は止まらず、失敗したときに入力が消えるため。
+  const saving = useIsMutating({ mutationKey: SAVE_MUTATION_KEY }) > 0;
   return (
-    <Modal opened={opened} onClose={onClose} title="Qwen設定" size="md">
-      <QwenSettingsBody onClose={onClose} />
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Qwen設定"
+      size="md"
+      closeOnEscape={!saving}
+      closeOnClickOutside={!saving}
+      withCloseButton={!saving}
+    >
+      <QwenSettingsLoader onClose={onClose} />
     </Modal>
   );
 }
