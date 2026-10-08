@@ -843,8 +843,8 @@ class VoiceVerification(Base):
     audio_sec: Mapped[float] = mapped_column(Float, nullable=False)
     #: パディング後の尺。超過時はパディングしないため`audio_sec`と同じ値になる。
     padded_sec: Mapped[float] = mapped_column(Float, nullable=False)
-    #: Shotが求める尺。超過の判定に使う。
-    target_duration_sec: Mapped[float] = mapped_column(Float, nullable=False)
+    #: Shotが求める尺。超過の判定に使う。Shot無しのJobは目標尺が無くNULL。
+    target_duration_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 

@@ -10099,8 +10099,15 @@
             "type": "string"
           },
           "target_duration_sec": {
-            "title": "Target Duration Sec",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Duration Sec"
           }
         },
         "required": [

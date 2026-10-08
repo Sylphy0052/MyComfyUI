@@ -5848,7 +5848,7 @@ export interface components {
             /** Status */
             status: string;
             /** Target Duration Sec */
-            target_duration_sec: number;
+            target_duration_sec: number | null;
         };
         /**
          * WorkflowGraphVersionCreate

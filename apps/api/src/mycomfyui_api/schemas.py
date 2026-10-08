@@ -2566,7 +2566,7 @@ class VoiceVerificationRead(ApiModel):
     diff_ratio: float | None
     audio_sec: float
     padded_sec: float
-    target_duration_sec: float
+    target_duration_sec: float | None
     status: str
     created_at: str
 
