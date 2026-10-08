@@ -1,6 +1,6 @@
 import { Alert, Button, Grid, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import type { Recipe } from "../api/client";
@@ -124,6 +124,8 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
   // 2つのeffectは宣言順に走る順序に依存する。初回は、ここが`initialized`がfalseのため何もせず、
   // 次のeffectが`true`にして復元する。復元でURLが変わると`targetKey`が変わり、ここが保存する。
   // 2つの順序を入れ替えると、初回に空の対象を保存して前回の対象を失う。
+  // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
+  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
   const initialized = useRef(false);
   useEffect(() => {
     if (!initialized.current) return;
@@ -149,8 +151,9 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
         setStored({ form: restored.form, target: restored.target });
         changeTarget(restored.target);
       },
-      onFail: () => changeTarget(target),
-    });
+      // 失敗したら、`from_artifact`の無い通常の起動と同じ対象 (前回の対象) に戻す。
+      onFail: () => changeTarget(initialTarget(target, stored.target) ?? target),
+    }).finally(() => setRestoring(false));
     // 依存配列は意図して空。開いたときの`target` / `stored.target`だけを使い、以後の変更では走らせない。
   }, []);
 
@@ -173,7 +176,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
   // 長さが既定のままで採用済みの動画を確認している間は、30秒で投入しないよう待つ。
   const secondsPending = form.seconds === null && target.sceneId !== null && video.isLoading;
   const canSubmit =
-    form.tags.trim() !== "" && !storyLoading && loadError === null && missing.length === 0 && !secondsPending;
+    !restoring && form.tags.trim() !== "" && !storyLoading && loadError === null && missing.length === 0 && !secondsPending;
   const onSubmit = () => {
     const bodies = Array.from({ length: form.count }, (_, index) => ({
       kind: "music" as const,
@@ -193,7 +196,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
   return (
     <Grid gap="lg">
       <Grid.Col span={{ base: 12, lg: 5 }}>
-        <Stack gap="md">
+        <Stack gap="md" inert={restoring}>
           <Group justify="space-between">
             <Title order={2}>BGM</Title>
             <Button
@@ -204,6 +207,11 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
               リセット
             </Button>
           </Group>
+          {restoring ? (
+            <Text size="xs" c="dimmed" data-testid="restoring-note">
+              生成物の設定を読み込み中です
+            </Text>
+          ) : null}
           <SimpleGrid cols={2} spacing="xs">
             <Select
               label="Project"

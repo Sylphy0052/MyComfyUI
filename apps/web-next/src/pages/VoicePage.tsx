@@ -172,6 +172,8 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
   // 2つのeffectは宣言順に走る順序に依存する。初回は、ここが`initialized`がfalseのため何もせず、
   // 次のeffectが`true`にして復元する。復元でURLが変わると`targetKey`が変わり、ここが保存する。
   // 2つの順序を入れ替えると、初回に空の対象を保存して前回の対象を失う。
+  // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
+  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
   const initialized = useRef(false);
   useEffect(() => {
     if (!initialized.current) return;
@@ -195,14 +197,15 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
         setStored({ form: restored.form, target: restored.target });
         applyTarget(restored.target);
       },
-      onFail: () => applyTarget(target),
-    });
+      // 失敗したら、`from_artifact`の無い通常の起動と同じ対象 (前回の対象) に戻す。
+      onFail: () => applyTarget(initialTarget(target, stored.target) ?? target),
+    }).finally(() => setRestoring(false));
     // 依存配列は意図して空。開いたときの`target` / `stored.target`だけを使い、以後の変更では走らせない。
   }, []);
 
   const problem = voiceProblem(form, character);
   const canSubmit =
-    form.text.trim() !== "" && problem === null && !storyLoading && loadError === null && missing.length === 0;
+    !restoring && form.text.trim() !== "" && problem === null && !storyLoading && loadError === null && missing.length === 0;
   const dialogues = scene?.dialogues ?? [];
   const labelOf = (line: StorySceneDialogue, index: number) =>
     lineLabel(index, speakerNameOf(characterList, line.speaker_character_id));
@@ -296,7 +299,7 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
   return (
     <Grid gap="lg">
       <Grid.Col span={{ base: 12, lg: 5 }}>
-        <Stack gap="md">
+        <Stack gap="md" inert={restoring}>
           <Group justify="space-between">
             <Title order={2}>音声</Title>
             <Button
@@ -307,6 +310,11 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
               リセット
             </Button>
           </Group>
+          {restoring ? (
+            <Text size="xs" c="dimmed" data-testid="restoring-note">
+              生成物の設定を読み込み中です
+            </Text>
+          ) : null}
           <SimpleGrid cols={2} spacing="xs">
             <Select
               label="Project"

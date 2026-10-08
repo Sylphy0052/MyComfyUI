@@ -1,5 +1,5 @@
 import { Alert, Button, Grid, Group, Loader, Stack, Tabs, Text, Textarea, Title } from "@mantine/core";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 
@@ -111,6 +111,8 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   // - 初回の描画では`initialized`がまだfalseなので、ここは保存せずに抜ける。URLが空のまま、保存済みの対象を空で上書きしない。
   // - 復元effectが`initialized`をtrueにして`changeTarget`を呼ぶと、URLが変わって`targetKey`が変わり、
   //   次の描画でここが復元後の対象を保存する。入れ替えると、復元前の空の対象を保存してしまう。
+  // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
+  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
   const initialized = useRef(false);
   useEffect(() => {
     if (!initialized.current) return;
@@ -139,8 +141,9 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
         setStored({ draft: restored.draft, target: restored.target });
         setSearchParams(paramsFromTarget(restored.target), { replace: true });
       },
-      onFail: () => changeTarget(target),
-    });
+      // 失敗したら、`from_artifact`の無い通常の起動と同じ対象 (前回の対象) に戻す。
+      onFail: () => changeTarget({ ...(initialTarget(target, stored.target) ?? target), extraCast: [] }),
+    }).finally(() => setRestoring(false));
   }, []);
 
   // ---- 画像の選択 ----
@@ -197,7 +200,7 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
 
   const blockedReason = videoBlockedReason(draft, recipe, imageRecipe);
   const canSubmit =
-    blockedReason === null && !storyLoading && storyError === null && projectsError === null && missing.length === 0;
+    !restoring && blockedReason === null && !storyLoading && storyError === null && projectsError === null && missing.length === 0;
   const onSubmit = () => {
     if (recipe === null) return;
     if (draft.mode === "prompt") {
@@ -244,7 +247,7 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   return (
     <Grid gap="lg">
       <Grid.Col span={{ base: 12, lg: 5 }}>
-        <Stack gap="md">
+        <Stack gap="md" inert={restoring}>
           <Group justify="space-between">
             <Title order={2}>動画</Title>
             <Button
@@ -255,6 +258,11 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
               リセット
             </Button>
           </Group>
+          {restoring ? (
+            <Text size="xs" c="dimmed" data-testid="restoring-note">
+              生成物の設定を読み込み中です
+            </Text>
+          ) : null}
           <TargetPicker
             target={target}
             onChange={changeTarget}
