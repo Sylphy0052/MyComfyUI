@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar, get_args
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
@@ -4336,6 +4337,7 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
 
 @router.get("/image-references/content")
 async def get_image_reference_content(
+    request: Request,
     relative_path: Annotated[str, Query(min_length=1, max_length=1024)],
 ):
     """入力cacheの参照画像を配信する。Artifactを持たない参照画像のサムネイルに使う (#480)。
@@ -4346,10 +4348,30 @@ async def get_image_reference_content(
     """
     settings = get_settings()
     media_type: str | None = None
+    data = b""
+    etag = ""
     try:
         path = storage.resolve_input(relative_path, settings)
-        with path.open("rb") as handle:
-            media_type = storage.detect_image_media_type(handle.read(32))
+        stat = path.stat()
+        if stat.st_size <= settings.max_image_bytes:
+            # mtimeとサイズ由来の弱いETag。一致すれば読み込まずに304を返す。
+            etag = f'W/"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+            candidates = {
+                value.strip().removeprefix("W/")
+                for value in request.headers.get("if-none-match", "").split(",")
+            }
+            if "*" in candidates or etag.removeprefix("W/") in candidates:
+                return Response(
+                    status_code=status.HTTP_304_NOT_MODIFIED,
+                    headers={"ETag": etag, "Cache-Control": "private, max-age=300"},
+                )
+            # 判定と配信で別々にファイルを開くと差し替えに追従するため、1回の読み取りで両方を行う。
+            data = await run_in_threadpool(path.read_bytes)
+            # 読み込み後のstatからETagを作り直し、古いETagと新しい内容の組を避ける。
+            stat = path.stat()
+            etag = f'W/"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+            if len(data) <= settings.max_image_bytes:
+                media_type = storage.detect_image_media_type(data[:32])
     except (storage.StorageError, OSError, ValueError):
         # ValueErrorはNULを含むパスで`Path.resolve()`が送出する。
         media_type = None
@@ -4359,7 +4381,16 @@ async def get_image_reference_content(
             "入力cacheの画像を取得できませんでした。",
             status_code=status.HTTP_404_NOT_FOUND,
         )
-    return FileResponse(path, media_type=media_type, filename=path.name)
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "ETag": etag,
+            "Cache-Control": "private, max-age=300",
+            "Content-Disposition": f"inline; filename*=utf-8''{quote(path.name, safe='', errors='replace')}",
+        },
+    )
 
 
 @router.post("/image-tags", response_model=schemas.ImageTagExtractRead)
