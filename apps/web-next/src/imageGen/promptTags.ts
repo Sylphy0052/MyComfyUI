@@ -1,4 +1,5 @@
 import type { StoryCharacter, StoryCostume, StoryScene } from "../api/client";
+import type { ImageTarget } from "./imageForm";
 
 /** 複数人のときの、キャラ1人分の補完タグ。`label`はキャラ名。 */
 export type SupplementGroup = { label: string; tags: string[] };
@@ -158,6 +159,22 @@ function headcountTags(characters: readonly StoryCharacter[]): string[] {
     else tags.push(count >= HEADCOUNT_CAP ? `${HEADCOUNT_CAP}+${plural}` : `${count}${plural}`);
   }
   return tags;
+}
+
+/**
+ * 対象のキャラと衣装を、補完タグの材料に並べる。先頭が主キャラ、`multi`のときだけ2人目以降を足す。
+ * 主キャラが一覧に無いときは空。2人目以降は、キャラが一覧に無ければ飛ばす。
+ */
+export function castEntriesOf(target: ImageTarget, characters: readonly StoryCharacter[], multi: boolean): CastEntry[] {
+  const find = (characterId: string | null, costumeId: string | null): CastEntry | null => {
+    const character = characters.find((item) => item.id === characterId);
+    if (!character) return null;
+    return { character, costume: character.costumes.find((item) => item.id === costumeId) ?? null };
+  };
+  const lead = find(target.characterId, target.costumeId);
+  if (!lead) return [];
+  const extra = multi ? target.extraCast.flatMap((member) => find(member.characterId, member.costumeId) ?? []) : [];
+  return [lead, ...extra];
 }
 
 /**

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 import type { StoryScene } from "../api/client";
 import { useSceneAdoptions } from "../projectDetail/useStory";
-import { videoImage, type VideoDraft } from "./videoForm";
+import { fillDraftFromScene, type VideoDraft } from "./videoForm";
 
 type Props = {
   projectId: string | null;
@@ -24,30 +24,7 @@ export function useSceneFill({ projectId, sceneId, scene, filledSceneId, setDraf
   useEffect(() => {
     if (scene === null || !adoptions.isSuccess || filledSceneId === scene.id) return;
     const artifactId = adoptions.data.find((item) => item.slot === "scene_image")?.artifact_id ?? null;
-    const motion = scene.video_motion.trim();
-    setDraft((current) => {
-      const firstFrame =
-        artifactId !== null
-          ? current.firstFrame === null || current.firstFrame.auto
-            ? videoImage({ artifact_id: artifactId }, "シーンの採用画像", true)
-            : current.firstFrame
-          : current.firstFrame?.auto
-            ? null
-            : current.firstFrame;
-      const promptIsFilled = current.prompt.trim() === "" || current.prompt === current.filled.motion;
-      const prompt = promptIsFilled ? motion : current.prompt;
-      return {
-        ...current,
-        firstFrame,
-        prompt,
-        // 自由欄を補完前の値へ戻したときだけ、補完した値の記録も消す。手で書き換えた自由欄は触らない。
-        filled: {
-          ...current.filled,
-          sceneId: scene.id,
-          motion: promptIsFilled ? (motion !== "" ? motion : null) : current.filled.motion,
-        },
-      };
-    });
+    setDraft((current) => fillDraftFromScene(current, scene.id, scene.video_motion, artifactId));
   }, [scene, adoptions.isSuccess, adoptions.data, filledSceneId, setDraft]);
 
   const sceneMotion = scene?.video_motion.trim() ?? "";

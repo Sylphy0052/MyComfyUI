@@ -1,4 +1,4 @@
-import type { GenerationJob, GenerationManifest, Recipe } from "../api/client";
+import type { GenerationJob, GenerationJobBody, GenerationManifest, Recipe } from "../api/client";
 import { acceptsInput, isRecord, positiveNumber, restorableSeed, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
 
 /** BGM生成に使うWorkflowテンプレート。 */
@@ -172,6 +172,22 @@ export function buildBgmInputs(form: BgmForm, seconds: number, index: number, re
       ([name, value]) => (value !== "" || EMPTY_ALLOWED.has(name)) && acceptsInput(recipe, name),
     ),
   );
+}
+
+/** 音楽Jobの`POST /generation-jobs`の本文。 */
+export function bgmJobBody(
+  recipe: Recipe,
+  target: { projectId: string | null; sceneId: string | null },
+  inputs: Record<string, unknown>,
+): GenerationJobBody {
+  return {
+    kind: "music",
+    recipe_id: recipe.id,
+    use_inherited_defaults: false,
+    project_id: target.projectId,
+    story_scene_id: target.sceneId,
+    inputs,
+  };
 }
 
 // ---- 生成物からの復元 ----
