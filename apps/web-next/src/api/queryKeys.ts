@@ -4,6 +4,7 @@ export const queryKeys = {
   // `jobs`の無効化に巻き込まれないよう、Job一覧とは別の系統に置く。
   jobProgress: (jobId: string) => ["generation-job-progress", jobId] as const,
   // シーン生成画面の状態用。Jobの状態が変わったイベントで取り直すため`jobs`の下に置く。
+  // 前者はProjectの待機中・実行中のJob、後者はシーンの統合Jobが出した動画の生成物ID。
   sceneProduceJobs: (projectId: string) => ["generation-jobs", "scene-produce", projectId] as const,
   sceneProduceComposeIds: (projectId: string, sceneId: string) =>
     ["generation-jobs", "scene-produce-compose", projectId, sceneId] as const,

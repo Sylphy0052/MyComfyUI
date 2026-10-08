@@ -24,7 +24,7 @@ import {
   useSceneMedia,
 } from "../sceneProduce/useSceneProduce";
 
-type QueryState = { isPending: boolean; error: Error | null };
+type QueryState = { isPending: boolean; isLoadingError: boolean };
 
 function BackToProjects({ message }: { message: string }) {
   return (
@@ -68,15 +68,27 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
   const castIds = [...new Set(scene.cast.map((entry) => entry.character_id))];
   const characterMedia = useCharacterCandidates(projectId, castIds, needsCandidates);
 
-  // 工程ごとの、状態の計算に要る取得。1つでも失敗した工程は「取得失敗」、取得中の工程は読み込み中にする。
+  // 工程ごとの、状態の計算に要る取得。1つでも取れなかった工程は「取得失敗」、取得中の工程は読み込み中にする。
+  // 一度取れたあとの再取得の失敗は、古いデータで状態を出し続け、上のAlertでだけ知らせる。
+  // `computeStepStatus`が使う入力と合わせる。キャラ画像は採用枠を持たず、シーンの生成物ではなく
+  // キャラに紐づく画像を見るので、採用とシーンの生成物を待たない。統合Jobの生成物IDは
+  // 動画と統合の見分けにだけ使う。
   const sourcesOf = (id: StepId): QueryState[] => {
     if (id === "character") return needsCandidates ? [characters, activeJobs, characterMedia] : [characters, activeJobs];
     const common = [adoptions, activeJobs, media];
     return id === "video" || id === "compose" ? [...common, composeIds] : common;
   };
-  const listed = [activeJobs, media, composeIds, ...(needsCandidates ? [characterMedia] : [])];
-  const error = [characters, adoptions, ...listed].find((query) => query.error)?.error;
-  const truncated = listed.some((query) => query.data?.truncated);
+  const error = [characters, adoptions, activeJobs, media, composeIds, ...(needsCandidates ? [characterMedia] : [])].find(
+    (query) => query.error,
+  )?.error;
+  // 一覧が上限に達して、古いJob・生成物を数えていない工程。`sourcesOf`と同じ対応で選ぶ。
+  // キャラ候補は1件あれば「候補あり」と決まり、上限に達しても状態が変わらないので含めない。
+  const truncatedLabels = STEPS.filter(({ id }) => {
+    if (activeJobs.data?.truncated) return true;
+    if (id === "character") return false;
+    if (media.data?.truncated) return true;
+    return (id === "video" || id === "compose") && composeIds.data?.truncated === true;
+  }).map(({ label }) => label);
 
   const inputs = {
     scene,
@@ -90,7 +102,7 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
   const statuses = new Map<StepId, StepStatus>();
   for (const { id } of STEPS) {
     const sources = sourcesOf(id);
-    if (sources.some((query) => query.error)) statuses.set(id, FAILED_STATUS);
+    if (sources.some((query) => query.isLoadingError)) statuses.set(id, FAILED_STATUS);
     else if (!sources.some((query) => query.isPending)) statuses.set(id, computeStepStatus(id, inputs));
   }
 
@@ -104,9 +116,9 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
   return (
     <Stack>
       {error ? <Alert color="red">{error.message}</Alert> : null}
-      {truncated ? (
+      {truncatedLabels.length > 0 ? (
         <Alert color="yellow" data-testid="produce-truncated">
-          一覧が取得の上限に達したため、新しいJob・生成物だけで状態を集計しています。
+          一覧が取得の上限に達したため、{truncatedLabels.join("・")}の状態は新しいJob・生成物だけで集計しています。
         </Alert>
       ) : null}
       <Group align="flex-start" wrap="nowrap" gap="lg">
