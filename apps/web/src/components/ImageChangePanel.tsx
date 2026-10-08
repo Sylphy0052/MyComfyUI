@@ -105,8 +105,6 @@ export function ImageChangePanel({
     [referenceRelativePath, referenceSha256, referenceFileName],
   );
   const sourceItem = sourceMode === "character" ? characterMedia : sourceMedia[0] ?? null;
-  const sourceModeRef = useRef(sourceMode);
-  sourceModeRef.current = sourceMode;
 
   // Projectが変わったら、前のProjectのキャラクター・衣装の選択を残さない。
   useEffect(() => {
@@ -144,6 +142,11 @@ export function ImageChangePanel({
   const handleSourceMediaChange = (next: PickedMedia[]) => {
     setSourceMedia(next);
     const item = next[0];
+    if (!item) {
+      setPrompt("");
+      setNegative("");
+      setPromptRestoreFailed(false);
+    }
     onSourceArtifactChange(item && "artifact_id" in item.source ? item.source.artifact_id : null);
   };
 
@@ -153,8 +156,9 @@ export function ImageChangePanel({
   useEffect(() => {
     let active = true;
     const item = sourceItem;
-    // キャラクター・衣装を選び終えるまでは元画像が決まっていないため、入力済みの説明を残す。
-    if (!item && sourceModeRef.current === "character") return;
+    // 元画像が決まっていない間 (キャラクター・衣装の選択前、モード切替直後) は、入力済みの説明を残す。
+    // 選択を外したときの初期化は handleSourceMediaChange で行う。
+    if (!item) return;
     const artifactId = item && "artifact_id" in item.source ? item.source.artifact_id : null;
     if (!artifactId) {
       setPrompt("");
