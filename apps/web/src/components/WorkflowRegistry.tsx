@@ -243,13 +243,19 @@ export function WorkflowRegistry({ sceneId, shotId }: Props) {
                 <span className="mono">Job {artifact.job_id}</span>
                 <span>
                   {artifact.availability === "complete" ? (
-                    <a
-                      href={api.artifactContentUrl(artifact.id)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      実行時のWorkflow JSON
-                    </a>
+                    <>
+                      <a
+                        href={api.artifactContentUrl(artifact.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        実行時のWorkflow JSON
+                      </a>
+                      {" / "}
+                      <a href={api.artifactDownloadUrl(artifact.id)} download>
+                        ダウンロード
+                      </a>
+                    </>
                   ) : (
                     <span className="muted">
                       実ファイルがないため開けません。
