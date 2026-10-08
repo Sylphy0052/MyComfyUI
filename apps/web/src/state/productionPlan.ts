@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 
 import type { LookProfile, Recipe } from "../api/client";
 import type { CanonDescriptor, SceneData } from "../api/aimedia";
+import { foldLineBreaks } from "./characterPrompt";
 import type { PipelineStepId } from "./pipelineState";
 
 /** Presetを割り当てる枠。音声・BGMの工程は台詞とBGMで別のPresetを持つ。 */
@@ -205,7 +206,7 @@ export function planFromBrief(
 /** 背景工程のプロンプト欄へ入れる説明。 */
 export function backgroundPrompt(plan: ProductionPlan): string {
   const { location, timeOfDay, note } = plan.background;
-  return [location, timeOfDay, note].map((item) => item.trim()).filter(Boolean).join(", ");
+  return [location, timeOfDay, note].map(foldLineBreaks).filter(Boolean).join(", ");
 }
 
 /** 開始済みの計画から、1つの枠へ渡すPreset。 */

@@ -157,11 +157,16 @@ MAX_SCENE_DETAILS = 1_000
 MAX_LOCAL_OVERRIDES_BYTES = 4 * 1024 * 1024
 #: 改行・タブ・C0/C1制御文字 (Cc) と、U+2028/U+2029の行・段落区切り (Zl/Zp)。
 _LINE_BREAK_OR_CONTROL_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+#: 表示順を偽装できる双方向制御文字 (Cf)。ZWJなどのゼロ幅文字は絵文字の結合に使うため通す (Issue #498)。
+_BIDI_CONTROL_CHARACTERS = frozenset(
+    {"\u061c", "\u200e", "\u200f", *map(chr, range(0x202A, 0x202F)), *map(chr, range(0x2066, 0x206A))}
+)
 
 
 def _has_line_break_or_control(value: str) -> bool:
     return any(
         unicodedata.category(character) in _LINE_BREAK_OR_CONTROL_CATEGORIES
+        or character in _BIDI_CONTROL_CHARACTERS
         for character in value
     )
 
