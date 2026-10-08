@@ -82,7 +82,7 @@ export function filterLookProfilesForRecipe(
   const dropped: string[] = [];
   for (const id of selectedIds) {
     const profile = byId.get(id);
-    // 一覧に無いProfileは合うか判断できない。送ると422になりうるため、IDのまま外して知らせる。
+    // 取得できなかったProfile (削除済みなど) は合うか判断できない。送ると422になりうるため、IDのまま外して知らせる。
     if (!profile) {
       dropped.push(id);
       continue;

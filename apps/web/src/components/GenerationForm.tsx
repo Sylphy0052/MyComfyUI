@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { api, subscribeAgentProvidersChanged } from "../api/client";
+import { ApiError, api, subscribeAgentProvidersChanged } from "../api/client";
 import { mergePrompt } from "../prompt/merge";
 import {
   draftString,
@@ -14,7 +14,6 @@ import { planPresetBlocker, type PlanPreset } from "../state/productionPlan";
 import { ignoresShortcut } from "./ui/shortcuts";
 import type {
   AgentProvider,
-  ApiError,
   GenerationManifest,
   GenerationPreview,
   LookProfile,
@@ -22,7 +21,7 @@ import type {
   ProjectCharacterProfile,
   Recipe,
 } from "../api/client";
-import { characterReferenceImage, REFERENCE_SLOTS } from "../state/referenceSlots";
+import { characterReferenceImage, findReferenceSelection, REFERENCE_SLOTS } from "../state/referenceSlots";
 import {
   DEFAULT_REFERENCE_STRENGTH,
   filterLookProfilesForRecipe,
@@ -292,6 +291,9 @@ function draftPlanNegative(value: unknown): { merged: string; source: string } |
   return typeof merged === "string" && typeof source === "string" ? { merged, source } : null;
 }
 
+const REFERENCE_NOT_FOUND_NOTICE =
+  "参照付きのJobですが、同じ参照画像を持つキャラクターと衣装が見つからないため、参照なしで入れました。キャラクターと衣装を選ぶと参照付きで投入します。";
+
 export function GenerationForm({
   projectId,
   recipes,
@@ -418,35 +420,9 @@ export function GenerationForm({
     setOutfitCharacterId("");
     setSelectedOutfitId(null);
     setReferenceDismissed(false);
+    // 切替前のJobの参照画像を、切替先のキャラクターから探さない。
+    setPendingReferenceHashes(null);
   }, [projectId]);
-
-  // 参照付きで投入するとき、参照Recipeに合うLookProfileを絞るために一覧を取る (#474)。
-  const needsLookProfileList = lookProfileIds.length > 0 && referenceRecipe !== null;
-  useEffect(() => {
-    if (!needsLookProfileList) {
-      setLookProfileStatus("idle");
-      return;
-    }
-    let active = true;
-    setLookProfileStatus("loading");
-    api
-      .listLookProfiles({ kind: "image", limit: 200 })
-      .then((items) => {
-        if (!active) return;
-        setLookProfileList(items);
-        setLookProfileStatus("ok");
-      })
-      .catch(() => {
-        // 取れなければ、合うか判断できないProfileは外して投入し、その旨を表示する。
-        if (!active) return;
-        // 古い一覧で判定すると表示と外す集合が食い違うため、一覧も空にする。
-        setLookProfileList([]);
-        setLookProfileStatus("error");
-      });
-    return () => {
-      active = false;
-    };
-  }, [needsLookProfileList, lookProfileIds]);
 
   // Recipe変更の効果から参照する。描画中に代入して、effectの実行順に依存しないようにする。
   const touchedRef = useRef(touchedFields);
@@ -494,6 +470,8 @@ export function GenerationForm({
   );
   // 生成済み画像の設定を入れる。値は触った印を付け、Recipeを切り替える場合は上の効果で持ち越させる。
   const appliedRestoreRef = useRef<string | null>(draftString(draft?.appliedRestoreKey));
+  // 参照付きJobの入力cacheのsha256。キャラクター定義は非同期に読むため、届いてから選び直す (#480)。
+  const [pendingReferenceHashes, setPendingReferenceHashes] = useState<string[] | null>(null);
   useEffect(() => {
     if (!restore || recipes.length === 0) return;
     if (appliedRestoreRef.current === restore.key) return;
@@ -568,9 +546,34 @@ export function GenerationForm({
     } else if (scope === "all") {
       setModelValues(models);
     }
+    // 参照付きのJob (#474) は参照Recipeが選択肢に無いため、今のRecipeへ入れる。投入時と同じ
+    // 参照画像になるキャラクターと衣装を選び直し、強度も戻す (#480)。参照画像はinput_refsの
+    // 入力cacheのsha256で探す (parametersのsource_imageはファイル名しか持たない)。
+    const referenceJob =
+      scope === "all" &&
+      !original &&
+      referenceRecipe !== null &&
+      findRecipeOrSuccessor([referenceRecipe], restore.recipeLineage) !== null;
+    if (referenceJob) {
+      // 見つからないときに前の選択の参照画像で投入しないよう、選択を外してから探す。
+      setOutfitCharacterId("");
+      setOutfitSearch("");
+      setSelectedOutfitId(null);
+      setPendingReferenceHashes(
+        (manifest.input_refs ?? [])
+          .filter((ref) => ref.kind === "cached_input" && typeof ref.sha256 === "string")
+          .map((ref) => ref.sha256 as string),
+      );
+      const strength = (manifest.parameters ?? {}).reference_strength;
+      if (typeof strength === "number" && Number.isFinite(strength)) setReferenceStrength(String(strength));
+    } else {
+      setPendingReferenceHashes(null);
+    }
     setRestoreNotice(
       scope !== "all"
         ? null
+        : referenceJob
+        ? REFERENCE_NOT_FOUND_NOTICE
         : !restore.recipeId
         ? "元のRecipeが記録されていないため、現在のRecipeへ合う項目だけ入れました。"
         : !original
@@ -580,7 +583,20 @@ export function GenerationForm({
           : null,
     );
     onRestoreApplied?.(scope, scope === "all" || Object.keys(filled).length > 0);
-  }, [restore, recipes, recipe, recipeId, plan, onRestoreApplied]);
+  }, [restore, recipes, recipe, recipeId, plan, onRestoreApplied, referenceRecipe]);
+
+  // キャラクター定義が届くまで待ち、届いたら1回だけ探す。Project切替直後は空の一覧が先に来る。
+  useEffect(() => {
+    if (!pendingReferenceHashes || characters.length === 0) return;
+    setPendingReferenceHashes(null);
+    const selection = findReferenceSelection(characters, pendingReferenceHashes);
+    if (!selection) return;
+    setOutfitCharacterId(selection.characterId);
+    setOutfitSearch("");
+    setSelectedOutfitId(selection.outfitId);
+    setReferenceDismissed(false);
+    setRestoreNotice("参照付きのJobのため、同じ参照画像を使うキャラクターと衣装を選び直しました。");
+  }, [pendingReferenceHashes, characters]);
 
   // 計画のPresetとプロンプトを入れる。値は触った印を付け、上のRecipe変更の効果で持ち越させる。
   useEffect(() => {
@@ -959,6 +975,44 @@ export function GenerationForm({
   const referenceOutfitId = effectiveOutfitId ?? outfitCharacter?.default_outfit_id ?? null;
   const referenceOutfit = (outfitCharacter?.outfits ?? []).find((item) => item.id === referenceOutfitId);
   const referenceOutfitUntagged = Boolean(autoReference && referenceOutfit && !/[A-Za-z]/.test(referenceOutfit.prompt));
+
+  // 参照付きで投入するとき、参照Recipeに合うLookProfileを絞るために選んだProfileを取る (#474)。
+  // 参照が効かない場面 (キャラクター未選択など) では取らない。一覧は件数の上限で取りこぼすため、
+  // 選んだIDを1件ずつ取る (#480)。
+  const needsLookProfiles = lookProfileIds.length > 0 && autoReference !== null;
+  useEffect(() => {
+    if (!needsLookProfiles) {
+      setLookProfileStatus("idle");
+      return;
+    }
+    let active = true;
+    setLookProfileStatus("loading");
+    Promise.all(
+      lookProfileIds.map((id) =>
+        api.getLookProfile(id).catch((cause) => {
+          // 削除済みのProfileは見つからない扱いで外す。それ以外の失敗は取得失敗として扱う。
+          if (cause instanceof ApiError && cause.status === 404) return null;
+          throw cause;
+        }),
+      ),
+    )
+      .then((items) => {
+        if (!active) return;
+        setLookProfileList(items.filter((item): item is LookProfile => item !== null));
+        setLookProfileStatus("ok");
+      })
+      .catch(() => {
+        // 取れなければ、合うか判断できないProfileは外して投入し、その旨を表示する。
+        if (!active) return;
+        // 古い一覧で判定すると表示と外す集合が食い違うため、一覧も空にする。
+        setLookProfileList([]);
+        setLookProfileStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [needsLookProfiles, lookProfileIds]);
+
   const referenceLookProfiles = useMemo(
     () =>
       autoReference && referenceRecipe
@@ -1202,13 +1256,15 @@ export function GenerationForm({
               {candidateReference && (
                 <div className="stack">
                   <div className="row">
-                    {candidateReference.artifactId && (
-                      <img
-                        src={api.artifactContentUrl(candidateReference.artifactId)}
-                        alt={`参照画像 (${referenceSlotLabel})`}
-                        style={{ width: 64, height: 64, objectFit: "cover" }}
-                      />
-                    )}
+                    <img
+                      src={
+                        candidateReference.artifactId
+                          ? api.artifactContentUrl(candidateReference.artifactId)
+                          : api.imageReferenceContentUrl(candidateReference.image.relative_path)
+                      }
+                      alt={`参照画像 (${referenceSlotLabel})`}
+                      style={{ width: 64, height: 64, objectFit: "cover" }}
+                    />
                     <div className="stack">
                       <span>{candidateReference.image.file_name}</span>
                       <span className="muted">
@@ -1264,7 +1320,7 @@ export function GenerationForm({
                     <p className="muted">
                       {lookProfileStatus === "error"
                         ? "LookProfileを取得できず外しました: "
-                        : "参照Recipeに合わない、または一覧に無いため、次のLookProfileは外して投入します: "}
+                        : "参照Recipeに合わない、または見つからないため、次のLookProfileは外して投入します: "}
                       {referenceLookProfiles.dropped.join(", ")}
                     </p>
                   )}
@@ -1530,8 +1586,9 @@ export function GenerationForm({
               disabled={useInheritedDefaults}
               onChange={(event) => {
                 setRecipeId(event.target.value);
-                // 復元時の通知は選び直したRecipeには当てはまらないので消す。
+                // 復元時の通知は選び直したRecipeには当てはまらないので消す。参照の選び直しもやめる。
                 setRestoreNotice(null);
+                setPendingReferenceHashes(null);
               }}
             >
               {recipes.map((item) => (

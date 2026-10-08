@@ -359,7 +359,11 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
               {REFERENCE_SLOTS.map((def) => {
                 const slot = set.slots?.[def.key];
                 const pending = Boolean(slot?.pending_job_id);
-                const thumbUrl = slot?.artifact_id ? api.artifactContentUrl(slot.artifact_id) : null;
+                const thumbUrl = slot?.artifact_id
+                  ? api.artifactContentUrl(slot.artifact_id)
+                  : slot?.image
+                    ? api.imageReferenceContentUrl(slot.image.relative_path)
+                    : null;
                 return (
                   <div key={def.key} className="stack" style={{ width: 160 }}>
                     <span className="muted">{def.label}</span>
@@ -367,7 +371,7 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
                     {pending && (
                       <Button disabled={busy} onClick={() => abandonPending(set.id, def.key, slot?.pending_job_id ?? "")}>生成を取り消す</Button>
                     )}
-                    {!pending && thumbUrl && <img src={thumbUrl} alt={def.label} style={{ width: "100%" }} />}
+                    {!pending && thumbUrl && <img src={thumbUrl} alt={slot?.image?.file_name ?? def.label} style={{ width: "100%" }} />}
                     {!pending && !thumbUrl && slot?.image && <p>{slot.image.file_name}</p>}
                     {!pending && !thumbUrl && !slot?.image && <p className="muted">未設定</p>}
                     {!pending && (slot?.image || slot?.artifact_id) && (

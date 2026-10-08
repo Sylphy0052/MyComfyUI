@@ -251,6 +251,9 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  getLookProfile: (profileId: string) =>
+    request<LookProfile>(`/look-profiles/${encodeURIComponent(profileId)}`),
+
   updateLookProfile: (profileId: string, payload: LookProfileUpdate) =>
     request<LookProfile>(`/look-profiles/${encodeURIComponent(profileId)}`, {
       method: "PATCH",
@@ -939,6 +942,10 @@ export const api = {
 
   artifactContentUrl: (artifactId: string) =>
     `${apiBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}/content`,
+
+  // Artifactを持たない参照画像 (一括登録した立ち絵など) を入力cacheから取る (#480)。
+  imageReferenceContentUrl: (relativePath: string) =>
+    `${apiBaseUrl()}/image-references/content?${new URLSearchParams({ relative_path: relativePath }).toString()}`,
 
   // ブラウザ内表示ではなくダウンロードさせるURL。
   artifactDownloadUrl: (artifactId: string) =>

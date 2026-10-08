@@ -913,6 +913,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-references/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Image Reference Content
+         * @description 入力cacheの参照画像を配信する。Artifactを持たない参照画像のサムネイルに使う (#480)。
+         *
+         *     読み出せるのは`inputs/`配下の画像だけとする。パスの解決は`storage.resolve_input`へ閉じ、
+         *     入力cacheの外と画像以外 (ガイド音声など) は配信しない。media_typeは拡張子ではなく
+         *     実ファイルのmagic bytesから決める。
+         */
+        get: operations["get_image_reference_content_api_v1_image_references_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/image-tags": {
         parameters: {
             query?: never;
@@ -6700,6 +6724,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageReferenceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_reference_content_api_v1_image_references_content_get: {
+        parameters: {
+            query: {
+                relative_path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
