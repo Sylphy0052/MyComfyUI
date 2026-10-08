@@ -17,12 +17,14 @@ import {
   type StepId,
   type StepStatus,
 } from "../sceneProduce/steps";
+import { BgmStep } from "../sceneProduce/BgmStep";
 import {
   useActiveJobs,
   useCharacterCandidates,
   useComposeArtifactIds,
   useSceneMedia,
 } from "../sceneProduce/useSceneProduce";
+import { VoiceStep } from "../sceneProduce/VoiceStep";
 
 type QueryState = { isPending: boolean; isLoadingError: boolean };
 
@@ -144,9 +146,15 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
             <Title order={4}>{stepLabel(step)}</Title>
             {current ? <StatusBadge status={current} /> : <Loader size="xs" />}
           </Group>
-          <Text c="dimmed" size="sm" mt="sm">
-            この工程の画面はまだありません。
-          </Text>
+          {step === "voice" ? (
+            <VoiceStep projectId={projectId} sceneId={scene.id} />
+          ) : step === "bgm" ? (
+            <BgmStep projectId={projectId} sceneId={scene.id} />
+          ) : (
+            <Text c="dimmed" size="sm" mt="sm">
+              この工程の画面はまだありません。
+            </Text>
+          )}
         </Paper>
       </Group>
     </Stack>
