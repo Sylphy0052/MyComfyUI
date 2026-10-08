@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../api/client";
-import type { GenerationJob, Recipe } from "../api/client";
+import type { GenerationJob, ProjectCharacterProfile, Recipe } from "../api/client";
 import {
   CHANGE_OPERATIONS,
   CHANGE_TEMPLATE_RECIPE_LABELS,
@@ -9,9 +9,20 @@ import {
 } from "../derivation/changeOperations";
 import type { ChangeOperation } from "../derivation/changeOperations";
 import { describeApiError, templateName } from "../derivation/recipeTemplate";
+import { characterReferenceImage } from "../state/referenceSlots";
 import { EmptyState } from "./ui/EmptyState";
+import { CharacterReferencePicker } from "./CharacterReferencePicker";
+import type { CharacterReferenceSelection } from "./CharacterReferencePicker";
 import { MediaPicker } from "./MediaPicker";
 import type { PickedMedia } from "./MediaPicker";
+
+/** 元画像の選び方。`media`は従来の`MediaPicker`、`character`はキャラクターと衣装の参照セット (#497)。 */
+type SourceMode = "media" | "character";
+
+const SOURCE_MODE_LABEL: Record<SourceMode, string> = {
+  media: "生成物・登録素材から",
+  character: "キャラクター・衣装から",
+};
 
 interface Props {
   projectId: string | null;
@@ -25,6 +36,8 @@ interface Props {
   recipesError: string | null;
   /** Recipe一覧の取得に失敗したとき、再取得を促す導線に使う。 */
   onRetryRecipes: () => void;
+  /** Projectに登録されたキャラクター。元画像をキャラクターと衣装から選ぶときに使う (#497)。 */
+  characters: readonly ProjectCharacterProfile[];
   sourceArtifactId: string | null;
   onSourceArtifactChange: (artifactId: string | null) => void;
   onSubmittedJob: (job: GenerationJob) => void;
@@ -40,12 +53,18 @@ export function ImageChangePanel({
   recipesLoading,
   recipesError,
   onRetryRecipes,
+  characters,
   sourceArtifactId,
   onSourceArtifactChange,
   onSubmittedJob,
   onManageWorkflows,
 }: Props) {
+  const [sourceMode, setSourceMode] = useState<SourceMode>("media");
   const [sourceMedia, setSourceMedia] = useState<PickedMedia[]>([]);
+  const [characterSelection, setCharacterSelection] = useState<CharacterReferenceSelection>({
+    characterId: "",
+    outfitId: "",
+  });
   const [operations, setOperations] = useState<ReadonlySet<ChangeOperation>>(new Set());
   const [prompt, setPrompt] = useState("");
   // 除外したい要素は画面に出さず、元画像の生成条件から取り込んだ値をそのまま送信にだけ使う。
@@ -63,10 +82,48 @@ export function ImageChangePanel({
     [recipes, plan],
   );
 
+  // 衣装まで選んだときだけ、その衣装の参照セットを見る。生成タブと同じく別の衣装のセットでは代用しない。
+  const characterReference = useMemo(() => {
+    const character = characters.find((item) => item.id === characterSelection.characterId);
+    if (!character || !characterSelection.outfitId) return null;
+    return characterReferenceImage(character, characterSelection.outfitId);
+  }, [characters, characterSelection]);
+  // 参照セットの画像はArtifactの有無に関わらず、生成タブの`toReferenceInputs`と同じ形で送る。
+  // キャラクター一覧を読み直しても同じ画像なら同じオブジェクトを保ち、説明欄を空に戻さない。
+  const referenceRelativePath = characterReference?.image.relative_path ?? null;
+  const referenceSha256 = characterReference?.image.sha256 ?? null;
+  const referenceFileName = characterReference?.image.file_name ?? "";
+  const characterMedia = useMemo<PickedMedia | null>(
+    () =>
+      referenceRelativePath && referenceSha256
+        ? {
+          key: referenceSha256,
+          label: referenceFileName,
+          source: { relative_path: referenceRelativePath, sha256: referenceSha256 },
+        }
+        : null,
+    [referenceRelativePath, referenceSha256, referenceFileName],
+  );
+  const sourceItem = sourceMode === "character" ? characterMedia : sourceMedia[0] ?? null;
+  const sourceModeRef = useRef(sourceMode);
+  sourceModeRef.current = sourceMode;
+
+  // Projectが変わったら、前のProjectのキャラクター・衣装の選択を残さない。
+  useEffect(() => {
+    setCharacterSelection({ characterId: "", outfitId: "" });
+  }, [projectId]);
+
+  const selectSourceMode = (mode: SourceMode) => {
+    setSourceMode(mode);
+    // 親の選択を外しておき、ギャラリーから同じ画像を送り直されたときも生成物・登録素材の選び方へ戻れるようにする。
+    if (mode === "character") onSourceArtifactChange(null);
+  };
+
   // 親から共有されるsourceArtifactIdが変わったら、pickerの選択をそれに合わせる。
   // ギャラリーの「この画像を変える」から渡された場合はここだけを経由する。
   useEffect(() => {
     if (!sourceArtifactId) return;
+    setSourceMode("media");
     setSourceMedia((current) => {
       const first = current[0];
       if (first && "artifact_id" in first.source && first.source.artifact_id === sourceArtifactId) {
@@ -88,9 +145,12 @@ export function ImageChangePanel({
 
   // 元画像を選ぶたびに、その生成条件のプロンプトを説明の初期値として取り込む。
   // 取れない (Artifactでない/Jobが無い/取得失敗) ときは空のまま始める。
+  // キャラクター・衣装の参照画像は`relative_path`で指すため、取り込まずに空で始まる。
   useEffect(() => {
     let active = true;
-    const item = sourceMedia[0];
+    const item = sourceItem;
+    // キャラクター・衣装を選び終えるまでは元画像が決まっていないため、入力済みの説明を残す。
+    if (!item && sourceModeRef.current === "character") return;
     const artifactId = item && "artifact_id" in item.source ? item.source.artifact_id : null;
     if (!artifactId) {
       setPrompt("");
@@ -128,7 +188,7 @@ export function ImageChangePanel({
     return () => {
       active = false;
     };
-  }, [sourceMedia]);
+  }, [sourceItem]);
 
   const toggleOperation = (operation: ChangeOperation) => {
     setOperations((current) => {
@@ -140,7 +200,6 @@ export function ImageChangePanel({
   };
 
   const execute = async () => {
-    const sourceItem = sourceMedia[0];
     if (!sourceItem) {
       setError("元画像を選択してください。");
       return;
@@ -224,7 +283,7 @@ export function ImageChangePanel({
       </section>
     );
   }
-  const sourceReady = sourceMedia.length > 0;
+  const sourceReady = sourceItem !== null;
   return (
     <section className="panel">
       <h2>画像を変更</h2>
@@ -240,19 +299,44 @@ export function ImageChangePanel({
         </button>
       </div>
       <div className="stack">
-        <MediaPicker
-          kind="image"
-          label="元画像"
-          value={sourceMedia}
-          onChange={handleSourceMediaChange}
-          multiple={false}
-          disabled={busy}
-          maxBytes={25 * 1024 * 1024}
-          projectId={projectId}
-          sceneId={sceneId}
-          shotId={shotId}
-          enableRoleTagging
-        />
+        <div className="row" role="group" aria-label="元画像の選び方">
+          {(Object.keys(SOURCE_MODE_LABEL) as SourceMode[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={sourceMode === mode ? "primary" : undefined}
+              aria-pressed={sourceMode === mode}
+              disabled={busy}
+              onClick={() => selectSourceMode(mode)}
+            >
+              {SOURCE_MODE_LABEL[mode]}
+            </button>
+          ))}
+        </div>
+        {sourceMode === "media" ? (
+          <MediaPicker
+            kind="image"
+            label="元画像"
+            value={sourceMedia}
+            onChange={handleSourceMediaChange}
+            multiple={false}
+            disabled={busy}
+            maxBytes={25 * 1024 * 1024}
+            projectId={projectId}
+            sceneId={sceneId}
+            shotId={shotId}
+            enableRoleTagging
+          />
+        ) : (
+          <CharacterReferencePicker
+            projectId={projectId}
+            characters={characters}
+            value={characterSelection}
+            onChange={setCharacterSelection}
+            reference={characterReference}
+            disabled={busy}
+          />
+        )}
         {promptRestoreFailed && (
           <p className="muted">元画像の生成条件からプロンプトを取り込めませんでした。説明欄は空で始まります。</p>
         )}

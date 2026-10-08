@@ -2000,6 +2000,7 @@ export function App() {
                       recipesLoading={recipesLoading}
                       recipesError={recipesError}
                       onRetryRecipes={() => setRecipesRetryToken((token) => token + 1)}
+                      characters={localCharacters}
                       sourceArtifactId={derivationSourceArtifactId}
                       onSourceArtifactChange={setDerivationSourceArtifactId}
                       onSubmittedJob={handleDerivedJob}
