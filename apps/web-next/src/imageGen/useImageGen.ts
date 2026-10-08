@@ -46,7 +46,7 @@ export type StoredInput = { form: ImageForm | null; target: ImageTarget | null }
 export type ResultEntry = { jobId: string; count: number };
 
 /** 結果欄に残すJobの数。古いものから落とす。 */
-const RESULTS_MAX = 30;
+export const RESULTS_MAX = 30;
 
 /** localStorageの文字列をJSONとして読む。読めなければ`undefined`。 */
 function parseStored(value: string | undefined): unknown {
@@ -306,6 +306,20 @@ export async function secondStepOrUndo(
 /** Sceneの採用枠。 */
 export type AdoptionSlot = StorySceneAdoption["slot"];
 
+/** Sceneの`slot`枠へ生成物を採用する。`voice`枠は台詞ごとの枠なので、`dialogueId`で台詞の行を指す。 */
+export function putAdoption(
+  projectId: string,
+  sceneId: string,
+  slot: AdoptionSlot,
+  artifactId: string,
+  dialogueId: string | null = null,
+): Promise<unknown> {
+  return apiRequest(`/projects/${enc(projectId)}/story-scenes/${enc(sceneId)}/adoptions/${slot}`, {
+    method: "PUT",
+    body: JSON.stringify(dialogueId === null ? { artifact_id: artifactId } : { artifact_id: artifactId, dialogue_id: dialogueId }),
+  });
+}
+
 /**
  * Sceneの`slot`枠への採用と、不採用の印。
  * 不採用の生成物は採用できないため、採用の前に採否を戻す。採用中のものを不採用にするときは先に枠から外す。
@@ -325,11 +339,7 @@ export function useSlotDecision(
       method: "PATCH",
       body: JSON.stringify({ decision }),
     });
-  const adopt = (artifactId: string) =>
-    apiRequest(adoptionPath, {
-      method: "PUT",
-      body: JSON.stringify(dialogueId === null ? { artifact_id: artifactId } : { artifact_id: artifactId, dialogue_id: dialogueId }),
-    });
+  const adopt = (artifactId: string) => putAdoption(projectId, sceneId, slot, artifactId, dialogueId);
   return useMutation({
     mutationFn: async ({
       artifact,
@@ -384,30 +394,37 @@ export function useSceneDecision(projectId: string, sceneId: string) {
 }
 
 /** 生成物を衣装の参照画像の末尾へ足す。 */
+export async function addCostumeReference(
+  client: QueryClient,
+  projectId: string,
+  costume: StoryCostume,
+  artifactId: string,
+): Promise<StoryCostume> {
+  // 別のタブやProject画面での追加・削除を上書きしないよう、送る直前に最新の参照画像を取り直す。
+  const characters = await client.fetchQuery({
+    queryKey: queryKeys.projectCharacters(projectId),
+    queryFn: () => apiRequest<StoryCharacter[]>(`/projects/${enc(projectId)}/characters`),
+    staleTime: 0,
+  });
+  const latest = characters.flatMap((item) => item.costumes).find((item) => item.id === costume.id);
+  if (!latest) throw new Error("衣装が見つかりません");
+  const reference = `artifact:${artifactId}`;
+  if (latest.reference_images.includes(reference)) return latest;
+  return apiRequest<StoryCostume>(
+    `/projects/${enc(projectId)}/characters/${enc(latest.character_id)}/costumes/${enc(latest.id)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ reference_images: [...latest.reference_images, reference] }),
+    },
+  );
+}
+
 export function useAddCostumeReference(projectId: string) {
   const client = useQueryClient();
-  const key = queryKeys.projectCharacters(projectId);
   return useMutation({
-    mutationFn: async ({ costume, artifactId }: { costume: StoryCostume; artifactId: string }) => {
-      // 別のタブやProject画面での追加・削除を上書きしないよう、送る直前に最新の参照画像を取り直す。
-      const characters = await client.fetchQuery({
-        queryKey: key,
-        queryFn: () => apiRequest<StoryCharacter[]>(`/projects/${enc(projectId)}/characters`),
-        staleTime: 0,
-      });
-      const latest = characters.flatMap((item) => item.costumes).find((item) => item.id === costume.id);
-      if (!latest) throw new Error("衣装が見つかりません");
-      const reference = `artifact:${artifactId}`;
-      if (latest.reference_images.includes(reference)) return latest;
-      return apiRequest<StoryCostume>(
-        `/projects/${enc(projectId)}/characters/${enc(latest.character_id)}/costumes/${enc(latest.id)}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ reference_images: [...latest.reference_images, reference] }),
-        },
-      );
-    },
-    onSettled: () => client.invalidateQueries({ queryKey: key }),
+    mutationFn: ({ costume, artifactId }: { costume: StoryCostume; artifactId: string }) =>
+      addCostumeReference(client, projectId, costume, artifactId),
+    onSettled: () => client.invalidateQueries({ queryKey: queryKeys.projectCharacters(projectId) }),
   });
 }
 

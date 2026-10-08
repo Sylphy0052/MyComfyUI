@@ -55,11 +55,15 @@ export function useJobProgress(jobId: string) {
   });
 }
 
+/** `POST /generation-jobs/{id}/cancel`。画面を介さず取り消すとき (一括実行の中止) にも使う。 */
+export function cancelJob(jobId: string): Promise<GenerationJob> {
+  return apiRequest<GenerationJob>(`/generation-jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+}
+
 export function useCancelJob() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (jobId: string) =>
-      apiRequest<GenerationJob>(`/generation-jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" }),
+    mutationFn: cancelJob,
     onSettled: () => client.invalidateQueries({ queryKey: queryKeys.jobs }),
   });
 }

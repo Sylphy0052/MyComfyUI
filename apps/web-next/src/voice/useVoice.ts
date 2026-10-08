@@ -38,10 +38,10 @@ const enc = encodeURIComponent;
 export type VoiceResultEntry = { jobId: string; text: string; line: string | null };
 
 /** 結果欄に残すJobの数。古いものから落とす。 */
-const RESULTS_MAX = 30;
+export const RESULTS_MAX = 30;
 
 /** 結果欄に添える台詞文の長さの上限。 */
-const TEXT_PREVIEW_MAX = 80;
+export const TEXT_PREVIEW_MAX = 80;
 
 /** localStorageの文字列をJSONとして読む。読めなければ`undefined`。 */
 function parseStored(value: string | undefined): unknown {

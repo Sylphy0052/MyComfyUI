@@ -8,6 +8,7 @@ import { FROM_ARTIFACT_PARAM, restoreFromArtifactParam } from "../imageGen/artif
 import { BgmParamsFields, BgmPromptFields } from "../bgm/BgmFields";
 import { BgmResultPanel } from "../bgm/BgmResultPanel";
 import {
+  bgmJobBody,
   buildBgmInputs,
   defaultBgmForm,
   defaultSeconds,
@@ -212,14 +213,9 @@ export function BgmWorkspace({ recipe, target, onTargetChange, storageKeys, from
   const canSubmit =
     !restoring && form.tags.trim() !== "" && !storyLoading && loadError === null && missing.length === 0 && !secondsPending;
   const onSubmit = () => {
-    const bodies = Array.from({ length: form.count }, (_, index) => ({
-      kind: "music" as const,
-      recipe_id: recipe.id,
-      use_inherited_defaults: false,
-      project_id: target.projectId,
-      story_scene_id: target.sceneId,
-      inputs: buildBgmInputs(form, seconds, index, recipe),
-    }));
+    const bodies = Array.from({ length: form.count }, (_, index) =>
+      bgmJobBody(recipe, target, buildBgmInputs(form, seconds, index, recipe)),
+    );
     submit.mutate(
       { bodies, onSubmitted: (job) => results.add({ jobId: job.id }) },
       { onError: (error) => notifyError("投入できませんでした", error) },

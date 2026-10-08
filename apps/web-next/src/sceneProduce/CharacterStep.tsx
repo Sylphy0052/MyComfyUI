@@ -3,23 +3,11 @@ import { useState } from "react";
 
 import type { StoryCharacter, StoryCostume, StoryScene } from "../api/client";
 import { ImageWorkspace } from "../imageGen/ImageWorkspace";
-import type { ImageStorageKeys, ImageTarget } from "../imageGen/imageForm";
 import { useTxt2ImgRecipe } from "../imageGen/useImageGen";
 import { MediaThumb } from "../projectDetail/MediaThumb";
 import { useCharacters } from "../projectDetail/useStory";
-
-/**
- * シーン生成のキャラ画像の保存先。`/image`の保存値を上書きしないよう別のkeyにする。
- * 衣装ごとにも分け、別のキャラの入力値・結果・外したタグを持ち越さない。
- */
-function storageKeysOf(characterId: string, costumeId: string): ImageStorageKeys {
-  const suffix = `${characterId}:${costumeId}`;
-  return {
-    input: `web-next:scene-produce-character-input:${suffix}`,
-    results: `web-next:scene-produce-character-results:${suffix}`,
-    sweeps: `web-next:scene-produce-character-sweeps:${suffix}`,
-  };
-}
+import { characterKeysOf } from "./storageKeys";
+import { characterTargetOf } from "./stepTargets";
 
 /** 行に並べるサムネイルの数。 */
 const THUMB_MAX = 4;
@@ -97,14 +85,8 @@ export function CharacterStep({ projectId, scene }: { projectId: string; scene: 
   const workspace =
     opened?.character && opened.costume
       ? {
-          target: {
-            projectId,
-            sceneId: null,
-            characterId: opened.character.id,
-            costumeId: opened.costume.id,
-            extraCast: [],
-          } satisfies ImageTarget,
-          storageKeys: storageKeysOf(opened.character.id, opened.costume.id),
+          target: characterTargetOf(projectId, opened.character.id, opened.costume.id),
+          storageKeys: characterKeysOf(opened.character.id, opened.costume.id),
           title: `${opened.character.name} / ${opened.costume.name}`,
         }
       : null;

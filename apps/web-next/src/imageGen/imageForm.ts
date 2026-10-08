@@ -1,4 +1,4 @@
-import type { GenerationManifest, Recipe } from "../api/client";
+import type { GenerationJobBody, GenerationManifest, Recipe } from "../api/client";
 import { composePositive, composePrompt, type SupplementTags } from "./promptTags";
 
 /** 新規生成に使うWorkflowテンプレート。 */
@@ -254,6 +254,20 @@ export function buildInputs(form: ImageForm, supplement: SupplementTags, recipe:
   return Object.fromEntries(
     Object.entries(values).filter(([name, value]) => value !== "" && acceptsInput(recipe, name)),
   );
+}
+
+/** 画像Jobの`POST /generation-jobs`の本文。対象 (Project/Scene/キャラ/衣装) と`inputs`を紐づける。 */
+export function imageJobBody(recipe: Recipe, target: ImageTarget, inputs: Record<string, unknown>): GenerationJobBody {
+  return {
+    kind: "image",
+    recipe_id: recipe.id,
+    use_inherited_defaults: false,
+    project_id: target.projectId,
+    story_scene_id: target.sceneId,
+    story_character_id: target.characterId,
+    story_costume_id: target.costumeId,
+    inputs,
+  };
 }
 
 /**

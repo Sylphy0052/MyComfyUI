@@ -8,6 +8,8 @@ import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/us
 import { BgmStep } from "../sceneProduce/BgmStep";
 import { CharacterStep } from "../sceneProduce/CharacterStep";
 import { ComposeStep } from "../sceneProduce/ComposeStep";
+import { RunAllBar } from "../sceneProduce/RunAllBar";
+import { RUN_STATE_LABELS, type RunStepState } from "../sceneProduce/runAll";
 import { SceneImageStep } from "../sceneProduce/SceneImageStep";
 import {
   computeStepStatus,
@@ -21,6 +23,7 @@ import {
   type StepId,
   type StepStatus,
 } from "../sceneProduce/steps";
+import { useRunAll } from "../sceneProduce/useRunAll";
 import { VideoStep } from "../sceneProduce/VideoStep";
 import {
   useActiveJobs,
@@ -57,6 +60,23 @@ function StatusBadge({ status }: { status: StepStatus }) {
         </Badge>
       ) : null}
     </Group>
+  );
+}
+
+const RUN_STATE_COLORS: Record<RunStepState, string> = {
+  pending: "gray",
+  running: "blue",
+  done: "green",
+  skipped: "gray",
+  failed: "red",
+};
+
+/** 一括実行中・実行後の工程の進み具合。 */
+function RunStateBadge({ state }: { state: RunStepState }) {
+  return (
+    <Badge size="sm" variant={state === "running" ? "filled" : "light"} color={RUN_STATE_COLORS[state]} data-testid="run-state">
+      {RUN_STATE_LABELS[state]}
+    </Badge>
   );
 }
 
@@ -136,6 +156,11 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
     else if (!sources.some((query) => query.isPending)) statuses.set(id, computeStepStatus(id, inputs));
   }
 
+  const runAll = useRunAll(projectId, scene);
+  const runSteps = runAll.state.steps;
+  // 状態の材料がそろうまで始めさせない。
+  const ready = STEPS.every(({ id }) => statuses.has(id) && statuses.get(id)?.key !== "failed");
+
   const select = (id: StepId) => {
     const next = new URLSearchParams(searchParams);
     next.set("step", id);
@@ -146,6 +171,7 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
   return (
     <Stack>
       {error ? <Alert color="red">{error.message}</Alert> : null}
+      <RunAllBar state={runAll.state} disabled={!ready} onStart={() => void runAll.start()} onStop={runAll.stop} />
       {truncatedLabels.length > 0 ? (
         <Alert color="yellow" data-testid="produce-truncated">
           一覧が取得の上限に達したため、{truncatedLabels.join("・")}の状態は新しいJob・生成物だけで集計しています。
@@ -155,16 +181,23 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
         <Stack gap={4} w={240} style={{ flexShrink: 0 }} data-testid="produce-stepper">
           {STEPS.map(({ id, label }, index) => {
             const status = statuses.get(id);
+            const runState = runSteps?.[id] ?? null;
             return (
               <NavLink
                 key={id}
                 active={id === step}
                 label={`${index + 1}. ${label}`}
-                rightSection={status ? <StatusBadge status={status} /> : <Loader size="xs" />}
+                rightSection={
+                  <Group gap={4} wrap="nowrap">
+                    {runState ? <RunStateBadge state={runState} /> : null}
+                    {status ? <StatusBadge status={status} /> : <Loader size="xs" />}
+                  </Group>
+                }
                 onClick={() => select(id)}
                 data-testid="produce-step"
                 data-step={id}
                 data-status={status?.key ?? "loading"}
+                data-run-state={runState ?? ""}
               />
             );
           })}
@@ -218,7 +251,7 @@ export function SceneProducePage() {
         </Title>
       </div>
       <SceneAdoptions projectId={projectId} scene={scene} />
-      <ProduceBody projectId={projectId} scene={scene} />
+      <ProduceBody key={scene.id} projectId={projectId} scene={scene} />
     </Stack>
   );
 }

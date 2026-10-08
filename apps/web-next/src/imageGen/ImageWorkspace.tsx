@@ -31,11 +31,12 @@ import {
   buildInputs,
   composedPrompts,
   defaultForm,
+  imageJobBody,
   type ImageForm,
   type ImageStorageKeys,
   type ImageTarget,
 } from "./imageForm";
-import { buildCastSupplementTags, isExcluded, type CastEntry } from "./promptTags";
+import { buildCastSupplementTags, castEntriesOf, isExcluded } from "./promptTags";
 import { buildSweepBody, planSweep } from "./sweep";
 import { initialTarget, paramsFromTarget, targetFromParams } from "./targetParams";
 import {
@@ -118,14 +119,7 @@ export function ImageWorkspace({
         return { member, character: extraCharacter, costume: extraCostume };
       })
     : [];
-  const cast: CastEntry[] = character
-    ? [
-        { character, costume },
-        ...extraEntries.flatMap((entry) =>
-          entry.character ? [{ character: entry.character, costume: entry.costume }] : [],
-        ),
-      ]
-    : [];
+  const cast = castEntriesOf(target, characterList, multi);
   const supplement = buildCastSupplementTags(cast, includeScene ? scene : null);
   const composed = composedPrompts(form, supplement);
 
@@ -306,19 +300,13 @@ export function ImageWorkspace({
     const submitRecipe = deriveMode === null ? recipe : deriveRecipe;
     if (submitRecipe === null) return;
     submit.mutate(
-      {
-        kind: "image",
-        recipe_id: submitRecipe.id,
-        use_inherited_defaults: false,
-        project_id: target.projectId,
-        story_scene_id: target.sceneId,
-        story_character_id: target.characterId,
-        story_costume_id: target.costumeId,
-        inputs:
-          deriveMode === null
-            ? buildInputs(form, supplement, recipe)
-            : buildDeriveInputs(deriveMode, derive, form, supplement, submitRecipe),
-      },
+      imageJobBody(
+        submitRecipe,
+        target,
+        deriveMode === null
+          ? buildInputs(form, supplement, recipe)
+          : buildDeriveInputs(deriveMode, derive, form, supplement, submitRecipe),
+      ),
       {
         onSuccess: (job) => results.add({ jobId: job.id, count: resultCountOf(submitRecipe, form) }),
         onError: (error) => notifyError("投入できませんでした", error),

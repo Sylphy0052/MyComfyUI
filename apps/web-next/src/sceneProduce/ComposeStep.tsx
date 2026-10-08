@@ -25,12 +25,8 @@ import {
   roundSec,
   voiceRowsOf,
 } from "./composeForm";
+import { composeResultsKeyOf } from "./storageKeys";
 import { useComposeRecipe } from "./useSceneProduce";
-
-/** シーンごとに別の保存キーにする。ほかのシーンの結果と混ざらない。 */
-function resultsKeyOf(sceneId: string): string {
-  return `web-next:scene-produce-compose-results:${sceneId}`;
-}
 
 const LOADING: Duration = { state: "loading" };
 
@@ -61,7 +57,7 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
   const adoptions = useSceneAdoptions(projectId, scene.id);
   const recipe = useComposeRecipe();
   const composeRecipe = recipe.data ?? null;
-  const results = useVideoResultEntries(resultsKeyOf(scene.id));
+  const results = useVideoResultEntries(composeResultsKeyOf(scene.id));
   const submit = useSubmitImageJob();
   const [durations, setDurations] = useState<Record<string, Duration>>({});
   const [edits, setEdits] = useState<Record<string, Edit>>({});

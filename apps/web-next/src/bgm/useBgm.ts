@@ -34,7 +34,7 @@ const enc = encodeURIComponent;
 export type BgmResultEntry = { jobId: string };
 
 /** 結果欄に残すJobの数。古いものから落とす。 */
-const RESULTS_MAX = 30;
+export const RESULTS_MAX = 30;
 
 /** localStorageの文字列をJSONとして読む。読めなければ`undefined`。 */
 function parseStored(value: string | undefined): unknown {
@@ -122,19 +122,22 @@ export function useAdoptedVideoSeconds(projectId: string | null, sceneId: string
   return useQuery({
     queryKey: [...queryKeys.sceneAdoptions(projectId ?? "", sceneId ?? ""), "video-seconds"],
     enabled: projectId !== null && sceneId !== null,
-    queryFn: async (): Promise<number | null> => {
-      const adoptions = await apiRequest<StorySceneAdoption[]>(
-        `/projects/${enc(projectId ?? "")}/story-scenes/${enc(sceneId ?? "")}/adoptions`,
-      );
-      const video = adoptions.find((item) => item.slot === "video");
-      if (!video) return null;
-      const artifact = await apiRequest<ArtifactRecord>(`/artifacts/${enc(video.artifact_id)}`);
-      if (artifact.job_id === null) return null;
-      const job = await apiRequest<GenerationJob>(`/generation-jobs/${enc(artifact.job_id)}`);
-      const manifest = await apiRequest<GenerationManifest>(`/generation-manifests/${enc(job.manifest_id)}`);
-      return videoSecondsOf(manifest);
-    },
+    queryFn: () => fetchAdoptedVideoSeconds(projectId ?? "", sceneId ?? ""),
   });
+}
+
+/** `useAdoptedVideoSeconds`の取得。画面を介さず長さの既定値を求めるときに使う。 */
+export async function fetchAdoptedVideoSeconds(projectId: string, sceneId: string): Promise<number | null> {
+  const adoptions = await apiRequest<StorySceneAdoption[]>(
+    `/projects/${enc(projectId)}/story-scenes/${enc(sceneId)}/adoptions`,
+  );
+  const video = adoptions.find((item) => item.slot === "video");
+  if (!video) return null;
+  const artifact = await apiRequest<ArtifactRecord>(`/artifacts/${enc(video.artifact_id)}`);
+  if (artifact.job_id === null) return null;
+  const job = await apiRequest<GenerationJob>(`/generation-jobs/${enc(artifact.job_id)}`);
+  const manifest = await apiRequest<GenerationManifest>(`/generation-manifests/${enc(job.manifest_id)}`);
+  return videoSecondsOf(manifest);
 }
 
 // ---- 投入と結果 ----

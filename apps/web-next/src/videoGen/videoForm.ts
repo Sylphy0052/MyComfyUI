@@ -355,6 +355,40 @@ export function buildVideoInputs(draft: VideoDraft, recipe: Recipe): Record<stri
   );
 }
 
+/** 動画Jobの`POST /generation-jobs`の本文。i2vとref2vで使う。 */
+export function videoJobBody(recipe: Recipe, links: VideoLinks, inputs: Record<string, unknown>): GenerationJobBody {
+  return { kind: "video", recipe_id: recipe.id, use_inherited_defaults: false, ...links, inputs };
+}
+
+/**
+ * Sceneを選んだときの補完。採用済みのシーン画像を先頭フレームに、`video_motion`を自由欄に入れる。
+ * 手で選んだ先頭フレームと、手で書いた自由欄は上書きしない。採用画像・動きが無ければ、自動で入れた分を空へ戻す。
+ */
+export function fillDraftFromScene(current: VideoDraft, sceneId: string, videoMotion: string, artifactId: string | null): VideoDraft {
+  const motion = videoMotion.trim();
+  const firstFrame =
+    artifactId !== null
+      ? current.firstFrame === null || current.firstFrame.auto
+        ? videoImage({ artifact_id: artifactId }, "シーンの採用画像", true)
+        : current.firstFrame
+      : current.firstFrame?.auto
+        ? null
+        : current.firstFrame;
+  const promptIsFilled = current.prompt.trim() === "" || current.prompt === current.filled.motion;
+  const prompt = promptIsFilled ? motion : current.prompt;
+  return {
+    ...current,
+    firstFrame,
+    prompt,
+    // 自由欄を補完前の値へ戻したときだけ、補完した値の記録も消す。手で書き換えた自由欄は触らない。
+    filled: {
+      ...current.filled,
+      sceneId,
+      motion: promptIsFilled ? (motion !== "" ? motion : null) : current.filled.motion,
+    },
+  };
+}
+
 /** Job2本に共通の紐づけ (Project/Scene/キャラ/衣装)。 */
 export type VideoLinks = Pick<
   GenerationJobBody,

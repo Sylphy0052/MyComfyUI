@@ -33,6 +33,7 @@ import {
   mergeReferences,
   videoBlockedReason,
   videoImageFromSource,
+  videoJobBody,
   VIDEO_MODE_LABELS,
   type VideoDraft,
   type VideoMode,
@@ -257,16 +258,16 @@ export function VideoWorkspace({
       return;
     }
     submit.mutate(
-      {
-        kind: "video",
-        recipe_id: recipe.id,
-        use_inherited_defaults: false,
-        project_id: target.projectId,
-        story_scene_id: target.sceneId,
-        story_character_id: target.characterId,
-        story_costume_id: target.costumeId,
-        inputs: buildVideoInputs(draft, recipe),
-      },
+      videoJobBody(
+        recipe,
+        {
+          project_id: target.projectId,
+          story_scene_id: target.sceneId,
+          story_character_id: target.characterId,
+          story_costume_id: target.costumeId,
+        },
+        buildVideoInputs(draft, recipe),
+      ),
       {
         onSuccess: (job) => results.add({ jobId: job.id }),
         onError: (error) => notifyError("投入できませんでした", error),
