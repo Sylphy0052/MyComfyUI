@@ -275,6 +275,11 @@ function JobResult({
           <Text size="xs" c="dimmed">
             {job.data ? `#${job.data.queue_sequence}` : entry.jobId}
           </Text>
+          {entry.line !== null ? (
+            <Badge size="sm" variant="outline" data-testid="result-line">
+              {entry.line}
+            </Badge>
+          ) : null}
           <Text size="sm" truncate data-testid="result-text">
             {entry.text}
           </Text>

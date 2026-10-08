@@ -1,17 +1,19 @@
 import { Alert, Button, Grid, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import type { Recipe, StoryCharacter } from "../api/client";
+import type { Recipe, StoryCharacter, StorySceneDialogue } from "../api/client";
 import { notifyError } from "../notifications";
 import { useCharacters, useScenes } from "../projectDetail/useStory";
 import { useProjectList } from "../projects/useProjects";
+import { lineLabel, SceneLineList, speakerNameOf, type LineNotice } from "../voice/SceneLineList";
 import { useStoredVoiceInput, useSubmitVoiceJob, useVoiceRecipe, useVoiceResultEntries } from "../voice/useVoice";
 import { VoiceLineFields, VoiceParamsFields, VoiceSourceFields } from "../voice/VoiceFields";
 import { VoiceResultPanel } from "../voice/VoiceResultPanel";
 import {
   buildVoiceBody,
   defaultVoiceForm,
+  formForLine,
   voiceProblem,
   type VoiceForm,
   type VoiceReferenceFile,
@@ -77,6 +79,8 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const results = useVoiceResultEntries();
   const submit = useSubmitVoiceJob();
+  const [lineNotice, setLineNotice] = useState<LineNotice | null>(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   const target = targetFromParams(searchParams);
   const targetKey = paramsFromTarget(target).toString();
@@ -132,6 +136,7 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
     [setSearchParams],
   );
   const changeTarget = (next: VoiceTarget) => {
+    if (next.projectId !== target.projectId || next.sceneId !== target.sceneId) setLineNotice(null);
     if (next.projectId !== target.projectId) {
       updateForm({
         speakerId: null,
@@ -165,15 +170,82 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
   const problem = voiceProblem(form, character);
   const canSubmit =
     form.text.trim() !== "" && problem === null && !storyLoading && loadError === null && missing.length === 0;
+  const dialogues = scene?.dialogues ?? [];
+  const labelOf = (line: StorySceneDialogue, index: number) =>
+    lineLabel(index, speakerNameOf(characterList, line.speaker_character_id));
+  // 「台詞の行」で採用先を選んで投入したときも、結果欄にどの行の音声かを出す。
+  const selectedIndex = dialogueId === null ? -1 : dialogues.findIndex((line) => line.id === dialogueId);
+  const selectedDialogue = dialogues[selectedIndex];
+  const selectedLine = selectedDialogue ? labelOf(selectedDialogue, selectedIndex) : null;
   const onSubmit = () => {
     submit.mutate(
       {
         body: buildVoiceBody(form, recipe, target, character, dialogueId),
-        onSubmitted: (job) => results.add({ jobId: job.id, text: form.text.trim() }),
+        onSubmitted: (job) => results.add({ jobId: job.id, text: form.text.trim(), line: selectedLine }),
       },
       { onError: (error) => notifyError("投入できませんでした", error) },
     );
   };
+
+  // 台詞の一覧からの投入。話者のキャラに声の参照が無い行は投入しない。
+  const linesDisabled = storyLoading || loadError !== null || missing.length > 0 || bulkRunning;
+  const voicedSpeakerOf = (line: StorySceneDialogue) => {
+    const speaker = characterList.find((item) => item.id === line.speaker_character_id) ?? null;
+    return speaker?.voice_media_key ? speaker : null;
+  };
+  const submitLine = (line: StorySceneDialogue, index: number, speaker: StoryCharacter) => {
+    const lineForm = formForLine(form, line, true);
+    return submit.mutateAsync({
+      body: buildVoiceBody(lineForm, recipe, target, speaker, lineForm.dialogueId),
+      onSubmitted: (job) => results.add({ jobId: job.id, text: line.text.trim(), line: labelOf(line, index) }),
+    });
+  };
+  // 行の「投入」。行を入力欄へ読み込み、声があればそのまま1本投入する。
+  const onSubmitLine = (line: StorySceneDialogue, index: number) => {
+    const speaker = voicedSpeakerOf(line);
+    updateForm(formForLine(form, line, speaker !== null));
+    if (speaker === null) {
+      setLineNotice({
+        color: "yellow",
+        text: `${labelOf(line, index)}は話者のキャラに声の参照が無いため、入力欄へ読み込むだけで投入していません。`,
+      });
+      return;
+    }
+    setLineNotice(null);
+    submitLine(line, index, speaker).catch((error: unknown) => notifyError("投入できませんでした", error));
+  };
+  // 「全行を投入」。1行1 Jobで上から順に投入する。失敗したら、そこで止めて以降の行は投入しない。
+  const onSubmitAll = async () => {
+    setBulkRunning(true);
+    setLineNotice(null);
+    const skipped: string[] = [];
+    let submitted = 0;
+    let failedAt: string | null = null;
+    try {
+      for (const [index, line] of dialogues.entries()) {
+        const speaker = voicedSpeakerOf(line);
+        if (speaker === null) {
+          skipped.push(labelOf(line, index));
+          continue;
+        }
+        try {
+          await submitLine(line, index, speaker);
+          submitted += 1;
+        } catch (error) {
+          failedAt = labelOf(line, index);
+          notifyError(`${failedAt}を投入できませんでした`, error);
+          break;
+        }
+      }
+    } finally {
+      setBulkRunning(false);
+    }
+    const parts = [`${submitted}行を投入しました。`];
+    if (failedAt !== null) parts.push(`${failedAt}で失敗したため、以降の行は投入していません。`);
+    if (skipped.length > 0) parts.push(`声の参照が無いため投入しなかった行: ${skipped.join("、")}`);
+    setLineNotice({ color: failedAt === null && skipped.length === 0 ? "green" : "yellow", text: parts.join(" ") });
+  };
+
   const applyReference = (reference: VoiceReferenceFile) =>
     updateForm({ mode: "clone", referenceSource: "file", reference });
 
@@ -238,6 +310,20 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
               onChange={(next) => updateForm({ dialogueId: next })}
               clearable
               data-testid="voice-dialogue"
+            />
+          ) : null}
+          {scene !== null && target.projectId !== null ? (
+            <SceneLineList
+              projectId={target.projectId}
+              sceneId={scene.id}
+              dialogues={dialogues}
+              characters={characterList}
+              disabled={linesDisabled}
+              running={bulkRunning}
+              notice={lineNotice}
+              onDismissNotice={() => setLineNotice(null)}
+              onSubmitLine={onSubmitLine}
+              onSubmitAll={() => void onSubmitAll()}
             />
           ) : null}
           <VoiceLineFields
