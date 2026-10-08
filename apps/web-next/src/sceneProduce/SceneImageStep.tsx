@@ -16,7 +16,7 @@ function storageKeysOf(sceneId: string): ImageStorageKeys {
   };
 }
 
-/** 採用済みの画像の大きさ。 */
+/** 採用済みの画像の大きさ (px)。 */
 const ADOPTED_SIZE = 160;
 
 /** シーンの登場キャラ全員を対象にする。先頭を主キャラ、残りを2人目以降として渡す (`/image`の`cast`と同じ)。 */
@@ -47,7 +47,11 @@ export function SceneImageStep({ projectId, scene }: { projectId: string; scene:
   return (
     <Stack gap="md" mt="sm">
       <Stack gap={4} data-testid="scene-image-adopted" data-adopted={adopted ? "true" : "false"}>
-        {adopted ? (
+        {adoptions.isPending ? (
+          <Loader size="sm" />
+        ) : adoptions.isError ? (
+          <Alert color="red">{adoptions.error?.message ?? "採用済みの画像を取得できません。"}</Alert>
+        ) : adopted ? (
           <>
             <MediaThumb mediaKey={`artifact:${adopted.artifact_id}`} size={ADOPTED_SIZE} alt="採用したシーン画像" />
             <Text size="xs" c="dimmed">
