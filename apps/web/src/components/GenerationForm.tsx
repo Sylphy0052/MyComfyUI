@@ -1239,13 +1239,15 @@ export function GenerationForm({
               {candidateReference && (
                 <div className="stack">
                   <div className="row">
-                    {candidateReference.artifactId && (
-                      <img
-                        src={api.artifactContentUrl(candidateReference.artifactId)}
-                        alt={`参照画像 (${referenceSlotLabel})`}
-                        style={{ width: 64, height: 64, objectFit: "cover" }}
-                      />
-                    )}
+                    <img
+                      src={
+                        candidateReference.artifactId
+                          ? api.artifactContentUrl(candidateReference.artifactId)
+                          : api.imageReferenceContentUrl(candidateReference.image.relative_path)
+                      }
+                      alt={`参照画像 (${referenceSlotLabel})`}
+                      style={{ width: 64, height: 64, objectFit: "cover" }}
+                    />
                     <div className="stack">
                       <span>{candidateReference.image.file_name}</span>
                       <span className="muted">

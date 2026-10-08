@@ -943,6 +943,10 @@ export const api = {
   artifactContentUrl: (artifactId: string) =>
     `${apiBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}/content`,
 
+  // Artifactを持たない参照画像 (一括登録した立ち絵など) を入力cacheから取る (#480)。
+  imageReferenceContentUrl: (relativePath: string) =>
+    `${apiBaseUrl()}/image-references/content?${new URLSearchParams({ relative_path: relativePath }).toString()}`,
+
   // seq は進捗イベントの preview_seq。更新のたびに URL を変えて取り直させる。
   jobPreviewUrl: (jobId: string, seq: number) =>
     `${apiBaseUrl()}/generation-jobs/${encodeURIComponent(jobId)}/preview?seq=${seq}`,

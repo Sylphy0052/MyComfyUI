@@ -4317,6 +4317,34 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
     )
 
 
+@router.get("/image-references/content")
+async def get_image_reference_content(
+    relative_path: Annotated[str, Query(min_length=1, max_length=1024)],
+):
+    """入力cacheの参照画像を配信する。Artifactを持たない参照画像のサムネイルに使う (#480)。
+
+    読み出せるのは`inputs/`配下の画像だけとする。パスの解決は`storage.resolve_input`へ閉じ、
+    入力cacheの外と画像以外 (ガイド音声など) は配信しない。media_typeは拡張子ではなく
+    実ファイルのmagic bytesから決める。
+    """
+    settings = get_settings()
+    media_type: str | None = None
+    try:
+        path = storage.resolve_input(relative_path, settings)
+        with path.open("rb") as handle:
+            media_type = storage.detect_image_media_type(handle.read(32))
+    except (storage.StorageError, OSError, ValueError):
+        # ValueErrorはNULを含むパスで`Path.resolve()`が送出する。
+        media_type = None
+    if media_type is None:
+        raise ApiError(
+            "IMAGE_REFERENCE_MISSING",
+            "入力cacheの画像を取得できませんでした。",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    return FileResponse(path, media_type=media_type, filename=path.name)
+
+
 @router.post("/image-tags", response_model=schemas.ImageTagExtractRead)
 async def extract_image_tags(payload: schemas.ImageTagExtractRequest, request: Request):
     """画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。

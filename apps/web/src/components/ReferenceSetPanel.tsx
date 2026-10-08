@@ -359,7 +359,11 @@ export function ReferenceSetPanel({ projectId, character, onSaved }: Props) {
               {REFERENCE_SLOTS.map((def) => {
                 const slot = set.slots?.[def.key];
                 const pending = Boolean(slot?.pending_job_id);
-                const thumbUrl = slot?.artifact_id ? api.artifactContentUrl(slot.artifact_id) : null;
+                const thumbUrl = slot?.artifact_id
+                  ? api.artifactContentUrl(slot.artifact_id)
+                  : slot?.image
+                    ? api.imageReferenceContentUrl(slot.image.relative_path)
+                    : null;
                 return (
                   <div key={def.key} className="stack" style={{ width: 160 }}>
                     <span className="muted">{def.label}</span>

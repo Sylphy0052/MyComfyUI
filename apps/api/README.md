@@ -107,6 +107,7 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |参照音声の取り込み|`POST /api/v1/voice-references`|
 |ComfyUI の疎通確認|`GET /api/v1/backends/comfyui/health`|
 |参照画像とガイド音声の取り込み|`POST /api/v1/image-references`|
+|入力cacheの参照画像の取得|`GET /api/v1/image-references/content?relative_path=inputs/...`|
 |Manifest の取得|`GET /api/v1/generation-manifests/{manifest_id}`|
 |Artifact の一覧|`GET /api/v1/artifacts`(`scene_id`、`shot_id`、`job_id`、`kind`、`decision`、`availability` で絞り込む)|
 |Artifact の作成・取得|`POST /api/v1/artifacts` / `GET /api/v1/artifacts/{artifact_id}`|
@@ -136,7 +137,9 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 キャラクターtagと参照画像、Scene・Shotごとの生成プロンプトを持ち、外部同期後も保持する。
 参照画像は先に`POST /api/v1/image-references`で入力cacheへ取り込み、応答の相対パス、
 SHA-256、バイト数、media_typeを登録する。PUT時に入力cacheの実ファイル、magic bytes、
-サイズ、SHA-256と照合する。
+サイズ、SHA-256と照合する。Artifactを持たない参照画像は、登録した相対パスを
+`GET /api/v1/image-references/content`へ渡すと画像を取得できる。返すのは`inputs/`配下の
+画像だけで、入力cacheの外や画像以外を指すと`IMAGE_REFERENCE_MISSING`(404)を返す。
 
 Scene・Shotプロンプトは画像・動画生成の`positive_prompt`として継承する。SceneよりShotを
 優先し、生成時に入力した値があればローカル設定より実行時入力を優先する。
