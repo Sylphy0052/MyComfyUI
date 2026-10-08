@@ -7,6 +7,7 @@ import { NAME_MAX, TAG_MAX, TAGS_MAX, TEXT_MAX } from "./limits";
 import { artifactIdOf } from "./MediaThumb";
 import { EditFieldset, useReadOnly } from "./readOnly";
 import { ReferenceImageList, type MemoEdits } from "./ReferenceImageList";
+import { TagExtractor } from "./TagExtractor";
 import { useReportDirty } from "./unsavedGuard";
 import { useSaveCostume } from "./useStory";
 
@@ -100,6 +101,13 @@ function CostumeForm({
           maxTags={TAGS_MAX}
           maxLength={TAG_MAX}
           onChange={(tags) => update({ tags })}
+        />
+        <TagExtractor
+          imageKeys={draft.reference_images}
+          tags={draft.tags}
+          onChange={(tags) => update({ tags })}
+          emptyHint="参照画像を追加すると、画像から衣装タグを抽出できます。"
+          targetLabel="衣装タグ"
         />
         <TagsInput
           label="ネガティブタグ"
