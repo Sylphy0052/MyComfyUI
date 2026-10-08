@@ -6,15 +6,22 @@ import type { SourceImage } from "../imageGen/deriveForm";
 import { type ImageTarget } from "../imageGen/imageForm";
 import { TargetPicker } from "../imageGen/TargetPicker";
 import { initialTarget, paramsFromTarget, targetFromParams } from "../imageGen/targetParams";
-import { useProjectStory, useSubmitImageJob } from "../imageGen/useImageGen";
+import { buildSupplementTags } from "../imageGen/promptTags";
+import { useProjectStory, useSubmitImageJob, useTxt2ImgRecipe } from "../imageGen/useImageGen";
 import { notifyError } from "../notifications";
 import { useProjectList } from "../projects/useProjects";
 import { notifyDroppedReferences } from "../videoGen/referenceNotice";
 import { useCostumeFill } from "../videoGen/useCostumeFill";
 import { useSceneFill } from "../videoGen/useSceneFill";
-import { useStoredVideoInput, useVideoRecipes, useVideoResultEntries } from "../videoGen/useVideoGen";
+import {
+  useStoredVideoInput,
+  useSubmitPromptOnlyVideo,
+  useVideoRecipes,
+  useVideoResultEntries,
+} from "../videoGen/useVideoGen";
 import {
   addReferences,
+  buildPromptOnlyBody,
   buildVideoInputs,
   defaultDraft,
   mergeReferences,
@@ -42,6 +49,9 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   const results = useVideoResultEntries();
   // Jobの投入は画像と同じ。投入後にJob一覧を取り直す。
   const submit = useSubmitImageJob();
+  // 「プロンプトだけ」は画像Jobと、その後のi2v Jobの予約を1回で投入する。
+  const submitPrompt = useSubmitPromptOnlyVideo();
+  const imageRecipe = useTxt2ImgRecipe().data ?? null;
 
   const draft = stored.draft;
   const params = draft.params[draft.mode];
@@ -165,11 +175,33 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
 
   // ---- 投入 ----
 
-  const blockedReason = videoBlockedReason(draft, recipe);
+  const blockedReason = videoBlockedReason(draft, recipe, imageRecipe);
   const canSubmit =
     blockedReason === null && !storyLoading && storyError === null && projectsError === null && missing.length === 0;
   const onSubmit = () => {
     if (recipe === null) return;
+    if (draft.mode === "prompt") {
+      if (imageRecipe === null) return;
+      submitPrompt.mutate(
+        buildPromptOnlyBody(
+          draft,
+          recipe,
+          imageRecipe,
+          {
+            project_id: target.projectId,
+            story_scene_id: target.sceneId,
+            story_character_id: target.characterId,
+            story_costume_id: target.costumeId,
+          },
+          buildSupplementTags(character, costume, scene),
+        ),
+        {
+          onSuccess: (result) => results.add({ jobId: result.image_job.id, followupId: result.followup.id }),
+          onError: (error) => notifyError("投入できませんでした", error),
+        },
+      );
+      return;
+    }
     submit.mutate(
       {
         kind: "video",
@@ -230,6 +262,7 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
             <Tabs.List>
               <Tabs.Tab value="i2v">{VIDEO_MODE_LABELS.i2v}</Tabs.Tab>
               <Tabs.Tab value="ref2v">{VIDEO_MODE_LABELS.ref2v}</Tabs.Tab>
+              <Tabs.Tab value="prompt">{VIDEO_MODE_LABELS.prompt}</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="i2v" pt="sm">
               <FirstFrameField
@@ -249,10 +282,41 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
                 {...pickerProps}
               />
             </Tabs.Panel>
+            <Tabs.Panel value="prompt" pt="sm">
+              <Stack gap="xs">
+                <Text size="xs" c="dimmed">
+                  画像を1枚作り、その画像を先頭フレームにして動画を作ります。キャラ・衣装・Sceneのタグは画像のプロンプトの前に足されます。
+                </Text>
+                <Textarea
+                  label="画像のプロンプト"
+                  placeholder="1段目の画像に写すものを書く"
+                  autosize
+                  minRows={3}
+                  maxRows={10}
+                  value={draft.imagePrompt}
+                  onChange={(event) => {
+                    const imagePrompt = event.currentTarget.value;
+                    setDraft((current) => ({ ...current, imagePrompt }));
+                  }}
+                />
+                <Textarea
+                  label="画像のネガティブプロンプト"
+                  placeholder="空ならRecipeの既定値を使う"
+                  autosize
+                  minRows={2}
+                  maxRows={8}
+                  value={draft.imageNegative}
+                  onChange={(event) => {
+                    const imageNegative = event.currentTarget.value;
+                    setDraft((current) => ({ ...current, imageNegative }));
+                  }}
+                />
+              </Stack>
+            </Tabs.Panel>
           </Tabs>
           <Stack gap={4}>
             <Textarea
-              label="プロンプト"
+              label={draft.mode === "prompt" ? "動画のプロンプト" : "プロンプト"}
               placeholder="動きや場面を文章で書く"
               autosize
               minRows={4}
@@ -281,7 +345,7 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
               {blockedReason}
             </Text>
           ) : null}
-          <Button onClick={onSubmit} disabled={!canSubmit} loading={submit.isPending}>
+          <Button onClick={onSubmit} disabled={!canSubmit} loading={submit.isPending || submitPrompt.isPending}>
             生成
           </Button>
         </Stack>
@@ -293,7 +357,7 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   );
 }
 
-/** `/video`。「画像から」「参照から」の入力欄と、この画面から投入した生成の結果欄。 */
+/** `/video`。「画像から」「参照から」「プロンプトだけ」の入力欄と、この画面から投入した生成の結果欄。 */
 export function VideoPage() {
   const recipes = useVideoRecipes();
   if (recipes.isPending) return <Loader size="sm" />;

@@ -12,6 +12,8 @@ export const queryKeys = {
     ["generation-jobs", "detail", jobId, "voice-verifications"] as const,
   // スイープの実験も`jobs`の下に置く。Jobの状態が変わったイベントで、実験の各セルも取り直す。
   experiment: (experimentId: string) => ["generation-jobs", "experiment", experimentId] as const,
+  // 後続Jobの予約。Jobの状態イベントでは変わらないので、`jobs`の外に置き、予約自身を取り直す。
+  followup: (followupId: string) => ["generation-job-followups", followupId] as const,
   manifest: (manifestId: string) => ["generation-manifests", manifestId] as const,
   qwenSettings: ["settings", "qwen"] as const,
   recipes: (kind: string) => ["recipes", kind] as const,
