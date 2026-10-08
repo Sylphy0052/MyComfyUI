@@ -358,6 +358,8 @@ export interface paths {
          * Get Artifact Content
          * @description Artifactの実ファイルを配信する。候補比較のプレビューに使う。
          *
+         *     既定は`inline`でブラウザ内に表示し、`download=true`のときだけ`attachment`で返す。
+         *
          *     画面へ渡すのは`artifact_id`だけとし、保存先の絶対パスを外へ出さない。パスの解決は
          *     `storage`へ閉じ、`data_root`の外は配信しない。
          */
@@ -911,6 +913,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/image-references/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Image Reference Content
+         * @description 入力cacheの参照画像を配信する。Artifactを持たない参照画像のサムネイルに使う (#480)。
+         *
+         *     読み出せるのは`inputs/`配下の画像だけとする。パスの解決は`storage.resolve_input`へ閉じ、
+         *     入力cacheの外と画像以外 (ガイド音声など) は配信しない。media_typeは拡張子ではなく
+         *     実ファイルのmagic bytesから決める。
+         */
+        get: operations["get_image_reference_content_api_v1_image_references_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/image-tags": {
         parameters: {
             query?: never;
@@ -923,6 +949,9 @@ export interface paths {
         /**
          * Extract Image Tags
          * @description 画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。
+         *
+         *     画像は`content_base64`か、入力cacheを指す`relative_path`のどちらか一方で受け取る
+         *     (排他はスキーマで検証済み)。後者は登録済みの衣装・参照画像の読み直しに使う (#486)。
          */
         post: operations["extract_image_tags_api_v1_image_tags_post"];
         delete?: never;
@@ -5900,7 +5929,9 @@ export interface operations {
     };
     get_artifact_content_api_v1_artifacts__artifact_id__content_get: {
         parameters: {
-            query?: never;
+            query?: {
+                download?: boolean;
+            };
             header?: never;
             path: {
                 artifact_id: string;
@@ -6693,6 +6724,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageReferenceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_reference_content_api_v1_image_references_content_get: {
+        parameters: {
+            query: {
+                relative_path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
