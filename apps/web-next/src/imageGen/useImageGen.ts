@@ -280,7 +280,7 @@ export function useSaveArtifactMemo() {
 export type SceneDecision = "adopt" | "release" | "reject" | "unreject";
 
 /** 2段に分かれた変更の2段目。失敗したら1段目を戻し、戻せなければどこまで反映されたかをエラーに書き足す。 */
-async function secondStepOrUndo(
+export async function secondStepOrUndo(
   run: () => Promise<unknown>,
   undo: () => Promise<unknown>,
   leftState: string,
