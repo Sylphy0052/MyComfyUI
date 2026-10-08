@@ -93,14 +93,20 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
   const lines = lineOptions(scene?.dialogues ?? [], characterList);
   const dialogueId = lines.some((line) => line.value === form.dialogueId) ? form.dialogueId : null;
 
-  const storyLoading = target.projectId !== null && (projects.isPending || scenes.isPending || characters.isPending);
   // ゴミ箱・削除済みのProjectは有効な一覧に無い。投入を止める。
   const projectMissing =
     target.projectId !== null &&
     projects.data !== undefined &&
     !projects.data.some((item) => item.id === target.projectId);
+  // Projectが無いと分かれば、Scene・キャラの一覧は404になるだけなので待たない。
+  const storyLoading =
+    target.projectId !== null &&
+    (projects.isPending || (!projectMissing && (scenes.isPending || characters.isPending)));
   // 一覧を取得できなかったときは、あるかどうかが分からない。「見つかりません」と誤案内せず、取得失敗として投入を止める。
-  const loadError = target.projectId === null ? null : (projects.error ?? scenes.error ?? characters.error ?? null);
+  const loadError =
+    target.projectId === null
+      ? null
+      : (projects.error ?? (projectMissing ? null : (scenes.error ?? characters.error)) ?? null);
   const missing =
     storyLoading || loadError !== null
       ? []
@@ -168,7 +174,7 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
       { onError: (error) => notifyError("投入できませんでした", error) },
     );
   };
-  const useReference = (reference: VoiceReferenceFile) =>
+  const applyReference = (reference: VoiceReferenceFile) =>
     updateForm({ mode: "clone", referenceSource: "file", reference });
 
   const projectOptions = (projects.data ?? []).map((project) => ({ value: project.id, label: project.name }));
@@ -259,7 +265,7 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
         </Stack>
       </Grid.Col>
       <Grid.Col span={{ base: 12, lg: 7 }}>
-        <VoiceResultPanel entries={results.entries} onRemove={results.remove} onUseReference={useReference} />
+        <VoiceResultPanel entries={results.entries} onRemove={results.remove} onUseReference={applyReference} />
       </Grid.Col>
     </Grid>
   );
