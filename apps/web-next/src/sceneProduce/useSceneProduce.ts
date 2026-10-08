@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { apiRequest, type ArtifactRecord, type GenerationJob, type MediaItem } from "../api/client";
+import { apiRequest, type ArtifactRecord, type GenerationJob, type MediaItem, type Recipe } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { ACTIVE_STATES } from "../jobs/useJobs";
+import { COMPOSE_TEMPLATE } from "./composeForm";
 
 /** `GET /generation-jobs`と`GET /media-items`の`limit`の上限。`URLSearchParams`に渡すので文字列で持つ。 */
 const MAX_LIST_LIMIT = "200";
@@ -90,5 +91,14 @@ export function useCharacterCandidates(projectId: string, characterIds: string[]
       return { items: lists.flat(), truncated: lists.some(reachedLimit) };
     },
     enabled,
+  });
+}
+
+/** 統合のRecipe。`kind="compose"`のうち、テンプレートが`ffmpeg_compose`のもの。台詞の音声・BGMの扱いはRecipeではなく`inputs`で決まる。 */
+export function useComposeRecipe() {
+  return useQuery({
+    queryKey: queryKeys.recipes("compose"),
+    queryFn: () => apiRequest<Recipe[]>("/recipes?kind=compose"),
+    select: (recipes) => recipes.find((recipe) => recipe.workflow_template_ref.name === COMPOSE_TEMPLATE) ?? null,
   });
 }

@@ -7,6 +7,7 @@ import { SceneAdoptions } from "../projectDetail/SceneAdoptions";
 import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/useStory";
 import { BgmStep } from "../sceneProduce/BgmStep";
 import { CharacterStep } from "../sceneProduce/CharacterStep";
+import { ComposeStep } from "../sceneProduce/ComposeStep";
 import {
   computeStepStatus,
   FAILED_STATUS,
@@ -69,6 +70,8 @@ function StepPanel({ step, projectId, scene }: { step: StepId; projectId: string
       return <BgmStep key={scene.id} projectId={projectId} sceneId={scene.id} />;
     case "video":
       return <VideoStep key={scene.id} projectId={projectId} scene={scene} />;
+    case "compose":
+      return <ComposeStep key={scene.id} projectId={projectId} scene={scene} />;
     default:
       return (
         <Text c="dimmed" size="sm" mt="sm">

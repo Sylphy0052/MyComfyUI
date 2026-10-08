@@ -1,25 +1,30 @@
 import { Alert, Badge, Button, Card, CloseButton, Group, Loader, Stack, Text, Title } from "@mantine/core";
 
 import { artifactContentUrl, type ArtifactRecord, type GenerationJobFollowup } from "../api/client";
-import { useJob, useJobImages, type SceneDecision } from "../imageGen/useImageGen";
+import { useJob, useJobImages, useSlotDecision, type AdoptionSlot, type SceneDecision } from "../imageGen/useImageGen";
 import { STATE_LABELS } from "../jobs/JobDrawer";
 import { notifyError } from "../notifications";
 import { useSceneAdoptions } from "../projectDetail/useStory";
-import { useFollowup, useJobVideos, useVideoDecision, type VideoResultEntry } from "./useVideoGen";
+import { useFollowup, useJobVideos, type VideoResultEntry } from "./useVideoGen";
 
-/** Sceneを指定して作った動画の、video枠への採用と不採用の印。 */
+/** 動画の採用枠。統合Jobの動画は`compose`枠、それ以外は`video`枠にだけ入る。 */
+type VideoSlot = Extract<AdoptionSlot, "video" | "compose">;
+
+/** Sceneを指定して作った動画の、`slot`枠への採用と不採用の印。 */
 function VideoDecisionButtons({
   artifact,
   projectId,
   sceneId,
+  slot,
 }: {
   artifact: ArtifactRecord;
   projectId: string;
   sceneId: string;
+  slot: VideoSlot;
 }) {
   const adoptions = useSceneAdoptions(projectId, sceneId);
-  const decide = useVideoDecision(projectId, sceneId);
-  const adopted = adoptions.data?.some((item) => item.slot === "video" && item.artifact_id === artifact.id) ?? false;
+  const decide = useSlotDecision(projectId, sceneId, slot);
+  const adopted = adoptions.data?.some((item) => item.slot === slot && item.artifact_id === artifact.id) ?? false;
   const rejected = artifact.decision === "rejected";
   const run = (action: SceneDecision) =>
     decide.mutate({ artifact, action, adopted }, { onError: (error) => notifyError("採否を変えられませんでした", error) });
@@ -68,7 +73,16 @@ function PlaceholderCard({ label }: { label: string }) {
   );
 }
 
-function VideoResult({ entry, onRemove }: { entry: VideoResultEntry; onRemove?: () => void }) {
+/** 動画のJobの結果。`slot`は採用先で、統合の工程は`compose`を渡す。 */
+export function VideoResult({
+  entry,
+  onRemove,
+  slot = "video",
+}: {
+  entry: VideoResultEntry;
+  onRemove?: () => void;
+  slot?: VideoSlot;
+}) {
   const job = useJob(entry.jobId);
   const succeeded = job.data?.state === "succeeded";
   const videos = useJobVideos(entry.jobId, succeeded);
@@ -122,6 +136,7 @@ function VideoResult({ entry, onRemove }: { entry: VideoResultEntry; onRemove?: 
                   artifact={artifact}
                   projectId={artifact.assigned_project_id}
                   sceneId={artifact.story_scene_id}
+                  slot={slot}
                 />
               ) : null}
             </Stack>
