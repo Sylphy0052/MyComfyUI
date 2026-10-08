@@ -61,7 +61,7 @@ export const EDIT_METHOD_TEMPLATES: Record<EditMethod, string> = {
   upscale: UPSCALE_TEMPLATE,
 };
 
-/** Jobの`inputs`へ渡す画像の指定。生成物のIDか、入力cacheの参照。 */
+/** Jobの`inputs`へ渡す入力ファイルの指定。生成物のIDか、入力cacheの参照。画像のほか、動画の`guide_audio`の音声も同じ形で渡す。 */
 export type ImageRef = { artifact_id: string } | { relative_path: string; sha256: string };
 
 /** アップロードして入力cacheに取り込んだ画像。 */

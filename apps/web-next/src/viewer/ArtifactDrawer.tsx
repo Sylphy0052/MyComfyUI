@@ -20,6 +20,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 
 import { artifactContentUrl, type ArtifactDecision, type ArtifactRecord } from "../api/client";
+import { FROM_ARTIFACT_PARAM } from "../imageGen/artifactRestore";
 import { notifyError } from "../notifications";
 import { useArtifact } from "../projectDetail/useStory";
 import { LinkSelects } from "./LinkSelects";
@@ -224,8 +225,35 @@ function GenerationSettings({ jobId }: { jobId: string | null }) {
   );
 }
 
-function ArtifactDetail({ artifactId, onClose }: { artifactId: string; onClose: () => void }) {
+/**
+ * 生成画面の行き先。画像・動画は種別で決まる。音声は台詞とBGMで画面が分かれるが、生成物には区別が無いので、
+ * 元のJobの種別 (`voice` / `music`) で決める。Jobを読めるまでは決まらない。
+ */
+function restorePathOf(artifactKind: string, jobKind: string | undefined): string | null {
+  if (artifactKind === "image") return "/image";
+  if (artifactKind === "video") return "/video";
+  if (artifactKind !== "audio") return null;
+  if (jobKind === "voice") return "/voice";
+  return jobKind === "music" ? "/bgm" : null;
+}
+
+/** 「この設定で生成画面へ」。生成物を作ったJobの設定を、種別に合う生成画面の入力欄へ戻す。 */
+function RestoreButton({ artifact }: { artifact: ArtifactRecord }) {
   const navigate = useNavigate();
+  const { job } = useGenerationSettings(artifact.job_id);
+  const path = restorePathOf(artifact.kind, job.data?.kind);
+  return (
+    <Button
+      variant="light"
+      disabled={artifact.job_id === null || path === null}
+      onClick={() => path !== null && navigate(`${path}?${new URLSearchParams({ [FROM_ARTIFACT_PARAM]: artifact.id })}`)}
+    >
+      この設定で生成画面へ
+    </Button>
+  );
+}
+
+function ArtifactDetail({ artifactId, onClose }: { artifactId: string; onClose: () => void }) {
   const artifact = useArtifact(artifactId);
   const trash = useBatchOperation();
   if (artifact.isPending) return <Loader size="sm" />;
@@ -274,13 +302,7 @@ function ArtifactDetail({ artifactId, onClose }: { artifactId: string; onClose: 
         <GenerationSettings jobId={data.job_id} />
       </Stack>
       <Group justify="space-between">
-        <Button
-          variant="light"
-          disabled={data.kind !== "image" || data.job_id === null}
-          onClick={() => navigate(`/image?${new URLSearchParams({ from_artifact: data.id })}`)}
-        >
-          この設定で生成画面へ
-        </Button>
+        <RestoreButton artifact={data} />
         {trashed ? null : (
           <Button color="red" variant="light" onClick={moveToTrash} loading={trash.isPending}>
             ゴミ箱へ移す

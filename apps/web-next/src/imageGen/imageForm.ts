@@ -79,6 +79,17 @@ export const SIZE_PRESETS = [
 export const BATCH_MAX = 8;
 /** backendの`MAX_SEED` (2**53-1) に合わせる。 */
 export const SEED_MAX = Number.MAX_SAFE_INTEGER;
+
+/** 生成物のManifestから戻すseed。0以上`max`以下の整数ならそのまま返し、それ以外 (NaN・小数・負数・`max`超・非数) は読めない値として`null`。 */
+export function restorableSeed(value: unknown, max: number): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > max) return null;
+  return value;
+}
+
+/** 0より大きい有限の数。それ以外は`null`。 */
+export function positiveNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
 /** backendの`AUTO_SEED`。投入時に乱数へ置き換わる。 */
 const AUTO_SEED = -1;
 

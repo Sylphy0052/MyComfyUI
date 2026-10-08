@@ -1,5 +1,5 @@
-import type { GenerationManifest, Recipe } from "../api/client";
-import { acceptsInput, isRecord, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
+import type { GenerationJob, GenerationManifest, Recipe } from "../api/client";
+import { acceptsInput, isRecord, positiveNumber, restorableSeed, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
 
 /** BGM生成に使うWorkflowテンプレート。 */
 export const BGM_TEMPLATE = "ace_step_bgm";
@@ -95,10 +95,9 @@ export function normalizeBgmForm(raw: Record<string, unknown>, base: BgmForm): B
     if (same) merged[key] = value;
   }
   const form = merged as BgmForm;
-  const seconds = raw.seconds;
   return {
     ...form,
-    seconds: typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 ? seconds : null,
+    seconds: positiveNumber(raw.seconds),
     count: Math.min(COUNT_MAX, Math.max(1, Math.trunc(form.count))),
     seedMode: form.seedMode === "random" || form.seedMode === "fixed" ? form.seedMode : base.seedMode,
   };
@@ -137,8 +136,9 @@ export function defaultSeconds(videoSeconds: number | null): number {
 
 /** 動画のManifestから長さ (秒) を出す。`length / fps`を小数1桁に丸める。読めなければ`null`。 */
 export function videoSecondsOf(manifest: GenerationManifest): number | null {
-  const { length, fps } = manifest.parameters;
-  if (typeof length !== "number" || typeof fps !== "number" || length <= 0 || fps <= 0) return null;
+  const length = positiveNumber(manifest.parameters.length);
+  const fps = positiveNumber(manifest.parameters.fps);
+  if (length === null || fps === null) return null;
   const seconds = Math.round((length / fps) * 10) / 10;
   return seconds > 0 ? seconds : null;
 }
@@ -172,4 +172,55 @@ export function buildBgmInputs(form: BgmForm, seconds: number, index: number, re
       ([name, value]) => (value !== "" || EMPTY_ALLOWED.has(name)) && acceptsInput(recipe, name),
     ),
   );
+}
+
+// ---- 生成物からの復元 ----
+
+/** 投入時に補った末尾の`instrumental`を外したタグ。 */
+function dropTrailingInstrumental(tags: string[]): string[] {
+  const last = tags[tags.length - 1];
+  return last !== undefined && last.toLowerCase() === INSTRUMENTAL_TAG ? tags.slice(0, -1) : tags;
+}
+
+/** 生成物から戻した入力欄と対象。戻せなかった項目があれば`warning`に理由を入れる。 */
+export type BgmRestored = { form: BgmForm; target: BgmTarget; warning: string | null };
+
+/**
+ * 音楽Jobとそのマニフェストから入力欄の内容を作る。タグは`resolved_prompt`、それ以外は`parameters` / `model`から戻す。
+ * 歌詞が空のときに投入時に補った末尾の`instrumental`は、入力欄の値ではないので外す
+ * (残すと、後で歌詞を書いたときに`instrumental`が残る)。
+ * 日本語の雰囲気の欄はManifestに残らないので空にする。枚数は1、シードは固定にして同じ値で作り直せるようにする。
+ * シードが整数として読めないときは、既定のシード (`base`) のままにして`warning`へ書く。
+ */
+export function bgmRestoredFromManifest(
+  base: BgmForm,
+  job: Pick<GenerationJob, "assigned_project_id" | "story_scene_id">,
+  manifest: Pick<GenerationManifest, "parameters" | "model" | "resolved_prompt" | "seed">,
+): BgmRestored {
+  const { parameters, model } = manifest;
+  const lyrics = stringOr(parameters.lyrics, base.lyrics);
+  const allTags = splitTags(manifest.resolved_prompt);
+  const tags = lyrics.trim() === "" ? dropTrailingInstrumental(allTags) : allTags;
+  const seconds = positiveNumber(parameters.seconds);
+  const seed = restorableSeed(manifest.seed, SEED_INPUT_MAX);
+  return {
+    form: {
+      ...base,
+      moodJa: "",
+      tags: tags.join(", "),
+      negative: stringOr(parameters.negative_prompt, base.negative),
+      lyrics,
+      seconds: seconds === null ? base.seconds : Math.min(seconds, SECONDS_MAX),
+      count: 1,
+      seedMode: seed === null ? base.seedMode : "fixed",
+      seed: seed ?? base.seed,
+      ckptName: stringOr(model.ckpt_name, base.ckptName),
+      steps: numberOr(parameters.steps, base.steps),
+      cfg: numberOr(parameters.cfg, base.cfg),
+      samplerName: stringOr(parameters.sampler_name, base.samplerName),
+      scheduler: stringOr(parameters.scheduler, base.scheduler),
+    },
+    target: { projectId: job.assigned_project_id, sceneId: job.story_scene_id ?? null },
+    warning: seed === null ? "シードを読めなかったため、既定のシードにしました" : null,
+  };
 }
