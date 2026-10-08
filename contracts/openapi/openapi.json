@@ -6157,15 +6157,7 @@
               "$ref": "#/components/schemas/ProjectReferenceSlot"
             },
             "propertyNames": {
-              "enum": [
-                "face_closed",
-                "face_open",
-                "face_angle",
-                "bust",
-                "full_body",
-                "pose",
-                "background"
-              ]
+              "const": "full_body"
             },
             "title": "Slots",
             "type": "object"

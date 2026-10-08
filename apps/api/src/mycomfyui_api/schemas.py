@@ -379,17 +379,15 @@ class ProjectReferenceImage(ApiModel):
         return media_type
 
 
-# 参照画像セットの枠。novel-writerの検証結果 (必要な画像リスト.md) の7枚構成に合わせる。
+# 参照画像セットの枠。衣装ごとの全身画像1枚だけを持つ (#493)。
 # web側は apps/web/src/state/referenceSlots.ts の REFERENCE_SLOTS が正本で、生成型には残らないため手で合わせる。
-ReferenceSlotKey = Literal[
-    "face_closed",
-    "face_open",
-    "face_angle",
-    "bust",
-    "full_body",
-    "pose",
-    "background",
-]
+ReferenceSlotKey = Literal["full_body"]
+
+# #493で廃止した枠。保存済みのlocal_overridesに残っていても読み込みで落とさず、捨てる。
+# 枠キーとして再利用しない。
+RETIRED_REFERENCE_SLOT_KEYS = frozenset(
+    {"face_closed", "face_open", "face_angle", "bust", "pose", "background"}
+)
 
 
 class ProjectReferenceSlot(ApiModel):
@@ -406,6 +404,14 @@ class ProjectReferenceSet(ApiModel):
     id: ResourceId
     outfit_id: ResourceId | None = None
     slots: dict[ReferenceSlotKey, ProjectReferenceSlot] = Field(default_factory=dict)
+
+    @field_validator("slots", mode="before")
+    @classmethod
+    def _drop_retired_slots(cls, value: Any) -> Any:
+        # 廃止した枠は捨てる。次に保存すると保存済みデータからも消える。
+        if not isinstance(value, dict):
+            return value
+        return {key: slot for key, slot in value.items() if key not in RETIRED_REFERENCE_SLOT_KEYS}
 
 
 class ProjectCharacterOutfit(ApiModel):

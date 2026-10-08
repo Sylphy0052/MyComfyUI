@@ -718,7 +718,6 @@ export function ProjectWorkspace({
                 <CharacterManager
                   projectId={selected.id}
                   active={!hidden && detailTab === "characters"}
-                  scenes={projectScenes}
                   onChanged={onCharactersChanged}
                   reloadToken={charactersReloadToken}
                 />
