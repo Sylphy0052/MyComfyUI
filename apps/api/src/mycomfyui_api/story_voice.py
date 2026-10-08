@@ -17,6 +17,7 @@ from mycomfyui_api import schemas, storage
 from mycomfyui_api.adapters.voice.plan import REFERENCE_NAMES
 from mycomfyui_api.execution import PreparationError
 from mycomfyui_api.models import Artifact, StoryCharacter
+from mycomfyui_api.settings import get_settings
 
 ARTIFACT_KEY_PREFIX = "artifact:"
 INPUT_KEY_PREFIX = "input:"
@@ -46,47 +47,79 @@ def _dialogue_voice_ids(dialogue: Any) -> list[str]:
 
 
 async def _character_reference(
-    session: AsyncSession, character: StoryCharacter
+    session: AsyncSession, character: StoryCharacter, *, persist: bool
 ) -> dict[str, str]:
-    """キャラクターの声を、入力cacheの参照音声 (`reference_*`の組) へ解決する。"""
+    """キャラクターの声を、入力cacheの参照音声 (`reference_*`の組) へ解決する。
+
+    使えない理由は`PreparationError.details["reason"]`で区別する (`no_voice`、
+    `artifact_missing`、`artifact_not_audio`、`artifact_trashed`、
+    `artifact_unavailable`、`reference_unreadable`、`bad_key`)。
+    """
     key = character.voice_media_key
     details = {"story_character_id": character.id}
     if not key:
-        raise PreparationError("キャラクターに声が登録されていません。", details)
+        raise PreparationError(
+            "キャラクターに声が登録されていません。", {**details, "reason": "no_voice"}
+        )
+    details = {**details, "voice_media_key": key}
     try:
         if key.startswith(ARTIFACT_KEY_PREFIX):
             artifact = await session.get(Artifact, key[len(ARTIFACT_KEY_PREFIX) :])
-            if (
-                artifact is None
-                or artifact.kind != "audio"
-                or artifact.deleted_at is not None
-                or artifact.availability != "complete"
-            ):
+            if artifact is None:
                 raise PreparationError(
-                    "キャラクターの声の生成物を参照音声として使えません。",
-                    {**details, "voice_media_key": key},
+                    "キャラクターの声の生成物がありません。",
+                    {**details, "reason": "artifact_missing"},
+                )
+            if artifact.kind != "audio":
+                raise PreparationError(
+                    "キャラクターの声の生成物が音声ではありません。",
+                    {**details, "reason": "artifact_not_audio"},
+                )
+            if artifact.deleted_at is not None:
+                raise PreparationError(
+                    "キャラクターの声の生成物がゴミ箱にあります。",
+                    {**details, "reason": "artifact_trashed"},
+                )
+            if artifact.availability != "complete":
+                raise PreparationError(
+                    "キャラクターの声の生成物のファイルがそろっていません。",
+                    {**details, "reason": "artifact_unavailable"},
                 )
             data = storage.resolve_artifact(artifact.relative_path).read_bytes()
-            # 参照音声は`inputs/<sha256>/`の入力cacheに置いた内容で固定する。
-            stored = storage.write_input(Path(artifact.relative_path).name, data)
+            name = Path(artifact.relative_path).name
+            # 参照音声は`inputs/<sha256>/`の入力cacheに置いた内容で固定する。プレビュー
+            # は置かずに、置く場所とhashだけを返す (投入しない参照を孤児にしない)。
+            stored = (
+                storage.write_input(name, data)
+                if persist
+                else storage.plan_input(name, data)
+            )
             return {
                 "reference_relative_path": stored.relative_path,
                 "reference_sha256": stored.sha256,
             }
         if key.startswith(INPUT_KEY_PREFIX):
-            relative_path = key[len(INPUT_KEY_PREFIX) :]
-            data = storage.resolve_input(relative_path).read_bytes()
+            path = storage.resolve_input(key[len(INPUT_KEY_PREFIX) :])
+            data = path.read_bytes()
+            # keyの`..`や区切りの揺れを残さず、解決後の入力cache内のパスを記録する。
+            inputs_root = (get_settings().data_root / storage.INPUTS_DIR_NAME).resolve()
+            relative_path = (
+                f"{storage.INPUTS_DIR_NAME}/{path.relative_to(inputs_root).as_posix()}"
+            )
             return {
                 "reference_relative_path": relative_path,
                 "reference_sha256": hashlib.sha256(data).hexdigest(),
             }
-    except (storage.StorageError, OSError) as error:
+    except PreparationError:
+        raise
+    except (storage.StorageError, OSError, ValueError) as error:
+        # NUL入りのパスは`ValueError`で来る。
         raise PreparationError(
             "キャラクターの声の参照音声を読み込めません。",
-            {**details, "voice_media_key": key},
+            {**details, "reason": "reference_unreadable"},
         ) from error
     raise PreparationError(
-        "キャラクターの声の参照の形式が想定外です。", {**details, "voice_media_key": key}
+        "キャラクターの声の参照の形式が想定外です。", {**details, "reason": "bad_key"}
     )
 
 
@@ -95,12 +128,17 @@ async def resolve_character_voice(
     payload: schemas.GenerationPreviewCreate,
     inputs: dict[str, Any],
     recipe_defaults: Any,
+    *,
+    persist: bool,
+    shot_data: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], frozenset[str]]:
     """`inputs`の`voices`を、キャラクターの声で補った入力と、補ったvoice_idを返す。
 
     補うのは、音声Jobで`story_character_id`があり、参照もcaptionも無いvoiceだけ。
-    `voices`自体が無いときは、`dialogue`の台詞が参照するvoice_idごとに補う。補う対象が
-    あるのにキャラクターに声が無ければ`PreparationError`とする。
+    `voices`自体が無いときは、台詞が参照するvoice_idごとに補う。台詞はShotを指定した
+    ときそのShot本文 (`shot_data`)、指定しないときは`inputs`の`dialogue`から取る。補う対象が
+    あるのにキャラクターに声が無ければ`PreparationError`とする。`persist=False`
+    (プレビュー) では、Artifactの音声を入力cacheへ書かない。
     """
     if payload.kind != "voice" or payload.story_character_id is None:
         return inputs, frozenset()
@@ -110,7 +148,12 @@ async def resolve_character_voice(
     if isinstance(raw_voices, dict) and raw_voices:
         voices = dict(raw_voices)
     elif raw_voices in (None, {}):
-        voices = {voice_id: {} for voice_id in _dialogue_voice_ids(merged.get("dialogue"))}
+        dialogue = (
+            (shot_data or {}).get("dialogue")
+            if payload.shot_id is not None
+            else merged.get("dialogue")
+        )
+        voices = {voice_id: {} for voice_id in _dialogue_voice_ids(dialogue)}
     else:
         return inputs, frozenset()
     targets = [voice_id for voice_id, raw in voices.items() if _needs_voice(raw)]
@@ -122,7 +165,7 @@ async def resolve_character_voice(
             "キャラクターがありません。",
             {"story_character_id": payload.story_character_id},
         )
-    reference = await _character_reference(session, character)
+    reference = await _character_reference(session, character, persist=persist)
     transcript = (character.voice_transcript or "").strip()
     if transcript:
         reference["reference_transcript"] = transcript

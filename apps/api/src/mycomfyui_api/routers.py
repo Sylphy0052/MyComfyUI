@@ -757,7 +757,9 @@ async def _submit_generation_job(
     )
     # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
-    prepared = await _prepare_execution(recipe, effective, source, resolved, session)
+    prepared = await _prepare_execution(
+        recipe, effective, source, resolved, session, persist=True
+    )
     await _validate_resolved_models(recipe, prepared)
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
@@ -808,7 +810,9 @@ async def preview_generation_job(
     effective, recipe, recipe_origin, input_origins, preferences, look_profile_ids, look_profiles = (
         await _resolve_generation_defaults(session, payload, resolved)
     )
-    prepared = await _prepare_execution(recipe, effective, source, resolved, session)
+    prepared = await _prepare_execution(
+        recipe, effective, source, resolved, session, persist=False
+    )
     await _validate_resolved_models(recipe, prepared)
     defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
     version = await _load_recipe_version(session, recipe)
@@ -1439,8 +1443,13 @@ async def _prepare_execution(
     source: ReferenceSource,
     resolved: _ResolvedReferences,
     session: AsyncSession,
+    *,
+    persist: bool,
 ):
-    """Recipeのengineに対応するAdapterで実行スナップショットを組み立てる。"""
+    """Recipeのengineに対応するAdapterで実行スナップショットを組み立てる。
+
+    `persist=False`はプレビュー用で、入力cacheなどへファイルを書かない。
+    """
     context = PreparationContext(
         project_id=payload.project_id,
         scene_id=payload.scene_id,
@@ -1452,7 +1461,12 @@ async def _prepare_execution(
     )
     try:
         inputs, exempt = await story_voice.resolve_character_voice(
-            session, payload, payload.inputs, recipe.defaults
+            session,
+            payload,
+            payload.inputs,
+            recipe.defaults,
+            persist=persist,
+            shot_data=resolved.shot_data,
         )
         context = replace(context, canon_exempt_voice_ids=exempt)
         return await prepare_execution(recipe, inputs, context)
