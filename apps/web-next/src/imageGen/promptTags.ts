@@ -7,7 +7,7 @@ export type SupplementTags = {
 };
 
 /** 重複の判定に使う形。大文字・小文字、`_`と空白、連続する空白の違いは同じタグとみなす。 */
-function tagKey(tag: string): string {
+export function tagKey(tag: string): string {
   return tag.trim().replace(/_/g, " ").replace(/\s+/g, " ").toLowerCase();
 }
 
@@ -49,6 +49,21 @@ export function partitionPrompt(prompt: string, supplement: readonly string[]): 
     free: tokens.filter((token) => !supplementKeys.has(tagKey(token))).join(", "),
     excluded: supplement.filter((tag) => !tokenKeys.has(tagKey(tag))),
   };
+}
+
+/** 自由欄の差分の1項目。 */
+export type TagDiffEntry = { kind: "added" | "removed" | "same"; tag: string };
+
+/** 変換前後のプロンプトをタグ単位で比べる。前にあって後に無いものは`removed`、逆は`added`。後の並びを基準に、消えたタグを末尾へ足す。 */
+export function diffTags(before: string, after: string): TagDiffEntry[] {
+  const beforeTags = uniqueTags(splitPrompt(before));
+  const afterTags = uniqueTags(splitPrompt(after));
+  const beforeKeys = new Set(beforeTags.map(tagKey));
+  const afterKeys = new Set(afterTags.map(tagKey));
+  return [
+    ...afterTags.map((tag): TagDiffEntry => ({ kind: beforeKeys.has(tagKey(tag)) ? "same" : "added", tag })),
+    ...beforeTags.filter((tag) => !afterKeys.has(tagKey(tag))).map((tag): TagDiffEntry => ({ kind: "removed", tag })),
+  ];
 }
 
 /** 外したタグか。 */

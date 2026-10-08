@@ -24,6 +24,10 @@ export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
 export type GenerationJobBody = components["schemas"]["GenerationJobCreate"];
 export type Recipe = components["schemas"]["RecipeRead"];
 export type WorkflowModelOptions = components["schemas"]["WorkflowModelOptionsRead"];
+export type ImagePromptAssist = components["schemas"]["ImagePromptAssistRead"];
+/** 現在のpromptは省略できる (APIの既定は空)。生成された型は既定値の欄も必須にするため緩める。 */
+export type ImagePromptAssistBody = Partial<components["schemas"]["ImagePromptAssistCreate"]> &
+  Pick<components["schemas"]["ImagePromptAssistCreate"], "instruction">;
 
 /** Web UIとApplication APIは同一originで配信する。 */
 const API_BASE = "/api/v1";
