@@ -1,7 +1,9 @@
+import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiRequest, type ProjectList, type ProjectPurgeResult, type ProjectRecord } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+import { notifyError } from "../notifications";
 
 export type ProjectTab = "active" | "trashed";
 
@@ -84,6 +86,17 @@ export function useRestoreProject() {
       apiRequest<ProjectRecord>(`/projects/${encodeURIComponent(id)}/restore`, { method: "POST" }),
     onSuccess: invalidate,
   });
+}
+
+/** 復元して結果を通知する。一覧と詳細画面で同じ文言にする。 */
+export function useRestoreProjectWithNotice() {
+  const restore = useRestoreProject();
+  const run = (project: ProjectRecord) =>
+    restore.mutate(project.id, {
+      onSuccess: () => notifications.show({ color: "green", message: `「${project.name}」を復元しました` }),
+      onError: (error) => notifyError("復元できません", error),
+    });
+  return { run, isPending: restore.isPending };
 }
 
 export function usePurgeProject() {
