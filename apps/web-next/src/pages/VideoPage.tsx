@@ -6,23 +6,22 @@ import type { SourceImage } from "../imageGen/deriveForm";
 import { EMPTY_TARGET, type ImageTarget } from "../imageGen/imageForm";
 import { TargetPicker } from "../imageGen/TargetPicker";
 import { initialTarget, paramsFromTarget, targetFromParams } from "../imageGen/targetParams";
-import { reimportInputImage, useProjectStory, useSubmitImageJob, useUploadInputImage } from "../imageGen/useImageGen";
+import { useProjectStory, useSubmitImageJob } from "../imageGen/useImageGen";
 import { notifyError } from "../notifications";
-import { artifactIdOf } from "../projectDetail/MediaThumb";
-import { useSceneAdoptions } from "../projectDetail/useStory";
 import { useProjectList } from "../projects/useProjects";
+import { notifyDroppedReferences } from "../videoGen/referenceNotice";
+import { useCostumeFill } from "../videoGen/useCostumeFill";
+import { useSceneFill } from "../videoGen/useSceneFill";
 import { useStoredVideoInput, useVideoRecipes, useVideoResultEntries } from "../videoGen/useVideoGen";
 import {
   addReferences,
   buildVideoInputs,
   defaultDraft,
-  REFERENCES_MAX,
+  mergeReferences,
   videoBlockedReason,
-  videoImage,
   videoImageFromSource,
   VIDEO_MODE_LABELS,
   type VideoDraft,
-  type VideoImage,
   type VideoMode,
   type VideoParams,
   type VideoRecipes,
@@ -30,8 +29,6 @@ import {
 import { FirstFrameField, ReferencesField } from "../videoGen/VideoImageFields";
 import { VideoParamsFields } from "../videoGen/VideoParamsFields";
 import { VideoResultPanel } from "../videoGen/VideoResultPanel";
-
-const INPUT_PREFIX = "input:";
 
 /** 動画は1人のキャラの衣装だけを使う。URLに`cast`があっても2人目以降は使わない。 */
 function videoTargetFromParams(params: URLSearchParams): ImageTarget {
@@ -44,7 +41,6 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   const results = useVideoResultEntries();
   // Jobの投入は画像と同じ。投入後にJob一覧を取り直す。
   const submit = useSubmitImageJob();
-  const upload = useUploadInputImage();
 
   const draft = stored.draft;
   const params = draft.params[draft.mode];
@@ -62,6 +58,8 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
 
   const storyLoading = story.isLoading || (target.projectId !== null && projects.isPending);
   const storyError = story.error;
+  // Project一覧を読めないと、Projectが有効か (ゴミ箱・削除済みでないか) を確かめられない。Projectを指す対象のときだけ投入を止める。
+  const projectsError = target.projectId !== null ? projects.error : null;
   // ゴミ箱・削除済みのProjectは有効な一覧に無い。投入を止める。
   const projectMissing =
     target.projectId !== null && projects.data !== undefined && !projects.data.some((item) => item.id === target.projectId);
@@ -92,7 +90,11 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
     [setSearchParams],
   );
 
-  // URLの対象を、次に開いたときの復元用に残す。初回の復元を決めるまでは、空の対象で上書きしない。
+  // URLの対象を、次に開いたときの復元用に残す。
+  // 下の復元effectより前に置くこと。順序は次の2点で効く。
+  // - 初回の描画では`initialized`がまだfalseなので、ここは保存せずに抜ける。URLが空のまま、保存済みの対象を空で上書きしない。
+  // - 復元effectが`initialized`をtrueにして`changeTarget`を呼ぶと、URLが変わって`targetKey`が変わり、
+  //   次の描画でここが復元後の対象を保存する。入れ替えると、復元前の空の対象を保存してしまう。
   const initialized = useRef(false);
   useEffect(() => {
     if (!initialized.current) return;
@@ -100,12 +102,14 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   }, [targetKey, setStored]);
 
   // 開いたときに一度だけ、最後に使った対象を戻す。
+  // 依存配列を`[]`にするのは、開いた時点の`target`・`stored.target`だけを使い、その後の変更で戻し直さないため
+  // (`initialized`でも二重実行を防ぐ)。web-nextにはESLint設定が無く、`ImagePage`の`[]`のeffectにも抑止コメントは無いため、
+  // `react-hooks/exhaustive-deps`の抑止コメントは付けない。
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
     const restored = initialTarget(target, stored.target);
     if (restored) changeTarget({ ...restored, extraCast: [] });
-    // 開いたときの値だけを使う。
   }, []);
 
   // ---- 画像の選択 ----
@@ -129,9 +133,15 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
     frameSeq.current += 1;
     setDraft((current) => ({ ...current, firstFrame: null }));
   }, [setDraft]);
+  // 取り込みを待った後に読むことがあるため、最新の参照画像をrefで持つ。
+  const referencesRef = useRef(draft.references);
+  referencesRef.current = draft.references;
   const pickReference = useCallback(
-    (source: SourceImage) =>
-      setDraft((current) => ({ ...current, references: addReferences(current.references, [videoImageFromSource(source)]) })),
+    (source: SourceImage) => {
+      const added = [videoImageFromSource(source)];
+      notifyDroppedReferences(mergeReferences(referencesRef.current, added));
+      setDraft((current) => ({ ...current, references: addReferences(current.references, added) }));
+    },
     [setDraft],
   );
   const reserveReference = useCallback(() => pickReference, [pickReference]);
@@ -143,77 +153,20 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
 
   // ---- Projectからの補完 ----
 
-  // Sceneを選ぶと、採用済みのシーン画像を先頭フレームに、`video_motion`を自由欄に入れる。
-  // 手で選んだ先頭フレームと、手で書いた自由欄は上書きしない。同じSceneでは入れ直さない。
-  const adoptions = useSceneAdoptions(target.projectId ?? "", target.projectId === null ? null : target.sceneId);
-  const sceneFilled = draft.filled.sceneId;
-  useEffect(() => {
-    if (scene === null || !adoptions.isSuccess || sceneFilled === scene.id) return;
-    const artifactId = adoptions.data.find((item) => item.slot === "scene_image")?.artifact_id ?? null;
-    const motion = scene.video_motion.trim();
-    setDraft((current) => ({
-      ...current,
-      firstFrame:
-        artifactId !== null && (current.firstFrame === null || current.firstFrame.auto)
-          ? videoImage({ artifact_id: artifactId }, "シーンの採用画像", true)
-          : current.firstFrame,
-      prompt: motion !== "" && (current.prompt.trim() === "" || current.prompt === current.filled.motion) ? motion : current.prompt,
-      filled: { ...current.filled, sceneId: scene.id, motion: motion !== "" ? motion : current.filled.motion },
-    }));
-  }, [scene, adoptions.isSuccess, adoptions.data, sceneFilled, setDraft]);
-  const sceneMotion = scene?.video_motion.trim() ?? "";
-  const insertMotion = () =>
-    setDraft((current) => ({ ...current, prompt: sceneMotion, filled: { ...current.filled, motion: sceneMotion } }));
-
-  // 衣装を選ぶと、衣装の参照画像を参照の枠へ入れる。手で足した参照画像は残し、前の衣装から入れたものは置き換える。
-  // アップロードした参照画像 (`input:`) はsha256を持たないため、入力cacheへ取り込み直す。
-  // fillSeqは入れ直すたびに進め、取り込みを待つ間に衣装が変わったら、待っていた結果を捨てる。
-  const costumeFilled = draft.filled.costumeId;
-  const fillSeq = useRef(0);
-  const fillingId = useRef<string | null>(null);
-  useEffect(() => {
-    if (costume === null) {
-      fillSeq.current += 1;
-      fillingId.current = null;
-      return;
-    }
-    if (costumeFilled === costume.id || fillingId.current === costume.id) return;
-    const costumeId = costume.id;
-    const seq = ++fillSeq.current;
-    fillingId.current = costumeId;
-    const resolveKey = async (key: string): Promise<VideoImage | null> => {
-      const artifactId = artifactIdOf(key);
-      if (artifactId !== null) return videoImage({ artifact_id: artifactId }, "衣装の参照画像", true);
-      if (!key.startsWith(INPUT_PREFIX)) return null;
-      try {
-        const reference = await reimportInputImage(key.slice(INPUT_PREFIX.length), upload.mutateAsync);
-        return videoImage({ relative_path: reference.relative_path, sha256: reference.sha256 }, "衣装の参照画像", true);
-      } catch (error) {
-        notifyError("衣装の参照画像を取り込めませんでした", error);
-        return null;
-      }
-    };
-    void (async () => {
-      const images = (await Promise.all(costume.reference_images.slice(0, REFERENCES_MAX).map(resolveKey))).flatMap(
-        (image) => image ?? [],
-      );
-      if (seq !== fillSeq.current) return;
-      fillingId.current = null;
-      setDraft((current) => ({
-        ...current,
-        references: addReferences(
-          current.references.filter((item) => !item.auto),
-          images,
-        ),
-        filled: { ...current.filled, costumeId },
-      }));
-    })();
-  }, [costume, costumeFilled, setDraft, upload.mutateAsync]);
+  const { sceneMotion, insertMotion } = useSceneFill({
+    projectId: target.projectId,
+    sceneId: target.sceneId,
+    scene,
+    filledSceneId: draft.filled.sceneId,
+    setDraft,
+  });
+  useCostumeFill({ costume, filledCostumeId: draft.filled.costumeId, referencesRef, setDraft });
 
   // ---- 投入 ----
 
   const blockedReason = videoBlockedReason(draft, recipe);
-  const canSubmit = blockedReason === null && !storyLoading && storyError === null && missing.length === 0;
+  const canSubmit =
+    blockedReason === null && !storyLoading && storyError === null && projectsError === null && missing.length === 0;
   const onSubmit = () => {
     if (recipe === null) return;
     submit.mutate(
@@ -258,6 +211,11 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
             multi={false}
           />
           {storyError ? <Alert color="red">{storyError.message}</Alert> : null}
+          {projectsError ? (
+            <Alert color="red" title="Project一覧を読めません" data-testid="projects-error">
+              {projectsError.message}
+            </Alert>
+          ) : null}
           <Tabs
             keepMounted={false}
             value={draft.mode}
