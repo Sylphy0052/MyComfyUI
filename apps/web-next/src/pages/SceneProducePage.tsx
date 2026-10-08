@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router";
 import type { StoryScene } from "../api/client";
 import { useProject } from "../layout/projectContext";
 import { SceneAdoptions } from "../projectDetail/SceneAdoptions";
+import { CharacterStep } from "../sceneProduce/CharacterStep";
 import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/useStory";
 import {
   computeStepStatus,
@@ -144,9 +145,13 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
             <Title order={4}>{stepLabel(step)}</Title>
             {current ? <StatusBadge status={current} /> : <Loader size="xs" />}
           </Group>
-          <Text c="dimmed" size="sm" mt="sm">
-            この工程の画面はまだありません。
-          </Text>
+          {step === "character" ? (
+            <CharacterStep projectId={projectId} scene={scene} />
+          ) : (
+            <Text c="dimmed" size="sm" mt="sm">
+              この工程の画面はまだありません。
+            </Text>
+          )}
         </Paper>
       </Group>
     </Stack>
