@@ -80,7 +80,7 @@ export type SourceImage = {
 
 export type DeriveState = {
   source: SourceImage | null;
-  /** inpaintのマスク画像。 */
+  /** inpaintのマスク画像。描いたマスクも、取り込んだ画像としてここに入る。 */
   mask: UploadedImage | null;
   changePoseExpression: boolean;
   changeOutfit: boolean;
@@ -187,7 +187,7 @@ export function deriveBlockedReason(
 ): string | null {
   if (state.source === null) return "元画像を選んでください";
   if (mode === "ref" && templateOfDerive(mode, state) === null) return "変えたい要素を選んでください";
-  if (mode === "edit" && state.editMethod === "inpaint" && state.mask === null) return "マスク画像をアップロードしてください";
+  if (mode === "edit" && state.editMethod === "inpaint" && state.mask === null) return "マスクを描くか、マスク画像をアップロードしてください";
   if (recipe === null) return "この方式のRecipeがありません";
   return null;
 }
