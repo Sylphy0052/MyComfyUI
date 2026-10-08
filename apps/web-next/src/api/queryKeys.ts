@@ -8,6 +8,8 @@ export const queryKeys = {
   jobImages: (jobId: string) => ["generation-jobs", "detail", jobId, "images"] as const,
   jobAudio: (jobId: string) => ["generation-jobs", "detail", jobId, "audio"] as const,
   jobVideos: (jobId: string) => ["generation-jobs", "detail", jobId, "videos"] as const,
+  jobVoiceVerifications: (jobId: string) =>
+    ["generation-jobs", "detail", jobId, "voice-verifications"] as const,
   // スイープの実験も`jobs`の下に置く。Jobの状態が変わったイベントで、実験の各セルも取り直す。
   experiment: (experimentId: string) => ["generation-jobs", "experiment", experimentId] as const,
   manifest: (manifestId: string) => ["generation-manifests", manifestId] as const,
