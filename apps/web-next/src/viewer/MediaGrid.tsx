@@ -11,7 +11,7 @@ export type GridItem = {
   createdAt: string;
 };
 
-const DECISION_BADGES: Record<string, { label: string; color: string }> = {
+export const DECISION_BADGES: Record<string, { label: string; color: string }> = {
   accepted: { label: "採用", color: "teal" },
   rejected: { label: "不採用", color: "red" },
 };

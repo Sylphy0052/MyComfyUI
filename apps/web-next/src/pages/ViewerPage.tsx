@@ -51,7 +51,9 @@ export function ViewerPage() {
     updateParams((params) => writeFilters(params, { ...readFilters(params), ...patch }));
   const setTab = (next: string | null) =>
     updateParams((params) => {
-      if (next === "trash" || next === "video" || next === "voice" || next === "bgm") params.set("tab", next);
+      // 先頭の`image`は既定値なのでURLに残さない。それ以外のタブだけ`tab`に書く。
+      const urlTabs: string[] = [...MEDIA_TAB_IDS.filter((id) => id !== "image"), "trash"];
+      if (next !== null && urlTabs.includes(next)) params.set("tab", next);
       else params.delete("tab");
       return params;
     });

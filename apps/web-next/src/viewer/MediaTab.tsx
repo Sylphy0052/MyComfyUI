@@ -3,8 +3,8 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
 import type { MediaItem } from "../api/client";
-import { LinkSelects } from "./LinkSelects";
 import { AudioList } from "./AudioList";
+import { LinkSelects } from "./LinkSelects";
 import { MediaGrid, type GridItem } from "./MediaGrid";
 import { useSelection } from "./useSelection";
 import {

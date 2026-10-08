@@ -18,12 +18,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { artifactContentUrl, type MediaItem } from "../api/client";
 import { useCharacters, useScenes } from "../projectDetail/useStory";
 import { useProjectList } from "../projects/useProjects";
-import { LoadMoreSentinel } from "./MediaGrid";
-
-const DECISION_BADGES: Record<string, { label: string; color: string }> = {
-  accepted: { label: "採用", color: "teal" },
-  rejected: { label: "不採用", color: "red" },
-};
+import { DECISION_BADGES, LoadMoreSentinel } from "./MediaGrid";
 
 function formatSeconds(seconds: number): string {
   const whole = Math.max(0, Math.floor(seconds));
