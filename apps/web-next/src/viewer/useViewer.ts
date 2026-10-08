@@ -188,13 +188,13 @@ export function useJobArtifact(jobId: string | null) {
 /** 生成設定。生成物のJobからManifestを辿る。取り込んだ画像のようにJobが無ければ`null`。 */
 export function useGenerationSettings(jobId: string | null) {
   const job = useQuery({
-    queryKey: queryKeys.generationJob(jobId ?? ""),
+    queryKey: queryKeys.job(jobId ?? ""),
     queryFn: () => apiRequest<GenerationJob>(`/generation-jobs/${enc(jobId ?? "")}`),
     enabled: jobId !== null,
   });
   const manifestId = job.data?.manifest_id ?? null;
   const manifest = useQuery({
-    queryKey: queryKeys.generationManifest(manifestId ?? ""),
+    queryKey: queryKeys.manifest(manifestId ?? ""),
     queryFn: () => apiRequest<GenerationManifest>(`/generation-manifests/${enc(manifestId ?? "")}`),
     enabled: manifestId !== null,
   });

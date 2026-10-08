@@ -31,7 +31,4 @@ export const queryKeys = {
   // ゴミ箱の変更で影響も変わるので、`artifactLists`の下に置く。
   artifactPurgePreview: (artifactIds: string[]) => ["artifact-lists", "purge-preview", artifactIds] as const,
   jobArtifacts: (jobId: string) => ["artifact-lists", "job", jobId] as const,
-  // `jobs`の無効化に巻き込まれないよう、Job一覧とは別の系統に置く。
-  generationJob: (jobId: string) => ["generation-job", jobId] as const,
-  generationManifest: (manifestId: string) => ["generation-manifests", manifestId] as const,
 };

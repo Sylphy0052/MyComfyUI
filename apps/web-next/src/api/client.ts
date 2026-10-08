@@ -22,7 +22,6 @@ export type GenerationManifest = components["schemas"]["GenerationManifestRead"]
 export type ImageReference = components["schemas"]["ImageReferenceRead"];
 export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
 export type GenerationJobBody = components["schemas"]["GenerationJobCreate"];
-export type GenerationManifest = components["schemas"]["GenerationManifestRead"];
 export type Recipe = components["schemas"]["RecipeRead"];
 export type WorkflowModelOptions = components["schemas"]["WorkflowModelOptionsRead"];
 
