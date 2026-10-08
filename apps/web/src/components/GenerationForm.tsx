@@ -553,6 +553,10 @@ export function GenerationForm({
       referenceRecipe !== null &&
       findRecipeOrSuccessor([referenceRecipe], restore.recipeLineage) !== null;
     if (referenceJob) {
+      // 見つからないときに前の選択の参照画像で投入しないよう、選択を外してから探す。
+      setOutfitCharacterId("");
+      setOutfitSearch("");
+      setSelectedOutfitId(null);
       setPendingReferenceHashes(
         (manifest.input_refs ?? [])
           .filter((ref) => ref.kind === "cached_input" && typeof ref.sha256 === "string")
@@ -1580,8 +1584,9 @@ export function GenerationForm({
               disabled={useInheritedDefaults}
               onChange={(event) => {
                 setRecipeId(event.target.value);
-                // 復元時の通知は選び直したRecipeには当てはまらないので消す。
+                // 復元時の通知は選び直したRecipeには当てはまらないので消す。参照の選び直しもやめる。
                 setRestoreNotice(null);
+                setPendingReferenceHashes(null);
               }}
             >
               {recipes.map((item) => (
