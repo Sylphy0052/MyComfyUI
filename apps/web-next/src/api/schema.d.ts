@@ -3504,6 +3504,8 @@ export interface components {
             story_character_id?: string | null;
             /** Story Costume Id */
             story_costume_id?: string | null;
+            /** Story Dialogue Id */
+            story_dialogue_id?: string | null;
             /** Story Scene Id */
             story_scene_id?: string | null;
             /**
@@ -3560,6 +3562,8 @@ export interface components {
             story_character_id?: string | null;
             /** Story Costume Id */
             story_costume_id?: string | null;
+            /** Story Dialogue Id */
+            story_dialogue_id?: string | null;
             /** Story Scene Id */
             story_scene_id?: string | null;
         };
@@ -3633,6 +3637,8 @@ export interface components {
             story_character_id?: string | null;
             /** Story Costume Id */
             story_costume_id?: string | null;
+            /** Story Dialogue Id */
+            story_dialogue_id?: string | null;
             /** Story Scene Id */
             story_scene_id?: string | null;
             /**
@@ -5842,7 +5848,7 @@ export interface components {
             /** Status */
             status: string;
             /** Target Duration Sec */
-            target_duration_sec: number;
+            target_duration_sec: number | null;
         };
         /**
          * WorkflowGraphVersionCreate

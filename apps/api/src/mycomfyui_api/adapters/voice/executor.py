@@ -91,7 +91,7 @@ class _JobContext:
     language: str
     verify_with_asr: bool
     pad_to_duration: bool
-    target_duration_sec: float
+    target_duration_sec: float | None
     dialogue: tuple[dict[str, Any], ...]
     bindings: dict[str, _VoiceBinding]
 
@@ -251,7 +251,7 @@ class VoiceExecutor:
             )
         )
         audio_sec = audio.inspect(result.wav).duration_sec
-        if context.pad_to_duration:
+        if context.pad_to_duration and context.target_duration_sec is not None:
             padded, padded_sec = audio.pad_to(result.wav, context.target_duration_sec)
         else:
             padded, padded_sec = result.wav, audio_sec
@@ -548,7 +548,7 @@ def _build_context(
         target_duration_sec=(
             float(target)
             if isinstance(target, int | float) and not isinstance(target, bool)
-            else 0.0
+            else None
         ),
         dialogue=tuple(line for line in dialogue if isinstance(line, dict)),
         bindings=bindings,

@@ -48,6 +48,9 @@ LEADING_SILENCE_TRIM_THRESHOLD_SEC = 0.5
 MIN_DURATION_SEC = 1.0
 MAX_DURATION_SEC = 15.0
 
+#: 演技指示の長さの上限。シーンの台詞の`direction`(`StoryText`)に合わせる。
+MAX_DIRECTION_LENGTH = 4_000
+
 #: 画面から受け取れる入力と、その型・必須。Workflowレジストリの変数定義にも使う。
 VOICE_VARIABLES: dict[str, dict[str, Any]] = {
     "profile": {"value_type": "str", "required": False},
@@ -81,6 +84,9 @@ _REFERENCE_NAMES = (
     "reference_sha256",
     "reference_transcript",
 )
+
+#: 参照音声の組を成す項目名 (他モジュールから使う公開名)。
+REFERENCE_NAMES = _REFERENCE_NAMES
 
 _HEX_DIGITS = frozenset("0123456789abcdef")
 
@@ -222,13 +228,23 @@ def _binding(
     return binding
 
 
-def _dialogue(shot_data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Shot本文または直接入力から台詞を取り出し、Job内での位置を固定する。"""
+def _dialogue(
+    shot_data: dict[str, Any], *, single_line: bool = False
+) -> list[dict[str, Any]]:
+    """Shot本文または直接入力から台詞を取り出し、Job内での位置を固定する。
+
+    Shotを指定しないJob (`single_line`) は台詞1行 = 1 Jobとし、2行以上は受け付けない。
+    """
     raw = shot_data.get("dialogue")
     if not isinstance(raw, list) or not raw:
         raise PreparationError(
             "台詞がありません。音声Jobを作れません。",
             {"shot_id": shot_data.get("id")},
+        )
+    if single_line and len(raw) != 1:
+        raise PreparationError(
+            "Shotを指定しない音声Jobで指定できる台詞は1行です。",
+            {"lines": len(raw)},
         )
     lines: list[dict[str, Any]] = []
     for index, item in enumerate(raw):
@@ -243,26 +259,41 @@ def _dialogue(shot_data: dict[str, Any]) -> list[dict[str, Any]]:
         reading = item.get("reading")
         speaker = item.get("speaker")
         start_sec = item.get("start_sec")
-        lines.append(
-            {
-                "index": index,
-                "speaker": speaker if isinstance(speaker, str) else None,
-                "voice_id": voice_id,
-                "text": text,
-                "reading": reading if isinstance(reading, str) and reading else None,
-                "start_sec": (
-                    float(start_sec)
-                    if isinstance(start_sec, int | float)
-                    and not isinstance(start_sec, bool)
-                    else None
-                ),
-            }
-        )
+        direction = item.get("direction")
+        if direction is not None and not isinstance(direction, str):
+            raise PreparationError(
+                f"{index}番目の台詞のdirectionは文字列で指定します。"
+            )
+        if isinstance(direction, str) and len(direction) > MAX_DIRECTION_LENGTH:
+            raise PreparationError(
+                f"{index}番目の台詞のdirectionは{MAX_DIRECTION_LENGTH}字以内です。"
+            )
+        line: dict[str, Any] = {
+            "index": index,
+            "speaker": speaker if isinstance(speaker, str) else None,
+            "voice_id": voice_id,
+            "text": text,
+            "reading": reading if isinstance(reading, str) and reading else None,
+            "start_sec": (
+                float(start_sec)
+                if isinstance(start_sec, int | float)
+                and not isinstance(start_sec, bool)
+                else None
+            ),
+        }
+        # 演技指示は記録するだけで、生成にはまだ使わない (caption変換で織り込む)。
+        # 既存Shotの台詞のスナップショットを変えないよう、指定があるときだけ持つ。
+        if isinstance(direction, str) and direction.strip():
+            line["direction"] = direction
+        lines.append(line)
     return lines
 
 
-def _duration(shot_data: dict[str, Any]) -> float:
+def _duration(shot_data: dict[str, Any], *, required: bool = True) -> float | None:
+    """目標尺を取り出す。Shotを指定しないJobでは省略でき、その場合はNoneを返す。"""
     value = shot_data.get("duration_sec")
+    if value is None and not required:
+        return None
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise PreparationError("duration_secがありません。")
     duration = float(value)
@@ -316,7 +347,11 @@ async def _canon_refs(
     for voice_id, binding in bindings.items():
         canon_id = binding.get("canon_id")
         if canon_id is None:
-            if context.project_id is not None and "reference" in binding:
+            if (
+                context.project_id is not None
+                and "reference" in binding
+                and voice_id not in context.canon_exempt_voice_ids
+            ):
                 raise PreparationError(
                     f"{voice_id}のVoice Canonを指定してください。"
                 )
@@ -371,6 +406,8 @@ def _resolved_prompt(lines: list[dict[str, Any]]) -> str:
         body = f"{speaker}: {line['text']}"
         if line["reading"]:
             body = f"{body} / 読み: {line['reading']}"
+        if line.get("direction"):
+            body = f"{body} / 演技指示: {line['direction']}"
         rendered.append(body)
     return "\n".join(rendered)
 
@@ -410,7 +447,8 @@ async def prepare(
             "duration_sec": values.get("duration_sec"),
         }
     )
-    lines = _dialogue(source_data)
+    shotless = context.shot_id is None
+    lines = _dialogue(source_data, single_line=shotless)
     missing = sorted({line["voice_id"] for line in lines} - set(bindings))
     if missing:
         raise PreparationError(
@@ -427,11 +465,18 @@ async def prepare(
     verify_with_asr = values.get("verify_with_asr", True)
     if not isinstance(verify_with_asr, bool):
         raise PreparationError("verify_with_asrは真偽値で指定します。")
+    duration_sec = _duration(source_data, required=not shotless)
     pad_to_duration = values.get("pad_to_duration", True)
     if not isinstance(pad_to_duration, bool):
         raise PreparationError("pad_to_durationは真偽値で指定します。")
-
-    duration_sec = _duration(source_data)
+    if duration_sec is None:
+        # 合わせる尺が無いときはパディングしない。Recipeの既定値(真)は無視し、
+        # 要求が明示したときだけ矛盾として拒否する。
+        if inputs.get("pad_to_duration") is True:
+            raise PreparationError(
+                "pad_to_durationを使うにはduration_secが必要です。"
+            )
+        pad_to_duration = False
     canon_refs = await _canon_refs(context, bindings)
 
     snapshot: dict[str, Any] = {
@@ -477,6 +522,8 @@ async def prepare(
             "pad_to_duration": pad_to_duration,
             "target_duration_sec": duration_sec,
             "snapshot_version": SNAPSHOT_VERSION,
+            # 台詞の並びと同じ順の演技指示。生成には使わず記録だけを残す。
+            "line_directions": [line.get("direction") for line in lines],
             # 参照を持たないvoiceは、captionとseedだけが再現の入力になる。captionが
             # 無いJobでも`{}`で付ける。キーの有無で読み手が分岐しなくて済む。
             "captions": {
