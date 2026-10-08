@@ -151,6 +151,8 @@ export function findReferenceSelection(
   for (const character of characters) {
     for (const referenceSet of character.reference_sets ?? []) {
       const outfitId = referenceSet.outfit_id ?? null;
+      // 削除済みの衣装のsetは、フォームで選べず別の衣装の参照に置き換わるため使わない。
+      if (outfitId && !(character.outfits ?? []).some((item) => item.id === outfitId)) continue;
       const image = characterReferenceImage(character, outfitId)?.image;
       if (image && sha256s.includes(image.sha256)) return { characterId: character.id, outfitId };
     }

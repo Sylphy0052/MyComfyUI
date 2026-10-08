@@ -291,6 +291,9 @@ function draftPlanNegative(value: unknown): { merged: string; source: string } |
   return typeof merged === "string" && typeof source === "string" ? { merged, source } : null;
 }
 
+const REFERENCE_NOT_FOUND_NOTICE =
+  "参照付きのJobですが、同じ参照画像を持つキャラクターと衣装が見つからないため、参照なしで入れました。キャラクターと衣装を選ぶと参照付きで投入します。";
+
 export function GenerationForm({
   projectId,
   recipes,
@@ -465,6 +468,8 @@ export function GenerationForm({
   );
   // 生成済み画像の設定を入れる。値は触った印を付け、Recipeを切り替える場合は上の効果で持ち越させる。
   const appliedRestoreRef = useRef<string | null>(draftString(draft?.appliedRestoreKey));
+  // 参照付きJobの入力cacheのsha256。キャラクター定義は非同期に読むため、届いてから選び直す (#480)。
+  const [pendingReferenceHashes, setPendingReferenceHashes] = useState<string[] | null>(null);
   useEffect(() => {
     if (!restore || recipes.length === 0) return;
     if (appliedRestoreRef.current === restore.key) return;
@@ -547,29 +552,22 @@ export function GenerationForm({
       !original &&
       referenceRecipe !== null &&
       findRecipeOrSuccessor([referenceRecipe], restore.recipeLineage) !== null;
-    let referenceRestored = false;
     if (referenceJob) {
-      const hashes = (manifest.input_refs ?? [])
-        .filter((ref) => ref.kind === "cached_input" && typeof ref.sha256 === "string")
-        .map((ref) => ref.sha256 as string);
-      const selection = findReferenceSelection(characters, hashes);
-      if (selection) {
-        setOutfitCharacterId(selection.characterId);
-        setOutfitSearch("");
-        setSelectedOutfitId(selection.outfitId);
-        setReferenceDismissed(false);
-        referenceRestored = true;
-      }
+      setPendingReferenceHashes(
+        (manifest.input_refs ?? [])
+          .filter((ref) => ref.kind === "cached_input" && typeof ref.sha256 === "string")
+          .map((ref) => ref.sha256 as string),
+      );
       const strength = (manifest.parameters ?? {}).reference_strength;
       if (typeof strength === "number" && Number.isFinite(strength)) setReferenceStrength(String(strength));
+    } else {
+      setPendingReferenceHashes(null);
     }
     setRestoreNotice(
       scope !== "all"
         ? null
         : referenceJob
-        ? referenceRestored
-          ? "参照付きのJobのため、同じ参照画像を使うキャラクターと衣装を選び直しました。"
-          : "参照付きのJobですが、同じ参照画像を持つキャラクターと衣装が見つからないため、参照なしで入れました。キャラクターと衣装を選ぶと参照付きで投入します。"
+        ? REFERENCE_NOT_FOUND_NOTICE
         : !restore.recipeId
         ? "元のRecipeが記録されていないため、現在のRecipeへ合う項目だけ入れました。"
         : !original
@@ -579,7 +577,20 @@ export function GenerationForm({
           : null,
     );
     onRestoreApplied?.(scope, scope === "all" || Object.keys(filled).length > 0);
-  }, [restore, recipes, recipe, recipeId, plan, onRestoreApplied, referenceRecipe, characters]);
+  }, [restore, recipes, recipe, recipeId, plan, onRestoreApplied, referenceRecipe]);
+
+  // キャラクター定義が届くまで待ち、届いたら1回だけ探す。Project切替直後は空の一覧が先に来る。
+  useEffect(() => {
+    if (!pendingReferenceHashes || characters.length === 0) return;
+    setPendingReferenceHashes(null);
+    const selection = findReferenceSelection(characters, pendingReferenceHashes);
+    if (!selection) return;
+    setOutfitCharacterId(selection.characterId);
+    setOutfitSearch("");
+    setSelectedOutfitId(selection.outfitId);
+    setReferenceDismissed(false);
+    setRestoreNotice("参照付きのJobのため、同じ参照画像を使うキャラクターと衣装を選び直しました。");
+  }, [pendingReferenceHashes, characters]);
 
   // 計画のPresetとプロンプトを入れる。値は触った印を付け、上のRecipe変更の効果で持ち越させる。
   useEffect(() => {
