@@ -46,10 +46,19 @@ function parseStored(value: string | undefined): unknown {
   }
 }
 
+/** localStorageのキー。入力欄と結果欄で分ける。シーン生成の工程は`/bgm`と別のキーを渡す。 */
+export type BgmStorageKeys = { input: string; results: string };
+
+/** `/bgm`の保存キー。 */
+export const BGM_STORAGE_KEYS: BgmStorageKeys = {
+  input: "web-next:bgm-input",
+  results: "web-next:bgm-results",
+};
+
 /** 最後に使った入力欄と対象をブラウザに残し、画面を離れて戻っても続きから書けるようにする。 */
-export function useStoredBgmInput(recipe: Recipe) {
+export function useStoredBgmInput(recipe: Recipe, key: string) {
   return useLocalStorage<StoredBgmInput>({
-    key: "web-next:bgm-input",
+    key,
     defaultValue: { form: null, target: null },
     // 初回の描画から保存済みの値を使う。既定値で描いてから差し替えると、対象の復元が既定値で上書きされる。
     getInitialValueInEffect: false,
@@ -65,9 +74,9 @@ export function useStoredBgmInput(recipe: Recipe) {
   });
 }
 
-export function useBgmResultEntries() {
+export function useBgmResultEntries(key: string) {
   const [entries, setEntries] = useLocalStorage<BgmResultEntry[]>({
-    key: "web-next:bgm-results",
+    key,
     defaultValue: [],
     getInitialValueInEffect: false,
     deserialize: (value) => {
