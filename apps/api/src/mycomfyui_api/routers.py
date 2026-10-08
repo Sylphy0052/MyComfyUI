@@ -720,11 +720,15 @@ async def create_generation_job(
     return await _submit_generation_job(session, source, payload)
 
 
-async def _validate_story_links_of(
-    session: AsyncSession, payload: schemas.GenerationPreviewCreate
-) -> None:
-    """Job作成・プレビューが受け取ったv2の紐づけ先を確かめる。"""
-    await story_links.validate_story_links(
+async def _validate_story_links_of[P: schemas.GenerationPreviewCreate](
+    session: AsyncSession, payload: P
+) -> P:
+    """Job作成・プレビューが受け取ったv2の紐づけ先を確かめる。
+
+    `story_dialogue_id`だけを渡したときは、台詞の所属シーンを`story_scene_id`へ補った
+    payloadを返す。生成物がシーンへ紐づかないまま残らないようにする。
+    """
+    scene_id = await story_links.validate_story_links(
         session,
         character_id=payload.story_character_id,
         costume_id=payload.story_costume_id,
@@ -732,6 +736,9 @@ async def _validate_story_links_of(
         project_id=payload.project_id,
         dialogue_id=payload.story_dialogue_id,
     )
+    if payload.story_scene_id is None and scene_id is not None:
+        return payload.model_copy(update={"story_scene_id": scene_id})
+    return payload
 
 
 async def _submit_generation_job(
@@ -741,7 +748,7 @@ async def _submit_generation_job(
 ) -> GenerationJob:
     """JobとManifestのIDを先行採番して作成する、Job投入の共通処理。"""
     await _validate_project_context(session, payload.project_id)
-    await _validate_story_links_of(session, payload)
+    payload = await _validate_story_links_of(session, payload)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
@@ -794,7 +801,7 @@ async def preview_generation_job(
     ようにする。
     """
     await _validate_project_context(session, payload.project_id)
-    await _validate_story_links_of(session, payload)
+    payload = await _validate_story_links_of(session, payload)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
@@ -4133,6 +4140,8 @@ async def _create_derived_job(
             assigned_scene_id=origin_job.assigned_scene_id,
             assigned_shot_id=origin_job.assigned_shot_id,
             **story_links.job_story_links(origin_job),
+            # 台詞の行はJobにだけある (Artifactには列が無い)。再実行・派生でも引き継ぐ。
+            story_dialogue_id=origin_job.story_dialogue_id,
             recipe_id=origin_job.recipe_id,
             manifest_id=manifest_id,
             parent_job_id=origin_job.id,

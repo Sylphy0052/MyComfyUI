@@ -106,11 +106,12 @@ async def validate_story_links(
     scene_id: str | None,
     project_id: str | None = None,
     dialogue_id: str | None = None,
-) -> None:
+) -> str | None:
     """紐づけ先が存在し、互いに矛盾しないことを確かめる。
 
     台詞(`dialogue_id`)はシーンの台詞に限り、`scene_id`も渡すときはそのシーンの台詞に
-    限る。
+    限る。戻り値は紐づけるシーンのID。`scene_id`を省いて台詞だけ渡したときは、台詞の
+    所属シーンになる。
 
     衣装はキャラクターのものに限る。キャラクターとシーンは同じProjectに属し、
     `project_id`を渡したときはそのProjectとも一致させる。ゴミ箱のProjectへは紐づけない。
@@ -200,6 +201,7 @@ async def validate_story_links(
                 status_code=status.HTTP_409_CONFLICT,
                 details={"project_id": owner},
             )
+    return scene.id if scene is not None else None
 
 
 async def revert_adoption_decisions(
