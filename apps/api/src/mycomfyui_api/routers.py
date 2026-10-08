@@ -4341,10 +4341,13 @@ async def get_image_reference_content(
     """
     settings = get_settings()
     media_type: str | None = None
+    data = b""
     try:
         path = storage.resolve_input(relative_path, settings)
-        with path.open("rb") as handle:
-            media_type = storage.detect_image_media_type(handle.read(32))
+        # 判定と配信で別々にファイルを開くと差し替えに追従するため、1回の読み取りで両方を行う。
+        if path.stat().st_size <= settings.max_image_bytes:
+            data = await run_in_threadpool(path.read_bytes)
+            media_type = storage.detect_image_media_type(data[:32])
     except (storage.StorageError, OSError, ValueError):
         # ValueErrorはNULを含むパスで`Path.resolve()`が送出する。
         media_type = None
@@ -4354,7 +4357,11 @@ async def get_image_reference_content(
             "入力cacheの画像を取得できませんでした。",
             status_code=status.HTTP_404_NOT_FOUND,
         )
-    return FileResponse(path, media_type=media_type, filename=path.name)
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.post("/image-tags", response_model=schemas.ImageTagExtractRead)

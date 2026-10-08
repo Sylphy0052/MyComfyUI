@@ -566,7 +566,8 @@ export function GenerationForm({
       );
       const strength = (manifest.parameters ?? {}).reference_strength;
       if (typeof strength === "number" && Number.isFinite(strength)) setReferenceStrength(String(strength));
-    } else {
+    } else if (scope === "all") {
+      // プロンプトのみ・seedのみの復元では、待機中の参照の選び直しを消さない。
       setPendingReferenceHashes(null);
     }
     setRestoreNotice(
@@ -1264,6 +1265,8 @@ export function GenerationForm({
                       }
                       alt={`参照画像 (${referenceSlotLabel})`}
                       style={{ width: 64, height: 64, objectFit: "cover" }}
+                      onError={(event) => { event.currentTarget.style.visibility = "hidden"; }}
+                      onLoad={(event) => { event.currentTarget.style.visibility = "visible"; }}
                     />
                     <div className="stack">
                       <span>{candidateReference.image.file_name}</span>
