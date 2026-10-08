@@ -68,6 +68,16 @@ export const EMPTY_TARGET: ImageTarget = {
   extraCast: [],
 };
 
+/** 入力値・結果欄・スイープの保存先 (localStorageのkey)。画面ごとに分けて、互いの保存値を上書きしない。 */
+export type ImageStorageKeys = { input: string; results: string; sweeps: string };
+
+/** `/image`の保存先。 */
+export const IMAGE_PAGE_STORAGE_KEYS: ImageStorageKeys = {
+  input: "web-next:image-input",
+  results: "web-next:image-results",
+  sweeps: "web-next:image-sweeps",
+};
+
 /** 縦横比のプリセット。値は縦長の向きで持ち、横長は入れ替えて使う。幅と高さは8の倍数にする。 */
 export const SIZE_PRESETS = [
   { label: "1:1", short: 1024, long: 1024 },

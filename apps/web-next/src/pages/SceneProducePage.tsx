@@ -5,6 +5,8 @@ import type { StoryScene } from "../api/client";
 import { useProject } from "../layout/projectContext";
 import { SceneAdoptions } from "../projectDetail/SceneAdoptions";
 import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/useStory";
+import { BgmStep } from "../sceneProduce/BgmStep";
+import { CharacterStep } from "../sceneProduce/CharacterStep";
 import {
   computeStepStatus,
   FAILED_STATUS,
@@ -17,7 +19,7 @@ import {
   type StepId,
   type StepStatus,
 } from "../sceneProduce/steps";
-import { BgmStep } from "../sceneProduce/BgmStep";
+import { VideoStep } from "../sceneProduce/VideoStep";
 import {
   useActiveJobs,
   useCharacterCandidates,
@@ -54,6 +56,26 @@ function StatusBadge({ status }: { status: StepStatus }) {
       ) : null}
     </Group>
   );
+}
+
+/** 工程ごとの右の枠。シーンを切り替えたら工程の入力を作り直すため、どの工程にも `key={scene.id}` を付ける。 */
+function StepPanel({ step, projectId, scene }: { step: StepId; projectId: string; scene: StoryScene }) {
+  switch (step) {
+    case "character":
+      return <CharacterStep key={scene.id} projectId={projectId} scene={scene} />;
+    case "voice":
+      return <VoiceStep key={scene.id} projectId={projectId} sceneId={scene.id} />;
+    case "bgm":
+      return <BgmStep key={scene.id} projectId={projectId} sceneId={scene.id} />;
+    case "video":
+      return <VideoStep key={scene.id} projectId={projectId} scene={scene} />;
+    default:
+      return (
+        <Text c="dimmed" size="sm" mt="sm">
+          この工程の画面はまだありません。
+        </Text>
+      );
+  }
 }
 
 /** 左にステッパー、右に選んだ工程の枠。工程の中身は後続のIssueで埋める。 */
@@ -146,15 +168,7 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
             <Title order={4}>{stepLabel(step)}</Title>
             {current ? <StatusBadge status={current} /> : <Loader size="xs" />}
           </Group>
-          {step === "voice" ? (
-            <VoiceStep projectId={projectId} sceneId={scene.id} />
-          ) : step === "bgm" ? (
-            <BgmStep projectId={projectId} sceneId={scene.id} />
-          ) : (
-            <Text c="dimmed" size="sm" mt="sm">
-              この工程の画面はまだありません。
-            </Text>
-          )}
+          <StepPanel step={step} projectId={projectId} scene={scene} />
         </Paper>
       </Group>
     </Stack>

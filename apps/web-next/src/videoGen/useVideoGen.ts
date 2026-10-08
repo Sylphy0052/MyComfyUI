@@ -14,6 +14,7 @@ import {
 import { queryKeys } from "../api/queryKeys";
 import { fetchJobSettings } from "../imageGen/artifactRestore";
 import { isRecord, normalizeTarget, type ImageTarget } from "../imageGen/imageForm";
+import { useSlotDecision } from "../imageGen/useImageGen";
 import {
   defaultDraft,
   normalizeDraft,
@@ -48,9 +49,14 @@ function parseStored(value: string | undefined): unknown {
   }
 }
 
-export function useStoredVideoInput(recipes: VideoRecipes) {
+/** `/video`が入力欄を残すlocalStorageのキー。 */
+export const VIDEO_INPUT_KEY = "web-next:video-input";
+/** `/video`が結果欄を残すlocalStorageのキー。 */
+export const VIDEO_RESULTS_KEY = "web-next:video-results";
+
+export function useStoredVideoInput(recipes: VideoRecipes, key = VIDEO_INPUT_KEY) {
   return useLocalStorage<StoredVideoInput>({
-    key: "web-next:video-input",
+    key,
     defaultValue: { draft: defaultDraft(recipes), target: null },
     // 初回の描画から保存済みの値を使う。既定値で描いてから差し替えると、対象の復元が既定値で上書きされる。
     getInitialValueInEffect: false,
@@ -66,9 +72,9 @@ export function useStoredVideoInput(recipes: VideoRecipes) {
   });
 }
 
-export function useVideoResultEntries() {
+export function useVideoResultEntries(key = VIDEO_RESULTS_KEY) {
   const [entries, setEntries] = useLocalStorage<VideoResultEntry[]>({
-    key: "web-next:video-results",
+    key,
     defaultValue: [],
     getInitialValueInEffect: false,
     deserialize: (value) => {
@@ -119,6 +125,14 @@ export function useJobVideos(jobId: string, enabled: boolean) {
     select: (items) => items.filter((item) => item.kind === "video" && item.deleted_at === null),
     enabled,
   });
+}
+
+/**
+ * Sceneのvideo枠への採用と、不採用の印。枠は1件だけなので、採用すると前の動画は枠から外れる。
+ * 統合Jobの動画は採用できない (backendが拒む)。手順は`useSlotDecision`と同じ。
+ */
+export function useVideoDecision(projectId: string, sceneId: string) {
+  return useSlotDecision(projectId, sceneId, "video");
 }
 
 // ---- プロンプトだけ (画像 -> i2v の2段) ----

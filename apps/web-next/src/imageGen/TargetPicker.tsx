@@ -28,6 +28,7 @@ export function TargetPicker({
   scenes,
   missing,
   multi,
+  lockScene = false,
 }: {
   target: ImageTarget;
   onChange: (target: ImageTarget) => void;
@@ -37,6 +38,8 @@ export function TargetPicker({
   missing: string[];
   /** 2人目以降を足せるか。参照・修正は1人ずつ。 */
   multi: boolean;
+  /** ProjectとSceneを選び直せなくする。シーン生成の工程に埋め込むとき。 */
+  lockScene?: boolean;
 }) {
   const projects = useProjectList("active");
   const scene = scenes.find((item) => item.id === target.sceneId) ?? null;
@@ -78,7 +81,8 @@ export function TargetPicker({
           value={target.projectId}
           onChange={(projectId) => onChange({ projectId, sceneId: null, characterId: null, costumeId: null, extraCast: [] })}
           searchable
-          clearable
+          clearable={!lockScene}
+          disabled={lockScene}
           error={projects.error?.message}
         />
         <Select
@@ -99,8 +103,8 @@ export function TargetPicker({
             }));
             onChange({ ...target, sceneId, costumeId, extraCast });
           }}
-          disabled={target.projectId === null}
-          clearable
+          disabled={target.projectId === null || lockScene}
+          clearable={!lockScene}
         />
         <Select
           label="キャラ"
