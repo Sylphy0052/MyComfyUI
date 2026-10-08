@@ -103,6 +103,34 @@ export function hasAllReferenceImages(scene: StoryScene, characters: StoryCharac
   });
 }
 
+/** 採用済みの台詞の行ID (このシーンの行だけ)。 */
+export function adoptedVoiceLineIds(scene: StoryScene, adoptions: StorySceneAdoption[]): Set<string> {
+  const lineIds = new Set(scene.dialogues.map((dialogue) => dialogue.id));
+  const adopted = new Set<string>();
+  for (const adoption of adoptions) {
+    if (adoption.slot === "voice" && adoption.dialogue_id && lineIds.has(adoption.dialogue_id)) {
+      adopted.add(adoption.dialogue_id);
+    }
+  }
+  return adopted;
+}
+
+/**
+ * キャラ画像以外の工程が採用済みか。`computeStepStatus`と、一括実行が実行対象を選ぶ`stepsToRun`の共通の判定。
+ * 音声は全行が採用済みのときだけ。台詞が0行なら採用済みにならない。
+ */
+export function isStepAdopted(
+  step: Exclude<StepId, "character">,
+  scene: StoryScene,
+  adoptions: StorySceneAdoption[],
+): boolean {
+  if (step === "voice") {
+    const lineCount = new Set(scene.dialogues.map((dialogue) => dialogue.id)).size;
+    return lineCount > 0 && adoptedVoiceLineIds(scene, adoptions).size >= lineCount;
+  }
+  return adoptions.some((adoption) => adoption.slot === SLOT_OF[step]);
+}
+
 function isCandidateOf(step: Exclude<StepId, "character">, item: MediaItem, composeIds: ReadonlySet<string>): boolean {
   const isCompose = item.artifact_id !== null && item.artifact_id !== undefined && composeIds.has(item.artifact_id);
   switch (step) {
@@ -140,16 +168,11 @@ export function computeStepStatus(step: StepId, inputs: StepInputs): StepStatus 
     return { key: complete ? "skipped" : "todo", detail: null };
   }
 
-  const slot = SLOT_OF[step];
-  const stepAdoptions = adoptions.filter((adoption) => adoption.slot === slot);
+  if (isStepAdopted(step, scene, adoptions)) return { key: "adopted", detail: null };
   let detail: string | null = null;
   if (step === "voice") {
-    const dialogueIds = new Set(scene.dialogues.map((dialogue) => dialogue.id));
-    const adopted = new Set(stepAdoptions.map((adoption) => adoption.dialogue_id).filter((id) => id && dialogueIds.has(id)));
-    if (dialogueIds.size > 0 && adopted.size >= dialogueIds.size) return { key: "adopted", detail: null };
-    if (adopted.size > 0) detail = `${adopted.size}/${dialogueIds.size}行`;
-  } else if (stepAdoptions.length > 0) {
-    return { key: "adopted", detail: null };
+    const adopted = adoptedVoiceLineIds(scene, adoptions);
+    if (adopted.size > 0) detail = `${adopted.size}/${new Set(scene.dialogues.map((dialogue) => dialogue.id)).size}行`;
   }
 
   const kind = JOB_KIND_OF[step];
