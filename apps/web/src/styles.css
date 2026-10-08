@@ -1501,7 +1501,7 @@ ul.list li button.project-card {
 }
 
 .project-metadata {
-  margin-top: var(--space-9) !important;
+  margin-top: var(--space-9);
 }
 
 .project-detail-tabs {
