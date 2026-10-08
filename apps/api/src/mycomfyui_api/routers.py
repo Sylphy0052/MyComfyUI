@@ -3447,8 +3447,14 @@ async def get_artifact(artifact_id: str, session: SessionDep):
 
 
 @router.get("/artifacts/{artifact_id}/content")
-async def get_artifact_content(artifact_id: str, session: SessionDep):
+async def get_artifact_content(
+    artifact_id: str,
+    session: SessionDep,
+    download: Annotated[bool, Query()] = False,
+):
     """Artifactの実ファイルを配信する。候補比較のプレビューに使う。
+
+    既定は`inline`でブラウザ内に表示し、`download=true`のときだけ`attachment`で返す。
 
     画面へ渡すのは`artifact_id`だけとし、保存先の絶対パスを外へ出さない。パスの解決は
     `storage`へ閉じ、`data_root`の外は配信しない。
@@ -3466,7 +3472,13 @@ async def get_artifact_content(artifact_id: str, session: SessionDep):
             status_code=status.HTTP_404_NOT_FOUND,
             details={"artifact_id": artifact_id},
         ) from error
-    return FileResponse(path, media_type=artifact.media_type, filename=path.name)
+    return FileResponse(
+        path,
+        media_type=artifact.media_type,
+        filename=path.name,
+        content_disposition_type="attachment" if download else "inline",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.patch("/artifacts/{artifact_id}/decision", response_model=schemas.ArtifactRead)
