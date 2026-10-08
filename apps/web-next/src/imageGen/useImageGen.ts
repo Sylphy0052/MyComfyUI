@@ -74,9 +74,9 @@ function normalizeEntries(raw: unknown): ResultEntry[] {
     .slice(0, RESULTS_MAX);
 }
 
-export function useStoredInput(recipe: Recipe) {
+export function useStoredInput(recipe: Recipe, key: string) {
   return useLocalStorage<StoredInput>({
-    key: "web-next:image-input",
+    key,
     defaultValue: { form: null, target: null },
     // 初回の描画から保存済みの値を使う。既定値で描いてから差し替えると、対象の復元が既定値で上書きされる。
     getInitialValueInEffect: false,
@@ -92,9 +92,9 @@ export function useStoredInput(recipe: Recipe) {
   });
 }
 
-export function useResultEntries() {
+export function useResultEntries(key: string) {
   const [entries, setEntries] = useLocalStorage<ResultEntry[]>({
-    key: "web-next:image-results",
+    key,
     defaultValue: [],
     getInitialValueInEffect: false,
     deserialize: (value) => normalizeEntries(parseStored(value)),
