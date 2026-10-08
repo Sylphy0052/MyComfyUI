@@ -1,6 +1,7 @@
 import { AspectRatio, Badge, Box, Card, Checkbox, Loader, SimpleGrid, Text, UnstyledButton } from "@mantine/core";
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { artifactContentUrl } from "../api/client";
 import { MediaThumb } from "../projectDetail/MediaThumb";
 
 export type GridItem = {
@@ -14,6 +15,22 @@ const DECISION_BADGES: Record<string, { label: string; color: string }> = {
   accepted: { label: "採用", color: "teal" },
   rejected: { label: "不採用", color: "red" },
 };
+
+/** 動画のサムネイル。サーバで画像を作らず、`preload="metadata"`で先頭フレームを出す。 */
+function VideoThumb({ artifactId }: { artifactId: string }) {
+  return (
+    <video
+      // 先頭の0フレームは描画されないことがあるので、少しだけ進めた位置を指す。
+      src={`${artifactContentUrl(artifactId)}#t=0.1`}
+      preload="metadata"
+      muted
+      playsInline
+      aria-hidden
+      data-testid="video-thumb"
+      style={{ width: "100%", height: "100%", objectFit: "cover", background: "var(--mantine-color-default-hover)" }}
+    />
+  );
+}
 
 /** 1件のサムネイル。左上のチェックで選び、画像の部分を押すと`onOpen`を呼ぶ。 */
 function Tile({
@@ -42,11 +59,15 @@ function Tile({
     >
       <UnstyledButton onClick={onOpen} aria-label="開く" style={{ display: "block" }}>
         <AspectRatio ratio={1}>
-          <MediaThumb
-            mediaKey={item.kind === "image" ? `artifact:${item.id}` : null}
-            size="fill"
-            label={item.kind === "image" ? undefined : item.kind}
-          />
+          {item.kind === "video" ? (
+            <VideoThumb artifactId={item.id} />
+          ) : (
+            <MediaThumb
+              mediaKey={item.kind === "image" ? `artifact:${item.id}` : null}
+              size="fill"
+              label={item.kind === "image" ? undefined : item.kind}
+            />
+          )}
         </AspectRatio>
       </UnstyledButton>
       <Checkbox
