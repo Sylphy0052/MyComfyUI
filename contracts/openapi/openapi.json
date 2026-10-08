@@ -934,6 +934,65 @@
         "title": "ArtifactIntegrityRead",
         "type": "object"
       },
+      "ArtifactLinkUpdate": {
+        "additionalProperties": false,
+        "description": "生成物のv2紐づけとメモの更新。渡した項目だけ変え、`null`で外す。\n\nメモは空白だけなら外す扱いにする。衣装を紐づけるにはキャラクターが必要で、\n衣装はそのキャラクターのものに限る。",
+        "properties": {
+          "memo": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memo"
+          },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          },
+          "story_costume_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Costume Id"
+          },
+          "story_scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Scene Id"
+          }
+        },
+        "title": "ArtifactLinkUpdate",
+        "type": "object"
+      },
       "ArtifactPurgePreview": {
         "additionalProperties": false,
         "description": "完全削除の影響。DBもファイルも変更せずに数える。\n\n`removed_file_count`と`removed_byte_size`は実際に消えるファイル、\n`shared_file_count`は同じパスを他のArtifactが使っているため残るファイルを表す。\n`not_trashed_ids`が空でなければ、完全削除は409になる。",
@@ -1182,6 +1241,17 @@
             "title": "Media Type",
             "type": "string"
           },
+          "memo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memo"
+          },
           "parent_artifact_id": {
             "anyOf": [
               {
@@ -1200,6 +1270,39 @@
           "sha256": {
             "title": "Sha256",
             "type": "string"
+          },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          },
+          "story_costume_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Costume Id"
+          },
+          "story_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Scene Id"
           },
           "tags": {
             "items": {
@@ -2438,6 +2541,45 @@
             ],
             "title": "Shot Id"
           },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          },
+          "story_costume_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Costume Id"
+          },
+          "story_scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Scene Id"
+          },
           "use_inherited_defaults": {
             "default": false,
             "title": "Use Inherited Defaults",
@@ -2607,6 +2749,39 @@
           "state": {
             "title": "State",
             "type": "string"
+          },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          },
+          "story_costume_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Costume Id"
+          },
+          "story_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Scene Id"
           }
         },
         "required": [
@@ -2821,6 +2996,45 @@
               }
             ],
             "title": "Shot Id"
+          },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          },
+          "story_costume_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Costume Id"
+          },
+          "story_scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Scene Id"
           },
           "use_inherited_defaults": {
             "default": false,
@@ -3893,6 +4107,21 @@
             ],
             "title": "Assigned Shot Id"
           },
+          "audio_class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "voice",
+                  "bgm"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Class"
+          },
           "byte_size": {
             "title": "Byte Size",
             "type": "integer"
@@ -3907,6 +4136,22 @@
           "created_at": {
             "title": "Created At",
             "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "undecided",
+                  "accepted",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
           },
           "key": {
             "title": "Key",
@@ -3930,6 +4175,17 @@
           "media_type": {
             "title": "Media Type",
             "type": "string"
+          },
+          "memo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memo"
           },
           "reference_transcript": {
             "anyOf": [
@@ -3971,6 +4227,39 @@
             ],
             "title": "Source",
             "type": "string"
+          },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          },
+          "story_costume_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Costume Id"
+          },
+          "story_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Scene Id"
           }
         },
         "required": [
@@ -8144,6 +8433,94 @@
         "title": "StoryCostumeUpdate",
         "type": "object"
       },
+      "StorySceneAdoptionPut": {
+        "additionalProperties": false,
+        "description": "枠へ生成物を採用する要求。`voice`枠は台詞(`dialogue_id`)の指定が必須。",
+        "properties": {
+          "artifact_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "dialogue_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dialogue Id"
+          }
+        },
+        "required": [
+          "artifact_id"
+        ],
+        "title": "StorySceneAdoptionPut",
+        "type": "object"
+      },
+      "StorySceneAdoptionRead": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dialogue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dialogue Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "slot": {
+            "enum": [
+              "scene_image",
+              "voice",
+              "bgm",
+              "video",
+              "compose"
+            ],
+            "title": "Slot",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scene_id",
+          "slot",
+          "dialogue_id",
+          "artifact_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StorySceneAdoptionRead",
+        "type": "object"
+      },
       "StorySceneCastEntry": {
         "additionalProperties": false,
         "properties": {
@@ -8296,6 +8673,19 @@
             "maxLength": 4000,
             "title": "Direction",
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
           },
           "speaker_character_id": {
             "maxLength": 36,
@@ -11174,6 +11564,54 @@
           }
         },
         "summary": "Get Artifact"
+      },
+      "patch": {
+        "description": "生成物のv2紐づけ(キャラクター・衣装・シーン)とメモを更新する。\n\n渡した項目だけ変え、`null`を渡すと外す。紐づけ先は更新後の組み合わせで検証する\n(衣装はそのキャラクターのもの、キャラクターとシーンと生成物のProjectは同じ)。\n旧UIの`assigned_*`と採否は変えない。",
+        "operationId": "update_artifact_links_api_v1_artifacts__artifact_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactLinkUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Artifact Links"
       }
     },
     "/api/v1/artifacts/{artifact_id}/content": {
@@ -12683,7 +13121,7 @@
     },
     "/api/v1/media-items": {
       "get": {
-        "description": "生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。\n\nArtifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力\ncacheファイル(`registered_input`)、Projectのキャラクター参照画像\n(`character_reference`)を横断して返す。人物参照はProject単位の設定のため\n`project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。\n`character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、\n常に一覧の末尾寄りになる。\n`shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを\n持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った\n結果を返す。`character_reference`もProject単位のまま返す。\n`exclude_kind`は複数指定でき、指定した種別を全系統から除く。\n\n絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って\nから並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと\n同じ結果になる。`character_reference`はProjectのJSON設定から作るため、\nメモリ上で絞る。",
+        "description": "生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。\n\nv2向けに、紐づけ(`story_character_id`・`story_costume_id`・`story_scene_id`)、\n採否(`decision`)、作成日時の期間(`from`・`to`、ISO 8601)、音声の種類\n(`audio_class`=`voice`|`bgm`、JobのRecipeで決まる)でも絞れる。これらは\nArtifactにだけある項目のため、どれかを指定すると入力cacheと人物参照は返さない。\n\nArtifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力\ncacheファイル(`registered_input`)、Projectのキャラクター参照画像\n(`character_reference`)を横断して返す。人物参照はProject単位の設定のため\n`project_id`を指定したときだけ含める。並び順は`created_at`の新しい順。\n`character_reference`は`ProjectReferenceImage`に登録時刻を持たないため、\n常に一覧の末尾寄りになる。\n`shot_id`はArtifact由来の項目にだけ効く。入力cacheの役割タグはShotの割当てを\n持たないため、`shot_id`を指定しても`registered_input`はProject・Scene単位で絞った\n結果を返す。`character_reference`もProject単位のまま返す。\n`exclude_kind`は複数指定でき、指定した種別を全系統から除く。\n\n絞り込みは系統ごとのSQLで行い、各系統から新しい順に`offset + limit`件だけ取って\nから並べ直して切り出す。各系統の先頭からその件数を取れば、全件を並べたときと\n同じ結果になる。`character_reference`はProjectのJSON設定から作るため、\nメモリ上で絞る。",
         "operationId": "list_media_items_api_v1_media_items_get",
         "parameters": [
           {
@@ -12856,6 +13294,129 @@
                 }
               ],
               "title": "Exclude Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "story_character_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Story Character Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "story_costume_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Story Costume Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "story_scene_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Story Scene Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "undecided",
+                    "accepted",
+                    "rejected"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decision"
+            }
+          },
+          {
+            "in": "query",
+            "name": "audio_class",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "voice",
+                    "bgm"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Audio Class"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
             }
           },
           {
@@ -16927,6 +17488,226 @@
           }
         },
         "summary": "Update Story Scene",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/story-scenes/{scene_id}/adoptions": {
+      "get": {
+        "description": "シーンの採用を一覧する。枠ごとに1件(`voice`は台詞ごとに1件)。",
+        "operationId": "list_story_scene_adoptions_api_v1_projects__project_id__story_scenes__scene_id__adoptions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StorySceneAdoptionRead"
+                  },
+                  "title": "Response List Story Scene Adoptions Api V1 Projects  Project Id  Story Scenes  Scene Id  Adoptions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Story Scene Adoptions",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/story-scenes/{scene_id}/adoptions/{slot}": {
+      "delete": {
+        "description": "枠の採用を外す。外れた生成物は他の枠で採用されていなければ`undecided`へ戻る。\n\n採用が無い枠でも204を返す。",
+        "operationId": "release_story_scene_adoption_api_v1_projects__project_id__story_scenes__scene_id__adoptions__slot__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Scene Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "enum": [
+                "scene_image",
+                "voice",
+                "bgm",
+                "video",
+                "compose"
+              ],
+              "title": "Slot",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dialogue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dialogue Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Release Story Scene Adoption",
+        "tags": [
+          "story"
+        ]
+      },
+      "put": {
+        "description": "枠へ生成物を採用する。その枠の前の採用は置き換わり、前の生成物は外れる。\n\n同じ生成物を再度指定しても何も変わらない。採用した生成物の採否は`accepted`になる。",
+        "operationId": "adopt_story_scene_artifact_api_v1_projects__project_id__story_scenes__scene_id__adoptions__slot__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Scene Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "enum": [
+                "scene_image",
+                "voice",
+                "bgm",
+                "video",
+                "compose"
+              ],
+              "title": "Slot",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorySceneAdoptionPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorySceneAdoptionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adopt Story Scene Artifact",
         "tags": [
           "story"
         ]

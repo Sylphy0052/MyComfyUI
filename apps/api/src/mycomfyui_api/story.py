@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from mycomfyui_api import schemas, storage
+from mycomfyui_api import schemas, storage, story_links
 from mycomfyui_api.db import get_session
 from mycomfyui_api.errors import ApiError
 from mycomfyui_api.models import (
@@ -25,6 +25,7 @@ from mycomfyui_api.models import (
     StoryCostume,
     StoryCostumeImage,
     StoryScene,
+    StorySceneAdoption,
     StorySceneCast,
     StorySceneDialogue,
 )
@@ -541,6 +542,7 @@ async def _scene_reads(
         for row in dialogue_rows:
             dialogues[row.scene_id].append(
                 schemas.StorySceneDialogueEntry(
+                    id=row.id,
                     speaker_character_id=row.speaker_character_id,
                     text=row.text,
                     direction=row.direction,
@@ -647,20 +649,64 @@ async def _replace_dialogues(
     scene_id: str,
     dialogues: list[schemas.StorySceneDialogueEntry],
 ) -> None:
-    await session.execute(
-        delete(StorySceneDialogue).where(StorySceneDialogue.scene_id == scene_id)
-    )
-    for position, entry in enumerate(dialogues):
-        session.add(
-            StorySceneDialogue(
-                id=schemas.new_id(),
-                scene_id=scene_id,
-                position=position,
-                speaker_character_id=entry.speaker_character_id,
-                text=entry.text,
-                direction=entry.direction,
-            )
+    """台詞を渡した配列へ置き換える。`id`を持つ行は同じ台詞として更新する。
+
+    IDを保つのは、台詞ごとの音声の採用(`story_scene_adoption`)が台詞IDを指すため。
+    配列から外れた台詞は消し、その採用も外す。`id`を省いた行は新しい台詞になる。
+    このシーンに無い`id`は、他シーンの台詞を取り込めてしまうため拒否する。
+    """
+    existing = {
+        row.id: row
+        for row in await session.scalars(
+            select(StorySceneDialogue).where(StorySceneDialogue.scene_id == scene_id)
         )
+    }
+    kept_ids = [entry.id for entry in dialogues if entry.id is not None]
+    if len(set(kept_ids)) != len(kept_ids):
+        raise _unprocessable(
+            "STORY_DIALOGUE_DUPLICATED",
+            "同じ台詞のidを複数の行に指定できません。",
+            {},
+        )
+    unknown = sorted(set(kept_ids) - existing.keys())
+    if unknown:
+        raise _unprocessable(
+            "STORY_DIALOGUE_NOT_IN_SCENE",
+            "このシーンに無い台詞のidは指定できません。",
+            {"dialogue_ids": unknown},
+        )
+    removed = [row for row_id, row in existing.items() if row_id not in kept_ids]
+    if removed:
+        await story_links.release_adoptions(
+            session, StorySceneAdoption.dialogue_id.in_([row.id for row in removed])
+        )
+        for row in removed:
+            await session.delete(row)
+    # (scene_id, position)の一意制約を、並べ替えの途中で踏まないよう、残す行を
+    # いったん負の位置へ逃がしてから確定する。
+    kept_rows = [existing[row_id] for row_id in kept_ids]
+    for index, row in enumerate(kept_rows):
+        row.position = -(index + 1)
+    await session.flush()
+    for position, entry in enumerate(dialogues):
+        if entry.id is None:
+            session.add(
+                StorySceneDialogue(
+                    id=schemas.new_id(),
+                    scene_id=scene_id,
+                    position=position,
+                    speaker_character_id=entry.speaker_character_id,
+                    text=entry.text,
+                    direction=entry.direction,
+                )
+            )
+            continue
+        row = existing[entry.id]
+        row.position = position
+        row.speaker_character_id = entry.speaker_character_id
+        row.text = entry.text
+        row.direction = entry.direction
+    await session.flush()
 
 
 @router.get("/{project_id}/story-scenes", response_model=list[schemas.StorySceneRead])
@@ -821,6 +867,10 @@ async def delete_story_scene(
     """シーンの定義を消す。このシーンに紐づいた生成物は消さず、紐づけだけ外す。"""
     await _require_writable_project(session, project_id)
     scene = await _get_scene(session, project_id, scene_id)
+    # 採用を外し、採用で`accepted`になっていた生成物の採否を戻す。
+    await story_links.release_adoptions(
+        session, StorySceneAdoption.scene_id == scene_id
+    )
     await session.execute(
         delete(StorySceneCast).where(StorySceneCast.scene_id == scene_id)
     )
