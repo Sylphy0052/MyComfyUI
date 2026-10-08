@@ -1,8 +1,15 @@
 import { useLocalStorage } from "@mantine/hooks";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-import { apiRequest, type ArtifactRecord, type Recipe } from "../api/client";
+import {
+  apiRequest,
+  type ArtifactRecord,
+  type GenerationJobFollowup,
+  type PromptOnlyVideoJob,
+  type PromptOnlyVideoJobBody,
+  type Recipe,
+} from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { isRecord, normalizeTarget, type ImageTarget } from "../imageGen/imageForm";
 import {
@@ -21,8 +28,8 @@ const enc = encodeURIComponent;
 /** 入力欄の内容と対象。最後に使った値をブラウザに残し、画面を離れて戻っても続きから書ける。 */
 export type StoredVideoInput = { draft: VideoDraft; target: ImageTarget | null };
 
-/** 結果欄に出すJob。 */
-export type VideoResultEntry = { jobId: string };
+/** 結果欄に出すJob。「プロンプトだけ」は1段目のJobと、2段目の予約 (`followupId`) を持つ。 */
+export type VideoResultEntry = { jobId: string; followupId?: string };
 
 /** 結果欄に残すJobの数。古いものから落とす。 */
 const RESULTS_MAX = 30;
@@ -65,6 +72,9 @@ export function useVideoResultEntries() {
       if (!Array.isArray(raw)) return [];
       return raw
         .filter((item): item is VideoResultEntry => isRecord(item) && typeof item.jobId === "string")
+        .map((item) =>
+          typeof item.followupId === "string" ? { jobId: item.jobId, followupId: item.followupId } : { jobId: item.jobId },
+        )
         .slice(0, RESULTS_MAX);
     },
   });
@@ -90,7 +100,7 @@ export function useVideoRecipes() {
     select: (recipes): VideoRecipes => {
       const find = (mode: VideoMode) =>
         recipes.find((recipe) => recipe.workflow_template_ref.name === VIDEO_TEMPLATES[mode]) ?? null;
-      return { i2v: find("i2v"), ref2v: find("ref2v") };
+      return { i2v: find("i2v"), ref2v: find("ref2v"), prompt: find("prompt") };
     },
   });
 }
@@ -104,5 +114,42 @@ export function useJobVideos(jobId: string, enabled: boolean) {
     queryFn: () => apiRequest<ArtifactRecord[]>(`/generation-jobs/${enc(jobId)}/artifacts`),
     select: (items) => items.filter((item) => item.kind === "video" && item.deleted_at === null),
     enabled,
+  });
+}
+
+// ---- プロンプトだけ (画像 -> i2v の2段) ----
+
+/** 画像Jobの投入と、2段目の予約。投入後にJob一覧を取り直す。 */
+export function useSubmitPromptOnlyVideo() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PromptOnlyVideoJobBody) =>
+      apiRequest<PromptOnlyVideoJob>("/prompt-only-video-jobs", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: (result) => {
+      client.setQueryData(queryKeys.job(result.image_job.id), result.image_job);
+      client.setQueryData(queryKeys.followup(result.followup.id), result.followup);
+      return client.invalidateQueries({ queryKey: queryKeys.jobs });
+    },
+  });
+}
+
+/** 予約を取り直す間隔。 */
+const FOLLOWUP_POLL_MS = 2_000;
+
+/**
+ * 2段目の予約。投入待ちの間は取り直す。投入のcommitと`child_job_id`の記録は別なので、
+ * `submitted`でも`child_job_id`が付くまでは取り直す。取り直しが1回失敗しても、直前の
+ * dataがまだ待機中なら間隔を保って再取得する (止めると待機中の表示のまま固まる)。
+ */
+export function useFollowup(followupId: string) {
+  return useQuery({
+    queryKey: queryKeys.followup(followupId),
+    queryFn: () => apiRequest<GenerationJobFollowup>(`/generation-job-followups/${enc(followupId)}`),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data === undefined) return false;
+      const settling = data.state === "pending" || (data.state === "submitted" && !data.child_job_id);
+      return settling ? FOLLOWUP_POLL_MS : false;
+    },
   });
 }

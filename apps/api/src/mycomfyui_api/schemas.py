@@ -2920,3 +2920,46 @@ class ProjectPurgeResult(ApiModel):
     detached_artifact_count: int
     detached_job_count: int
     detached_media_role_tag_count: int
+
+
+FollowupState = Literal["pending", "submitted", "skipped", "failed"]
+
+
+class PromptOnlyVideoJobCreate(ApiModel):
+    """「プロンプトだけ」の動画生成。画像Jobと、その生成物を開始フレームにするi2v Jobを1回で受ける。
+
+    2段目 (`video`) は1段目が成功した後にサーバ側で投入する。開始フレームと親Jobは
+    サーバが決めるため、呼び出し元は指定できない。
+    """
+
+    image: GenerationJobCreate
+    video: GenerationJobCreate
+
+    @model_validator(mode="after")
+    def _validate_stages(self) -> "PromptOnlyVideoJobCreate":
+        if self.image.kind != "image":
+            raise ValueError("imageのkindはimageにします。")
+        if self.video.kind != "video":
+            raise ValueError("videoのkindはvideoにします。")
+        if "first_frame" in self.video.inputs:
+            raise ValueError("videoのinputsにfirst_frameを指定できません。")
+        if self.video.parent_job_id is not None:
+            raise ValueError("videoにparent_job_idを指定できません。")
+        if self.image.project_id != self.video.project_id:
+            raise ValueError("imageとvideoのproject_idは同じにします。")
+        return self
+
+
+class GenerationJobFollowupRead(ApiModel):
+    id: str
+    parent_job_id: str
+    child_job_id: str | None
+    state: FollowupState
+    failure_message: str | None
+    created_at: str
+    updated_at: str
+
+
+class PromptOnlyVideoJobRead(ApiModel):
+    image_job: GenerationJobRead
+    followup: GenerationJobFollowupRead

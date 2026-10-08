@@ -1,16 +1,31 @@
-import { artifactContentUrl, imageReferenceUrl, type Recipe } from "../api/client";
+import {
+  artifactContentUrl,
+  imageReferenceUrl,
+  type GenerationJobBody,
+  type PromptOnlyVideoJobBody,
+  type Recipe,
+} from "../api/client";
 import type { ImageRef, SourceImage } from "../imageGen/deriveForm";
-import { acceptsInput, isRecord } from "../imageGen/imageForm";
+import { acceptsInput, buildInputs, defaultForm, isRecord } from "../imageGen/imageForm";
+import type { SupplementTags } from "../imageGen/promptTags";
 
-/** 動画の方式。「画像から」(i2v) は先頭フレーム1枚、「参照から」(ref2v) は参照画像1〜9枚。 */
-export type VideoMode = "i2v" | "ref2v";
+/**
+ * 動画の方式。「画像から」(i2v) は先頭フレーム1枚、「参照から」(ref2v) は参照画像1〜9枚。
+ * 「プロンプトだけ」(prompt) は画像を生成してからその画像を先頭フレームにするi2v (2段)。動画側のRecipeはi2vを使う。
+ */
+export type VideoMode = "i2v" | "ref2v" | "prompt";
 
 export const VIDEO_TEMPLATES: Record<VideoMode, string> = {
   i2v: "minimax_h3_i2v",
   ref2v: "minimax_h3_ref2v",
+  prompt: "minimax_h3_i2v",
 };
 
-export const VIDEO_MODE_LABELS: Record<VideoMode, string> = { i2v: "画像から", ref2v: "参照から" };
+export const VIDEO_MODE_LABELS: Record<VideoMode, string> = {
+  i2v: "画像から",
+  ref2v: "参照から",
+  prompt: "プロンプトだけ",
+};
 
 /** 参照画像の上限。backendの`MAX_REFERENCE_IMAGES` (`workflow.py`) に合わせる。 */
 export const REFERENCES_MAX = 9;
@@ -74,6 +89,9 @@ export type VideoFilled = {
 export type VideoDraft = {
   mode: VideoMode;
   prompt: string;
+  /** 「プロンプトだけ」の1段目 (画像) のプロンプト。空のネガティブはRecipeの既定値を使う。 */
+  imagePrompt: string;
+  imageNegative: string;
   firstFrame: VideoImage | null;
   references: VideoImage[];
   params: Record<VideoMode, VideoParams>;
@@ -180,9 +198,15 @@ export function defaultDraft(recipes: VideoRecipes): VideoDraft {
   return {
     mode: "i2v",
     prompt: "",
+    imagePrompt: "",
+    imageNegative: "",
     firstFrame: null,
     references: [],
-    params: { i2v: defaultParams(recipes.i2v), ref2v: defaultParams(recipes.ref2v) },
+    params: {
+      i2v: defaultParams(recipes.i2v),
+      ref2v: defaultParams(recipes.ref2v),
+      prompt: defaultParams(recipes.prompt),
+    },
     filled: EMPTY_FILLED,
   };
 }
@@ -231,8 +255,10 @@ export function normalizeDraft(raw: Record<string, unknown>, base: VideoDraft): 
   const filled = isRecord(raw.filled) ? raw.filled : {};
   const params = isRecord(raw.params) ? raw.params : {};
   return {
-    mode: raw.mode === "ref2v" ? "ref2v" : "i2v",
+    mode: raw.mode === "ref2v" || raw.mode === "prompt" ? raw.mode : "i2v",
     prompt: stringOr(raw.prompt, base.prompt),
+    imagePrompt: stringOr(raw.imagePrompt, base.imagePrompt),
+    imageNegative: stringOr(raw.imageNegative, base.imageNegative),
     firstFrame: normalizeImage(raw.firstFrame),
     references: addReferences(
       [],
@@ -243,6 +269,7 @@ export function normalizeDraft(raw: Record<string, unknown>, base: VideoDraft): 
     params: {
       i2v: normalizeParams(params.i2v, base.params.i2v),
       ref2v: normalizeParams(params.ref2v, base.params.ref2v),
+      prompt: normalizeParams(params.prompt, base.params.prompt),
     },
     filled: {
       sceneId: idOrNull(filled.sceneId),
@@ -255,8 +282,14 @@ export function normalizeDraft(raw: Record<string, unknown>, base: VideoDraft): 
 // ---- 投入 ----
 
 /** 投入できない理由。投入できるなら`null`。 */
-export function videoBlockedReason(draft: VideoDraft, recipe: Recipe | null): string | null {
+export function videoBlockedReason(
+  draft: VideoDraft,
+  recipe: Recipe | null,
+  imageRecipe: Recipe | null,
+): string | null {
   if (recipe === null) return "この方式のRecipeがありません";
+  if (draft.mode === "prompt" && imageRecipe === null) return "画像のRecipeがありません";
+  if (draft.mode === "prompt" && draft.imagePrompt.trim() === "") return "画像のプロンプトを入力してください";
   if (draft.mode === "i2v" && draft.firstFrame === null) return "先頭フレームを1枚選んでください";
   if (draft.mode === "ref2v" && draft.references.length === 0) return "参照画像を1枚以上選んでください";
   if (draft.prompt.trim() === "") return "プロンプトを入力してください";
@@ -283,10 +316,55 @@ export function buildVideoInputs(draft: VideoDraft, recipe: Recipe): Record<stri
   };
   if (draft.mode === "i2v") {
     if (draft.firstFrame !== null) values.first_frame = draft.firstFrame.ref;
-  } else {
+  } else if (draft.mode === "ref2v") {
     values.references = draft.references.map((item) => item.ref);
   }
   return Object.fromEntries(
     Object.entries(values).filter(([name, value]) => value !== "" && acceptsInput(recipe, name)),
   );
+}
+
+/** Job2本に共通の紐づけ (Project/Scene/キャラ/衣装)。 */
+export type VideoLinks = Pick<
+  GenerationJobBody,
+  "project_id" | "story_scene_id" | "story_character_id" | "story_costume_id"
+>;
+
+/**
+ * `POST /prompt-only-video-jobs`の本文。1段目は`anima_txt2img` (1枚、大きさは動画に合わせる)、2段目はi2vで、
+ * 先頭フレームはサーバが1段目の画像から入れるため送らない。補完タグは`/image`と同じく1段目のプロンプトの前に足す。
+ */
+export function buildPromptOnlyBody(
+  draft: VideoDraft,
+  videoRecipe: Recipe,
+  imageRecipe: Recipe,
+  links: VideoLinks,
+  supplement: SupplementTags,
+): PromptOnlyVideoJobBody {
+  const p = draft.params.prompt;
+  const base = defaultForm(imageRecipe);
+  const form = {
+    ...base,
+    positiveFree: draft.imagePrompt.trim(),
+    negativeFree: draft.imageNegative.trim() === "" ? base.negativeFree : draft.imageNegative.trim(),
+    width: p.width,
+    height: p.height,
+    batchSize: 1,
+  };
+  return {
+    image: {
+      kind: "image",
+      recipe_id: imageRecipe.id,
+      use_inherited_defaults: false,
+      ...links,
+      inputs: buildInputs(form, supplement, imageRecipe),
+    },
+    video: {
+      kind: "video",
+      recipe_id: videoRecipe.id,
+      use_inherited_defaults: false,
+      ...links,
+      inputs: buildVideoInputs(draft, videoRecipe),
+    },
+  };
 }

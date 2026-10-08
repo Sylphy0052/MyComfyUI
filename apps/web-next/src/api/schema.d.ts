@@ -604,6 +604,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/generation-job-followups/{followup_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Generation Job Followup */
+        get: operations["get_generation_job_followup_api_v1_generation_job_followups__followup_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generation-jobs": {
         parameters: {
             query?: never;
@@ -2164,6 +2181,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/prompt-only-video-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Prompt Only Video Job
+         * @description 画像Jobを投入し、成功後にそのまま開始フレームにするi2v Jobを予約する。
+         *
+         *     2段目は画像Jobが成功した後、workerのsweepがサーバ側で投入する。1段目が失敗・中止
+         *     された場合は2段目を投入しない。2段目の紐づけ先とRecipeは、1段目を投入する前に
+         *     確かめる。
+         */
+        post: operations["create_prompt_only_video_job_api_v1_prompt_only_video_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/recipes": {
         parameters: {
             query?: never;
@@ -3536,6 +3577,26 @@ export interface components {
              * @default false
              */
             use_inherited_defaults: boolean;
+        };
+        /** GenerationJobFollowupRead */
+        GenerationJobFollowupRead: {
+            /** Child Job Id */
+            child_job_id: string | null;
+            /** Created At */
+            created_at: string;
+            /** Failure Message */
+            failure_message: string | null;
+            /** Id */
+            id: string;
+            /** Parent Job Id */
+            parent_job_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "submitted" | "skipped" | "failed";
+            /** Updated At */
+            updated_at: string;
         };
         /** GenerationJobRead */
         GenerationJobRead: {
@@ -4970,6 +5031,22 @@ export interface components {
             tags?: string[] | null;
             /** Thumbnail Artifact Id */
             thumbnail_artifact_id?: string | null;
+        };
+        /**
+         * PromptOnlyVideoJobCreate
+         * @description 「プロンプトだけ」の動画生成。画像Jobと、その生成物を開始フレームにするi2v Jobを1回で受ける。
+         *
+         *     2段目 (`video`) は1段目が成功した後にサーバ側で投入する。開始フレームと親Jobは
+         *     サーバが決めるため、呼び出し元は指定できない。
+         */
+        PromptOnlyVideoJobCreate: {
+            image: components["schemas"]["GenerationJobCreate"];
+            video: components["schemas"]["GenerationJobCreate"];
+        };
+        /** PromptOnlyVideoJobRead */
+        PromptOnlyVideoJobRead: {
+            followup: components["schemas"]["GenerationJobFollowupRead"];
+            image_job: components["schemas"]["GenerationJobRead"];
         };
         /**
          * PromptTagCheckRead
@@ -7046,6 +7123,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerationExperimentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_generation_job_followup_api_v1_generation_job_followups__followup_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                followup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationJobFollowupRead"];
                 };
             };
             /** @description Validation Error */
@@ -10579,6 +10687,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_prompt_only_video_job_api_v1_prompt_only_video_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptOnlyVideoJobCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptOnlyVideoJobRead"];
                 };
             };
             /** @description Validation Error */
