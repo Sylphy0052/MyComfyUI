@@ -24,6 +24,7 @@ from mycomfyui_api.adapters.agent.proposals import (
     MAX_INSTRUCTION_LENGTH,
     MAX_PLAN_STEPS,
 )
+from mycomfyui_api.adapters.voice.base import MAX_CAPTION_CHARS
 from mycomfyui_api.approvals import OperationEffect
 from mycomfyui_api.settings import AgentProviderId
 from mycomfyui_api.storage import ARTIFACTS_DIR_NAME, INPUTS_DIR_NAME
@@ -2437,6 +2438,25 @@ class MusicPromptAssistRead(ApiModel):
 
     mood: str = Field(min_length=1, max_length=1000)
     genre: str = Field(max_length=1000)
+    rationale: str = Field(max_length=2000)
+    provider_id: AgentProviderId
+    model: str | None
+
+
+class VoiceCaptionAssistCreate(ApiModel):
+    """音声の声質の文章 (caption) の変換要求。演技指示と、あれば話者のキャラから作る。"""
+
+    #: 未指定なら設定の既定Providerを使う。
+    provider_id: AgentProviderId | None = None
+    instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
+    #: 指定すると、キャラクターの名前と性格・設定を変換の入力へ含める。
+    story_character_id: str | None = None
+
+
+class VoiceCaptionAssistRead(ApiModel):
+    """構造化検証済みの声質の文章。/voiceのcaption欄へそのまま入れる。"""
+
+    caption: str = Field(min_length=1, max_length=MAX_CAPTION_CHARS)
     rationale: str = Field(max_length=2000)
     provider_id: AgentProviderId
     model: str | None

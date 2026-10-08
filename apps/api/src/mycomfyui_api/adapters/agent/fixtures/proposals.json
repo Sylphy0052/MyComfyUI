@@ -145,5 +145,9 @@
     "mood": "calm, mysterious, slow tempo, 70 bpm, soft piano, warm synth pad",
     "genre": "ambient, cinematic",
     "rationale": "暗室の静けさに合わせ、遅いテンポと柔らかい音色を選んだ。"
+  },
+  "voice_caption": {
+    "caption": "落ち着いた若い女性の声。低めで柔らかく、ゆっくりと静かに語りかけるように話す。",
+    "rationale": "固定応答。演技指示の静かな話し方を、声の高さと速さの記述へ置き換えた。"
   }
 }

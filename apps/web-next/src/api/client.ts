@@ -31,8 +31,11 @@ export type WorkflowModelOptions = components["schemas"]["WorkflowModelOptionsRe
 export type ImagePromptAssist = components["schemas"]["ImagePromptAssistRead"];
 export type VideoPromptAssist = components["schemas"]["VideoPromptAssistRead"];
 export type MusicPromptAssist = components["schemas"]["MusicPromptAssistRead"];
+export type VoiceCaptionAssist = components["schemas"]["VoiceCaptionAssistRead"];
 /** `/video-prompt-assists`と`/music-prompt-assists`の要求。 */
 export type MediaPromptAssistBody = components["schemas"]["MediaPromptAssistCreate"];
+/** `/voice-caption-assists`の要求。`instruction`に加えて話者のキャラを送れる。 */
+export type VoiceCaptionAssistBody = components["schemas"]["VoiceCaptionAssistCreate"];
 export type QwenSettings = components["schemas"]["QwenSettingsRead"];
 export type QwenSettingsBody = components["schemas"]["QwenSettingsUpdate"];
 /** 現在のpromptは省略できる (APIの既定は空)。生成された型は既定値の欄も必須にするため緩める。 */

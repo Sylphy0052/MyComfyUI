@@ -2401,6 +2401,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/voice-caption-assists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assist Voice Caption
+         * @description 演技指示とキャラクターの性格・設定を、音声の声質の文章 (caption) へ変換する。
+         *
+         *     画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。キャラクターは存在と
+         *     ゴミ箱のProjectを確かめ、名前と性格・設定だけを許可リストで入力へ含める。
+         */
+        post: operations["assist_voice_caption_api_v1_voice_caption_assists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/voice-references": {
         parameters: {
             query?: never;
@@ -5751,6 +5774,35 @@ export interface components {
             reachable: boolean;
             /** Reason */
             reason?: string | null;
+        };
+        /**
+         * VoiceCaptionAssistCreate
+         * @description 音声の声質の文章 (caption) の変換要求。演技指示と、あれば話者のキャラから作る。
+         */
+        VoiceCaptionAssistCreate: {
+            /** Instruction */
+            instruction: string;
+            /** Provider Id */
+            provider_id?: ("claude_code" | "codex" | "qwen" | "stub") | null;
+            /** Story Character Id */
+            story_character_id?: string | null;
+        };
+        /**
+         * VoiceCaptionAssistRead
+         * @description 構造化検証済みの声質の文章。/voiceのcaption欄へそのまま入れる。
+         */
+        VoiceCaptionAssistRead: {
+            /** Caption */
+            caption: string;
+            /** Model */
+            model: string | null;
+            /**
+             * Provider Id
+             * @enum {string}
+             */
+            provider_id: "claude_code" | "codex" | "qwen" | "stub";
+            /** Rationale */
+            rationale: string;
         };
         /**
          * VoiceEngineHealthRead
@@ -10990,6 +11042,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VideoPromptAssistRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assist_voice_caption_api_v1_voice_caption_assists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceCaptionAssistCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceCaptionAssistRead"];
                 };
             };
             /** @description Validation Error */

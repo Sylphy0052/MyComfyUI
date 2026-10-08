@@ -90,6 +90,7 @@ from mycomfyui_api.models import (
     Project,
     ProjectShot,
     Recipe,
+    StoryCharacter,
     StorySceneAdoption,
     VoiceVerification,
     Workflow,
@@ -5701,6 +5702,55 @@ async def assist_music_prompt(
     return schemas.MusicPromptAssistRead(
         mood=result.output["mood"],
         genre=result.output["genre"],
+        rationale=result.output["rationale"],
+        provider_id=provider.id,
+        model=result.model,
+    )
+
+
+@router.post(
+    "/voice-caption-assists",
+    response_model=schemas.VoiceCaptionAssistRead,
+)
+async def assist_voice_caption(
+    payload: schemas.VoiceCaptionAssistCreate,
+    providers: AgentProvidersDep,
+    session: SessionDep,
+):
+    """演技指示とキャラクターの性格・設定を、音声の声質の文章 (caption) へ変換する。
+
+    画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。キャラクターは存在と
+    ゴミ箱のProjectを確かめ、名前と性格・設定だけを許可リストで入力へ含める。
+    """
+    context: dict[str, Any] = {}
+    if payload.story_character_id is not None:
+        character = await session.get(StoryCharacter, payload.story_character_id)
+        if character is None:
+            raise ApiError(
+                "STORY_CHARACTER_NOT_FOUND",
+                "紐づけ先のキャラクターがありません。",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                details={"story_character_id": payload.story_character_id},
+            )
+        # ゴミ箱のProjectのキャラを弾く。存在は上で確かめ済み。
+        await story_links.validate_story_links(
+            session,
+            character_id=character.id,
+            costume_id=None,
+            scene_id=None,
+        )
+        context["character"] = {"name": character.name}
+        if character.profile.strip():
+            context["character"]["profile"] = character.profile
+    provider = _resolve_agent_provider(providers, payload.provider_id)
+    result = await _propose_assist(
+        provider,
+        agent_base.ProposalRequest(
+            kind="voice_caption", instruction=payload.instruction, context=context
+        ),
+    )
+    return schemas.VoiceCaptionAssistRead(
+        caption=result.output["caption"],
         rationale=result.output["rationale"],
         provider_id=provider.id,
         model=result.model,

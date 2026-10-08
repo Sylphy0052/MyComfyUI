@@ -16,6 +16,7 @@ import { IconUpload } from "@tabler/icons-react";
 import { artifactContentUrl, type StoryCharacter } from "../api/client";
 import { SEED_MAX } from "../imageGen/imageForm";
 import { notifyError } from "../notifications";
+import { VoiceCaptionAssistField } from "./VoiceCaptionAssist";
 import { useImportVoiceReference } from "./useVoice";
 import { CAPTION_MAX, captionProblem, type VoiceForm } from "./voiceForm";
 
@@ -133,17 +134,25 @@ export function VoiceSourceFields({
         />
       </Stack>
       {form.mode === "caption" ? (
-        <Textarea
-          label="声質の文章 *"
-          description={`声の特徴を日本語で書く。改行は使えません。${CAPTION_MAX}字以内。`}
-          autosize
-          minRows={2}
-          maxRows={6}
-          value={form.caption}
-          onChange={(event) => onChange({ caption: event.currentTarget.value })}
-          error={captionError}
-          data-testid="voice-caption"
-        />
+        <Stack gap="xs">
+          <Textarea
+            label="声質の文章 *"
+            description={`声の特徴を日本語で書く。改行は使えません。${CAPTION_MAX}字以内。`}
+            autosize
+            minRows={2}
+            maxRows={6}
+            value={form.caption}
+            onChange={(event) => onChange({ caption: event.currentTarget.value })}
+            error={captionError}
+            data-testid="voice-caption"
+          />
+          <VoiceCaptionAssistField
+            direction={form.direction}
+            storyCharacterId={character?.id ?? null}
+            caption={form.caption}
+            onApply={(caption) => onChange({ caption })}
+          />
+        </Stack>
       ) : (
         <Stack gap="xs">
           <SegmentedControl

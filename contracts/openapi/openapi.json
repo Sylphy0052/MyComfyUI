@@ -9855,6 +9855,97 @@
         "title": "VoiceBackendHealthRead",
         "type": "object"
       },
+      "VoiceCaptionAssistCreate": {
+        "additionalProperties": false,
+        "description": "音声の声質の文章 (caption) の変換要求。演技指示と、あれば話者のキャラから作る。",
+        "properties": {
+          "instruction": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Instruction",
+            "type": "string"
+          },
+          "provider_id": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude_code",
+                  "codex",
+                  "qwen",
+                  "stub"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Id"
+          },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          }
+        },
+        "required": [
+          "instruction"
+        ],
+        "title": "VoiceCaptionAssistCreate",
+        "type": "object"
+      },
+      "VoiceCaptionAssistRead": {
+        "additionalProperties": false,
+        "description": "構造化検証済みの声質の文章。/voiceのcaption欄へそのまま入れる。",
+        "properties": {
+          "caption": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Caption",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider_id": {
+            "enum": [
+              "claude_code",
+              "codex",
+              "qwen",
+              "stub"
+            ],
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "rationale": {
+            "maxLength": 2000,
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "caption",
+          "rationale",
+          "provider_id",
+          "model"
+        ],
+        "title": "VoiceCaptionAssistRead",
+        "type": "object"
+      },
       "VoiceEngineHealthRead": {
         "additionalProperties": false,
         "description": "voice-runnerが公開する1engineの状態。",
@@ -18956,6 +19047,45 @@
           }
         },
         "summary": "Assist Video Prompt"
+      }
+    },
+    "/api/v1/voice-caption-assists": {
+      "post": {
+        "description": "演技指示とキャラクターの性格・設定を、音声の声質の文章 (caption) へ変換する。\n\n画像の補完と同じく、Job、Artifact、Proposal履歴を作らない。キャラクターは存在と\nゴミ箱のProjectを確かめ、名前と性格・設定だけを許可リストで入力へ含める。",
+        "operationId": "assist_voice_caption_api_v1_voice_caption_assists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceCaptionAssistCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceCaptionAssistRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assist Voice Caption"
       }
     },
     "/api/v1/voice-references": {
