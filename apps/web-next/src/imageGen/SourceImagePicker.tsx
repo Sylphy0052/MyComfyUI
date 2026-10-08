@@ -91,11 +91,13 @@ function CostumeSource({
   characters,
   defaultCostumeId,
   onPick,
+  reservePick,
 }: {
   projectId: string | null;
   characters: StoryCharacter[];
   defaultCostumeId: string | null;
   onPick: (source: SourceImage) => void;
+  reservePick: () => (source: SourceImage) => void;
 }) {
   const [chosen, setChosen] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -110,7 +112,9 @@ function CostumeSource({
       </Text>
     );
   }
-  const costumeId = chosen ?? defaultCostumeId ?? costumes[0]?.costume.id ?? null;
+  // Projectを切り替えると、前に選んだ衣装は候補から消える。そのときは既定の衣装へ戻す。
+  const chosenCostume = costumes.some((entry) => entry.costume.id === chosen) ? chosen : null;
+  const costumeId = chosenCostume ?? defaultCostumeId ?? costumes[0]?.costume.id ?? null;
   const current = costumes.find((entry) => entry.costume.id === costumeId)?.costume ?? null;
 
   const pick = async (key: string) => {
@@ -123,9 +127,10 @@ function CostumeSource({
     if (!key.startsWith(INPUT_PREFIX)) return;
     const path = key.slice(INPUT_PREFIX.length);
     setBusyKey(key);
+    const apply = reservePick();
     try {
       const reference = await reimportInputImage(path, upload.mutateAsync);
-      onPick(
+      apply(
         sourceFromCostume(
           { relative_path: reference.relative_path, sha256: reference.sha256 },
           imageReferenceUrl(reference.relative_path),
@@ -173,17 +178,19 @@ function CostumeSource({
 }
 
 /** 手元の画像をアップロードして選ぶ。 */
-function UploadSource({ onPick }: { onPick: (source: SourceImage) => void }) {
+function UploadSource({ reservePick }: { reservePick: () => (source: SourceImage) => void }) {
   const upload = useUploadInputImage();
   return (
     <FileButton
       accept="image/png,image/jpeg,image/webp"
       onChange={(file) => {
         if (file === null) return;
-        upload.mutate(file, {
-          onSuccess: (reference) => onPick(sourceFromUpload(uploadedImage(reference, file.name))),
-          onError: (error) => notifyError(`${file.name}を取り込めません`, error),
-        });
+        // mutateの個別コールバックは入力欄を閉じると呼ばれないため、mutateAsyncで受ける。
+        const apply = reservePick();
+        upload.mutateAsync(file).then(
+          (reference) => apply(sourceFromUpload(uploadedImage(reference, file.name))),
+          (error: unknown) => notifyError(`${file.name}を取り込めません`, error),
+        );
       }}
     >
       {(props) => (
@@ -202,12 +209,15 @@ function UploadSource({ onPick }: { onPick: (source: SourceImage) => void }) {
 export function SourceImagePicker({
   source,
   onPick,
+  reservePick,
   onClear,
   target,
   characters,
 }: {
   source: SourceImage | null;
   onPick: (source: SourceImage) => void;
+  /** 取り込みを待つ選び方で使う。取り込む前に呼び、返り値へ元画像を渡す。 */
+  reservePick: () => (source: SourceImage) => void;
   onClear: () => void;
   target: ImageTarget;
   characters: StoryCharacter[];
@@ -243,9 +253,10 @@ export function SourceImagePicker({
           characters={characters}
           defaultCostumeId={target.costumeId}
           onPick={onPick}
+          reservePick={reservePick}
         />
       ) : null}
-      {origin === "upload" ? <UploadSource onPick={onPick} /> : null}
+      {origin === "upload" ? <UploadSource reservePick={reservePick} /> : null}
       <Text size="xs" c="dimmed">
         生成物と衣装の参照画像を選ぶと、その画像のProject・Scene・キャラ・衣装が上の対象に入り、結果にも引き継がれます。
       </Text>

@@ -31,9 +31,14 @@ const FALLBACK_DENOISE = 0.65;
 
 export type ChangePlan = { templateName: string; referenceStrength: number };
 
+/** 参照強度の既定値。ポーズ・表情だけ、衣装だけ、両方を変えるときの順。 */
+const POSE_EXPRESSION_STRENGTH = 0.5;
+const OUTFIT_STRENGTH = 1.0;
+const OUTFIT_AND_POSE_STRENGTH = 1.5;
+
 /**
  * 「変えたい要素」のチェックからテンプレートと参照強度を決める。
- * 旧UIの`apps/web/src/derivation/changeOperations.ts:46`の`planForOperations`を移植したもの。
+ * 旧UIの`apps/web/src/derivation/changeOperations.ts`の`planForOperations`を移植したもの。
  * 旧UIの「ポーズ」「表情」は、この画面では「ポーズ・表情を変える」の1つにまとめている。
  * - ポーズ・表情だけ → anima_ref_siglip, 0.5
  * - 衣装だけ → anima_ref_incontext, 1.0
@@ -42,9 +47,9 @@ export type ChangePlan = { templateName: string; referenceStrength: number };
  */
 export function planForChanges(changePoseExpression: boolean, changeOutfit: boolean): ChangePlan | null {
   if (!changePoseExpression && !changeOutfit) return null;
-  if (!changeOutfit) return { templateName: REF_SIGLIP_TEMPLATE, referenceStrength: 0.5 };
-  if (!changePoseExpression) return { templateName: REF_INCONTEXT_TEMPLATE, referenceStrength: 1.0 };
-  return { templateName: REF_INCONTEXT_TEMPLATE, referenceStrength: 1.5 };
+  if (!changeOutfit) return { templateName: REF_SIGLIP_TEMPLATE, referenceStrength: POSE_EXPRESSION_STRENGTH };
+  if (!changePoseExpression) return { templateName: REF_INCONTEXT_TEMPLATE, referenceStrength: OUTFIT_STRENGTH };
+  return { templateName: REF_INCONTEXT_TEMPLATE, referenceStrength: OUTFIT_AND_POSE_STRENGTH };
 }
 
 /** 修正の方式。 */
@@ -153,10 +158,6 @@ export function uploadedImage(
   // APIが返すbyte_sizeなどはJobの参照では未知の項目として弾かれるため、2項目だけを残す。
   const ref = { relative_path: reference.relative_path, sha256: reference.sha256 };
   return { ref, previewUrl: imageReferenceUrl(reference.relative_path), label };
-}
-
-export function hasLinks(links: ImageTarget): boolean {
-  return Object.values(links).some((value) => value !== null);
 }
 
 /** 今のタブと入力から使うテンプレート。まだ決まらなければ`null`。 */

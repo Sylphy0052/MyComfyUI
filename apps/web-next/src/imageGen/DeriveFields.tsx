@@ -11,6 +11,7 @@ import {
   uploadedImage,
   type DeriveState,
   type EditMethod,
+  type UploadedImage,
 } from "./deriveForm";
 import { useUploadInputImage } from "./useImageGen";
 
@@ -79,10 +80,13 @@ const EDIT_METHODS: { value: EditMethod; label: string }[] = [
 export function EditFields({
   state,
   onChange,
+  reserveMask,
   img2imgRecipe,
 }: {
   state: DeriveState;
   onChange: Update;
+  /** マスク画像を取り込む前に呼び、返り値へ取り込んだマスクを渡す。 */
+  reserveMask: () => (mask: UploadedImage) => void;
   img2imgRecipe: Recipe | null;
 }) {
   const upload = useUploadInputImage();
@@ -127,10 +131,12 @@ export function EditFields({
               accept="image/png,image/jpeg,image/webp"
               onChange={(file) => {
                 if (file === null) return;
-                upload.mutate(file, {
-                  onSuccess: (reference) => onChange({ mask: uploadedImage(reference, file.name) }),
-                  onError: (error) => notifyError(`${file.name}を取り込めません`, error),
-                });
+                // mutateの個別コールバックは入力欄を閉じると呼ばれないため、mutateAsyncで受ける。
+                const apply = reserveMask();
+                upload.mutateAsync(file).then(
+                  (reference) => apply(uploadedImage(reference, file.name)),
+                  (error: unknown) => notifyError(`${file.name}を取り込めません`, error),
+                );
               }}
             >
               {(props) => (

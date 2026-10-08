@@ -15,7 +15,6 @@ import { TargetPicker } from "../imageGen/TargetPicker";
 import {
   buildDeriveInputs,
   deriveBlockedReason,
-  hasLinks,
   IMG2IMG_TEMPLATE,
   INITIAL_DERIVE,
   REF_SIGLIP_TEMPLATE,
@@ -26,6 +25,7 @@ import {
   type DeriveState,
   type GenerateMode,
   type SourceImage,
+  type UploadedImage,
 } from "../imageGen/deriveForm";
 import {
   buildInputs,
@@ -39,9 +39,9 @@ import { buildSupplementTags, isExcluded } from "../imageGen/promptTags";
 import {
   jobIdOfArtifact,
   restoreFromJob,
+  useDeriveRecipes,
   useProjectStory,
   useResultEntries,
-  useDeriveRecipes,
   useStoredInput,
   useSubmitImageJob,
   useTxt2ImgRecipe,
@@ -167,15 +167,37 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
     (update: Partial<DeriveState>) => setDerive((current) => ({ ...current, ...update })),
     [],
   );
-  // 元画像を選んだら、その紐づけを対象へ引き継ぐ。アップロードは紐づけを持たず、今の対象のまま使う。
+  // 元画像を選んだら、その紐づけを対象へ引き継ぐ。紐づけの無い生成物なら対象も空にする。
+  // アップロードは紐づけを持たず、今の対象のまま使う。
   // 元画像が変わると大きさが合わなくなるため、マスク画像は外す。
+  // pickSeqは元画像を選び直すたびに進め、取り込みを待つ間に選び直されたら、待っていた結果を捨てる。
+  const pickSeq = useRef(0);
   const pickSource = useCallback(
     (source: SourceImage) => {
+      pickSeq.current += 1;
       setDerive((current) => ({ ...current, source, mask: null }));
-      if (hasLinks(source.links)) changeTarget(source.links);
+      if (source.origin !== "upload") changeTarget(source.links);
     },
     [changeTarget],
   );
+  // 取り込みを始めるときに呼び、取り込めたら返り値へ元画像を渡す。入力欄を切り替えた後でも反映する。
+  const reservePick = useCallback(() => {
+    const seq = ++pickSeq.current;
+    return (source: SourceImage) => {
+      if (seq === pickSeq.current) pickSource(source);
+    };
+  }, [pickSource]);
+  // マスクは元画像に合わせて作るため、取り込みの間に元画像が変わったら捨てる。
+  const reserveMask = useCallback(() => {
+    const seq = pickSeq.current;
+    return (mask: UploadedImage) => {
+      if (seq === pickSeq.current) setDerive((current) => ({ ...current, mask }));
+    };
+  }, []);
+  const clearSource = useCallback(() => {
+    pickSeq.current += 1;
+    setDerive((current) => ({ ...current, source: null, mask: null }));
+  }, []);
   const sendToEdit = useCallback(
     (artifact: ArtifactRecord) => {
       pickSource(sourceFromArtifact(artifact));
@@ -298,7 +320,8 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
     <SourceImagePicker
       source={derive.source}
       onPick={pickSource}
-      onClear={() => updateDerive({ source: null, mask: null })}
+      reservePick={reservePick}
+      onClear={clearSource}
       target={target}
       characters={characterList}
     />
@@ -350,7 +373,12 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
             <Tabs.Panel value="edit" pt="sm">
               <Stack gap="md">
                 {sourcePicker}
-                <EditFields state={derive} onChange={updateDerive} img2imgRecipe={deriveRecipes[IMG2IMG_TEMPLATE] ?? null} />
+                <EditFields
+                  state={derive}
+                  onChange={updateDerive}
+                  reserveMask={reserveMask}
+                  img2imgRecipe={deriveRecipes[IMG2IMG_TEMPLATE] ?? null}
+                />
                 {promptNeeded ? (
                   <>
                     {promptFields}
@@ -383,7 +411,7 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   );
 }
 
-/** `/image`。新規生成 (`anima_txt2img`) の入力欄と、この画面から投入した生成の結果欄。 */
+/** `/image`。新規・参照・修正の入力欄と、この画面から投入した生成の結果欄。 */
 export function ImagePage() {
   const recipe = useTxt2ImgRecipe();
   if (recipe.isPending) return <Loader size="sm" />;
