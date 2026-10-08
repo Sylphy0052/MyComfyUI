@@ -15,6 +15,7 @@ __pycache__/
 # Node.js
 node_modules/
 apps/web/dist/
+apps/web-next/dist/
 
 # Playwright MCP の作業出力
 .playwright-mcp/
