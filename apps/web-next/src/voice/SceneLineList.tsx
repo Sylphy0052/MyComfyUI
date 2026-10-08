@@ -6,9 +6,35 @@ import { useSceneAdoptions } from "../projectDetail/useStory";
 /** 台詞の一覧の上に出す案内。投入の結果や、飛ばした行を知らせる。 */
 export type LineNotice = { color: "green" | "yellow"; text: string };
 
+/** IDのキャラ。一覧に無いキャラ (削除済みなど) は`null`。 */
+export function characterOf(characters: StoryCharacter[], characterId: string | null): StoryCharacter | null {
+  return characters.find((character) => character.id === characterId) ?? null;
+}
+
 /** 話者のキャラ名。一覧に無いキャラ (削除済みなど) は`(不明)`。 */
 export function speakerNameOf(characters: StoryCharacter[], characterId: string): string {
-  return characters.find((character) => character.id === characterId)?.name ?? "(不明)";
+  return characterOf(characters, characterId)?.name ?? "(不明)";
+}
+
+/** 行の話者のキャラ。声の参照が無ければ`null`。 */
+export function voicedSpeakerOf(characters: StoryCharacter[], line: StorySceneDialogue): StoryCharacter | null {
+  const speaker = characterOf(characters, line.speaker_character_id);
+  return speaker?.voice_media_key ? speaker : null;
+}
+
+/** 台詞の行を投入しない理由。知らせでは後ろに「投入しなかった行」「入力欄へ読み込むだけ」と続ける。 */
+export const LINE_SKIP_REASONS = {
+  noId: "行IDが無く採用先にできないため",
+  empty: "台詞が空のため",
+  noVoice: "話者のキャラに声の参照が無いため",
+} as const;
+export type LineSkip = keyof typeof LINE_SKIP_REASONS;
+
+/** 行を投入しない理由。投入できる行 (声のある話者が居る行) は`null`。 */
+export function lineSkipOf(characters: StoryCharacter[], line: StorySceneDialogue): LineSkip | null {
+  if (!line.id) return "noId";
+  if (line.text.trim() === "") return "empty";
+  return voicedSpeakerOf(characters, line) === null ? "noVoice" : null;
 }
 
 /** 台詞の行の見出し。結果欄にも添え、どの行の音声かを示す。 */
@@ -81,7 +107,6 @@ export function SceneLineList({
         </Text>
       ) : null}
       {dialogues.map((line, index) => {
-        const speaker = characters.find((character) => character.id === line.speaker_character_id) ?? null;
         const adopted = adoptedOf(line.id);
         return (
           <Card key={line.id ?? `index-${index}`} withBorder padding="xs" data-testid="scene-line" data-line-id={line.id ?? ""}>
@@ -92,9 +117,9 @@ export function SceneLineList({
                     {index + 1}
                   </Text>
                   <Text size="sm" fw={500} data-testid="scene-line-speaker">
-                    {speaker?.name ?? "(不明)"}
+                    {speakerNameOf(characters, line.speaker_character_id)}
                   </Text>
-                  {speaker?.voice_media_key ? null : (
+                  {voicedSpeakerOf(characters, line) !== null ? null : (
                     <Badge size="xs" color="gray" data-testid="scene-line-no-voice">
                       声の参照なし
                     </Badge>
