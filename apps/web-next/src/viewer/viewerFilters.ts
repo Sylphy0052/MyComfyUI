@@ -1,7 +1,25 @@
 import type { ArtifactDecision } from "../api/client";
 
-/** タブ。動画・音声・BGMはロードマップ2で足す。 */
-export type ViewerTab = "image" | "trash";
+/** 一覧を出すタブ。 */
+export type MediaTabId = "image" | "video" | "voice" | "bgm";
+
+/** タブ。一覧のタブ (`MediaTabId`) とゴミ箱。 */
+export type ViewerTab = MediaTabId | "trash";
+
+/** 一覧のタブごとの`GET /media-items`の種別。音声とBGMは`kind`が同じで`audioClass`が違う。 */
+export type MediaTabSpec = {
+  kind: "image" | "video" | "audio";
+  audioClass?: "voice" | "bgm";
+  /** 一覧が空のときの文言。 */
+  emptyText: string;
+};
+
+export const MEDIA_TABS: Record<MediaTabId, MediaTabSpec> = {
+  image: { kind: "image", emptyText: "条件に合う画像はありません" },
+  video: { kind: "video", emptyText: "条件に合う動画はありません" },
+  voice: { kind: "audio", audioClass: "voice", emptyText: "条件に合う音声はありません" },
+  bgm: { kind: "audio", audioClass: "bgm", emptyText: "条件に合うBGMはありません" },
+};
 
 /** 紐づけ先。Project → Scene → キャラ → 衣装の順に絞り込む。フィルタと付け替えで共用する。 */
 export type StoryLinks = {
@@ -30,8 +48,10 @@ function dateParam(params: URLSearchParams, name: string): string | null {
   return value !== null && DATE_PATTERN.test(value) ? value : null;
 }
 
+/** `tab=`を読む。読めない値は画像タブにする。 */
 export function readTab(params: URLSearchParams): ViewerTab {
-  return params.get("tab") === "trash" ? "trash" : "image";
+  const tab = params.get("tab");
+  return tab === "trash" || tab === "video" || tab === "voice" || tab === "bgm" ? tab : "image";
 }
 
 /** URLのフィルタを読む。読めない値は指定なしとして扱う。 */
@@ -79,9 +99,14 @@ export function writeFilters(params: URLSearchParams, filters: ViewerFilters): U
   return next;
 }
 
-/** `GET /media-items`の絞り込み (ページ指定を除く)。画像タブは画像だけを出す。 */
-export function mediaItemsQuery(filters: ViewerFilters, overrides: { decision?: ArtifactDecision } = {}): URLSearchParams {
-  const query = new URLSearchParams({ kind: "image" });
+/** `GET /media-items`の絞り込み (ページ指定を除く)。タブの種別 (`spec`) の生成物だけを出す。 */
+export function mediaItemsQuery(
+  spec: MediaTabSpec,
+  filters: ViewerFilters,
+  overrides: { decision?: ArtifactDecision } = {},
+): URLSearchParams {
+  const query = new URLSearchParams({ kind: spec.kind });
+  if (spec.audioClass) query.set("audio_class", spec.audioClass);
   const decision = overrides.decision ?? filters.decision;
   if (filters.unassigned) query.set("unassigned", "true");
   if (filters.project) query.set("project_id", filters.project);

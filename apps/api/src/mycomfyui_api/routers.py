@@ -6,7 +6,7 @@ import json
 import logging
 import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar, get_args
@@ -40,6 +40,7 @@ from mycomfyui_api import (
     schemas,
     storage,
     story_links,
+    story_voice,
 )
 from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters import tag_preflight
@@ -719,17 +720,25 @@ async def create_generation_job(
     return await _submit_generation_job(session, source, payload)
 
 
-async def _validate_story_links_of(
-    session: AsyncSession, payload: schemas.GenerationPreviewCreate
-) -> None:
-    """Job作成・プレビューが受け取ったv2の紐づけ先を確かめる。"""
-    await story_links.validate_story_links(
+async def _validate_story_links_of[P: schemas.GenerationPreviewCreate](
+    session: AsyncSession, payload: P
+) -> P:
+    """Job作成・プレビューが受け取ったv2の紐づけ先を確かめる。
+
+    `story_dialogue_id`だけを渡したときは、台詞の所属シーンを`story_scene_id`へ補った
+    payloadを返す。生成物がシーンへ紐づかないまま残らないようにする。
+    """
+    scene_id = await story_links.validate_story_links(
         session,
         character_id=payload.story_character_id,
         costume_id=payload.story_costume_id,
         scene_id=payload.story_scene_id,
         project_id=payload.project_id,
+        dialogue_id=payload.story_dialogue_id,
     )
+    if payload.story_scene_id is None and scene_id is not None:
+        return payload.model_copy(update={"story_scene_id": scene_id})
+    return payload
 
 
 async def _submit_generation_job(
@@ -739,7 +748,7 @@ async def _submit_generation_job(
 ) -> GenerationJob:
     """JobとManifestのIDを先行採番して作成する、Job投入の共通処理。"""
     await _validate_project_context(session, payload.project_id)
-    await _validate_story_links_of(session, payload)
+    payload = await _validate_story_links_of(session, payload)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
@@ -748,7 +757,9 @@ async def _submit_generation_job(
     )
     # 実行スナップショットの組み立てはengineごとのAdapterが行う。音声Jobは台詞を
     # 固定する必要があるため、参照APIから取得したShot本文もここで渡す。
-    prepared = await _prepare_execution(recipe, effective, source, resolved, session)
+    prepared = await _prepare_execution(
+        recipe, effective, source, resolved, session, persist=True
+    )
     await _validate_resolved_models(recipe, prepared)
     queue_sequence = _resolve_queue_sequence(payload.queue_sequence)
 
@@ -792,14 +803,16 @@ async def preview_generation_job(
     ようにする。
     """
     await _validate_project_context(session, payload.project_id)
-    await _validate_story_links_of(session, payload)
+    payload = await _validate_story_links_of(session, payload)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
     effective, recipe, recipe_origin, input_origins, preferences, look_profile_ids, look_profiles = (
         await _resolve_generation_defaults(session, payload, resolved)
     )
-    prepared = await _prepare_execution(recipe, effective, source, resolved, session)
+    prepared = await _prepare_execution(
+        recipe, effective, source, resolved, session, persist=False
+    )
     await _validate_resolved_models(recipe, prepared)
     defaults = recipe.defaults if isinstance(recipe.defaults, dict) else {}
     version = await _load_recipe_version(session, recipe)
@@ -1430,8 +1443,13 @@ async def _prepare_execution(
     source: ReferenceSource,
     resolved: _ResolvedReferences,
     session: AsyncSession,
+    *,
+    persist: bool,
 ):
-    """Recipeのengineに対応するAdapterで実行スナップショットを組み立てる。"""
+    """Recipeのengineに対応するAdapterで実行スナップショットを組み立てる。
+
+    `persist=False`はプレビュー用で、入力cacheなどへファイルを書かない。
+    """
     context = PreparationContext(
         project_id=payload.project_id,
         scene_id=payload.scene_id,
@@ -1442,7 +1460,16 @@ async def _prepare_execution(
         artifact_lookup=_ArtifactLookup(session),
     )
     try:
-        return await prepare_execution(recipe, payload.inputs, context)
+        inputs, exempt = await story_voice.resolve_character_voice(
+            session,
+            payload,
+            payload.inputs,
+            recipe.defaults,
+            persist=persist,
+            shot_data=resolved.shot_data,
+        )
+        context = replace(context, canon_exempt_voice_ids=exempt)
+        return await prepare_execution(recipe, inputs, context)
     except PreparationError as error:
         raise _validation_error(error.message, error.details) from error
 
@@ -1527,6 +1554,7 @@ def _build_job_records(
         story_character_id=payload.story_character_id,
         story_costume_id=payload.story_costume_id,
         story_scene_id=payload.story_scene_id,
+        story_dialogue_id=payload.story_dialogue_id,
         recipe_id=payload.recipe_id,
         manifest_id=manifest_id,
         parent_job_id=_resolve_parent_job_id(payload, prepared),
@@ -4126,6 +4154,8 @@ async def _create_derived_job(
             assigned_scene_id=origin_job.assigned_scene_id,
             assigned_shot_id=origin_job.assigned_shot_id,
             **story_links.job_story_links(origin_job),
+            # 台詞の行はJobにだけある (Artifactには列が無い)。再実行・派生でも引き継ぐ。
+            story_dialogue_id=origin_job.story_dialogue_id,
             recipe_id=origin_job.recipe_id,
             manifest_id=manifest_id,
             parent_job_id=origin_job.id,

@@ -3,11 +3,22 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { ArtifactDrawer } from "../viewer/ArtifactDrawer";
-import { ImageTab } from "../viewer/ImageTab";
+import { MediaTab } from "../viewer/MediaTab";
 import { TrashTab } from "../viewer/TrashTab";
 import { useJobArtifact } from "../viewer/useViewer";
 import { ViewerFilterBar } from "../viewer/ViewerFilterBar";
-import { mediaItemsQuery, readFilters, readTab, writeFilters, type ViewerFilters } from "../viewer/viewerFilters";
+import {
+  MEDIA_TABS,
+  mediaItemsQuery,
+  readFilters,
+  readTab,
+  writeFilters,
+  type MediaTabId,
+  type ViewerFilters,
+} from "../viewer/viewerFilters";
+
+const MEDIA_TAB_LABELS: Record<MediaTabId, string> = { image: "画像", video: "動画", voice: "音声", bgm: "BGM" };
+const MEDIA_TAB_IDS = Object.keys(MEDIA_TABS) as MediaTabId[];
 
 /**
  * `/viewer`。タブとフィルタはURLに持たせ、開き直すと同じ条件で出す。
@@ -40,7 +51,9 @@ export function ViewerPage() {
     updateParams((params) => writeFilters(params, { ...readFilters(params), ...patch }));
   const setTab = (next: string | null) =>
     updateParams((params) => {
-      if (next === "trash") params.set("tab", "trash");
+      // 先頭の`image`は既定値なのでURLに残さない。それ以外のタブだけ`tab`に書く。
+      const urlTabs: string[] = [...MEDIA_TAB_IDS.filter((id) => id !== "image"), "trash"];
+      if (next !== null && urlTabs.includes(next)) params.set("tab", next);
       else params.delete("tab");
       return params;
     });
@@ -66,18 +79,29 @@ export function ViewerPage() {
       {jobArtifact.error ? <Alert color="red">Jobの生成物を取得できません: {jobArtifact.error.message}</Alert> : null}
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
-          <Tabs.Tab value="image">画像</Tabs.Tab>
+          {MEDIA_TAB_IDS.map((id) => (
+            <Tabs.Tab key={id} value={id}>
+              {MEDIA_TAB_LABELS[id]}
+            </Tabs.Tab>
+          ))}
           <Tabs.Tab value="trash">ゴミ箱</Tabs.Tab>
         </Tabs.List>
-        <Tabs.Panel value="image" pt="md">
-          {tab === "image" ? (
-            <Stack gap="sm">
-              <ViewerFilterBar filters={filters} onChange={setFilters} />
-              {/* 条件が変わったら選択を持ち越さないよう、絞り込みごとに作り直す。 */}
-              <ImageTab key={mediaItemsQuery(filters).toString()} filters={filters} onOpen={setOpenedId} />
-            </Stack>
-          ) : null}
-        </Tabs.Panel>
+        {MEDIA_TAB_IDS.map((id) => (
+          <Tabs.Panel key={id} value={id} pt="md">
+            {tab === id ? (
+              <Stack gap="sm">
+                <ViewerFilterBar filters={filters} onChange={setFilters} />
+                {/* 条件が変わったら選択を持ち越さないよう、絞り込みごとに作り直す。 */}
+                <MediaTab
+                  key={mediaItemsQuery(MEDIA_TABS[id], filters).toString()}
+                  spec={MEDIA_TABS[id]}
+                  filters={filters}
+                  onOpen={setOpenedId}
+                />
+              </Stack>
+            ) : null}
+          </Tabs.Panel>
+        ))}
         <Tabs.Panel value="trash" pt="md">
           {tab === "trash" ? <TrashTab onOpen={setOpenedId} /> : null}
         </Tabs.Panel>

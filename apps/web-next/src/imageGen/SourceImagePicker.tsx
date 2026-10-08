@@ -213,6 +213,9 @@ export function SourceImagePicker({
   onClear,
   target,
   characters,
+  title = "元画像",
+  hideSelection = false,
+  note,
 }: {
   source: SourceImage | null;
   onPick: (source: SourceImage) => void;
@@ -221,14 +224,20 @@ export function SourceImagePicker({
   onClear: () => void;
   target: ImageTarget;
   characters: StoryCharacter[];
+  /** 見出し。複数枚を選ぶ使い方では「参照画像を追加」などにする。 */
+  title?: string;
+  /** 選んだ画像の表示を出さない。選んだ画像を呼び出し側が並べるとき。 */
+  hideSelection?: boolean;
+  /** 末尾の説明。省略すると、対象への引き継ぎの説明を出す。`null`なら出さない。 */
+  note?: string | null;
 }) {
   const [origin, setOrigin] = useState<Origin>("artifact");
   return (
     <Stack gap="xs" data-testid="source-picker">
       <Text size="sm" fw={500}>
-        元画像
+        {title}
       </Text>
-      {source !== null ? (
+      {hideSelection ? null : source !== null ? (
         <Group gap="sm" wrap="nowrap" data-testid="source-selected">
           <Image src={source.previewUrl} alt="選んだ元画像" h={96} w="auto" fit="contain" />
           <Stack gap={4}>
@@ -257,9 +266,11 @@ export function SourceImagePicker({
         />
       ) : null}
       {origin === "upload" ? <UploadSource reservePick={reservePick} /> : null}
-      <Text size="xs" c="dimmed">
-        生成物と衣装の参照画像を選ぶと、その画像のProject・Scene・キャラ・衣装が上の対象に入り、結果にも引き継がれます。
-      </Text>
+      {note === null ? null : (
+        <Text size="xs" c="dimmed">
+          {note ?? "生成物と衣装の参照画像を選ぶと、その画像のProject・Scene・キャラ・衣装が上の対象に入り、結果にも引き継がれます。"}
+        </Text>
+      )}
     </Stack>
   );
 }

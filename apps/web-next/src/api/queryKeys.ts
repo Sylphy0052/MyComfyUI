@@ -7,6 +7,7 @@ export const queryKeys = {
   job: (jobId: string) => ["generation-jobs", "detail", jobId] as const,
   jobImages: (jobId: string) => ["generation-jobs", "detail", jobId, "images"] as const,
   jobAudio: (jobId: string) => ["generation-jobs", "detail", jobId, "audio"] as const,
+  jobVideos: (jobId: string) => ["generation-jobs", "detail", jobId, "videos"] as const,
   // スイープの実験も`jobs`の下に置く。Jobの状態が変わったイベントで、実験の各セルも取り直す。
   experiment: (experimentId: string) => ["generation-jobs", "experiment", experimentId] as const,
   manifest: (manifestId: string) => ["generation-manifests", manifestId] as const,
@@ -28,7 +29,7 @@ export const queryKeys = {
   // 生成物の一覧は取得元のAPIで系統を分ける (`/media-items`と`/artifacts`)。
   // 採否・紐づけ・ゴミ箱の変更では、両方の系統を条件ごとのページまでまとめて取り直す。
   mediaItems: ["media-items"] as const,
-  viewerImages: (query: string) => ["media-items", "viewer-images", query] as const,
+  viewerMediaItems: (query: string) => ["media-items", "viewer-list", query] as const,
   // 元画像の選択に出す最近の生成物。
   sourceImages: (query: string) => ["media-items", "source-images", query] as const,
   rejectedArtifactIds: (query: string) => ["media-items", "rejected-ids", query] as const,

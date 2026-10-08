@@ -1,0 +1,310 @@
+import { Alert, Button, Grid, Group, Loader, Stack, Tabs, Text, Textarea, Title } from "@mantine/core";
+import { useCallback, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router";
+
+import type { SourceImage } from "../imageGen/deriveForm";
+import { type ImageTarget } from "../imageGen/imageForm";
+import { TargetPicker } from "../imageGen/TargetPicker";
+import { initialTarget, paramsFromTarget, targetFromParams } from "../imageGen/targetParams";
+import { useProjectStory, useSubmitImageJob } from "../imageGen/useImageGen";
+import { notifyError } from "../notifications";
+import { useProjectList } from "../projects/useProjects";
+import { notifyDroppedReferences } from "../videoGen/referenceNotice";
+import { useCostumeFill } from "../videoGen/useCostumeFill";
+import { useSceneFill } from "../videoGen/useSceneFill";
+import { useStoredVideoInput, useVideoRecipes, useVideoResultEntries } from "../videoGen/useVideoGen";
+import {
+  addReferences,
+  buildVideoInputs,
+  defaultDraft,
+  mergeReferences,
+  videoBlockedReason,
+  videoImageFromSource,
+  VIDEO_MODE_LABELS,
+  type VideoDraft,
+  type VideoMode,
+  type VideoParams,
+  type VideoRecipes,
+} from "../videoGen/videoForm";
+import { FirstFrameField, ReferencesField } from "../videoGen/VideoImageFields";
+import { VideoParamsFields } from "../videoGen/VideoParamsFields";
+import { VideoResultPanel } from "../videoGen/VideoResultPanel";
+
+/** 動画は1人のキャラの衣装だけを使う。URLに`cast`があっても2人目以降は使わない。 */
+function videoTargetFromParams(params: URLSearchParams): ImageTarget {
+  return { ...targetFromParams(params), extraCast: [] };
+}
+
+function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
+  const [stored, setStored] = useStoredVideoInput(recipes);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const results = useVideoResultEntries();
+  // Jobの投入は画像と同じ。投入後にJob一覧を取り直す。
+  const submit = useSubmitImageJob();
+
+  const draft = stored.draft;
+  const params = draft.params[draft.mode];
+  const recipe = recipes[draft.mode];
+  const target = videoTargetFromParams(searchParams);
+  const targetKey = paramsFromTarget(target).toString();
+
+  const story = useProjectStory(target.projectId);
+  const projects = useProjectList("active");
+  const characterList = story.characters;
+  const sceneList = story.scenes;
+  const character = characterList.find((item) => item.id === target.characterId) ?? null;
+  const costume = character?.costumes.find((item) => item.id === target.costumeId) ?? null;
+  const scene = sceneList.find((item) => item.id === target.sceneId) ?? null;
+
+  const storyLoading = story.isLoading || (target.projectId !== null && projects.isPending);
+  const storyError = story.error;
+  // Project一覧を読めないと、Projectが有効か (ゴミ箱・削除済みでないか) を確かめられない。Projectを指す対象のときだけ投入を止める。
+  const projectsError = target.projectId !== null ? projects.error : null;
+  // ゴミ箱・削除済みのProjectは有効な一覧に無い。投入を止める。
+  const projectMissing =
+    target.projectId !== null && projects.data !== undefined && !projects.data.some((item) => item.id === target.projectId);
+  const missing = storyLoading
+    ? []
+    : [
+        projectMissing ? "Project" : null,
+        target.sceneId !== null && scene === null ? "Scene" : null,
+        target.characterId !== null && character === null ? "キャラ" : null,
+        target.costumeId !== null && costume === null ? "衣装" : null,
+      ].filter((name): name is string => name !== null);
+
+  const setDraft = useCallback(
+    (update: (current: VideoDraft) => VideoDraft) =>
+      setStored((current) => ({ ...current, draft: update(current.draft) })),
+    [setStored],
+  );
+  const updateParams = useCallback(
+    (update: Partial<VideoParams>) =>
+      setDraft((current) => ({
+        ...current,
+        params: { ...current.params, [current.mode]: { ...current.params[current.mode], ...update } },
+      })),
+    [setDraft],
+  );
+  const changeTarget = useCallback(
+    (next: ImageTarget) => setSearchParams(paramsFromTarget(next), { replace: true }),
+    [setSearchParams],
+  );
+
+  // URLの対象を、次に開いたときの復元用に残す。
+  // 下の復元effectより前に置くこと。順序は次の2点で効く。
+  // - 初回の描画では`initialized`がまだfalseなので、ここは保存せずに抜ける。URLが空のまま、保存済みの対象を空で上書きしない。
+  // - 復元effectが`initialized`をtrueにして`changeTarget`を呼ぶと、URLが変わって`targetKey`が変わり、
+  //   次の描画でここが復元後の対象を保存する。入れ替えると、復元前の空の対象を保存してしまう。
+  const initialized = useRef(false);
+  useEffect(() => {
+    if (!initialized.current) return;
+    setStored((current) => ({ ...current, target: videoTargetFromParams(new URLSearchParams(targetKey)) }));
+  }, [targetKey, setStored]);
+
+  // 開いたときに一度だけ、最後に使った対象を戻す。
+  // 依存配列を`[]`にするのは、開いた時点の`target`・`stored.target`だけを使い、その後の変更で戻し直さないため
+  // (`initialized`でも二重実行を防ぐ)。web-nextにはESLint設定が無く、`ImagePage`の`[]`のeffectにも抑止コメントは無いため、
+  // `react-hooks/exhaustive-deps`の抑止コメントは付けない。
+  useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+    const restored = initialTarget(target, stored.target);
+    if (restored) changeTarget({ ...restored, extraCast: [] });
+  }, []);
+
+  // ---- 画像の選択 ----
+
+  // 先頭フレームを選び直すたびに進め、取り込みを待つ間に選び直されたら、待っていた結果を捨てる。
+  const frameSeq = useRef(0);
+  const pickFirstFrame = useCallback(
+    (source: SourceImage) => {
+      frameSeq.current += 1;
+      setDraft((current) => ({ ...current, firstFrame: videoImageFromSource(source) }));
+    },
+    [setDraft],
+  );
+  const reserveFirstFrame = useCallback(() => {
+    const seq = ++frameSeq.current;
+    return (source: SourceImage) => {
+      if (seq === frameSeq.current) setDraft((current) => ({ ...current, firstFrame: videoImageFromSource(source) }));
+    };
+  }, [setDraft]);
+  const clearFirstFrame = useCallback(() => {
+    frameSeq.current += 1;
+    setDraft((current) => ({ ...current, firstFrame: null }));
+  }, [setDraft]);
+  // 取り込みを待った後に読むことがあるため、最新の参照画像をrefで持つ。
+  const referencesRef = useRef(draft.references);
+  referencesRef.current = draft.references;
+  const pickReference = useCallback(
+    (source: SourceImage) => {
+      const added = [videoImageFromSource(source)];
+      notifyDroppedReferences(mergeReferences(referencesRef.current, added));
+      setDraft((current) => ({ ...current, references: addReferences(current.references, added) }));
+    },
+    [setDraft],
+  );
+  const reserveReference = useCallback(() => pickReference, [pickReference]);
+  const removeReference = useCallback(
+    (index: number) =>
+      setDraft((current) => ({ ...current, references: current.references.filter((_, i) => i !== index) })),
+    [setDraft],
+  );
+
+  // ---- Projectからの補完 ----
+
+  const { sceneMotion, insertMotion, adoptionsError } = useSceneFill({
+    projectId: target.projectId,
+    sceneId: target.sceneId,
+    scene,
+    filledSceneId: draft.filled.sceneId,
+    setDraft,
+  });
+  useCostumeFill({ costume, filledCostumeId: draft.filled.costumeId, referencesRef, setDraft });
+
+  // ---- 投入 ----
+
+  const blockedReason = videoBlockedReason(draft, recipe);
+  const canSubmit =
+    blockedReason === null && !storyLoading && storyError === null && projectsError === null && missing.length === 0;
+  const onSubmit = () => {
+    if (recipe === null) return;
+    submit.mutate(
+      {
+        kind: "video",
+        recipe_id: recipe.id,
+        use_inherited_defaults: false,
+        project_id: target.projectId,
+        story_scene_id: target.sceneId,
+        story_character_id: target.characterId,
+        story_costume_id: target.costumeId,
+        inputs: buildVideoInputs(draft, recipe),
+      },
+      {
+        onSuccess: (job) => results.add({ jobId: job.id }),
+        onError: (error) => notifyError("投入できませんでした", error),
+      },
+    );
+  };
+
+  const pickerProps = { target, characters: characterList };
+  return (
+    <Grid gap="lg">
+      <Grid.Col span={{ base: 12, lg: 5 }}>
+        <Stack gap="md">
+          <Group justify="space-between">
+            <Title order={2}>動画</Title>
+            <Button
+              variant="default"
+              size="xs"
+              onClick={() => setDraft((current) => ({ ...defaultDraft(recipes), mode: current.mode }))}
+            >
+              リセット
+            </Button>
+          </Group>
+          <TargetPicker
+            target={target}
+            onChange={changeTarget}
+            characters={characterList}
+            scenes={sceneList}
+            missing={missing}
+            multi={false}
+          />
+          {storyError ? <Alert color="red">{storyError.message}</Alert> : null}
+          {projectsError ? (
+            <Alert color="red" title="Project一覧を読めません" data-testid="projects-error">
+              {projectsError.message}
+            </Alert>
+          ) : null}
+          {adoptionsError ? (
+            <Alert color="yellow" title="Sceneの採用画像を取得できませんでした" data-testid="adoptions-error">
+              先頭フレームは手で選んでください。({adoptionsError.message})
+            </Alert>
+          ) : null}
+          <Tabs
+            keepMounted={false}
+            value={draft.mode}
+            onChange={(value) => value !== null && setDraft((current) => ({ ...current, mode: value as VideoMode }))}
+          >
+            <Tabs.List>
+              <Tabs.Tab value="i2v">{VIDEO_MODE_LABELS.i2v}</Tabs.Tab>
+              <Tabs.Tab value="ref2v">{VIDEO_MODE_LABELS.ref2v}</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="i2v" pt="sm">
+              <FirstFrameField
+                image={draft.firstFrame}
+                onClear={clearFirstFrame}
+                onPick={pickFirstFrame}
+                reservePick={reserveFirstFrame}
+                {...pickerProps}
+              />
+            </Tabs.Panel>
+            <Tabs.Panel value="ref2v" pt="sm">
+              <ReferencesField
+                images={draft.references}
+                onRemove={removeReference}
+                onPick={pickReference}
+                reservePick={reserveReference}
+                {...pickerProps}
+              />
+            </Tabs.Panel>
+          </Tabs>
+          <Stack gap={4}>
+            <Textarea
+              label="プロンプト"
+              placeholder="動きや場面を文章で書く"
+              autosize
+              minRows={4}
+              maxRows={12}
+              value={draft.prompt}
+              onChange={(event) => {
+                const prompt = event.currentTarget.value;
+                setDraft((current) => ({ ...current, prompt }));
+              }}
+            />
+            {sceneMotion !== "" && draft.prompt !== sceneMotion ? (
+              <Group>
+                <Button size="compact-xs" variant="light" onClick={insertMotion} data-testid="insert-motion">
+                  Sceneの動きを入れ直す
+                </Button>
+              </Group>
+            ) : null}
+          </Stack>
+          {recipe !== null ? <VideoParamsFields params={params} onChange={updateParams} recipe={recipe} /> : null}
+          {blockedReason !== null ? (
+            <Text size="xs" c="dimmed" data-testid="blocked-reason">
+              {blockedReason}
+            </Text>
+          ) : null}
+          <Button onClick={onSubmit} disabled={!canSubmit} loading={submit.isPending}>
+            生成
+          </Button>
+        </Stack>
+      </Grid.Col>
+      <Grid.Col span={{ base: 12, lg: 7 }}>
+        <VideoResultPanel entries={results.entries} onRemove={results.remove} />
+      </Grid.Col>
+    </Grid>
+  );
+}
+
+/** `/video`。「画像から」「参照から」の入力欄と、この画面から投入した生成の結果欄。 */
+export function VideoPage() {
+  const recipes = useVideoRecipes();
+  if (recipes.isPending) return <Loader size="sm" />;
+  if (recipes.error) {
+    return (
+      <Alert color="red" title="Recipeを読めません">
+        {recipes.error.message}
+      </Alert>
+    );
+  }
+  if (recipes.data.i2v === null && recipes.data.ref2v === null) {
+    return (
+      <Alert color="yellow" title="動画のRecipeがありません">
+        minimax_h3_i2v か minimax_h3_ref2v のRecipeを登録してから開いてください。
+      </Alert>
+    );
+  }
+  return <VideoWorkspace recipes={recipes.data} />;
+}
