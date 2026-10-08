@@ -1,4 +1,4 @@
-import type { GenerationManifest, Recipe } from "../api/client";
+import type { GenerationJob, GenerationManifest, Recipe } from "../api/client";
 import { acceptsInput, isRecord, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
 
 /** BGM生成に使うWorkflowテンプレート。 */
@@ -172,4 +172,47 @@ export function buildBgmInputs(form: BgmForm, seconds: number, index: number, re
       ([name, value]) => (value !== "" || EMPTY_ALLOWED.has(name)) && acceptsInput(recipe, name),
     ),
   );
+}
+
+// ---- 生成物からの復元 ----
+
+/** 生成物から戻した入力欄と対象。 */
+export type BgmRestored = { form: BgmForm; target: BgmTarget; warning: string | null };
+
+/**
+ * 音楽Jobとそのマニフェストから入力欄の内容を作る。タグは`resolved_prompt`、それ以外は`parameters` / `model`から戻す。
+ * 歌詞が空のときに投入時に補った末尾の`instrumental`は、入力欄の値ではないので外す
+ * (残すと、後で歌詞を書いたときに`instrumental`が残る)。
+ * 日本語の雰囲気の欄はManifestに残らないので空にする。枚数は1、シードは固定にして同じ値で作り直せるようにする。
+ */
+export function bgmRestoredFromManifest(
+  base: BgmForm,
+  job: Pick<GenerationJob, "assigned_project_id" | "story_scene_id">,
+  manifest: Pick<GenerationManifest, "parameters" | "model" | "resolved_prompt" | "seed">,
+): BgmRestored {
+  const { parameters, model } = manifest;
+  const lyrics = stringOr(parameters.lyrics, base.lyrics);
+  const tags = splitTags(manifest.resolved_prompt);
+  const last = tags[tags.length - 1];
+  if (lyrics.trim() === "" && last !== undefined && last.toLowerCase() === INSTRUMENTAL_TAG) tags.pop();
+  return {
+    form: {
+      ...base,
+      moodJa: "",
+      tags: tags.join(", "),
+      negative: stringOr(parameters.negative_prompt, base.negative),
+      lyrics,
+      seconds: typeof parameters.seconds === "number" && parameters.seconds > 0 ? Math.min(parameters.seconds, SECONDS_MAX) : base.seconds,
+      count: 1,
+      seedMode: "fixed",
+      seed: Math.min(SEED_INPUT_MAX, Math.max(0, Math.trunc(manifest.seed))),
+      ckptName: stringOr(model.ckpt_name, base.ckptName),
+      steps: numberOr(parameters.steps, base.steps),
+      cfg: numberOr(parameters.cfg, base.cfg),
+      samplerName: stringOr(parameters.sampler_name, base.samplerName),
+      scheduler: stringOr(parameters.scheduler, base.scheduler),
+    },
+    target: { projectId: job.assigned_project_id, sceneId: job.story_scene_id ?? null },
+    warning: null,
+  };
 }

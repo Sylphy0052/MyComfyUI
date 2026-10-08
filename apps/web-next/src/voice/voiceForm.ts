@@ -1,4 +1,4 @@
-import type { Recipe, StoryCharacter, StorySceneDialogue } from "../api/client";
+import type { GenerationJob, GenerationManifest, Recipe, StoryCharacter, StorySceneDialogue } from "../api/client";
 import { acceptsInput, isRecord, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
 
 /** 声質の文章 (caption) の上限。backendの`MAX_CAPTION_CHARS`と揃える。 */
@@ -189,5 +189,65 @@ export function buildVoiceBody(
     story_character_id: character?.id ?? null,
     story_dialogue_id: dialogueId,
     inputs,
+  };
+}
+
+// ---- 生成物からの復元 ----
+
+/** 生成物から戻した入力欄と対象。戻せなかった項目があれば`warning`に理由を入れる。 */
+export type VoiceRestored = { form: VoiceForm; target: VoiceTarget; warning: string | null };
+
+function stringOrEmpty(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * 音声Jobとそのスナップショットから入力欄の内容を作る。台詞文・読み・演技指示・話者・声の指定は、
+ * `resolved_prompt`が1つの文字列に潰れて読み取れないため、Workflowのスナップショット (`dialogue` / `voices`) から戻す。
+ * 声は、参照音声があればその参照ファイルでClone、無ければ声質の文章 (caption) にする。
+ * 話者は、元のキャラが`characterIds` (対象Projectのキャラ) にいればそのキャラ、いなければ話者名だけ戻す。
+ * シードは固定にして、同じ値で作り直せるようにする。
+ */
+export function voiceRestoredFromSnapshot(
+  base: VoiceForm,
+  job: Pick<GenerationJob, "assigned_project_id" | "story_scene_id" | "story_character_id" | "story_dialogue_id">,
+  manifest: Pick<GenerationManifest, "seed" | "parameters">,
+  snapshot: Record<string, unknown>,
+  characterIds: ReadonlySet<string>,
+): VoiceRestored {
+  const lines = Array.isArray(snapshot.dialogue) ? snapshot.dialogue.filter(isRecord) : [];
+  const line = lines[0];
+  if (line === undefined) throw new Error("音声の生成設定ではありません");
+  const voices = isRecord(snapshot.voices) ? snapshot.voices : {};
+  const voice = isRecord(voices[stringOrEmpty(line.voice_id)]) ? (voices[stringOrEmpty(line.voice_id)] as Record<string, unknown>) : {};
+  const reference = isRecord(voice.reference) ? voice.reference : null;
+  const referencePath = reference === null ? "" : stringOrEmpty(reference.relative_path);
+  const referenceSha = reference === null ? "" : stringOrEmpty(reference.sha256);
+  const hasReference = referencePath !== "" && referenceSha !== "";
+
+  const warnings: string[] = [];
+  if (lines.length > 1) warnings.push("複数行の音声だったため、先頭の行だけ戻しました");
+  const speakerId = job.story_character_id != null && characterIds.has(job.story_character_id) ? job.story_character_id : null;
+  const verify = typeof snapshot.verify_with_asr === "boolean" ? snapshot.verify_with_asr : manifest.parameters.verify_with_asr;
+
+  return {
+    form: {
+      ...base,
+      text: stringOrEmpty(line.text),
+      reading: stringOrEmpty(line.reading),
+      speakerId,
+      speakerName: speakerId === null ? stringOrEmpty(line.speaker) : "",
+      direction: stringOrEmpty(line.direction),
+      mode: hasReference ? "clone" : "caption",
+      caption: stringOrEmpty(voice.caption),
+      referenceSource: "file",
+      reference: hasReference ? { relativePath: referencePath, sha256: referenceSha, label: referencePath.split("/").pop() || referencePath } : null,
+      dialogueId: job.story_dialogue_id ?? null,
+      seedMode: "fixed",
+      seed: Math.min(SEED_MAX, Math.max(0, Math.trunc(manifest.seed))),
+      verifyAsr: typeof verify === "boolean" ? verify : base.verifyAsr,
+    },
+    target: { projectId: job.assigned_project_id, sceneId: job.story_scene_id ?? null },
+    warning: warnings.length === 0 ? null : warnings.join("。"),
   };
 }

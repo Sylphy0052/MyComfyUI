@@ -1,5 +1,5 @@
 import { useLocalStorage } from "@mantine/hooks";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
@@ -9,9 +9,11 @@ import {
   type GenerationJob,
   type GenerationJobBody,
   type Recipe,
+  type StoryCharacter,
   type VoiceVerification,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+import { fetchJobSettings, fetchWorkflowSnapshot } from "../imageGen/artifactRestore";
 import { isRecord } from "../imageGen/imageForm";
 import { useSlotDecision } from "../imageGen/useImageGen";
 import { useUploadVoiceReference } from "../projectDetail/useStory";
@@ -21,6 +23,8 @@ import {
   normalizeVoiceTarget,
   type StoredVoiceInput,
   type VoiceReferenceFile,
+  type VoiceRestored,
+  voiceRestoredFromSnapshot,
 } from "./voiceForm";
 
 const enc = encodeURIComponent;
@@ -203,4 +207,29 @@ export function useArtifactAsVoiceReference() {
 /** Sceneの台詞の行 (`dialogueId`) の音声枠への採用と、不採用の印。枠は台詞ごとに1件。 */
 export function useVoiceDecision(projectId: string, sceneId: string, dialogueId: string | null) {
   return useSlotDecision(projectId, sceneId, "voice", dialogueId);
+}
+
+// ---- 生成物からの復元 ----
+
+/** `/voice?from_artifact=`で開いたとき、生成物を作った音声Jobの設定を入力欄の内容にする。 */
+export async function restoreVoiceFromJob(client: QueryClient, jobId: string, recipe: Recipe): Promise<VoiceRestored> {
+  const { job, manifest } = await fetchJobSettings(client, jobId, "voice", "音声");
+  const snapshot = await fetchWorkflowSnapshot(client, manifest);
+  const characterIds = new Set<string>();
+  let warning: string | null = null;
+  const projectId = job.assigned_project_id;
+  if (projectId !== null) {
+    try {
+      const characters = await client.fetchQuery({
+        queryKey: queryKeys.projectCharacters(projectId),
+        queryFn: () => apiRequest<StoryCharacter[]>(`/projects/${enc(projectId)}/characters`),
+      });
+      for (const character of characters) characterIds.add(character.id);
+    } catch (error) {
+      // Projectがゴミ箱・削除済みでも設定は戻す。話者はキャラを選ばず、名前だけ戻す。
+      warning = `話者のキャラを確認できないため、話者名だけ戻しました (${error instanceof Error ? error.message : String(error)})`;
+    }
+  }
+  const restored = voiceRestoredFromSnapshot(defaultVoiceForm(recipe), job, manifest, snapshot, characterIds);
+  return { ...restored, warning: [warning, restored.warning].filter((text) => text !== null).join("。") || null };
 }

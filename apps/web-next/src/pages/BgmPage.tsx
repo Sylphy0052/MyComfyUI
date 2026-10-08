@@ -1,8 +1,10 @@
 import { Alert, Button, Grid, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
 
 import type { Recipe } from "../api/client";
+import { FROM_ARTIFACT_PARAM, restoreFromArtifactParam } from "../imageGen/artifactRestore";
 import { BgmParamsFields, BgmPromptFields } from "../bgm/BgmFields";
 import { BgmResultPanel } from "../bgm/BgmResultPanel";
 import {
@@ -15,6 +17,7 @@ import {
   type BgmTarget,
 } from "../bgm/bgmForm";
 import {
+  restoreBgmFromJob,
   useAdoptedVideoSeconds,
   useBgmRecipe,
   useBgmResultEntries,
@@ -79,6 +82,7 @@ function secondsNote(
 function BgmWorkspace({ recipe }: { recipe: Recipe }) {
   const [stored, setStored] = useStoredBgmInput(recipe);
   const [searchParams, setSearchParams] = useSearchParams();
+  const client = useQueryClient();
   const results = useBgmResultEntries();
   const submit = useSubmitBgmJobs();
 
@@ -125,12 +129,28 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
     if (!initialized.current) return;
     setStored((current) => ({ ...current, target: targetFromParams(new URLSearchParams(targetKey)) }));
   }, [targetKey, setStored]);
-  // 開いたときに一度だけ、最後に使った対象を戻す。
+  // 開いたときに一度だけ、`from_artifact`の生成設定か、最後に使った対象を戻す。
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    const restored = initialTarget(target, stored.target);
-    if (restored) changeTarget(restored);
+    const fromArtifact = searchParams.get(FROM_ARTIFACT_PARAM);
+    if (fromArtifact === null) {
+      const restored = initialTarget(target, stored.target);
+      if (restored) changeTarget(restored);
+      return;
+    }
+    void restoreFromArtifactParam({
+      client,
+      artifactId: fromArtifact,
+      restore: (jobId) => restoreBgmFromJob(client, jobId, recipe),
+      apply: (restored) => {
+        // 戻したSceneを「適用済み」にして、下のSceneの補完 (雰囲気と長さの入れ直し) が戻した入力を上書きしないようにする。
+        appliedSceneId.current = restored.target.sceneId;
+        setStored({ form: restored.form, target: restored.target });
+        changeTarget(restored.target);
+      },
+      onFail: () => changeTarget(target),
+    });
     // 依存配列は意図して空。開いたときの`target` / `stored.target`だけを使い、以後の変更では走らせない。
   }, []);
 

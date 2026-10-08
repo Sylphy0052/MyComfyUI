@@ -1,8 +1,10 @@
 import { Alert, Button, Grid, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import type { Recipe, StoryCharacter, StorySceneDialogue } from "../api/client";
+import { FROM_ARTIFACT_PARAM, restoreFromArtifactParam } from "../imageGen/artifactRestore";
 import { notifyError } from "../notifications";
 import { useCharacters, useScenes } from "../projectDetail/useStory";
 import { useProjectList } from "../projects/useProjects";
@@ -17,7 +19,13 @@ import {
   type LineNotice,
   type LineSkip,
 } from "../voice/SceneLineList";
-import { useStoredVoiceInput, useSubmitVoiceJob, useVoiceRecipe, useVoiceResultEntries } from "../voice/useVoice";
+import {
+  restoreVoiceFromJob,
+  useStoredVoiceInput,
+  useSubmitVoiceJob,
+  useVoiceRecipe,
+  useVoiceResultEntries,
+} from "../voice/useVoice";
 import { VoiceLineFields, VoiceParamsFields, VoiceSourceFields } from "../voice/VoiceFields";
 import { VoiceResultPanel } from "../voice/VoiceResultPanel";
 import {
@@ -87,6 +95,7 @@ function lineOptions(
 function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
   const [stored, setStored] = useStoredVoiceInput(recipe);
   const [searchParams, setSearchParams] = useSearchParams();
+  const client = useQueryClient();
   const results = useVoiceResultEntries();
   const submit = useSubmitVoiceJob();
   const [lineNotice, setLineNotice] = useState<LineNotice | null>(null);
@@ -168,12 +177,26 @@ function VoiceWorkspace({ recipe }: { recipe: Recipe }) {
     if (!initialized.current) return;
     setStored((current) => ({ ...current, target: targetFromParams(new URLSearchParams(targetKey)) }));
   }, [targetKey, setStored]);
-  // 開いたときに一度だけ、最後に使った対象を戻す。
+  // 開いたときに一度だけ、`from_artifact`の生成設定か、最後に使った対象を戻す。
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    const restored = initialTarget(target, stored.target);
-    if (restored) applyTarget(restored);
+    const fromArtifact = searchParams.get(FROM_ARTIFACT_PARAM);
+    if (fromArtifact === null) {
+      const restored = initialTarget(target, stored.target);
+      if (restored) applyTarget(restored);
+      return;
+    }
+    void restoreFromArtifactParam({
+      client,
+      artifactId: fromArtifact,
+      restore: (jobId) => restoreVoiceFromJob(client, jobId, recipe),
+      apply: (restored) => {
+        setStored({ form: restored.form, target: restored.target });
+        applyTarget(restored.target);
+      },
+      onFail: () => applyTarget(target),
+    });
     // 依存配列は意図して空。開いたときの`target` / `stored.target`だけを使い、以後の変更では走らせない。
   }, []);
 

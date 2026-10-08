@@ -1,5 +1,5 @@
 import { useLocalStorage } from "@mantine/hooks";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
@@ -12,14 +12,17 @@ import {
   type StorySceneAdoption,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+import { fetchJobSettings } from "../imageGen/artifactRestore";
 import { isRecord } from "../imageGen/imageForm";
 import { useSlotDecision } from "../imageGen/useImageGen";
 import {
   BGM_TEMPLATE,
+  bgmRestoredFromManifest,
   defaultBgmForm,
   normalizeBgmForm,
   normalizeBgmTarget,
   videoSecondsOf,
+  type BgmRestored,
   type StoredBgmInput,
 } from "./bgmForm";
 
@@ -181,4 +184,12 @@ export function useJobAudio(jobId: string, enabled: boolean) {
  */
 export function useBgmDecision(projectId: string, sceneId: string) {
   return useSlotDecision(projectId, sceneId, "bgm");
+}
+
+// ---- 生成物からの復元 ----
+
+/** `/bgm?from_artifact=`で開いたとき、生成物を作った音楽Jobの設定を入力欄の内容にする。 */
+export async function restoreBgmFromJob(client: QueryClient, jobId: string, recipe: Recipe): Promise<BgmRestored> {
+  const { job, manifest } = await fetchJobSettings(client, jobId, "music", "音楽");
+  return bgmRestoredFromManifest(defaultBgmForm(recipe), job, manifest);
 }
