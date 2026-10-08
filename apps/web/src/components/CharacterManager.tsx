@@ -541,6 +541,10 @@ export function CharacterManager({ projectId, active, onChanged, reloadToken = 0
     setDraft(next);
     setSelectedId(next.id);
     setOutfitTagResult(null);
+    setOutfitBulkProgress(null);
+    setOutfitBulkFailures([]);
+    setOutfitSkipped(0);
+    setRefImportReport(null);
   };
 
   const handleReferencePicked = (next: PickedMedia[]) => {
@@ -776,7 +780,8 @@ export function CharacterManager({ projectId, active, onChanged, reloadToken = 0
       }
     }
     setOutfitTagProgress(null);
-    setOutfitTagResult({ filled, skipped, failures, interrupted });
+    // 抽出中にキャラクターが替わったら、新しいdraftへ結果を書き戻さない。
+    if (draftRef.current?.id === draftId) setOutfitTagResult({ filled, skipped, failures, interrupted });
     setExtractingOutfitTags(false);
   };
 

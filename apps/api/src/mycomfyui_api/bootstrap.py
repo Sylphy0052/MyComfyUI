@@ -483,6 +483,19 @@ _IMAGE_REF_TEMPLATES = frozenset(
 )
 
 
+def _effective_negative_term(term: str) -> str | None:
+    """negativeの1語を小文字の語名にする。重みが1未満の語は効かないため``None``を返す。"""
+    body = term.strip().strip("()")
+    name, _, weight = body.partition(":")
+    if weight.strip():
+        try:
+            if float(weight.strip().rstrip(")")) < 1:
+                return None
+        except ValueError:
+            pass
+    return name.strip().lower()
+
+
 def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
     """参照Recipeのnegativeへ、欠けている安全語を先頭に足す。参照Recipe以外はそのまま返す。
 
@@ -495,8 +508,7 @@ def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
         return negative
     # 大文字小文字と重み (`(nsfw:1.2)`) を無視して既存の語を判定する。
     present = {
-        term.strip().strip("()").split(":")[0].strip().lower()
-        for term in negative.split(",")
+        name for term in negative.split(",") if (name := _effective_negative_term(term))
     }
     missing = [
         term for term in IMAGE_REF_SAFETY_NEGATIVE.split(", ") if term not in present
