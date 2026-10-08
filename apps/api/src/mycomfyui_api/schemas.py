@@ -2591,3 +2591,205 @@ class ImageTagExtractRead(ApiModel):
     """画像から抽出した正プロンプト用のタグ。"""
 
     tags: list[str]
+
+
+# --- WebUI v2: キャラクター・衣装・シーン (#529) ---
+
+StoryTimeOfDay = Literal["morning", "day", "sunset", "night"]
+
+#: 生成物・入力cacheの参照。`MediaItemRead.key`と同じ書式で、`artifact:<id>`か`input:<relative_path>`。
+StoryMediaKey = Annotated[str, Field(min_length=1, max_length=1_100)]
+
+
+def _story_name(value: str) -> str:
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("名前を空にできません。")
+    return candidate
+
+
+def _story_tag(value: str) -> str:
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("タグを空にできません。")
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in candidate):
+        raise ValueError("タグに制御文字を含められません。")
+    return candidate
+
+
+def _unique_items(value: list[str]) -> list[str]:
+    if len(set(value)) != len(value):
+        raise ValueError("同じ値を重複して指定できません。")
+    return value
+
+
+StoryName = Annotated[
+    str, Field(min_length=1, max_length=120), AfterValidator(_story_name)
+]
+StoryTag = Annotated[
+    str, Field(min_length=1, max_length=128), AfterValidator(_story_tag)
+]
+StoryTags = Annotated[
+    list[StoryTag], Field(max_length=100), AfterValidator(_unique_items)
+]
+StoryText = Annotated[str, Field(max_length=4_000)]
+
+
+class StoryCostumeCreate(ApiModel):
+    name: StoryName
+    tags: StoryTags = Field(default_factory=list)
+    negative_tags: StoryTags = Field(default_factory=list)
+    description: StoryText = ""
+    #: 参照画像。並び順がそのまま保存され、先頭が代表画像になる。
+    reference_images: Annotated[
+        list[StoryMediaKey], Field(max_length=50), AfterValidator(_unique_items)
+    ] = Field(default_factory=list)
+
+
+class StoryCostumeUpdate(ApiModel):
+    name: StoryName | None = None
+    tags: StoryTags | None = None
+    negative_tags: StoryTags | None = None
+    description: StoryText | None = None
+    reference_images: (
+        Annotated[
+            list[StoryMediaKey], Field(max_length=50), AfterValidator(_unique_items)
+        ]
+        | None
+    ) = None
+
+
+class StoryCostumeRead(ApiModel):
+    id: str
+    character_id: str
+    name: str
+    tags: list[str]
+    negative_tags: list[str]
+    description: str
+    reference_images: list[str]
+    created_at: str
+    updated_at: str
+
+
+class StoryCharacterCreate(ApiModel):
+    name: StoryName
+    fixed_tags: StoryTags = Field(default_factory=list)
+    negative_tags: StoryTags = Field(default_factory=list)
+    #: 性格・設定 (日本語)。
+    profile: StoryText = ""
+    portrait_media_key: StoryMediaKey | None = None
+    voice_media_key: StoryMediaKey | None = None
+    voice_transcript: StoryText | None = None
+
+
+class StoryCharacterUpdate(ApiModel):
+    name: StoryName | None = None
+    fixed_tags: StoryTags | None = None
+    negative_tags: StoryTags | None = None
+    profile: StoryText | None = None
+    portrait_media_key: StoryMediaKey | None = None
+    voice_media_key: StoryMediaKey | None = None
+    voice_transcript: StoryText | None = None
+
+
+class StoryCharacterRead(ApiModel):
+    id: str
+    project_id: str
+    name: str
+    fixed_tags: list[str]
+    negative_tags: list[str]
+    profile: str
+    portrait_media_key: str | None
+    voice_media_key: str | None
+    voice_transcript: str | None
+    costumes: list[StoryCostumeRead]
+    created_at: str
+    updated_at: str
+
+
+class StorySceneCastEntry(ApiModel):
+    character_id: ResourceId
+    #: 指定できるのは`character_id`のキャラクターの衣装だけ。
+    costume_id: ResourceId | None = None
+    pose_text: StoryText = ""
+    pose_tags: StoryTags = Field(default_factory=list)
+    expression_text: StoryText = ""
+    expression_tags: StoryTags = Field(default_factory=list)
+
+
+class StorySceneDialogueEntry(ApiModel):
+    speaker_character_id: ResourceId
+    text: Annotated[str, Field(min_length=1, max_length=4_000)]
+    #: 演技指示。
+    direction: StoryText = ""
+
+
+def _unique_cast(value: list[StorySceneCastEntry]) -> list[StorySceneCastEntry]:
+    _unique_items([entry.character_id for entry in value])
+    return value
+
+
+StorySceneCast = Annotated[
+    list[StorySceneCastEntry], Field(max_length=50), AfterValidator(_unique_cast)
+]
+StorySceneDialogues = Annotated[list[StorySceneDialogueEntry], Field(max_length=500)]
+
+
+class StorySceneCreate(ApiModel):
+    name: StoryName
+    summary: StoryText = ""
+    background_text: StoryText = ""
+    background_tags: StoryTags = Field(default_factory=list)
+    time_of_day: StoryTimeOfDay | None = None
+    bgm_mood: StoryText = ""
+    video_motion: StoryText = ""
+    cast: StorySceneCast = Field(default_factory=list)
+    dialogues: StorySceneDialogues = Field(default_factory=list)
+
+
+class StorySceneUpdate(ApiModel):
+    """指定した項目だけ更新する。`cast`と`dialogues`は渡した配列で置き換える。"""
+
+    name: StoryName | None = None
+    summary: StoryText | None = None
+    background_text: StoryText | None = None
+    background_tags: StoryTags | None = None
+    time_of_day: StoryTimeOfDay | None = None
+    bgm_mood: StoryText | None = None
+    video_motion: StoryText | None = None
+    cast: StorySceneCast | None = None
+    dialogues: StorySceneDialogues | None = None
+
+
+class StorySceneRead(ApiModel):
+    id: str
+    project_id: str
+    parent_scene_id: str | None
+    name: str
+    sequence: int
+    summary: str
+    background_text: str
+    background_tags: list[str]
+    time_of_day: StoryTimeOfDay | None
+    bgm_mood: str
+    video_motion: str
+    cast: list[StorySceneCastEntry]
+    dialogues: list[StorySceneDialogueEntry]
+    created_at: str
+    updated_at: str
+
+
+class ProjectPurgeResult(ApiModel):
+    """Projectの完全削除で消した定義と、紐づけを外した生成物の件数。"""
+
+    project_id: str
+    character_count: int
+    costume_count: int
+    story_scene_count: int
+    legacy_scene_count: int
+    legacy_shot_count: int
+    batch_count: int
+    experiment_count: int
+    detached_artifact_count: int
+    detached_job_count: int
+    detached_media_role_tag_count: int
