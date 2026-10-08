@@ -138,7 +138,8 @@ const FOLLOWUP_POLL_MS = 2_000;
 
 /**
  * 2段目の予約。投入待ちの間は取り直す。投入のcommitと`child_job_id`の記録は別なので、
- * `submitted`でも`child_job_id`が付くまでは取り直す。
+ * `submitted`でも`child_job_id`が付くまでは取り直す。取り直しが1回失敗しても、直前の
+ * dataがまだ待機中なら間隔を保って再取得する (止めると待機中の表示のまま固まる)。
  */
 export function useFollowup(followupId: string) {
   return useQuery({
@@ -146,7 +147,7 @@ export function useFollowup(followupId: string) {
     queryFn: () => apiRequest<GenerationJobFollowup>(`/generation-job-followups/${enc(followupId)}`),
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (query.state.status === "error" || query.state.fetchFailureCount > 0 || data === undefined) return false;
+      if (data === undefined) return false;
       const settling = data.state === "pending" || (data.state === "submitted" && !data.child_job_id);
       return settling ? FOLLOWUP_POLL_MS : false;
     },

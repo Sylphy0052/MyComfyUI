@@ -1,6 +1,6 @@
 import { Alert, Badge, Card, CloseButton, Group, Loader, Stack, Text, Title } from "@mantine/core";
 
-import { artifactContentUrl } from "../api/client";
+import { artifactContentUrl, type GenerationJobFollowup } from "../api/client";
 import { useJob, useJobImages } from "../imageGen/useImageGen";
 import { STATE_LABELS } from "../jobs/JobDrawer";
 import { useFollowup, useJobVideos, type VideoResultEntry } from "./useVideoGen";
@@ -91,7 +91,7 @@ function VideoResult({ entry, onRemove }: { entry: VideoResultEntry; onRemove?: 
   );
 }
 
-const FOLLOWUP_LABELS: Record<string, { label: string; color: string }> = {
+const FOLLOWUP_LABELS: Record<GenerationJobFollowup["state"], { label: string; color: string }> = {
   pending: { label: "1段目の完了待ち", color: "gray" },
   submitted: { label: "投入済み", color: "blue" },
   skipped: { label: "投入しなかった", color: "yellow" },
@@ -182,13 +182,26 @@ function ImageStage({ jobId }: { jobId: string }) {
 function VideoStage({ followupId }: { followupId: string }) {
   const followup = useFollowup(followupId);
   const data = followup.data;
-  const state = data ? (FOLLOWUP_LABELS[data.state] ?? { label: data.state, color: "gray" }) : null;
+  const state = data ? FOLLOWUP_LABELS[data.state] : null;
 
   const body = () => {
     if (data === undefined) {
       return followup.error ? <Alert color="red">{followup.error.message}</Alert> : <Loader size="xs" />;
     }
-    if (data.state === "pending") return <StageWaiting label="1段目の完了後に自動で投入します" />;
+    // 取り直しの失敗はdataを消さないため、前回の状態を出したまま小さく知らせる。
+    const refetchFailed = followup.isRefetchError ? (
+      <Text size="xs" c="red" data-testid="followup-refetch-error">
+        状態の取得に失敗しました。自動で再取得します。
+      </Text>
+    ) : null;
+    if (data.state === "pending") {
+      return (
+        <>
+          <StageWaiting label="1段目の完了後に自動で投入します" />
+          {refetchFailed}
+        </>
+      );
+    }
     if (data.state === "skipped" || data.state === "failed") {
       return (
         <Alert color={data.state === "failed" ? "red" : "yellow"} title="動画は作られません" data-testid="followup-reason">
@@ -197,7 +210,12 @@ function VideoStage({ followupId }: { followupId: string }) {
       );
     }
     if (data.child_job_id) return <VideoResult entry={{ jobId: data.child_job_id }} />;
-    return <StageWaiting label="動画のJobを投入しています" />;
+    return (
+      <>
+        <StageWaiting label="動画のJobを投入しています" />
+        {refetchFailed}
+      </>
+    );
   };
 
   return (
