@@ -152,6 +152,7 @@ async function runSceneImage(ctx: RunContext): Promise<StepOutcome> {
 /** 音声。台詞を1行1 Jobで順に投入し、行ごとに最初の候補を採用する。声の参照が無い話者の行は飛ばす。 */
 async function runVoice(ctx: RunContext): Promise<StepOutcome> {
   const { client, projectId, scene } = ctx;
+  // 一括実行では`stepsToRun`が先に外すので通らない。単体で呼ばれたときの保険として残す
   if (scene.dialogues.length === 0) return "skipped";
   const characters = await fetchCharacters(client, projectId);
   const recipe = await fetchRecipe(client, "voice", "音声", (recipes) => recipes[0]);
@@ -308,6 +309,7 @@ async function runCompose(ctx: RunContext): Promise<StepOutcome> {
     ctx,
     composeJobBody({ recipeId: recipe.id, projectId, sceneId: scene.id, inputs }),
     "video",
+    // 統合の結果欄は`ComposeStep`が動画の結果欄のフック (`useVideoResultEntries`) で読むので、上限も動画に揃える
     (job) => appendResultEntry(composeResultsKeyOf(scene.id), { jobId: job.id }, VIDEO_RESULTS_MAX),
   );
   await putAdoption(projectId, scene.id, "compose", artifact.id);

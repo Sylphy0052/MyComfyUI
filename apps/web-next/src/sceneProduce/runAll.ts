@@ -285,6 +285,7 @@ export function stepsToRun(
 ): StepId[] {
   return STEPS.map(({ id }) => id).filter((id) => {
     if (id === "character") return !hasAllReferenceImages(scene, characters);
+    // 台詞が無いシーンは全行採用の判定が成り立たず採用済みにならないため、ここで対象から外す
     if (id === "voice" && scene.dialogues.length === 0) return false;
     return !isStepAdopted(id, scene, adoptions);
   });
