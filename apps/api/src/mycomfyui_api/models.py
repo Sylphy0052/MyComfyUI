@@ -812,3 +812,151 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StoryCharacter(Base):
+    """WebUI v2のキャラクター。旧Projectの`characters`設定とは別に持つ。
+
+    画像・音声の参照は`MediaItemRead.key`と同じ書式の文字列 (`artifact:<id>`または
+    `input:<relative_path>`) で持つ。Artifactを持たない入力cacheの素材も指すため、
+    FKにはしない。
+    """
+
+    __tablename__ = "story_character"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_story_character_name"),
+        Index("ix_story_character_project", "project_id", "created_at"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(PROJECT_ID_LENGTH), ForeignKey("project.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text(collation="NOCASE"), nullable=False)
+    fixed_tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    negative_tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    profile: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    portrait_media_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    voice_media_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    voice_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StoryCostume(Base):
+    """キャラクターの衣装。参照画像は`StoryCostumeImage`に並び順つきで持つ。"""
+
+    __tablename__ = "story_costume"
+    __table_args__ = (
+        UniqueConstraint("character_id", "name", name="uq_story_costume_name"),
+        Index("ix_story_costume_character", "character_id", "created_at"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    character_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("story_character.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text(collation="NOCASE"), nullable=False)
+    tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    negative_tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StoryCostumeImage(Base):
+    """衣装の参照画像。`position`が0の行を代表画像とする。"""
+
+    __tablename__ = "story_costume_image"
+    __table_args__ = (
+        UniqueConstraint("costume_id", "position", name="uq_story_costume_image_position"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    costume_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("story_costume.id"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    media_key: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StoryScene(Base):
+    """WebUI v2のシーン。Shotは持たず1階層とする。`parent_scene_id`は欄だけで常にNULL。"""
+
+    __tablename__ = "story_scene"
+    __table_args__ = (
+        CheckConstraint(
+            "time_of_day IS NULL OR time_of_day in ('morning','day','sunset','night')",
+            name="ck_story_scene_time_of_day",
+        ),
+        Index("ix_story_scene_project", "project_id", "sequence"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(PROJECT_ID_LENGTH), ForeignKey("project.id"), nullable=False
+    )
+    parent_scene_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("story_scene.id"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    background_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    background_tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    # 値はそのまま補完タグになる (morning / day / sunset / night)。
+    time_of_day: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bgm_mood: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    video_motion: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StorySceneCast(Base):
+    """シーンの登場キャラ。衣装は同じキャラクターのものに限る (API側で検証する)。"""
+
+    __tablename__ = "story_scene_cast"
+    __table_args__ = (
+        UniqueConstraint("scene_id", "character_id", name="uq_story_scene_cast_character"),
+        UniqueConstraint("scene_id", "position", name="uq_story_scene_cast_position"),
+        Index("ix_story_scene_cast_character", "character_id"),
+        Index("ix_story_scene_cast_costume", "costume_id"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    scene_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("story_scene.id"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    character_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("story_character.id"), nullable=False
+    )
+    costume_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("story_costume.id"), nullable=True
+    )
+    pose_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    pose_tags: Mapped[list] = mapped_column(JSON, nullable=False)
+    expression_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    expression_tags: Mapped[list] = mapped_column(JSON, nullable=False)
+
+
+class StorySceneDialogue(Base):
+    """シーンの台詞1行。"""
+
+    __tablename__ = "story_scene_dialogue"
+    __table_args__ = (
+        UniqueConstraint("scene_id", "position", name="uq_story_scene_dialogue_position"),
+        Index("ix_story_scene_dialogue_speaker", "speaker_character_id"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    scene_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("story_scene.id"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    speaker_character_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("story_character.id"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    direction: Mapped[str] = mapped_column(Text, nullable=False, default="")
