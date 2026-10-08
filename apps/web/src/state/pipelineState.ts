@@ -25,7 +25,7 @@ export const PIPELINE_STEPS: readonly PipelineStep[] = [
     id: "character",
     label: "キャラクター参照",
     tab: "image",
-    imageSubTab: "change",
+    imageSubTab: "derive",
     missing: "参照画像 (appearance_reference) を登録してください",
   },
   { id: "audio", label: "音声・BGM", tab: "voice", missing: "音声かBGMを生成してください" },

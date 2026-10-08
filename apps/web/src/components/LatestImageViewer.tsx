@@ -16,7 +16,6 @@ type Props = {
   onApplyPromptOnly?: (job: GenerationJob, manifest: GenerationManifest) => void;
   onApplySeedOnly?: (job: GenerationJob, manifest: GenerationManifest) => void;
   onDerive?: (artifactId: string) => void;
-  onChangeSource?: (artifactId: string) => void;
 };
 
 // 最後に成功した Job の画像を1枚ずつ表示する。バッチで複数枚あるときはスライダーで切り替える。
@@ -28,7 +27,6 @@ export function LatestImageViewer({
   onApplyPromptOnly,
   onApplySeedOnly,
   onDerive,
-  onChangeSource,
 }: Props) {
   const [index, setIndex] = useState(0);
   const [collapsed, toggleCollapsed] = usePanelCollapsed("latestImage");
@@ -97,15 +95,8 @@ export function LatestImageViewer({
               {onDerive && (
                 <IconButton
                   icon={<Icon name="branch" />}
-                  label="派生生成"
+                  label="この画像から派生"
                   onClick={() => onDerive(current.id)}
-                />
-              )}
-              {onChangeSource && (
-                <IconButton
-                  icon={<Icon name="branch" />}
-                  label="この画像を変える"
-                  onClick={() => onChangeSource(current.id)}
                 />
               )}
             </div>

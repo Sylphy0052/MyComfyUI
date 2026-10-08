@@ -32,9 +32,8 @@ interface Props {
   candidates: Candidate[];
   busyArtifactId: string | null;
   onDecide: (artifactId: string, decision: ArtifactDecision) => void;
+  /** 「この画像から派生」を押したときに、派生元として選ぶ。 */
   onDerive?: (artifactId: string) => void;
-  /** 作品制作 (モードB) で「この画像を変える」を押したときに、変更元として選ぶ。 */
-  onChangeSource?: (artifactId: string) => void;
   /** 候補の生成条件からPresetを作る。処理は呼び出し側 (PresetPromotionPanel) へ委ねる。 */
   onPromoteToPreset?: (artifactId: string) => void;
   /** 詳細に出した候補の生成条件を生成フォームへ戻す。 */
@@ -154,7 +153,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onChangeSource, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false, showCompare = true, collapsible = false, panelId = "candidates:compare" }: Props) {
+export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDerive, onPromoteToPreset, onApplySettings, onApplyPromptOnly, onApplySeedOnly, active = true, comparisonActive = false, onClearComparison, onDialogOpenChange, simple = false, showCompare = true, collapsible = false, panelId = "candidates:compare" }: Props) {
   const [storedDensity, setDensity] = useListDensity("candidates");
   const [storedCollapsed, toggleCollapsed] = usePanelCollapsed(panelId);
   const collapsed = collapsible && storedCollapsed;
@@ -540,13 +539,12 @@ export function CandidateGallery({ candidates, busyArtifactId, onDecide, onDeriv
                 </div>
                 {!simple && <div className="action-group" role="group" aria-label="その他">
                   <IconButton icon={<Icon name="info" />} label="詳細" aria-pressed={artifact.id === detailArtifactId} onClick={() => setDetailArtifactId((current) => current === artifact.id ? null : artifact.id)} />
-                  {onDerive && <IconButton icon={<Icon name="branch" />} label="派生生成" onClick={() => onDerive(artifact.id)} />}
                   {onApplyPromptOnly && <IconButton icon={<Icon name="text" />} label="プロンプトのみ適用" disabled={applyingArtifactId === artifact.id} onClick={() => void applyScopedSettings(artifact.id, jobId, onApplyPromptOnly)} />}
                   {onApplySeedOnly && <IconButton icon={<Icon name="dice" />} label="seedのみ適用" disabled={applyingArtifactId === artifact.id} onClick={() => void applyScopedSettings(artifact.id, jobId, onApplySeedOnly)} />}
                   {onPromoteToPreset && <IconButton icon={<Icon name="bookmark" />} label="Presetにする" onClick={() => onPromoteToPreset(artifact.id)} />}
                 </div>}
-                {onChangeSource && <div className="action-group" role="group" aria-label="変更">
-                  <IconButton icon={<Icon name="branch" />} label="この画像を変える" onClick={() => onChangeSource(artifact.id)} />
+                {onDerive && <div className="action-group" role="group" aria-label="派生">
+                  <IconButton icon={<Icon name="branch" />} label="この画像から派生" onClick={() => onDerive(artifact.id)} />
                 </div>}
               </div>
             </figcaption>
