@@ -14,7 +14,7 @@ const KIND_LABELS: Record<string, string> = {
   compose: "統合",
 };
 
-const STATE_LABELS: Record<string, { label: string; color: string }> = {
+export const STATE_LABELS: Record<string, { label: string; color: string }> = {
   queued: { label: "待機中", color: "gray" },
   running: { label: "実行中", color: "blue" },
   cancelling: { label: "中止中", color: "orange" },
