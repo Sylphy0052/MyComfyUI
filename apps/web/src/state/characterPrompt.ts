@@ -34,9 +34,9 @@ export function selectedOutfitPrompt(
   return outfits.find((outfit) => outfit.id === outfitId)?.prompt ?? "";
 }
 
-/** プロンプトへ連結する前に改行を空白1つへ畳む (Issue #498)。 */
+/** プロンプトへ連結する前に改行 (CR/LF/VT/FF/NEL/LS/PS) を空白1つへ畳む (Issue #498, #510)。 */
 export function foldLineBreaks(text: string): string {
-  return text.replace(/\s*[\r\n\u2028\u2029]+\s*/g, " ").trim();
+  return text.replace(/\s*[\r\n\v\f\u0085\u2028\u2029]+\s*/g, " ").trim();
 }
 
 /** キャラクター工程のプロンプトを組む。ローカル定義が無いキャラクターは名前だけ使う。 */
