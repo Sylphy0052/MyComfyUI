@@ -27,7 +27,11 @@ export function readStep(value: string | null): StepId {
   return STEPS.find((step) => step.id === value)?.id ?? STEPS[0].id;
 }
 
-export type StepStatusKey = "adopted" | "running" | "candidate" | "skipped" | "todo";
+/**
+ * `skipped`はキャラ画像だけが使う。登場キャラ×衣装の参照画像がそろっていて、生成しなくてよいとき。
+ * `failed`は状態の材料を取れなかったとき。空として計算すると「未着手」に見えるため分ける。
+ */
+export type StepStatusKey = "adopted" | "running" | "candidate" | "skipped" | "todo" | "failed";
 
 export const STATUS_LABELS: Record<StepStatusKey, string> = {
   adopted: "採用済み",
@@ -35,7 +39,19 @@ export const STATUS_LABELS: Record<StepStatusKey, string> = {
   candidate: "候補あり",
   skipped: "スキップ",
   todo: "未着手",
+  failed: "取得失敗",
 };
+
+export const STATUS_COLORS: Record<StepStatusKey, string> = {
+  adopted: "green",
+  running: "blue",
+  candidate: "yellow",
+  skipped: "gray",
+  todo: "gray",
+  failed: "red",
+};
+
+export const FAILED_STATUS: StepStatus = { key: "failed", detail: null };
 
 export type StepStatus = {
   key: StepStatusKey;
@@ -54,7 +70,7 @@ export type StepInputs = {
   sceneMedia: MediaItem[];
   /** 統合Jobが出した動画の生成物ID。`video`と`compose`の動画を見分ける。 */
   composeArtifactIds: ReadonlySet<string>;
-  /** Projectの未判定の画像。キャラ画像の候補を探す。 */
+  /** 登場キャラに紐づく未判定の画像。キャラ画像の候補を探す。 */
   characterMedia: MediaItem[];
 };
 

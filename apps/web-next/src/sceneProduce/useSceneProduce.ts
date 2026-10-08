@@ -4,43 +4,54 @@ import { apiRequest, type ArtifactRecord, type GenerationJob, type MediaItem } f
 import { queryKeys } from "../api/queryKeys";
 import { ACTIVE_STATES } from "../jobs/useJobs";
 
-/** `GET /generation-jobs`と`GET /media-items`の`limit`の上限。 */
-const LIMIT = "200";
+/** `GET /generation-jobs`と`GET /media-items`の`limit`の上限。`URLSearchParams`に渡すので文字列で持つ。 */
+const MAX_LIST_LIMIT = "200";
 
-type SceneJobs = {
-  /** 待機中・実行中のJob。どのシーンのものかは状態の計算側で選ぶ。 */
-  active: GenerationJob[];
-  /** 統合Jobが出した動画の生成物ID。 */
-  composeArtifactIds: Set<string>;
-};
+/** 一覧が上限まで返ったか。上限に達した一覧は古いものが切れている。 */
+function reachedLimit(list: unknown[]): boolean {
+  return list.length >= Number(MAX_LIST_LIMIT);
+}
+
+/** 状態の材料。`truncated`は、どれかの一覧が上限に達して一部だけで集計したこと。 */
+export type Listed<T> = { items: T; truncated: boolean };
 
 function listJobs(params: Record<string, string>): Promise<GenerationJob[]> {
   return apiRequest<GenerationJob[]>(`/generation-jobs?${new URLSearchParams(params)}`);
 }
 
 /**
- * Job一覧はシーンで絞れないため、状態 (とProject) で絞って取り、`story_scene_id`で選ぶ。
- * 統合の動画は`/media-items`にJobの種別が無いので、統合Jobの生成物を引いて見分ける。
+ * Projectの待機中・実行中のJob。Job一覧はシーンで絞れないため、状態とProjectで絞って取り、
+ * どのシーンのものかは状態の計算側で`story_scene_id`から選ぶ。
  */
-async function fetchSceneJobs(projectId: string, sceneId: string): Promise<SceneJobs> {
-  const [active, succeeded] = await Promise.all([
-    Promise.all(ACTIVE_STATES.map((state) => listJobs({ state, order: "desc", limit: LIMIT }))),
-    listJobs({ state: "succeeded", project_id: projectId, order: "desc", limit: LIMIT }),
-  ]);
-  const composeJobs = succeeded.filter((job) => job.kind === "compose" && job.story_scene_id === sceneId);
-  const outputs = await Promise.all(
-    composeJobs.map((job) => apiRequest<ArtifactRecord[]>(`/artifacts?${new URLSearchParams({ job_id: job.id, kind: "video" })}`)),
-  );
-  return {
-    active: active.flat(),
-    composeArtifactIds: new Set(outputs.flat().map((artifact) => artifact.id)),
-  };
+export function useActiveJobs(projectId: string) {
+  return useQuery({
+    queryKey: queryKeys.sceneProduceJobs(projectId),
+    queryFn: async (): Promise<Listed<GenerationJob[]>> => {
+      const lists = await Promise.all(
+        ACTIVE_STATES.map((state) => listJobs({ state, project_id: projectId, order: "desc", limit: MAX_LIST_LIMIT })),
+      );
+      return { items: lists.flat(), truncated: lists.some(reachedLimit) };
+    },
+  });
 }
 
-export function useSceneJobs(projectId: string, sceneId: string) {
+/**
+ * シーンの統合Jobが出した動画の生成物ID。`/media-items`にはJobの種別が無いので、
+ * 統合Jobの生成物を引いて動画と見分ける。動画と統合の工程だけが使う。
+ */
+export function useComposeArtifactIds(projectId: string, sceneId: string) {
   return useQuery({
-    queryKey: queryKeys.sceneProduceJobs(projectId, sceneId),
-    queryFn: () => fetchSceneJobs(projectId, sceneId),
+    queryKey: queryKeys.sceneProduceComposeIds(projectId, sceneId),
+    queryFn: async (): Promise<Listed<Set<string>>> => {
+      const succeeded = await listJobs({ state: "succeeded", project_id: projectId, order: "desc", limit: MAX_LIST_LIMIT });
+      const composeJobs = succeeded.filter((job) => job.kind === "compose" && job.story_scene_id === sceneId);
+      const outputs = await Promise.all(
+        composeJobs.map((job) =>
+          apiRequest<ArtifactRecord[]>(`/artifacts?${new URLSearchParams({ job_id: job.id, kind: "video" })}`),
+        ),
+      );
+      return { items: new Set(outputs.flat().map((artifact) => artifact.id)), truncated: reachedLimit(succeeded) };
+    },
   });
 }
 
@@ -48,23 +59,36 @@ export function useSceneJobs(projectId: string, sceneId: string) {
 export function useSceneMedia(sceneId: string) {
   return useQuery({
     queryKey: queryKeys.sceneProduceMedia(sceneId),
-    queryFn: () => {
-      const query = new URLSearchParams({ story_scene_id: sceneId, limit: LIMIT });
+    queryFn: async (): Promise<Listed<MediaItem[]>> => {
+      const query = new URLSearchParams({ story_scene_id: sceneId, limit: MAX_LIST_LIMIT });
       query.append("exclude_kind", "workflow");
       query.append("exclude_kind", "log");
-      return apiRequest<MediaItem[]>(`/media-items?${query}`);
+      const items = await apiRequest<MediaItem[]>(`/media-items?${query}`);
+      return { items, truncated: reachedLimit(items) };
     },
   });
 }
 
-/** キャラ画像の候補を探すための、Projectの未判定の画像。 */
-export function useCharacterCandidates(projectId: string, enabled: boolean) {
+/** キャラ画像の候補を探すための、登場キャラに紐づく未判定の画像。キャラごとに取る。 */
+export function useCharacterCandidates(projectId: string, characterIds: string[], enabled: boolean) {
   return useQuery({
-    queryKey: queryKeys.sceneProduceCharacterMedia(projectId),
-    queryFn: () =>
-      apiRequest<MediaItem[]>(
-        `/media-items?${new URLSearchParams({ kind: "image", project_id: projectId, decision: "undecided", limit: LIMIT })}`,
-      ),
+    queryKey: queryKeys.sceneProduceCharacterMedia(projectId, characterIds),
+    queryFn: async (): Promise<Listed<MediaItem[]>> => {
+      const lists = await Promise.all(
+        characterIds.map((characterId) =>
+          apiRequest<MediaItem[]>(
+            `/media-items?${new URLSearchParams({
+              kind: "image",
+              project_id: projectId,
+              story_character_id: characterId,
+              decision: "undecided",
+              limit: MAX_LIST_LIMIT,
+            })}`,
+          ),
+        ),
+      );
+      return { items: lists.flat(), truncated: lists.some(reachedLimit) };
+    },
     enabled,
   });
 }

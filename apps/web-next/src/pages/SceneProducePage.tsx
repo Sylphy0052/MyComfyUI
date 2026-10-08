@@ -7,24 +7,24 @@ import { SceneAdoptions } from "../projectDetail/SceneAdoptions";
 import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/useStory";
 import {
   computeStepStatus,
+  FAILED_STATUS,
   hasAllReferenceImages,
   readStep,
+  STATUS_COLORS,
   STATUS_LABELS,
   STEPS,
   stepLabel,
   type StepId,
   type StepStatus,
-  type StepStatusKey,
 } from "../sceneProduce/steps";
-import { useCharacterCandidates, useSceneJobs, useSceneMedia } from "../sceneProduce/useSceneProduce";
+import {
+  useActiveJobs,
+  useCharacterCandidates,
+  useComposeArtifactIds,
+  useSceneMedia,
+} from "../sceneProduce/useSceneProduce";
 
-const STATUS_COLORS: Record<StepStatusKey, string> = {
-  adopted: "green",
-  running: "blue",
-  candidate: "yellow",
-  skipped: "gray",
-  todo: "gray",
-};
+type QueryState = { isPending: boolean; error: Error | null };
 
 function BackToProjects({ message }: { message: string }) {
   return (
@@ -60,28 +60,38 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
   const step = readStep(searchParams.get("step"));
   const characters = useCharacters(projectId);
   const adoptions = useSceneAdoptions(projectId, scene.id);
-  const jobs = useSceneJobs(projectId, scene.id);
+  const activeJobs = useActiveJobs(projectId);
   const media = useSceneMedia(scene.id);
+  const composeIds = useComposeArtifactIds(projectId, scene.id);
   // 参照画像がそろっていればキャラ画像の候補は数えないので、取らない。
   const needsCandidates = characters.data !== undefined && !hasAllReferenceImages(scene, characters.data);
-  const characterMedia = useCharacterCandidates(projectId, needsCandidates);
+  const castIds = [...new Set(scene.cast.map((entry) => entry.character_id))];
+  const characterMedia = useCharacterCandidates(projectId, castIds, needsCandidates);
 
-  const queries = [characters, adoptions, jobs, media, characterMedia];
-  const loading = [characters, adoptions, jobs, media].some((query) => query.isPending);
-  const error = queries.find((query) => query.error)?.error;
+  // 工程ごとの、状態の計算に要る取得。1つでも失敗した工程は「取得失敗」、取得中の工程は読み込み中にする。
+  const sourcesOf = (id: StepId): QueryState[] => {
+    if (id === "character") return needsCandidates ? [characters, activeJobs, characterMedia] : [characters, activeJobs];
+    const common = [adoptions, activeJobs, media];
+    return id === "video" || id === "compose" ? [...common, composeIds] : common;
+  };
+  const listed = [activeJobs, media, composeIds, ...(needsCandidates ? [characterMedia] : [])];
+  const error = [characters, adoptions, ...listed].find((query) => query.error)?.error;
+  const truncated = listed.some((query) => query.data?.truncated);
 
+  const inputs = {
+    scene,
+    characters: characters.data ?? [],
+    adoptions: adoptions.data ?? [],
+    activeJobs: activeJobs.data?.items ?? [],
+    sceneMedia: media.data?.items ?? [],
+    composeArtifactIds: composeIds.data?.items ?? new Set<string>(),
+    characterMedia: needsCandidates ? (characterMedia.data?.items ?? []) : [],
+  };
   const statuses = new Map<StepId, StepStatus>();
-  if (!loading) {
-    const inputs = {
-      scene,
-      characters: characters.data ?? [],
-      adoptions: adoptions.data ?? [],
-      activeJobs: jobs.data?.active ?? [],
-      sceneMedia: media.data ?? [],
-      composeArtifactIds: jobs.data?.composeArtifactIds ?? new Set<string>(),
-      characterMedia: needsCandidates ? (characterMedia.data ?? []) : [],
-    };
-    for (const { id } of STEPS) statuses.set(id, computeStepStatus(id, inputs));
+  for (const { id } of STEPS) {
+    const sources = sourcesOf(id);
+    if (sources.some((query) => query.error)) statuses.set(id, FAILED_STATUS);
+    else if (!sources.some((query) => query.isPending)) statuses.set(id, computeStepStatus(id, inputs));
   }
 
   const select = (id: StepId) => {
@@ -94,6 +104,11 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
   return (
     <Stack>
       {error ? <Alert color="red">{error.message}</Alert> : null}
+      {truncated ? (
+        <Alert color="yellow" data-testid="produce-truncated">
+          一覧が取得の上限に達したため、新しいJob・生成物だけで状態を集計しています。
+        </Alert>
+      ) : null}
       <Group align="flex-start" wrap="nowrap" gap="lg">
         <Stack gap={4} w={240} style={{ flexShrink: 0 }} data-testid="produce-stepper">
           {STEPS.map(({ id, label }, index) => {
@@ -137,6 +152,9 @@ export function SceneProducePage() {
   if (!projectId) return <BackToProjects message="URLにProject (?project=) がありません。" />;
   if (project.isPending || scenes.isPending) return <Loader size="sm" />;
   if (project.data === undefined) return <BackToProjects message={project.error?.message ?? "Projectを開けません。"} />;
+  if (project.data.lifecycle === "trashed") {
+    return <BackToProjects message="ゴミ箱にあるProjectです。復元してから開いてください。" />;
+  }
   if (scenes.data === undefined) return <BackToProjects message={scenes.error?.message ?? "シーンを開けません。"} />;
   const scene = scenes.data.find((item) => item.id === sceneId);
   if (!scene) return <BackToProjects message="シーンが見つかりません。" />;
