@@ -483,6 +483,20 @@ _IMAGE_REF_TEMPLATES = frozenset(
 )
 
 
+def _effective_negative_term(term: str) -> str | None:
+    """negativeの1語を小文字の語名にする。重みが1未満の語は効かないため``None``を返す。"""
+    body = term.strip().strip("()")
+    name, _, weight = body.partition(":")
+    if weight.strip():
+        try:
+            # nanや数値でない重みは効かない側に倒す。
+            if not float(weight.strip().rstrip(")")) >= 1:
+                return None
+        except ValueError:
+            return None
+    return name.strip().lower()
+
+
 def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
     """参照Recipeのnegativeへ、欠けている安全語を先頭に足す。参照Recipe以外はそのまま返す。
 
@@ -493,13 +507,20 @@ def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
     name = reference.get("name") if isinstance(reference, dict) else None
     if not isinstance(name, str) or name not in _IMAGE_REF_TEMPLATES:
         return negative
-    present = {term.strip() for term in negative.split(",")}
+    # 大文字小文字と重み (`(nsfw:1.2)`) を無視して既存の語を判定する。
+    present = {
+        term_name
+        for term in negative.split(",")
+        if (term_name := _effective_negative_term(term))
+    }
     missing = [
         term for term in IMAGE_REF_SAFETY_NEGATIVE.split(", ") if term not in present
     ]
     if not missing:
         return negative
-    return ", ".join([*missing, negative.strip()] if negative.strip() else missing)
+    # negativeが空なら、安全語だけにせずテンプレート既定の品質系の語を基底にする。
+    base = negative.strip() or DEFAULT_VALUES["negative_prompt"]
+    return ", ".join([*missing, base])
 
 
 _IMAGE_REF_DEFAULTS: dict[str, Any] = {

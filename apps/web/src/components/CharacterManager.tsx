@@ -540,6 +540,11 @@ export function CharacterManager({ projectId, active, onChanged, reloadToken = 0
     setError(null);
     setDraft(next);
     setSelectedId(next.id);
+    setOutfitTagResult(null);
+    setOutfitBulkProgress(null);
+    setOutfitBulkFailures([]);
+    setOutfitSkipped(0);
+    setRefImportReport(null);
   };
 
   const handleReferencePicked = (next: PickedMedia[]) => {
@@ -775,7 +780,8 @@ export function CharacterManager({ projectId, active, onChanged, reloadToken = 0
       }
     }
     setOutfitTagProgress(null);
-    setOutfitTagResult({ filled, skipped, failures, interrupted });
+    // 抽出中にキャラクターが替わったら、新しいdraftへ結果を書き戻さない。
+    if (draftRef.current?.id === draftId) setOutfitTagResult({ filled, skipped, failures, interrupted });
     setExtractingOutfitTags(false);
   };
 
@@ -951,7 +957,7 @@ export function CharacterManager({ projectId, active, onChanged, reloadToken = 0
             >
               {refImportProgress ?? "参照画像を一括登録"}
             </Button>
-            <Button variant="primary" disabled={busy || importing} onClick={() => openDraft()}>追加</Button>
+            <Button variant="primary" disabled={busy || importing || addingOutfit || extractingOutfitTags} onClick={() => openDraft()}>追加</Button>
           </div>
         </div>
         {refImportReport && <RefImportSummary report={refImportReport} />}
@@ -982,7 +988,7 @@ export function CharacterManager({ projectId, active, onChanged, reloadToken = 0
             <div className="row spread">
               <h3>{selectedCharacter.name}</h3>
               <div className="row">
-                <Button disabled={busy || importing} onClick={() => openDraft(selectedCharacter)}>編集</Button>
+                <Button disabled={busy || importing || addingOutfit || extractingOutfitTags} onClick={() => openDraft(selectedCharacter)}>編集</Button>
                 <Button variant="danger" disabled={busy || importing} onClick={() => void removeCharacter(selectedCharacter)}>削除</Button>
               </div>
             </div>
@@ -1003,7 +1009,7 @@ export function CharacterManager({ projectId, active, onChanged, reloadToken = 0
                 ))}
               </ul>
             )}
-            <Button disabled={busy || importing} onClick={() => openDraft(selectedCharacter)}>編集</Button>
+            <Button disabled={busy || importing || addingOutfit || extractingOutfitTags} onClick={() => openDraft(selectedCharacter)}>編集</Button>
             <ReferenceSetPanel
               key={`reference-set:${selectedCharacter.id}`}
               projectId={projectId}

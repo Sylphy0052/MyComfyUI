@@ -1172,6 +1172,7 @@ async def _resolve_generation_defaults(
         safe_negative = bootstrap.with_reference_safety_negative(recipe, negative)
         if safe_negative != negative:
             inputs["negative_prompt"] = safe_negative
+            input_origins.setdefault("negative_prompt", "recipe_default")
 
     return (
         payload.model_copy(
