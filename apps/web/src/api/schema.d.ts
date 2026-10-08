@@ -553,6 +553,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/generation-experiments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Standalone Experiment */
+        post: operations["create_standalone_experiment_api_v1_generation_experiments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generation-experiments/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Standalone Experiment */
+        post: operations["preview_standalone_experiment_api_v1_generation_experiments_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/generation-experiments/{experiment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Standalone Experiment */
+        get: operations["get_standalone_experiment_api_v1_generation_experiments__experiment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generation-jobs": {
         parameters: {
             query?: never;
@@ -3290,9 +3341,15 @@ export interface components {
             /** Recipe Id */
             recipe_id: string;
             /** Scene Id */
-            scene_id: string;
+            scene_id?: string | null;
             /** Shot Id */
-            shot_id: string;
+            shot_id?: string | null;
+            /** Story Character Id */
+            story_character_id?: string | null;
+            /** Story Costume Id */
+            story_costume_id?: string | null;
+            /** Story Scene Id */
+            story_scene_id?: string | null;
         };
         /** GenerationExperimentItemRead */
         GenerationExperimentItemRead: {
@@ -3362,11 +3419,50 @@ export interface components {
             /** Name */
             name: string;
             /** Project Id */
-            project_id: string;
+            project_id: string | null;
             /** State */
             state: string;
             /** Updated At */
             updated_at: string;
+        };
+        /**
+         * GenerationExperimentRequest
+         * @description Project無しのルート (`/generation-experiments`) の要求。Projectは任意。
+         */
+        GenerationExperimentRequest: {
+            axes: components["schemas"]["GenerationSweepAxes"];
+            /** Base Inputs */
+            base_inputs?: {
+                [key: string]: unknown;
+            };
+            /** Input Refs */
+            input_refs?: {
+                [key: string]: unknown;
+            }[];
+            /** Look Profile Ids */
+            look_profile_ids?: string[];
+            /**
+             * Mode
+             * @default cartesian
+             * @enum {string}
+             */
+            mode: "cartesian" | "zip";
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Recipe Id */
+            recipe_id: string;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Shot Id */
+            shot_id?: string | null;
+            /** Story Character Id */
+            story_character_id?: string | null;
+            /** Story Costume Id */
+            story_costume_id?: string | null;
+            /** Story Scene Id */
+            story_scene_id?: string | null;
         };
         /**
          * GenerationJobCreate
@@ -6795,6 +6891,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExternalImagePreviewRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_standalone_experiment_api_v1_generation_experiments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationExperimentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationExperimentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_standalone_experiment_api_v1_generation_experiments_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationExperimentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationExperimentPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_standalone_experiment_api_v1_generation_experiments__experiment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationExperimentRead"];
                 };
             };
             /** @description Validation Error */

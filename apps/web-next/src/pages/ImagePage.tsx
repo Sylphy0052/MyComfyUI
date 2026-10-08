@@ -11,6 +11,7 @@ import { PromptAssistPanel } from "../imageGen/PromptAssistPanel";
 import { PromptFields } from "../imageGen/PromptFields";
 import { ResultPanel } from "../imageGen/ResultPanel";
 import { SourceImagePicker } from "../imageGen/SourceImagePicker";
+import { SweepFields } from "../imageGen/SweepFields";
 import { TargetPicker } from "../imageGen/TargetPicker";
 import {
   buildDeriveInputs,
@@ -36,6 +37,7 @@ import {
   type ImageTarget,
 } from "../imageGen/imageForm";
 import { buildSupplementTags, isExcluded } from "../imageGen/promptTags";
+import { buildSweepBody, planSweep } from "../imageGen/sweep";
 import {
   jobIdOfArtifact,
   restoreFromJob,
@@ -47,6 +49,7 @@ import {
   useTxt2ImgRecipe,
   type RestoredInput,
 } from "../imageGen/useImageGen";
+import { useSubmitSweep, useSweepEntries } from "../imageGen/useSweep";
 import { notifyError } from "../notifications";
 import { useProjectList } from "../projects/useProjects";
 
@@ -103,6 +106,8 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const results = useResultEntries();
   const submit = useSubmitImageJob();
+  const submitSweep = useSubmitSweep();
+  const sweeps = useSweepEntries();
   const [restoringJobId, setRestoringJobId] = useState<string | null>(null);
   const [mode, setMode] = useState<GenerateMode>("txt2img");
   const [derive, setDerive] = useState<DeriveState>(INITIAL_DERIVE);
@@ -265,13 +270,24 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const paramsRecipe = deriveMode === null ? recipe : (deriveRecipe ?? deriveRecipes[fallbackTemplate] ?? recipe);
   const blockedReason = deriveMode === null ? null : deriveBlockedReason(deriveMode, derive, deriveRecipe);
   const promptNeeded = usesPrompt(mode, derive);
+  // スイープは新規タブだけで使う。オンの間は、軸の入力が不正でも投入しない。
+  const sweepPlan = planSweep(form);
+  const sweepOn = mode === "txt2img" && form.sweepEnabled;
   const canSubmit =
     (!promptNeeded || composed.positive !== "") &&
     !storyLoading &&
     storyError === null &&
     missing.length === 0 &&
-    blockedReason === null;
+    blockedReason === null &&
+    (!sweepOn || sweepPlan.ok);
   const onSubmit = () => {
+    if (sweepOn) {
+      if (!sweepPlan.ok) return;
+      submitSweep.mutate(buildSweepBody(sweepPlan, form, supplement, recipe, target, new Date()), {
+        onError: (error) => notifyError("スイープを投入できませんでした", error),
+      });
+      return;
+    }
     const submitRecipe = deriveMode === null ? recipe : deriveRecipe;
     if (submitRecipe === null) return;
     submit.mutate(
@@ -354,7 +370,12 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
             <Tabs.Panel value="txt2img" pt="sm">
               <Stack gap="md">
                 {promptFields}
-                <ParamsFields form={form} onChange={updateForm} recipe={recipe} />
+                <ParamsFields
+                  form={form}
+                  onChange={updateForm}
+                  recipe={recipe}
+                  detailSweep={<SweepFields form={form} onChange={updateForm} plan={sweepPlan} />}
+                />
               </Stack>
             </Tabs.Panel>
             <Tabs.Panel value="ref" pt="sm">
@@ -393,8 +414,13 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
               {blockedReason}
             </Text>
           ) : null}
-          <Button onClick={onSubmit} disabled={!canSubmit} loading={submit.isPending}>
-            生成
+          {sweepOn ? (
+            <Text size="xs" c={sweepPlan.ok ? undefined : "red"} data-testid="sweep-submit-note">
+              {sweepPlan.ok ? `スイープ: ${sweepPlan.summary}` : `スイープを投入できません: ${sweepPlan.reason}`}
+            </Text>
+          ) : null}
+          <Button onClick={onSubmit} disabled={!canSubmit} loading={submit.isPending || submitSweep.isPending}>
+            {sweepOn ? "スイープを生成" : "生成"}
           </Button>
         </Stack>
       </Grid.Col>
@@ -405,6 +431,8 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
           onRestore={(jobId) => void restoreJob(jobId)}
           restoringJobId={restoringJobId}
           onSendToEdit={sendToEdit}
+          sweeps={sweeps.entries}
+          onRemoveSweep={sweeps.remove}
         />
       </Grid.Col>
     </Grid>

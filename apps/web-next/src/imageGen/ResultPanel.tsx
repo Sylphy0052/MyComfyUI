@@ -3,7 +3,9 @@ import { Alert, Badge, Button, Card, CloseButton, Group, Loader, SimpleGrid, Sta
 import type { ArtifactRecord } from "../api/client";
 import { STATE_LABELS } from "../jobs/JobDrawer";
 import { ArtifactCard } from "./ArtifactCard";
+import { SweepResult } from "./SweepResult";
 import { useJob, useJobImages, type ResultEntry } from "./useImageGen";
+import type { SweepEntry } from "./useSweep";
 
 type RestoreProps = {
   onRestore: (jobId: string) => void;
@@ -124,15 +126,32 @@ export function ResultPanel({
   onRestore,
   restoringJobId,
   onSendToEdit,
-}: { entries: ResultEntry[]; onRemove: (jobId: string) => void } & RestoreProps) {
+  sweeps,
+  onRemoveSweep,
+}: {
+  entries: ResultEntry[];
+  onRemove: (jobId: string) => void;
+  sweeps: SweepEntry[];
+  onRemoveSweep: (experimentId: string) => void;
+} & RestoreProps) {
   return (
     <Stack gap="md">
       <Title order={4}>結果</Title>
-      {entries.length === 0 ? (
+      {entries.length === 0 && sweeps.length === 0 ? (
         <Text size="sm" c="dimmed">
           まだ生成していません。左の入力欄から投入すると、ここに新しい順で並びます。
         </Text>
       ) : null}
+      {sweeps.map((sweep) => (
+        <SweepResult
+          key={sweep.experimentId}
+          experimentId={sweep.experimentId}
+          onRemove={() => onRemoveSweep(sweep.experimentId)}
+          onRestore={onRestore}
+          restoringJobId={restoringJobId}
+          onSendToEdit={onSendToEdit}
+        />
+      ))}
       {entries.map((entry) => (
         <JobResult
           key={entry.jobId}

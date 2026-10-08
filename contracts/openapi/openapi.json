@@ -2218,20 +2218,71 @@
             "type": "string"
           },
           "scene_id": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Scene Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
           },
           "shot_id": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
-            "title": "Shot Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          },
+          "story_costume_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Costume Id"
+          },
+          "story_scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Scene Id"
           }
         },
         "required": [
           "name",
-          "scene_id",
-          "shot_id",
           "recipe_id",
           "axes"
         ],
@@ -2404,8 +2455,15 @@
             "type": "string"
           },
           "project_id": {
-            "title": "Project Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "state": {
             "title": "State",
@@ -2427,6 +2485,143 @@
           "updated_at"
         ],
         "title": "GenerationExperimentRead",
+        "type": "object"
+      },
+      "GenerationExperimentRequest": {
+        "additionalProperties": false,
+        "description": "Project無しのルート (`/generation-experiments`) の要求。Projectは任意。",
+        "properties": {
+          "axes": {
+            "$ref": "#/components/schemas/GenerationSweepAxes"
+          },
+          "base_inputs": {
+            "additionalProperties": true,
+            "maxProperties": 64,
+            "title": "Base Inputs",
+            "type": "object"
+          },
+          "input_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "title": "Input Refs",
+            "type": "array"
+          },
+          "look_profile_ids": {
+            "items": {
+              "maxLength": 36,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Look Profile Ids",
+            "type": "array"
+          },
+          "mode": {
+            "default": "cartesian",
+            "enum": [
+              "cartesian",
+              "zip"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "recipe_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Recipe Id",
+            "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "shot_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shot Id"
+          },
+          "story_character_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Character Id"
+          },
+          "story_costume_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Costume Id"
+          },
+          "story_scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Story Scene Id"
+          }
+        },
+        "required": [
+          "name",
+          "recipe_id",
+          "axes"
+        ],
+        "title": "GenerationExperimentRequest",
         "type": "object"
       },
       "GenerationJobCreate": {
@@ -11966,6 +12161,130 @@
           }
         },
         "summary": "Preview External Image Import"
+      }
+    },
+    "/api/v1/generation-experiments": {
+      "post": {
+        "operationId": "create_standalone_experiment_api_v1_generation_experiments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationExperimentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationExperimentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Standalone Experiment",
+        "tags": [
+          "generation-experiments"
+        ]
+      }
+    },
+    "/api/v1/generation-experiments/preview": {
+      "post": {
+        "operationId": "preview_standalone_experiment_api_v1_generation_experiments_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationExperimentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationExperimentPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Standalone Experiment",
+        "tags": [
+          "generation-experiments"
+        ]
+      }
+    },
+    "/api/v1/generation-experiments/{experiment_id}": {
+      "get": {
+        "operationId": "get_standalone_experiment_api_v1_generation_experiments__experiment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationExperimentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Standalone Experiment",
+        "tags": [
+          "generation-experiments"
+        ]
       }
     },
     "/api/v1/generation-jobs": {
