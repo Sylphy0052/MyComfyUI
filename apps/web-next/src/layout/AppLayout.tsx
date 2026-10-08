@@ -10,6 +10,7 @@ import {
   IconMusic,
   IconPhoto,
   IconPhotoSearch,
+  IconSettings,
   type Icon,
 } from "@tabler/icons-react";
 import { useCallback } from "react";
@@ -19,6 +20,7 @@ import { useApiEvents, type ApiEvent } from "../api/events";
 import { JobDrawer } from "../jobs/JobDrawer";
 import { jobResultPath, useJobBoard } from "../jobs/useJobs";
 import { projectSearch, useCurrentProjectId, useProject } from "./projectContext";
+import { QwenSettingsModal } from "./QwenSettingsModal";
 
 type NavItem = { path: string; label: string; icon: Icon };
 
@@ -132,6 +134,7 @@ function notifyJobFinished(event: ApiEvent, openDrawer: () => void): void {
 export function AppLayout() {
   const [navCollapsed, setNavCollapsed] = useLocalStorage({ key: "web-next:nav-collapsed", defaultValue: false });
   const [drawerOpened, drawer] = useDisclosure(false);
+  const [qwenOpened, qwen] = useDisclosure(false);
   const openDrawer = drawer.open;
   useApiEvents(useCallback((event: ApiEvent) => notifyJobFinished(event, openDrawer), [openDrawer]));
 
@@ -155,7 +158,12 @@ export function AppLayout() {
             <Title order={4}>MyComfyUI</Title>
             <CurrentProject />
           </Group>
-          <JobCounter onOpen={drawer.open} />
+          <Group gap="xs">
+            <JobCounter onOpen={drawer.open} />
+            <ActionIcon variant="subtle" onClick={qwen.open} aria-label="Qwen設定">
+              <IconSettings size={20} />
+            </ActionIcon>
+          </Group>
         </Group>
       </AppShell.Header>
       <AppShell.Navbar p={4}>
@@ -165,6 +173,7 @@ export function AppLayout() {
         <Outlet />
       </AppShell.Main>
       <JobDrawer opened={drawerOpened} onClose={drawer.close} />
+      <QwenSettingsModal opened={qwenOpened} onClose={qwen.close} />
     </AppShell>
   );
 }

@@ -9,6 +9,7 @@ export const queryKeys = {
   // スイープの実験も`jobs`の下に置く。Jobの状態が変わったイベントで、実験の各セルも取り直す。
   experiment: (experimentId: string) => ["generation-jobs", "experiment", experimentId] as const,
   manifest: (manifestId: string) => ["generation-manifests", manifestId] as const,
+  qwenSettings: ["settings", "qwen"] as const,
   recipes: (kind: string) => ["recipes", kind] as const,
   modelOptions: (workflowVersionId: string) => ["workflow-versions", workflowVersionId, "models"] as const,
   project: (projectId: string) => ["projects", projectId] as const,
