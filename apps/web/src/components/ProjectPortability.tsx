@@ -85,8 +85,8 @@ export function ProjectPortabilityPanel({
   };
 
   return (
-    <section className="project-portability-panel">
-      <h3>再利用・移行・バックアップ</h3>
+    <details className="project-portability-panel">
+      <summary>再利用・移行・バックアップ</summary>
       <div className="row">
         <button type="button" disabled={busy} onClick={() => { setMode("template"); setName(`${project.name}テンプレート`); }}>テンプレート保存</button>
         <button type="button" disabled={busy} onClick={() => { setMode("clone"); setName(`${project.name}のコピー`); }}>複製</button>
@@ -114,7 +114,7 @@ export function ProjectPortabilityPanel({
           <div className="row"><button type="button" onClick={() => setMode(null)}>取消</button><button type="submit" className="primary" disabled={busy}>保存</button></div>
         </form>
       )}
-    </section>
+    </details>
   );
 }
 

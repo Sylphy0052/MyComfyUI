@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { ApiError, api } from "../api/client";
@@ -101,6 +101,18 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   completed: "完了",
 };
 
+const PROGRESS_STAGES: { key: string; label: string }[] = [
+  { key: "not_started", label: "未着手" },
+  { key: "in_progress", label: "制作中" },
+  { key: "has_candidates", label: "候補あり" },
+  { key: "accepted", label: "採用済み" },
+  { key: "completed", label: "完了" },
+];
+
+// 最近の生成物に出さない種別。workflowのJSONは生成の様子を表さない。
+const RECENT_EXCLUDED_KINDS = ["workflow"];
+const RECENT_ARTIFACT_LIMIT = 8;
+
 const STATUS_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
   planning: ["planning", "active", "on_hold"],
   active: ["active", "on_hold", "completed"],
@@ -120,6 +132,18 @@ function describe(error: unknown): string {
 function formatDate(value: string | null): string {
   if (!value) return "未使用";
   return new Date(value).toLocaleString("ja-JP");
+}
+
+/** 一覧・生成物向けの日時。秒を省く。 */
+function formatMinute(value: string | null): string {
+  if (!value) return "未使用";
+  return new Date(value).toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function ProjectWorkspace({
@@ -158,11 +182,28 @@ export function ProjectWorkspace({
   // 場面一覧の取得を終えたProject。取得前に「Sceneなし」と判定しないために持つ。
   const [scenesLoadedFor, setScenesLoadedFor] = useState<string | null>(null);
   const [scenesError, setScenesError] = useState<string | null>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDetailsElement>(null);
 
   const selected = useMemo(
     () => projects.find((project) => project.id === focusedId) ?? null,
     [focusedId, projects],
   );
+
+  // Projectを切り替えたら「その他」メニューを閉じる。
+  useEffect(() => {
+    setMoreMenuOpen(false);
+  }, [focusedId]);
+
+  // 「その他」メニューの外を押したら閉じる。
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!moreMenuRef.current?.contains(event.target as Node)) setMoreMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutside);
+    return () => document.removeEventListener("pointerdown", closeOnOutside);
+  }, [moreMenuOpen]);
 
   // Sceneが1件も無ければシーンタブ自体を出さない。
   const visibleProjectTabs = useMemo(
@@ -236,7 +277,11 @@ export function ProjectWorkspace({
         const [impact, jobs, artifacts, progress] = await Promise.all([
           api.getProjectDeletionImpact(selected.id),
           api.listJobs({ projectId: selected.id }),
-          api.listArtifacts({ projectId: selected.id, limit: 6 }),
+          api.listArtifacts({
+            projectId: selected.id,
+            excludeKinds: RECENT_EXCLUDED_KINDS,
+            limit: RECENT_ARTIFACT_LIMIT,
+          }),
           api.getProjectProgress(selected.id),
         ]);
         if (active) setHome({ impact, jobs, artifacts, progress });
@@ -409,6 +454,10 @@ export function ProjectWorkspace({
   };
 
   const failedJobs = home?.jobs.filter((job) => job.state === "failed").length ?? 0;
+  const isRecentImage = (artifact: Artifact) =>
+    artifact.kind === "image" && artifact.availability === "complete";
+  const recentImages = home?.artifacts.filter(isRecentImage) ?? [];
+  const recentOthers = home?.artifacts.filter((artifact) => !isRecentImage(artifact)) ?? [];
 
   return (
     <main className="full project-workspace" hidden={hidden}>
@@ -430,19 +479,6 @@ export function ProjectWorkspace({
             </button>
           </div>
         </div>
-        <nav className="project-lifecycle-tabs" aria-label="Projectの保管場所">
-          {LIFECYCLES.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              aria-pressed={lifecycle === item.value}
-              className={lifecycle === item.value ? "primary" : undefined}
-              onClick={() => setLifecycle(item.value)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
         <div className="filters">
           <label>
             検索
@@ -482,7 +518,18 @@ export function ProjectWorkspace({
 
       <div className="project-layout">
         <section className="panel project-list-panel" aria-busy={loading}>
-          <h2>{LIFECYCLES.find((item) => item.value === lifecycle)?.label}</h2>
+          <nav className="project-lifecycle-switch" aria-label="Projectの保管場所">
+            {LIFECYCLES.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={lifecycle === item.value}
+                onClick={() => setLifecycle(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
           {loading && <LoadingPlaceholder label="読込み中..." />}
           {!loading && !listError && projects.length === 0 && (
             <p className="muted">条件に一致するProjectはありません。</p>
@@ -492,19 +539,39 @@ export function ProjectWorkspace({
               <li key={project.id}>
                 <button
                   type="button"
+                  className="project-card"
                   aria-pressed={project.id === focusedId}
                   onClick={() => setFocusedId(project.id)}
                 >
-                  <span className="row spread">
-                    <strong>{project.name}</strong>
-                    <span aria-label={project.favorite ? "お気に入り" : undefined}>
-                      {project.favorite ? "★" : ""}
+                  {project.thumbnail_artifact_id ? (
+                    <img
+                      className="project-card-thumb"
+                      src={api.artifactContentUrl(project.thumbnail_artifact_id)}
+                      alt=""
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="project-card-thumb placeholder" aria-hidden="true">
+                      {project.name.slice(0, 1)}
                     </span>
+                  )}
+                  <span className="project-card-body">
+                    <span className="row spread">
+                      <strong>{project.name}</strong>
+                      <span aria-label={project.favorite ? "お気に入り" : undefined}>
+                        {project.favorite ? "★" : ""}
+                      </span>
+                    </span>
+                    <span className="project-card-meta">
+                      <span className={`badge project-status status-${project.status}`}>
+                        {STATUS_LABELS[project.status]}
+                      </span>
+                      <span>
+                        Scene {project.scene_count} / Shot {project.shot_count}
+                      </span>
+                    </span>
+                    <span className="muted">最終使用 {formatMinute(project.last_used_at)}</span>
                   </span>
-                  <span className="muted">
-                    {STATUS_LABELS[project.status]} / 更新{formatDate(project.updated_at)}
-                  </span>
-                  <span className="muted">最終使用{formatDate(project.last_used_at)}</span>
                 </button>
               </li>
             ))}
@@ -559,30 +626,58 @@ export function ProjectWorkspace({
                     生成既定値
                   </button>
                 )}
-                {selected.lifecycle === "active" && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => prepareAction("archive", selected)}
-                  >
-                    アーカイブ
-                  </button>
-                )}
-                {selected.lifecycle !== "trashed" && (
-                  <button
-                    type="button"
-                    className="danger-button"
-                    disabled={busy}
-                    onClick={() => prepareAction("trash", selected)}
-                  >
-                    ゴミ箱へ移動
-                  </button>
-                )}
-                {selected.lifecycle !== "active" && (
-                  <button type="button" disabled={busy} onClick={() => restore(selected)}>
-                    復元
-                  </button>
-                )}
+                <details
+                  ref={moreMenuRef}
+                  className="project-more-menu"
+                  open={moreMenuOpen}
+                  onToggle={(event) => setMoreMenuOpen(event.currentTarget.open)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape") return;
+                    setMoreMenuOpen(false);
+                    moreMenuRef.current?.querySelector("summary")?.focus();
+                  }}
+                >
+                  <summary>その他</summary>
+                  <div className="project-more-menu-items">
+                    {selected.lifecycle === "active" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          prepareAction("archive", selected);
+                        }}
+                      >
+                        アーカイブ
+                      </button>
+                    )}
+                    {selected.lifecycle !== "trashed" && (
+                      <button
+                        type="button"
+                        className="danger-button"
+                        disabled={busy}
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          prepareAction("trash", selected);
+                        }}
+                      >
+                        ゴミ箱へ移動
+                      </button>
+                    )}
+                    {selected.lifecycle !== "active" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          restore(selected);
+                        }}
+                      >
+                        復元
+                      </button>
+                    )}
+                  </div>
+                </details>
               </div>
 
               {selected.tags.length > 0 && (
@@ -643,30 +738,68 @@ export function ProjectWorkspace({
                       <Metric label="失敗Job" value={failedJobs} tone={failedJobs ? "danger" : undefined} />
                     </div>
                     <h3>制作進捗</h3>
-                    <div className="progress-grid">
-                      {[
-                        ["未着手", "not_started"],
-                        ["制作中", "in_progress"],
-                        ["候補あり", "has_candidates"],
-                        ["採用済み", "accepted"],
-                        ["完了", "completed"],
-                      ].map(([label, key]) => (
-                        <div key={key} className="metric">
-                          <span>{label}</span>
-                          <strong>{home.progress.scenes[key] ?? 0}/{home.progress.shots[key] ?? 0}</strong>
-                          <span>Scene / Shot</span>
-                        </div>
-                      ))}
-                    </div>
+                    <table className="project-progress-table">
+                      <thead>
+                        <tr>
+                          <td />
+                          {PROGRESS_STAGES.map((stage) => (
+                            <th key={stage.key} scope="col">
+                              {stage.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(
+                          [
+                            ["Scene", home.progress.scenes],
+                            ["Shot", home.progress.shots],
+                          ] as const
+                        ).map(([label, counts]) => (
+                          <tr key={label}>
+                            <th scope="row">{label}</th>
+                            {PROGRESS_STAGES.map((stage) => {
+                              const count = counts[stage.key] ?? 0;
+                              return (
+                                <td key={stage.key} className={count === 0 ? "muted" : undefined}>
+                                  {count}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                     <h3>最近の生成物</h3>
-                    {home.artifacts.length === 0 ? (
+                    {home.artifacts.length === 0 && (
                       <p className="muted">このProjectの生成物はまだありません。</p>
-                    ) : (
+                    )}
+                    {recentImages.length > 0 && (
+                      <ul className="recent-artifact-grid">
+                        {recentImages.map((artifact) => (
+                          <li key={artifact.id}>
+                            <a
+                              href={api.artifactContentUrl(artifact.id)}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={formatMinute(artifact.created_at)}
+                            >
+                              <img
+                                src={api.artifactContentUrl(artifact.id)}
+                                alt={`${formatMinute(artifact.created_at)}の生成画像`}
+                                loading="lazy"
+                              />
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {recentOthers.length > 0 && (
                       <ul className="recent-artifacts">
-                        {home.artifacts.map((artifact) => (
+                        {recentOthers.map((artifact) => (
                           <li key={artifact.id}>
                             <span className="badge">{artifact.kind}</span>
-                            <span>{formatDate(artifact.created_at)}</span>
+                            <span>{formatMinute(artifact.created_at)}</span>
                             <a href={api.artifactContentUrl(artifact.id)} target="_blank" rel="noreferrer">
                               開く
                             </a>
