@@ -5,6 +5,7 @@ import { BgmPage } from "./pages/BgmPage";
 import { ImagePage } from "./pages/ImagePage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { SceneProducePage } from "./pages/SceneProducePage";
 import { VideoPage } from "./pages/VideoPage";
 import { ViewerPage } from "./pages/ViewerPage";
 import { VoicePage } from "./pages/VoicePage";
@@ -17,6 +18,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/projects" replace /> },
       { path: "projects", Component: ProjectsPage },
       { path: "projects/:projectId", Component: ProjectDetailPage },
+      { path: "scenes/:sceneId/produce", Component: SceneProducePage },
       { path: "image", Component: ImagePage },
       { path: "video", Component: VideoPage },
       { path: "voice", Component: VoicePage },
