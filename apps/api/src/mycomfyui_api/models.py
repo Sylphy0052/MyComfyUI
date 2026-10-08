@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -340,6 +341,24 @@ class GenerationJob(Base):
     assigned_shot_id: Mapped[str | None] = mapped_column(
         String(PROJECT_ID_LENGTH), nullable=True
     )
+    # WebUI v2のキャラクター・衣装・シーン (#530)。旧UIの`assigned_*`とは別に持つ。
+    # 設計文書とIssueの`outfit_id`は、命名を#529の`story_costume`に揃えて`story_costume_id`とする。
+    # 参照先を消すとNULLへ戻り、生成物は消えない。
+    story_character_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_character.id", ondelete="SET NULL", name="fk_generation_job_story_character"),
+        nullable=True,
+    )
+    story_costume_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_costume.id", ondelete="SET NULL", name="fk_generation_job_story_costume"),
+        nullable=True,
+    )
+    story_scene_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_scene.id", ondelete="SET NULL", name="fk_generation_job_story_scene"),
+        nullable=True,
+    )
     recipe_id: Mapped[str] = mapped_column(
         String(UUID_LENGTH), ForeignKey("recipe.id"), nullable=False
     )
@@ -491,6 +510,9 @@ class Artifact(Base):
             name="ck_artifact_decision",
         ),
         Index("ix_artifact_assignment", "assigned_project_id", "assigned_scene_id", "assigned_shot_id"),
+        Index("ix_artifact_story_character", "story_character_id"),
+        Index("ix_artifact_story_costume", "story_costume_id"),
+        Index("ix_artifact_story_scene", "story_scene_id"),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
@@ -515,6 +537,26 @@ class Artifact(Base):
     assigned_shot_id: Mapped[str | None] = mapped_column(
         String(PROJECT_ID_LENGTH), nullable=True
     )
+    # WebUI v2のキャラクター・衣装・シーン (#530)。旧UIの`assigned_*`とは別に持つ。
+    # 設計文書とIssueの`outfit_id`は、命名を#529の`story_costume`に揃えて`story_costume_id`とする。
+    # 参照先を消すとNULLへ戻り、生成物は消えない。
+    story_character_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_character.id", ondelete="SET NULL", name="fk_artifact_story_character"),
+        nullable=True,
+    )
+    story_costume_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_costume.id", ondelete="SET NULL", name="fk_artifact_story_costume"),
+        nullable=True,
+    )
+    story_scene_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_scene.id", ondelete="SET NULL", name="fk_artifact_story_scene"),
+        nullable=True,
+    )
+    # 生成物ごとのメモ。衣装の画面とViewerのどちらからでも同じものを読み書きする。
+    memo: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     decision: Mapped[str] = mapped_column(Text, nullable=False, default="undecided")
     decision_at: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -960,3 +1002,58 @@ class StorySceneDialogue(Base):
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     direction: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class StorySceneAdoption(Base):
+    """シーン×枠ごとに1件の採用 (#530)。
+
+    枠は`scene_image` / `voice` / `bgm` / `video` / `compose`。`voice`だけは台詞1行
+    (`story_scene_dialogue`) ごとに別の枠になり、`dialogue_id`を持つ。同じ枠への採用は
+    `artifact_id`の置き換えで表す。
+    """
+
+    __tablename__ = "story_scene_adoption"
+    __table_args__ = (
+        CheckConstraint(
+            "slot in ('scene_image','voice','bgm','video','compose')",
+            name="ck_story_scene_adoption_slot",
+        ),
+        CheckConstraint(
+            "(slot = 'voice') = (dialogue_id IS NOT NULL)",
+            name="ck_story_scene_adoption_dialogue",
+        ),
+        Index(
+            "ux_story_scene_adoption_slot",
+            "scene_id",
+            "slot",
+            unique=True,
+            sqlite_where=text("dialogue_id IS NULL"),
+        ),
+        Index(
+            "ux_story_scene_adoption_dialogue",
+            "dialogue_id",
+            unique=True,
+            sqlite_where=text("dialogue_id IS NOT NULL"),
+        ),
+        Index("ix_story_scene_adoption_artifact", "artifact_id"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    scene_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_scene.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    slot: Mapped[str] = mapped_column(Text, nullable=False)
+    dialogue_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_scene_dialogue.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    artifact_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("artifact.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)

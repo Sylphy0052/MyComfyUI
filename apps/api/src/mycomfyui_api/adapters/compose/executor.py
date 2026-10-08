@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from mycomfyui_api import schemas, storage
+from mycomfyui_api import schemas, storage, story_links
 from mycomfyui_api.adapters.compose import plan as compose_plan
 from mycomfyui_api.models import Artifact, GenerationJob, GenerationManifest
 from mycomfyui_api.queue import ExecutionOutcome
@@ -277,6 +277,7 @@ class ComposeExecutor:
                     assigned_project_id=assignment[0],
                     assigned_scene_id=assignment[1],
                     assigned_shot_id=assignment[2],
+                    **story_links.job_story_links(job),
                     created_at=schemas.now_iso(),
                     decision="undecided",
                     decision_at=None,

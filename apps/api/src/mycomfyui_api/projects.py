@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from mycomfyui_api import schemas, storage
+from mycomfyui_api import schemas, storage, story_links
 from mycomfyui_api.adapters.aimedia.client import (
     AiMediaNotFound,
     AiMediaUnavailable,
@@ -39,6 +39,7 @@ from mycomfyui_api.models import (
     StoryCostume,
     StoryCostumeImage,
     StoryScene,
+    StorySceneAdoption,
     StorySceneCast,
     StorySceneDialogue,
     WorkflowVersion,
@@ -1139,6 +1140,11 @@ async def purge_project(
         StoryCostume.character_id.in_(character_ids)
     )
     story_scene_ids = select(StoryScene.id).where(StoryScene.project_id == project_id)
+    # シーンの採用を外し、採用で`accepted`になっていた生成物の採否を戻す。生成物の
+    # v2紐づけ(キャラ・衣装・シーン)はFKの`ON DELETE SET NULL`でNULLに戻る。
+    await story_links.release_adoptions(
+        session, StorySceneAdoption.scene_id.in_(story_scene_ids)
+    )
     await remove(
         delete(StorySceneCast).where(StorySceneCast.scene_id.in_(story_scene_ids))
     )

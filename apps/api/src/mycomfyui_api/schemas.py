@@ -32,6 +32,10 @@ GenerationKind = Literal["image", "video", "voice", "music", "compose"]
 ArtifactKind = Literal["image", "video", "audio", "workflow", "log"]
 Availability = Literal["complete", "incomplete"]
 ArtifactDecision = Literal["undecided", "accepted", "rejected"]
+#: 音声Artifactの種類。台詞の音声(`voice`)とBGM(`bgm`)をJobのRecipeで見分ける。
+ArtifactAudioClass = Literal["voice", "bgm"]
+#: シーンの採用枠。`voice`だけ台詞ごとに1枠、他はシーンごとに1枠。
+StoryAdoptionSlot = Literal["scene_image", "voice", "bgm", "video", "compose"]
 ProjectStatus = Literal["planning", "active", "on_hold", "completed"]
 ProjectLifecycle = Literal["active", "archived", "trashed"]
 ProjectSourceType = Literal["local", "external"]
@@ -1331,9 +1335,18 @@ class GenerationPreviewCreate(ApiModel):
     #: 利用者素材のcache参照だけを受け取る。Scene/Shot/Canonの参照は解決結果が正本の
     #: ため、ここから渡された同種の参照は受け付けない。
     input_refs: list[dict[str, Any]] = Field(default_factory=list)
+    #: WebUI v2の紐づけ。生成された成果物へそのまま引き継ぐ。Issue #530の
+    #: `outfit_id`は`story_costume_id`にあたる。
+    story_character_id: ResourceId | None = None
+    story_costume_id: ResourceId | None = None
+    story_scene_id: ResourceId | None = None
 
     @model_validator(mode="after")
     def _validate_context(self) -> "GenerationPreviewCreate":
+        if self.story_costume_id is not None and self.story_character_id is None:
+            raise ValueError(
+                "story_costume_idを指定する場合はstory_character_idが必要です。"
+            )
         if self.scene_id is not None and self.project_id is None:
             raise ValueError("scene_idを指定する場合はproject_idが必要です。")
         if self.shot_id is not None and self.scene_id is None:
@@ -1595,6 +1608,9 @@ class GenerationJobRead(ApiModel):
     failure_message: str | None
     failure_stage: str | None
     retryable: bool | None
+    story_character_id: str | None = None
+    story_costume_id: str | None = None
+    story_scene_id: str | None = None
 
 
 class GenerationManifestRead(ApiModel):
@@ -1697,6 +1713,10 @@ class ArtifactRead(ApiModel):
     decision_at: str | None
     deleted_at: str | None
     tags: list[str] = Field(default_factory=list)
+    story_character_id: str | None = None
+    story_costume_id: str | None = None
+    story_scene_id: str | None = None
+    memo: str | None = None
 
 
 class ArtifactImportRead(ApiModel):
@@ -1846,6 +1866,13 @@ class MediaItemRead(ApiModel):
     assigned_project_id: str | None = None
     assigned_scene_id: str | None = None
     assigned_shot_id: str | None = None
+    decision: ArtifactDecision | None = None
+    memo: str | None = None
+    story_character_id: str | None = None
+    story_costume_id: str | None = None
+    story_scene_id: str | None = None
+    #: 音声のとき、台詞の音声(`voice`)かBGM(`bgm`)か。Jobを持たない音声はNone。
+    audio_class: ArtifactAudioClass | None = None
 
 
 class AssignmentTarget(ApiModel):
@@ -1947,6 +1974,46 @@ class ArtifactPurgeResult(ApiModel):
     purged_ids: list[str]
     removed_file_count: int
     removed_byte_size: int
+
+
+ARTIFACT_MEMO_MAX_LENGTH = 2_000
+
+
+class ArtifactLinkUpdate(ApiModel):
+    """生成物のv2紐づけとメモの更新。渡した項目だけ変え、`null`で外す。
+
+    メモは空白だけなら外す扱いにする。衣装を紐づけるにはキャラクターが必要で、
+    衣装はそのキャラクターのものに限る。
+    """
+
+    story_character_id: ResourceId | None = None
+    story_costume_id: ResourceId | None = None
+    story_scene_id: ResourceId | None = None
+    memo: Annotated[str, Field(max_length=ARTIFACT_MEMO_MAX_LENGTH)] | None = None
+
+    @field_validator("memo")
+    @classmethod
+    def _blank_memo_is_none(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return value
+
+
+class StorySceneAdoptionPut(ApiModel):
+    """枠へ生成物を採用する要求。`voice`枠は台詞(`dialogue_id`)の指定が必須。"""
+
+    artifact_id: ResourceId
+    dialogue_id: ResourceId | None = None
+
+
+class StorySceneAdoptionRead(ApiModel):
+    id: str
+    scene_id: str
+    slot: StoryAdoptionSlot
+    dialogue_id: str | None
+    artifact_id: str
+    created_at: str
+    updated_at: str
 
 
 class ArtifactDecisionUpdate(ApiModel):
@@ -2718,6 +2785,9 @@ class StorySceneCastEntry(ApiModel):
 
 
 class StorySceneDialogueEntry(ApiModel):
+    #: 読み出しでは常に返す。更新で既存の台詞を指すと、並べ替えや書き換えをしても
+    #: IDが変わらず、台詞の音声の採用が保たれる。省略すると新しい台詞になる。
+    id: ResourceId | None = None
     speaker_character_id: ResourceId
     text: Annotated[str, Field(min_length=1, max_length=4_000)]
     #: 演技指示。

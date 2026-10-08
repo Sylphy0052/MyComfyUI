@@ -7,7 +7,7 @@ import logging
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar, get_args
 from urllib.parse import quote
@@ -39,6 +39,7 @@ from mycomfyui_api import (
     provenance,
     schemas,
     storage,
+    story_links,
 )
 from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters import tag_preflight
@@ -88,6 +89,7 @@ from mycomfyui_api.models import (
     Project,
     ProjectShot,
     Recipe,
+    StorySceneAdoption,
     VoiceVerification,
     Workflow,
     WorkflowVersion,
@@ -717,6 +719,19 @@ async def create_generation_job(
     return await _submit_generation_job(session, source, payload)
 
 
+async def _validate_story_links_of(
+    session: AsyncSession, payload: schemas.GenerationPreviewCreate
+) -> None:
+    """Job作成・プレビューが受け取ったv2の紐づけ先を確かめる。"""
+    await story_links.validate_story_links(
+        session,
+        character_id=payload.story_character_id,
+        costume_id=payload.story_costume_id,
+        scene_id=payload.story_scene_id,
+        project_id=payload.project_id,
+    )
+
+
 async def _submit_generation_job(
     session: AsyncSession,
     source: ReferenceSource,
@@ -724,6 +739,7 @@ async def _submit_generation_job(
 ) -> GenerationJob:
     """JobとManifestのIDを先行採番して作成する、Job投入の共通処理。"""
     await _validate_project_context(session, payload.project_id)
+    await _validate_story_links_of(session, payload)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
@@ -776,6 +792,7 @@ async def preview_generation_job(
     ようにする。
     """
     await _validate_project_context(session, payload.project_id)
+    await _validate_story_links_of(session, payload)
     resolved = await _resolve_references(
         session, source, payload.project_id, payload.scene_id, payload.shot_id
     )
@@ -1507,6 +1524,9 @@ def _build_job_records(
         assigned_project_id=payload.project_id,
         assigned_scene_id=payload.scene_id,
         assigned_shot_id=payload.shot_id,
+        story_character_id=payload.story_character_id,
+        story_costume_id=payload.story_costume_id,
+        story_scene_id=payload.story_scene_id,
         recipe_id=payload.recipe_id,
         manifest_id=manifest_id,
         parent_job_id=_resolve_parent_job_id(payload, prepared),
@@ -1525,6 +1545,9 @@ def _build_job_records(
         assigned_project_id=payload.project_id,
         assigned_scene_id=payload.scene_id,
         assigned_shot_id=payload.shot_id,
+        story_character_id=payload.story_character_id,
+        story_costume_id=payload.story_costume_id,
+        story_scene_id=payload.story_scene_id,
         created_at=created_at,
         decision="undecided",
         decision_at=None,
@@ -2226,6 +2249,7 @@ async def create_artifact(payload: schemas.ArtifactCreate, session: SessionDep):
         assigned_project_id=job.assigned_project_id,
         assigned_scene_id=job.assigned_scene_id,
         assigned_shot_id=job.assigned_shot_id,
+        **story_links.job_story_links(job),
         **payload.model_dump(),
     )
     session.add(artifact)
@@ -2337,6 +2361,10 @@ async def operate_artifacts(
         for artifact in rows:
             if artifact.deleted_at is None:
                 artifact.deleted_at = now
+        # ゴミ箱の生成物をシーンの採用枠に残さない。採否も採用前へ戻す。
+        await story_links.release_adoptions(
+            session, StorySceneAdoption.artifact_id.in_([row.id for row in rows])
+        )
         affected = rows
     elif payload.operation == "restore":
         for artifact in rows:
@@ -2558,7 +2586,13 @@ async def purge_artifacts(payload: schemas.ArtifactPurgeRequest, session: Sessio
         )
     ids = list(payload.artifact_ids)
     # FKにondeleteが無いため、参照する行を先に消すか外す。
-    for model in (ArtifactTag, ArtifactImport, MediaRoleTag, VoiceVerification):
+    for model in (
+        ArtifactTag,
+        ArtifactImport,
+        MediaRoleTag,
+        VoiceVerification,
+        StorySceneAdoption,
+    ):
         await session.execute(delete(model).where(model.artifact_id.in_(ids)))
     await session.execute(
         update(Artifact)
@@ -2964,6 +2998,70 @@ def _media_role_tag_conditions(
     return conditions
 
 
+def _parse_period_bound(name: str, value: str, *, is_end: bool) -> tuple[str, bool]:
+    """期間指定のISO 8601文字列を、`julianday()`へ渡せるUTC表記と包含の別に直す。
+
+    タイムゾーンを持たない値はサーバーのローカル時刻として読む。日付だけの終端
+    (`to=2026-10-08`)はその日の終わりまでを含める意味で、翌日0時を超えない(排他)境界にする。
+    戻り値は(境界のUTC表記, 境界を含めるか)。
+    """
+    inclusive = True
+    try:
+        parsed = datetime.fromisoformat(value)
+        if is_end and len(value) == 10:
+            parsed += timedelta(days=1)
+            inclusive = False
+        bound = parsed.astimezone().astimezone(UTC).isoformat()
+    except (ValueError, OverflowError):
+        # 0001-01-01や9999-12-31のように、翌日やUTCへ直すと範囲外になる値もここで弾く。
+        raise _validation_error(
+            f"{name}はISO 8601形式で指定してください。", {"value": value}
+        ) from None
+    return bound, inclusive
+
+
+async def _story_media_conditions(
+    session: AsyncSession,
+    *,
+    story_character_id: str | None,
+    story_costume_id: str | None,
+    story_scene_id: str | None,
+    audio_class: schemas.ArtifactAudioClass | None,
+    created_from: str | None,
+    created_to: str | None,
+) -> list[ColumnElement[bool]]:
+    """`/media-items`のv2向け絞り込み条件。指定があればArtifactだけが対象になる。"""
+    conditions: list[ColumnElement[bool]] = []
+    if story_character_id is not None:
+        conditions.append(Artifact.story_character_id == story_character_id)
+    if story_costume_id is not None:
+        conditions.append(Artifact.story_costume_id == story_costume_id)
+    if story_scene_id is not None:
+        conditions.append(Artifact.story_scene_id == story_scene_id)
+    if audio_class is not None:
+        recipe_ids = await story_links.recipe_ids_of_audio_class(session, audio_class)
+        conditions.append(Artifact.kind == "audio")
+        conditions.append(
+            Artifact.job_id.in_(
+                select(GenerationJob.id).where(GenerationJob.recipe_id.in_(recipe_ids))
+            )
+        )
+    # `created_at`はローカルのオフセット付きで保存されているため、文字列比較ではなく
+    # 時刻へ直して突き合わせる。
+    if created_from is not None:
+        bound, _ = _parse_period_bound("from", created_from, is_end=False)
+        conditions.append(func.julianday(Artifact.created_at) >= func.julianday(bound))
+    if created_to is not None:
+        bound, inclusive = _parse_period_bound("to", created_to, is_end=True)
+        end = func.julianday(bound)
+        conditions.append(
+            func.julianday(Artifact.created_at) <= end
+            if inclusive
+            else func.julianday(Artifact.created_at) < end
+        )
+    return conditions
+
+
 @router.get("/media-items", response_model=list[schemas.MediaItemRead])
 async def list_media_items(
     session: SessionDep,
@@ -2978,10 +3076,22 @@ async def list_media_items(
     exclude_kind: Annotated[
         list[schemas.ArtifactKind] | None, Query(max_length=MAX_EXCLUDE_KINDS)
     ] = None,
+    story_character_id: str | None = None,
+    story_costume_id: str | None = None,
+    story_scene_id: str | None = None,
+    decision: schemas.ArtifactDecision | None = None,
+    audio_class: schemas.ArtifactAudioClass | None = None,
+    created_from: Annotated[str | None, Query(alias="from", max_length=40)] = None,
+    created_to: Annotated[str | None, Query(alias="to", max_length=40)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。
+
+    v2向けに、紐づけ(`story_character_id`・`story_costume_id`・`story_scene_id`)、
+    採否(`decision`)、作成日時の期間(`from`・`to`、ISO 8601)、音声の種類
+    (`audio_class`=`voice`|`bgm`、JobのRecipeで決まる)でも絞れる。これらは
+    Artifactにだけある項目のため、どれかを指定すると入力cacheと人物参照は返さない。
 
     Artifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力
     cacheファイル(`registered_input`)、Projectのキャラクター参照画像
@@ -3010,6 +3120,19 @@ async def list_media_items(
     # 未指定として扱う。
     character_id = character_id or None
 
+    story_conditions = await _story_media_conditions(
+        session,
+        story_character_id=story_character_id or None,
+        story_costume_id=story_costume_id or None,
+        story_scene_id=story_scene_id or None,
+        audio_class=audio_class,
+        created_from=created_from or None,
+        created_to=created_to or None,
+    )
+    # 採否もArtifactにしか無い。入力cacheと人物参照を混ぜないため、絞り込みの有無で
+    # 系統ごと外す。
+    artifact_only = bool(story_conditions) or decision is not None
+
     window = offset + limit
     excluded_kinds = set(exclude_kind or [])
     items: list[schemas.MediaItemRead] = []
@@ -3029,8 +3152,11 @@ async def list_media_items(
             unassigned=unassigned,
             job_id=None,
             kind=kind,
+            decision=decision,
             exclude_kinds=exclude_kind,
         )
+        if story_conditions:
+            artifact_query = artifact_query.where(*story_conditions)
         imported = select(ArtifactImport.artifact_id)
         if source == "generated":
             artifact_query = artifact_query.where(Artifact.job_id.is_not(None))
@@ -3053,6 +3179,7 @@ async def list_media_items(
     artifact_ids = [artifact.id for artifact in artifacts]
     imported_ids = await _artifact_import_ids(session, artifact_ids)
     artifact_role_tags = await _media_role_tag_map(session, artifact_ids)
+    audio_class_map = await story_links.audio_classes(session, artifacts)
     for artifact in artifacts:
         artifact_source: schemas.MediaItemSource = (
             "generated"
@@ -3080,6 +3207,12 @@ async def list_media_items(
                 assigned_project_id=artifact.assigned_project_id,
                 assigned_scene_id=artifact.assigned_scene_id,
                 assigned_shot_id=artifact.assigned_shot_id,
+                decision=artifact.decision,
+                memo=artifact.memo,
+                story_character_id=artifact.story_character_id,
+                story_costume_id=artifact.story_costume_id,
+                story_scene_id=artifact.story_scene_id,
+                audio_class=audio_class_map.get(artifact.id),
             )
         )
 
@@ -3091,7 +3224,7 @@ async def list_media_items(
         for value in ("image", "audio")
         if kind in (None, value) and value not in excluded_kinds
     }
-    if source in (None, "registered_input") and input_kinds:
+    if source in (None, "registered_input") and input_kinds and not artifact_only:
         input_tag_query = (
             select(MediaRoleTag)
             .where(MediaRoleTag.relative_path.is_not(None), *tag_conditions)
@@ -3152,6 +3285,7 @@ async def list_media_items(
         project_id is not None
         and source in (None, "character_reference")
         and role in (None, "appearance_reference")
+        and not artifact_only
     ):
         project = await session.get(Project, project_id)
         if project is not None:
@@ -3486,6 +3620,40 @@ async def get_artifact_content(
         content_disposition_type="attachment" if download else "inline",
         headers={"X-Content-Type-Options": "nosniff"},
     )
+
+
+@router.patch("/artifacts/{artifact_id}", response_model=schemas.ArtifactRead)
+async def update_artifact_links(
+    artifact_id: str, payload: schemas.ArtifactLinkUpdate, session: SessionDep
+):
+    """生成物のv2紐づけ(キャラクター・衣装・シーン)とメモを更新する。
+
+    渡した項目だけ変え、`null`を渡すと外す。紐づけ先は更新後の組み合わせで検証する
+    (衣装はそのキャラクターのもの、キャラクターとシーンと生成物のProjectは同じ)。
+    旧UIの`assigned_*`と採否は変えない。
+    """
+    artifact = await _get_or_404(session, Artifact, "Artifact", artifact_id)
+    provided = payload.model_fields_set
+    if provided & set(story_links.LINK_FIELDS):
+        merged = {
+            field: getattr(payload, field)
+            if field in provided
+            else getattr(artifact, field)
+            for field in story_links.LINK_FIELDS
+        }
+        await story_links.validate_story_links(
+            session,
+            character_id=merged["story_character_id"],
+            costume_id=merged["story_costume_id"],
+            scene_id=merged["story_scene_id"],
+            project_id=artifact.assigned_project_id,
+        )
+        for field, value in merged.items():
+            setattr(artifact, field, value)
+    if "memo" in provided:
+        artifact.memo = payload.memo
+    await _commit(session)
+    return await _artifact_read(session, artifact)
 
 
 @router.patch("/artifacts/{artifact_id}/decision", response_model=schemas.ArtifactRead)
@@ -3957,6 +4125,7 @@ async def _create_derived_job(
             assigned_project_id=origin_job.assigned_project_id,
             assigned_scene_id=origin_job.assigned_scene_id,
             assigned_shot_id=origin_job.assigned_shot_id,
+            **story_links.job_story_links(origin_job),
             recipe_id=origin_job.recipe_id,
             manifest_id=manifest_id,
             parent_job_id=origin_job.id,
@@ -3975,6 +4144,7 @@ async def _create_derived_job(
             assigned_project_id=origin_job.assigned_project_id,
             assigned_scene_id=origin_job.assigned_scene_id,
             assigned_shot_id=origin_job.assigned_shot_id,
+            **story_links.job_story_links(origin_job),
             created_at=created_at,
             decision="undecided",
             decision_at=None,
