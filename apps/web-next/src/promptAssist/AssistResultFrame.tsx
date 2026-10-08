@@ -6,6 +6,7 @@ export function AssistResultFrame({
   testId,
   title,
   stale,
+  applyDisabled = false,
   onApply,
   onDiscard,
   children,
@@ -13,6 +14,8 @@ export function AssistResultFrame({
   testId: string;
   title: string;
   stale: boolean;
+  /** 適用しても意味のない結果 (空) のとき。古さとは別に「適用」を止める。 */
+  applyDisabled?: boolean;
   onApply: () => void;
   onDiscard: () => void;
   children: ReactNode;
@@ -30,7 +33,7 @@ export function AssistResultFrame({
           </Text>
         ) : null}
         <Group gap="xs">
-          <Button size="xs" disabled={stale} onClick={onApply}>
+          <Button size="xs" disabled={stale || applyDisabled} onClick={onApply}>
             適用
           </Button>
           <Button size="xs" variant="default" onClick={onDiscard}>

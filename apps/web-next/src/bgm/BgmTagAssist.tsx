@@ -56,13 +56,18 @@ export function BgmTagAssist({
           testId="bgm-assist-diff"
           title="変換の結果 (タグ欄との差分)"
           stale={assist.stale}
+          applyDisabled={suggestion === ""}
           onApply={() => {
             onApply(suggestion);
             assist.clear();
           }}
           onDiscard={assist.clear}
         >
-          {diff.length === 0 ? (
+          {suggestion === "" ? (
+            <Text size="xs" c="dimmed" data-testid="assist-empty">
+              変換結果にタグがありません。
+            </Text>
+          ) : diff.length === 0 ? (
             <Text size="xs" c="dimmed">
               タグ欄から変わる点はありません。
             </Text>

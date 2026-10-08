@@ -52,6 +52,7 @@ export function VideoPromptAssistField({ prompt, onApply }: { prompt: string; on
           testId="video-assist-diff"
           title="変換の結果"
           stale={assist.stale}
+          applyDisabled={result.prompt.trim() === ""}
           onApply={() => {
             onApply(result.prompt);
             assist.clear();
@@ -78,6 +79,11 @@ export function VideoPromptAssistField({ prompt, onApply }: { prompt: string; on
               </Text>
             </Stack>
           </SimpleGrid>
+          {result.prompt.trim() === "" ? (
+            <Text size="xs" c="dimmed" data-testid="assist-empty">
+              変換結果にプロンプトがありません。
+            </Text>
+          ) : null}
           {result.rationale ? (
             <Text size="xs" c="dimmed" data-testid="video-assist-rationale">
               {result.rationale}
