@@ -105,8 +105,8 @@ worker は生成の直前に `torch.manual_seed` / `torch.cuda.manual_seed_all` 
 渡す。**嘘を渡すと生成が破綻する** (検証_minimax/18 で 655 秒の暴走)。この engine では
 書き起こしの無い参照音声を 422 で拒む。書き起こしを使う engine を足すときは、
 `engines.yaml` の `uses_reference_transcript: true` に加えて、Application API の
-`REFERENCE_TRANSCRIPT_ENGINES` (`apps/api/src/mycomfyui_api/adapters/voice/base.py`) と
-Web の同名の集合 (`apps/web/src/components/VoicePanel.tsx`) にも engine を足す。
+`REFERENCE_TRANSCRIPT_ENGINES` (`apps/api/src/mycomfyui_api/adapters/voice/base.py`) にも
+engine を足す。
 
 参照を使わないときは `reference_audio` と `reference_transcript` を省き、
 `caption` (声質の文章指定。例: 「落ち着いた若い女性の声」) を渡す。参照と `caption` を

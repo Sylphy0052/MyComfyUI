@@ -405,7 +405,7 @@ class ProjectReferenceImage(ApiModel):
 
 
 # 参照画像セットの枠。衣装ごとの全身画像1枚だけを持つ (#493)。
-# web側は apps/web/src/state/referenceSlots.ts の REFERENCE_SLOTS が正本で、生成型には残らないため手で合わせる。
+# 枠の一覧を持っていた旧UI (#612で削除) と手で合わせていた。apps/web-nextは枠を使わない。
 ReferenceSlotKey = Literal["full_body"]
 
 # #493で廃止した枠。保存済みのlocal_overridesに残っていても読み込みで落とさず、捨てる。
@@ -497,7 +497,7 @@ class ProjectCharacterProfile(ApiModel):
     )
     appearance: str | None = Field(default=None, max_length=2_000)
     voice: str | None = Field(default=None, max_length=2_000)
-    # キャラ固有の生成プロンプト断片。連結順は apps/web/src/state/characterPrompt.ts 側で決める (#287)。
+    # キャラ固有の生成プロンプト断片。連結順は利用する側で決める (#287)。
     prompt: str | None = Field(default=None, max_length=2_000)
     negative_prompt: str | None = Field(default=None, max_length=2_000)
     # 性格などのプロフィール。画像生成のプロンプトには合成しない (#287)。

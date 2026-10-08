@@ -38,7 +38,7 @@ const OUTFIT_AND_POSE_STRENGTH = 1.5;
 
 /**
  * 「変えたい要素」のチェックからテンプレートと参照強度を決める。
- * 旧UIの`apps/web/src/derivation/changeOperations.ts`の`planForOperations`を移植したもの。
+ * 旧UI (#612で削除) の`planForOperations`を移植したもの。
  * 旧UIの「ポーズ」「表情」は、この画面では「ポーズ・表情を変える」の1つにまとめている。
  * - ポーズ・表情だけ → anima_ref_siglip, 0.5
  * - 衣装だけ → anima_ref_incontext, 1.0

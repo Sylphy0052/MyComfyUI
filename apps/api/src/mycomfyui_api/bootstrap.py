@@ -289,7 +289,7 @@ IMAGE_IMG2IMG_RECIPE_NAME = "Anima img2img"
 IMAGE_INPAINT_RECIPE_NAME = "Anima inpaint"
 IMAGE_UPSCALE_RECIPE_NAME = "画像アップスケール"
 IMAGE_CONTROLNET_RECIPE_NAME = "SD1.5 参照画像制御(ControlNet)"
-# apps/web/src/derivation/changeOperations.ts の CHANGE_TEMPLATE_RECIPE_LABELS と名称を揃える。
+# 旧UIのテンプレート名の表 (CHANGE_TEMPLATE_RECIPE_LABELS、#612で削除) と揃えていた名称。Recipe名なので変えない。
 IMAGE_REF_SIGLIP_RECIPE_NAME = "Anima 参照 ポーズ・表情"
 IMAGE_REF_INCONTEXT_RECIPE_NAME = "Anima 参照 衣装"
 
