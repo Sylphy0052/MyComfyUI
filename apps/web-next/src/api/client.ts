@@ -29,6 +29,10 @@ export type GenerationExperimentBody = components["schemas"]["GenerationExperime
 export type Recipe = components["schemas"]["RecipeRead"];
 export type WorkflowModelOptions = components["schemas"]["WorkflowModelOptionsRead"];
 export type ImagePromptAssist = components["schemas"]["ImagePromptAssistRead"];
+export type VideoPromptAssist = components["schemas"]["VideoPromptAssistRead"];
+export type MusicPromptAssist = components["schemas"]["MusicPromptAssistRead"];
+/** `/video-prompt-assists`と`/music-prompt-assists`の要求。 */
+export type MediaPromptAssistBody = components["schemas"]["MediaPromptAssistCreate"];
 export type QwenSettings = components["schemas"]["QwenSettingsRead"];
 export type QwenSettingsBody = components["schemas"]["QwenSettingsUpdate"];
 /** 現在のpromptは省略できる (APIの既定は空)。生成された型は既定値の欄も必須にするため緩める。 */

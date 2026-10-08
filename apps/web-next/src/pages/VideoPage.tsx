@@ -28,6 +28,7 @@ import {
 } from "../videoGen/videoForm";
 import { FirstFrameField, ReferencesField } from "../videoGen/VideoImageFields";
 import { VideoParamsFields } from "../videoGen/VideoParamsFields";
+import { VideoPromptAssistField } from "../videoGen/VideoPromptAssist";
 import { VideoResultPanel } from "../videoGen/VideoResultPanel";
 
 /** 動画は1人のキャラの衣装だけを使う。URLに`cast`があっても2人目以降は使わない。 */
@@ -269,6 +270,10 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
                 </Button>
               </Group>
             ) : null}
+            <VideoPromptAssistField
+              prompt={draft.prompt}
+              onApply={(prompt) => setDraft((current) => ({ ...current, prompt }))}
+            />
           </Stack>
           {recipe !== null ? <VideoParamsFields params={params} onChange={updateParams} recipe={recipe} /> : null}
           {blockedReason !== null ? (
