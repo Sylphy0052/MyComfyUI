@@ -134,9 +134,8 @@ function formatDate(value: string | null): string {
   return new Date(value).toLocaleString("ja-JP");
 }
 
-/** 一覧・生成物向けの日時。秒を省く。 */
-function formatMinute(value: string | null): string {
-  if (!value) return "未使用";
+/** formatDate から秒を省いた日時。一覧と最近の生成物で使う。 */
+function formatMinute(value: string): string {
   return new Date(value).toLocaleString("ja-JP", {
     year: "numeric",
     month: "numeric",
@@ -183,6 +182,10 @@ export function ProjectWorkspace({
   const [scenesLoadedFor, setScenesLoadedFor] = useState<string | null>(null);
   const [scenesError, setScenesError] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  // 読み込めなかった画像のArtifact ID。サムネイルの代わりにプレースホルダや1行表示へ落とす。
+  const [brokenImageIds, setBrokenImageIds] = useState<ReadonlySet<string>>(new Set());
+  const markImageBroken = (artifactId: string) =>
+    setBrokenImageIds((current) => new Set(current).add(artifactId));
   const moreMenuRef = useRef<HTMLDetailsElement>(null);
 
   const selected = useMemo(
@@ -455,7 +458,9 @@ export function ProjectWorkspace({
 
   const failedJobs = home?.jobs.filter((job) => job.state === "failed").length ?? 0;
   const isRecentImage = (artifact: Artifact) =>
-    artifact.kind === "image" && artifact.availability === "complete";
+    artifact.kind === "image" &&
+    artifact.availability === "complete" &&
+    !brokenImageIds.has(artifact.id);
   const recentImages = home?.artifacts.filter(isRecentImage) ?? [];
   const recentOthers = home?.artifacts.filter((artifact) => !isRecentImage(artifact)) ?? [];
 
@@ -543,12 +548,14 @@ export function ProjectWorkspace({
                   aria-pressed={project.id === focusedId}
                   onClick={() => setFocusedId(project.id)}
                 >
-                  {project.thumbnail_artifact_id ? (
+                  {project.thumbnail_artifact_id &&
+                  !brokenImageIds.has(project.thumbnail_artifact_id) ? (
                     <img
                       className="project-card-thumb"
                       src={api.artifactContentUrl(project.thumbnail_artifact_id)}
                       alt=""
                       loading="lazy"
+                      onError={() => markImageBroken(project.thumbnail_artifact_id!)}
                     />
                   ) : (
                     <span className="project-card-thumb placeholder" aria-hidden="true">
@@ -570,7 +577,11 @@ export function ProjectWorkspace({
                         Scene {project.scene_count} / Shot {project.shot_count}
                       </span>
                     </span>
-                    <span className="muted">最終使用 {formatMinute(project.last_used_at)}</span>
+                    <span className="muted">
+                      {project.last_used_at
+                        ? `最終使用 ${formatMinute(project.last_used_at)}`
+                        : "未使用"}
+                    </span>
                   </span>
                 </button>
               </li>
@@ -741,7 +752,9 @@ export function ProjectWorkspace({
                     <table className="project-progress-table">
                       <thead>
                         <tr>
-                          <td />
+                          <th scope="col">
+                            <span className="visually-hidden">対象</span>
+                          </th>
                           {PROGRESS_STAGES.map((stage) => (
                             <th key={stage.key} scope="col">
                               {stage.label}
@@ -788,6 +801,7 @@ export function ProjectWorkspace({
                                 src={api.artifactContentUrl(artifact.id)}
                                 alt={`${formatMinute(artifact.created_at)}の生成画像`}
                                 loading="lazy"
+                                onError={() => markImageBroken(artifact.id)}
                               />
                             </a>
                           </li>
