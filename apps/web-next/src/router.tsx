@@ -4,6 +4,7 @@ import { AppLayout } from "./layout/AppLayout";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { ViewerPage } from "./pages/ViewerPage";
 
 export const router = createBrowserRouter([
   {
@@ -17,7 +18,7 @@ export const router = createBrowserRouter([
       { path: "video", element: <PlaceholderPage title="動画" /> },
       { path: "voice", element: <PlaceholderPage title="音声" /> },
       { path: "bgm", element: <PlaceholderPage title="BGM" /> },
-      { path: "viewer", element: <PlaceholderPage title="Viewer" /> },
+      { path: "viewer", Component: ViewerPage },
       { path: "*", element: <Navigate to="/projects" replace /> },
     ],
   },
