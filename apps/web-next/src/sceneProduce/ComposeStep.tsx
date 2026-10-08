@@ -1,5 +1,5 @@
 import { Alert, Anchor, Button, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
-import { type SyntheticEvent, useState } from "react";
+import { type SyntheticEvent, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { artifactContentUrl, type StoryScene } from "../api/client";
@@ -10,9 +10,11 @@ import { VideoResult } from "../videoGen/VideoResultPanel";
 import { useVideoResultEntries } from "../videoGen/useVideoGen";
 import {
   buildComposeInputs,
+  type ComposeVoiceInput,
   composeJobBody,
   DEFAULT_BGM_VOLUME,
   DEFAULT_VOICE_VOLUME,
+  DURATION_LOAD_TIMEOUT_MS,
   type Duration,
   exceedsVideo,
   MAX_START_SEC,
@@ -25,7 +27,7 @@ import {
 } from "./composeForm";
 import { useComposeRecipe } from "./useSceneProduce";
 
-/** 工程ごと・シーンごとに別の保存キーにする。ほかのシーンの結果と混ざらない。 */
+/** シーンごとに別の保存キーにする。ほかのシーンの結果と混ざらない。 */
 function resultsKeyOf(sceneId: string): string {
   return `web-next:scene-produce-compose-results:${sceneId}`;
 }
@@ -34,6 +36,12 @@ const LOADING: Duration = { state: "loading" };
 
 function secondsOf(duration: Duration): number | null {
   return duration.state === "ready" ? duration.seconds : null;
+}
+
+/** 尺の記録が同じか。同じなら状態を更新しない。 */
+function sameDuration(current: Duration | undefined, next: Duration): boolean {
+  if (current?.state !== next.state) return false;
+  return current.state !== "ready" || (next.state === "ready" && current.seconds === next.seconds);
 }
 
 function DurationText({ duration }: { duration: Duration }) {
@@ -52,6 +60,7 @@ type Edit = { start?: string; volume?: string };
 export function ComposeStep({ projectId, scene }: { projectId: string; scene: StoryScene }) {
   const adoptions = useSceneAdoptions(projectId, scene.id);
   const recipe = useComposeRecipe();
+  const composeRecipe = recipe.data ?? null;
   const results = useVideoResultEntries(resultsKeyOf(scene.id));
   const submit = useSubmitImageJob();
   const [durations, setDurations] = useState<Record<string, Duration>>({});
@@ -59,14 +68,8 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
   const [bgmVolumeEdit, setBgmVolumeEdit] = useState<string | null>(null);
 
   const report = (artifactId: string, next: Duration) =>
-    setDurations((prev) => {
-      const current = prev[artifactId];
-      const same =
-        current?.state === next.state &&
-        (current.state !== "ready" || (next.state === "ready" && current.seconds === next.seconds));
-      return same ? prev : { ...prev, [artifactId]: next };
-    });
-  /** `<video>`・`<audio>`に付ける。メタデータの読み込みで尺を、失敗で読めないことを記録する。 */
+    setDurations((prev) => (sameDuration(prev[artifactId], next) ? prev : { ...prev, [artifactId]: next }));
+  // `<video>`・`<audio>`に付ける。メタデータの読み込みで尺を、失敗で読めないことを記録する。
   const mediaProps = (artifactId: string) => ({
     preload: "metadata" as const,
     controls: true,
@@ -80,6 +83,29 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
   const durationOf = (artifactId: string): Duration => durations[artifactId] ?? LOADING;
   const patchEdit = (dialogueId: string, patch: Edit) =>
     setEdits((prev) => ({ ...prev, [dialogueId]: { ...prev[dialogueId], ...patch } }));
+
+  const adoptionItems = adoptions.data ?? [];
+  const video = adoptionItems.find((item) => item.slot === "video") ?? null;
+  const bgm = adoptionItems.find((item) => item.slot === "bgm") ?? null;
+  const allRows = voiceRowsOf(scene, adoptionItems);
+  const rows = allRows.slice(0, MAX_VOICE_TRACKS);
+
+  // 尺を判定に使うのは動画と台詞の音声だけ。BGMの尺は使わない (backendが動画の尺で切り詰める)。
+  const timedIds = [...(video ? [video.artifact_id] : []), ...rows.map((row) => row.artifactId)];
+  const timedKey = timedIds.join(",");
+  // 読み込みが終わらない素材は、一定時間で読めないものとして扱う。読み込み済みの素材は変えない。
+  useEffect(() => {
+    const timers = timedKey
+      .split(",")
+      .filter((id) => id !== "")
+      .map((id) =>
+        setTimeout(
+          () => setDurations((prev) => (prev[id] ? prev : { ...prev, [id]: { state: "error" } })),
+          DURATION_LOAD_TIMEOUT_MS,
+        ),
+      );
+    return () => timers.forEach((timer) => clearTimeout(timer));
+  }, [timedKey]);
 
   const videoPath = `/scenes/${encodeURIComponent(scene.id)}/produce?${new URLSearchParams({
     project: projectId,
@@ -95,10 +121,6 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
   }
   if (!adoptions.data) return <Loader size="sm" mt="sm" />;
 
-  const video = adoptions.data.find((item) => item.slot === "video") ?? null;
-  const bgm = adoptions.data.find((item) => item.slot === "bgm") ?? null;
-  const allRows = voiceRowsOf(scene, adoptions.data);
-  const rows = allRows.slice(0, MAX_VOICE_TRACKS);
   const excluded = allRows.length - rows.length;
   const withoutVoice = scene.dialogues.length - allRows.length;
 
@@ -106,7 +128,7 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
   const voiceDurations = rows.map((row) => durationOf(row.artifactId));
   const packed = packedStarts(voiceDurations.map(secondsOf));
 
-  /** 行ごとの入力の検証結果。`start`・`volume`は有効なときの値。 */
+  // 行ごとの入力の検証結果。`start`・`volume`は有効なときの値。
   const lines = rows.map((row, index) => {
     const edit = edits[row.dialogueId] ?? {};
     const startText = edit.start ?? (packed[index] === null ? "" : String(packed[index]));
@@ -119,23 +141,38 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
       start !== null && seconds !== null && videoSeconds !== null && exceedsVideo(start, seconds, videoSeconds);
     // 前の行の尺が読めず、初期値がまだ決まらない開始。読み込み側の案内に任せ、入力の誤りとは数えない。
     const pending = edit.start === undefined && packed[index] === null;
+    // 投入できない入力。音量が不正、または開始が不正 (初期値待ちの行は除く)。
     const bad = volume === null || (!pending && start === null);
-    return { row, startText, volumeText, start, volume, overrun, bad, duration: voiceDurations[index] ?? LOADING };
+    return {
+      row,
+      startText,
+      volumeText,
+      start,
+      volume,
+      overrun,
+      bad,
+      duration: voiceDurations[index] ?? LOADING,
+    };
   });
   const bgmVolumeText = bgmVolumeEdit ?? String(DEFAULT_BGM_VOLUME);
   const bgmVolume = parseBounded(bgmVolumeText, 0, MAX_VOLUME);
 
   const durationList = [videoDuration, ...voiceDurations];
   const loading = durationList.some((item) => item.state === "loading");
-  const unreadable = durationList.some((item) => item.state === "error");
+  // 尺を読めない素材の名前。動画と、何行目の台詞の音声か。
+  const unreadableNames = [
+    ...(videoDuration.state === "error" ? ["動画"] : []),
+    ...lines.filter((line) => line.duration.state === "error").map((line) => `${line.row.lineNo}行目の台詞の音声`),
+  ];
+  const unreadable = unreadableNames.length > 0;
   const hasOverrun = lines.some((line) => line.overrun);
   const invalid = lines.some((line) => line.bad) || (bgm !== null && bgmVolume === null);
   const canSubmit =
-    video !== null && recipe.data != null && !loading && !unreadable && !hasOverrun && !invalid && !submit.isPending;
+    video !== null && composeRecipe !== null && !loading && !unreadable && !hasOverrun && !invalid && !submit.isPending;
 
   const onSubmit = () => {
-    if (!canSubmit || !video || !recipe.data) return;
-    const voices = lines.flatMap((line) =>
+    if (!canSubmit || !video || !composeRecipe) return;
+    const voices: ComposeVoiceInput[] = lines.flatMap((line) =>
       line.start === null || line.volume === null
         ? []
         : [{ artifact_id: line.row.artifactId, start_sec: line.start, volume: line.volume }],
@@ -145,7 +182,7 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
       voices,
       bgm: bgm && bgmVolume !== null ? { artifactId: bgm.artifact_id, volume: bgmVolume } : null,
     });
-    submit.mutate(composeJobBody({ recipeId: recipe.data.id, projectId, sceneId: scene.id, inputs }), {
+    submit.mutate(composeJobBody({ recipeId: composeRecipe.id, projectId, sceneId: scene.id, inputs }), {
       onSuccess: (job) => results.add({ jobId: job.id }),
       onError: (error) => notifyError("投入できませんでした", error),
     });
@@ -221,6 +258,7 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
                       w={90}
                       inputMode="decimal"
                       value={line.startText}
+                      aria-label={`${line.row.lineNo}行目の台詞の開始 (秒)`}
                       error={line.bad && line.start === null}
                       onChange={(event) => patchEdit(line.row.dialogueId, { start: event.currentTarget.value })}
                       data-testid="compose-start"
@@ -237,6 +275,7 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
                       w={70}
                       inputMode="decimal"
                       value={line.volumeText}
+                      aria-label={`${line.row.lineNo}行目の台詞の音量`}
                       error={line.volume === null}
                       onChange={(event) => patchEdit(line.row.dialogueId, { volume: event.currentTarget.value })}
                       data-testid="compose-volume"
@@ -293,7 +332,7 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
       ) : null}
       {unreadable ? (
         <Alert color="red" data-testid="compose-unreadable">
-          尺を読めない素材があります。動画か音声を採用し直してください。
+          尺を読めない素材があります: {unreadableNames.join("、")}。採用し直してください。
         </Alert>
       ) : null}
       {hasOverrun ? (
@@ -306,9 +345,19 @@ export function ComposeStep({ projectId, scene }: { projectId: string; scene: St
           開始は0〜{MAX_START_SEC}秒、音量は0〜{MAX_VOLUME}の数値で入力してください。
         </Alert>
       ) : null}
+      {recipe.isPending ? (
+        <Text size="sm" c="dimmed" data-testid="compose-recipe-loading">
+          統合のRecipeを読み込んでいます。
+        </Text>
+      ) : null}
       {recipe.isError ? (
         <Alert color="red" data-testid="compose-recipe-error">
           統合のRecipeを取得できません: {recipe.error.message}
+        </Alert>
+      ) : null}
+      {recipe.isSuccess && composeRecipe === null ? (
+        <Alert color="red" data-testid="compose-no-recipe">
+          統合のRecipeが見つかりません。
         </Alert>
       ) : null}
 

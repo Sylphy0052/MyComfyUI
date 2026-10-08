@@ -1,16 +1,31 @@
 import type { GenerationJobBody, StoryScene, StorySceneAdoption } from "../api/client";
 
-/** 台詞の音声の上限 (`adapters/compose/plan.py`の`MAX_VOICE_TRACKS`)。超えた行は投入に含めない。 */
+// 以下の定数はbackendの値の写し。backend側を変えたらここも合わせる (画面側の検証がずれるだけで、
+// 最終的な検証はbackendが行う)。
+
+/** 統合のWorkflowテンプレート名。backendの`adapters/compose/plan.py`の`COMPOSE_TEMPLATE_NAME`と合わせる。 */
+export const COMPOSE_TEMPLATE = "ffmpeg_compose";
+/** 台詞の音声の上限。backendの`adapters/compose/plan.py`の`MAX_VOICE_TRACKS`と合わせる。超えた行は投入に含めない。 */
 export const MAX_VOICE_TRACKS = 16;
-/** `start_sec`の範囲。 */
+/**
+ * `start_sec`の上限 (秒)。backendの`adapters/compose/plan.py`で`start_sec`の`maximum`に直書きされた`3600.0`と合わせる
+ * (定数名は無い)。
+ */
 export const MAX_START_SEC = 3600;
-/** 音量の上限 (`MAX_VOLUME`)。 */
+/** 音量の上限。backendの`adapters/compose/plan.py`の`MAX_VOLUME`と合わせる。 */
 export const MAX_VOLUME = 4;
-/** 音量の既定値 (`DEFAULT_VOICE_VOLUME`・`DEFAULT_BGM_VOLUME`)。 */
+/** 台詞の音量の既定値。backendの`adapters/compose/plan.py`の`DEFAULT_VOICE_VOLUME`と合わせる。 */
 export const DEFAULT_VOICE_VOLUME = 1;
+/** BGMの音量の既定値。backendの`adapters/compose/plan.py`の`DEFAULT_BGM_VOLUME`と合わせる。 */
 export const DEFAULT_BGM_VOLUME = 0.33;
-/** 尺の比較の許容誤差 (`executor.py`の`DURATION_TOLERANCE_SEC`)。フレーム境界の丸めは超過にしない。 */
+/**
+ * 尺の比較の許容誤差 (秒)。backendの`adapters/compose/executor.py`の`DURATION_TOLERANCE_SEC`と合わせる。
+ * フレーム境界の丸めは超過にしない。
+ */
 export const DURATION_TOLERANCE_SEC = 0.05;
+
+/** 尺の読み込みを待つ上限 (ミリ秒)。超えたら読めない素材として扱う (読み込みが止まったままでも投入の可否が決まる)。 */
+export const DURATION_LOAD_TIMEOUT_MS = 20_000;
 
 /** 尺の読み込み状態。`<video>`と`<audio>`の`loadedmetadata`で決まる。 */
 export type Duration = { state: "loading" } | { state: "error" } | { state: "ready"; seconds: number };
@@ -56,10 +71,14 @@ export function roundSec(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-/** 入力欄の文字列を、範囲内の有限な数値にする。範囲外・空・数値でないものは`null`。 */
+/** 非負の10進数の書式。`Number()`が通す`0x10`・`1e1`などを除く。 */
+const DECIMAL_PATTERN = /^\d+(\.\d+)?$/;
+
+/** 入力欄の文字列を、範囲内の有限な数値にする。範囲外・空・10進数でないものは`null`。 */
 export function parseBounded(value: string, min: number, max: number): number | null {
-  if (value.trim() === "") return null;
-  const parsed = Number(value);
+  const text = value.trim();
+  if (!DECIMAL_PATTERN.test(text)) return null;
+  const parsed = Number(text);
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : null;
 }
 
@@ -81,6 +100,7 @@ export function buildComposeInputs(args: {
   return inputs;
 }
 
+/** `POST /generation-jobs`の本体。統合のJobは`kind="compose"`で、継承した既定値は使わない。 */
 export function composeJobBody(args: {
   recipeId: string;
   projectId: string;
