@@ -47,6 +47,7 @@ export function voiceRowsOf(scene: StoryScene, adoptions: StorySceneAdoption[]):
   }
   const rows: VoiceRow[] = [];
   scene.dialogues.forEach((dialogue, index) => {
+    if (!dialogue.id) return;
     const artifactId = byDialogue.get(dialogue.id);
     if (artifactId) rows.push({ dialogueId: dialogue.id, lineNo: index + 1, text: dialogue.text, artifactId });
   });

@@ -2,9 +2,8 @@ set -Eeuo pipefail
 set -m
 
 API_PORT="${API_PORT:-8000}"
-WEB_PORT="${WEB_PORT:-5173}"
-# WebUI v2 (apps/web-next)。ポートはapps/web-next/vite.config.tsと合わせる。
-WEB_NEXT_PORT=5174
+# WebUI (apps/web-next)。ポートはapps/web-next/vite.config.tsと合わせる。
+WEB_PORT=5174
 # プロンプト補完用のQwenを手元のOllamaで動かす。Remote側のQwenを使うなら START_OLLAMA=0。
 START_OLLAMA="${START_OLLAMA:-1}"
 export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
@@ -64,7 +63,6 @@ trap 'exit 143' TERM
 
 free_port "$API_PORT"
 free_port "$WEB_PORT"
-free_port "$WEB_NEXT_PORT"
 
 if [ "$START_OLLAMA" != "0" ]; then
   OLLAMA_BIN="${OLLAMA_BIN:-$(command -v ollama || true)}"
@@ -89,8 +87,6 @@ npm run api:dev &
 curl -fsS --retry 60 --retry-all-errors --retry-connrefused --retry-delay 1 --max-time 1 \
   "http://127.0.0.1:${API_PORT}/api/v1/health" &
 wait $!
-
-npm run dev:next &
 
 npm run dev &
 wait $!

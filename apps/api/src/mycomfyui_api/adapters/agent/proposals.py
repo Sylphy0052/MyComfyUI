@@ -1055,7 +1055,7 @@ def normalize_prompt_tags(
             return output
         data["items"] = normalized_bodies
     # 注記のタグ名は、LLMが返した文字列を加工せずに`rationale`と`natural_text`へ連結して
-    # いる。既存の`rationale`と`natural_text`もLLMの出力そのままで、`apps/web/src`は
+    # いる。既存の`rationale`と`natural_text`もLLMの出力そのままで、`apps/web-next/src`は
     # `innerHTML`系を使わずReactのエスケープで描画するため、今は実害が無い (#414)。
     # これらをHTMLとして描画する箇所を足すときは、描画側でエスケープすること。
     notes = [

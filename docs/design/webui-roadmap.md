@@ -2,6 +2,8 @@
 
 ## この文書の位置付け
 
+旧UI (`apps/web`) を対象にした過去の記録である。旧UIは #612 で削除したため、文中のパスと行番号は削除前のものを指す。
+
 [webui-use-cases.md](./webui-use-cases.md) で定義したあるべき使い方と、[webui-gap-analysis.md](./webui-gap-analysis.md) で洗い出したギャップ（G-01〜G-34）を、着手できる単位へ分割して順序付けたものである。
 
 各項目は 1 Issue に相当し、Roadmap Issue 3 本と子 Issue 31 本として起票済みである。

@@ -38,7 +38,7 @@ WebUIを機能を絞って作り直すための設計を定める。2026-10-08�
   - 画面の対象 (Project、Sceneなど) はURLのクエリに持たせる
   - サーバーの状態はTanStack Queryで扱う。WebSocket (`/events`、`apps/api/src/mycomfyui_api/events.py:198`) のイベントを受けたら、該当するQueryのキャッシュを無効化する
   - 各ライブラリのバージョンとReact 19への対応は、実装前に公式資料で確認する
-- `apps/web-next` で全画面を置き換えたら、旧 `apps/web` を削除する
+- `apps/web-next` で全画面を置き換えたら、旧 `apps/web` を削除する (#612で削除済み)
 
 ## 共通のレイアウト
 
@@ -153,7 +153,7 @@ Jobの状態は `queued` / `running` / `cancelling` / `succeeded` / `failed` / `
   - Sceneを選ぶと、背景・時間帯・ポーズ・表情も補完タグに入る
 - 生成方法のタブ
   - 新規: `anima_txt2img`
-  - 参照: 「変えたい要素」のチェック (ポーズ・表情を変える / 衣装を変える) から、テンプレートと強度を自動で決める。現行のロジック (`apps/web/src/derivation/changeOperations.ts:46`) を流用する。ポーズ・表情だけなら `anima_ref_siglip` (強度0.5)、衣装だけなら `anima_ref_incontext` (強度1.0) となる。強度は「詳細」で手で直せる
+  - 参照: 「変えたい要素」のチェック (ポーズ・表情を変える / 衣装を変える) から、テンプレートと強度を自動で決める。旧UIのロジックを流用する (`apps/web-next/src/imageGen/deriveForm.ts` へ移植済み)。ポーズ・表情だけなら `anima_ref_siglip` (強度0.5)、衣装だけなら `anima_ref_incontext` (強度1.0) となる。強度は「詳細」で手で直せる
   - 修正: 「全体を変える」(`anima_img2img`、denoiseのスライダー) / 「一部を描き直す」(`anima_inpaint`) / 「拡大」(`image_upscale`)
   - 参照と修正では、元画像を1枚選ぶ。出どころは、生成物、衣装の参照画像、アップロードのいずれかとする
 - 常に出すパラメータ: サイズ (縦横比のプリセットと縦横の入れ替え)、枚数、seed (ランダム/固定)
@@ -165,7 +165,7 @@ Jobの状態は `queued` / `running` / `cancelling` / `succeeded` / `failed` / `
 - 元画像の上にcanvasを重ね、ブラシで塗ってマスクを作る。ブラシの太さ、消しゴム、全消去を持つ
 - マスク画像のアップロードも受け付ける
 
-旧UIはマスクを描く機能を持たず、登録済みの画像をマスクとして選ぶだけだった (`apps/web/src/components/ImageDerivationPanel.tsx:297-302`)。
+旧UIはマスクを描く機能を持たず、登録済みの画像をマスクとして選ぶだけだった (旧 `apps/web/src/components/ImageDerivationPanel.tsx:297-302`、#612で削除)。
 
 ### 複数人
 
