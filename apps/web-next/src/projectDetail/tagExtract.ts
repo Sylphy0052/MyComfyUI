@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import { apiRequest, artifactContentUrl, ApiError } from "../api/client";
 import type { components } from "../api/schema";
+import { notifyError } from "../notifications";
 import { artifactIdOf } from "./MediaThumb";
 import { TAG_MAX, TAGS_MAX } from "./limits";
 import { fileToBase64 } from "./useStory";
@@ -91,5 +92,7 @@ export function useExtractImageTags() {
       });
       return cleanExtractedTags(result.tags);
     },
+    // 抽出中にドロワーを閉じても失敗を知らせるため、mutate側でなくここで通知する。
+    onError: (error) => notifyError("タグを抽出できません", error),
   });
 }

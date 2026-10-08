@@ -3,7 +3,6 @@ import { notifications } from "@mantine/notifications";
 import { IconWand } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
-import { notifyError } from "../notifications";
 import { MediaThumb } from "./MediaThumb";
 import { mergeTags, normalizeTag, useExtractImageTags } from "./tagExtract";
 
@@ -45,7 +44,7 @@ export function TagExtractor({
   const run = () => {
     if (imageKey === null) return;
     setUnchecked(new Set());
-    extract.mutate(imageKey, { onError: (error) => notifyError("タグを抽出できません", error) });
+    extract.mutate(imageKey);
   };
 
   const existing = new Set(tags.map(normalizeTag));
