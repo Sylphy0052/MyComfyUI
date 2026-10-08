@@ -30,17 +30,31 @@ function formatSeconds(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
+type NamedQuery = {
+  data: { id: string; name: string }[] | undefined;
+  isError: boolean;
+};
+
+/**
+ * 一覧から名前を引く。取得中は`null` (表示しない)。取得に失敗したら「取得できません」、
+ * 一覧に無ければ「削除済み」、名前が空なら「名前なし」。SceneとキャラでWordingをそろえる。
+ */
+function linkName(query: NamedQuery, id: string): string | null {
+  if (query.data) {
+    const entry = query.data.find((candidate) => candidate.id === id);
+    if (!entry) return "(削除済み)";
+    return entry.name || "(名前なし)";
+  }
+  return query.isError ? "(取得できません)" : null;
+}
+
 /** 行に出す紐づけ名 (Scene・キャラ)。Projectがあるときだけ、そのProjectのScene・キャラ一覧から名前を引く。 */
 function useLinkNames(item: MediaItem, showCharacters: boolean) {
   const projectId = item.assigned_project_id ?? null;
   const scenes = useScenes(projectId);
   const characters = useCharacters(projectId, showCharacters);
   const sceneId = item.story_scene_id ?? null;
-  const scene =
-    sceneId === null
-      ? null
-      : scenes.data?.find((entry) => entry.id === sceneId)?.name ||
-        "(名前なし)";
+  const scene = sceneId === null ? null : linkName(scenes, sceneId);
   const characterIds = [
     ...new Set(
       [item.story_character_id, ...(item.character_ids ?? [])].filter(
@@ -49,10 +63,9 @@ function useLinkNames(item: MediaItem, showCharacters: boolean) {
     ),
   ];
   const characterNames = showCharacters
-    ? characterIds.map(
-        (id) =>
-          characters.data?.find((entry) => entry.id === id)?.name ?? "(不明)",
-      )
+    ? characterIds
+        .map((id) => linkName(characters, id))
+        .filter((name): name is string => name !== null)
     : [];
   return { scene, characterNames };
 }
