@@ -73,8 +73,8 @@ export function ImageChangePanel({
   const [promptRestoreFailed, setPromptRestoreFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 説明欄を初期化した最後の元画像。モードを往復しても同じ元画像なら入力済みの説明を残すために覚えておく。
-  const lastSourceItemRef = useRef<PickedMedia | null>(null);
+  // 説明欄を初期化した最後の元画像のkey。モードを往復しても同じ元画像なら入力済みの説明を残すために覚えておく。
+  const lastSourceKeyRef = useRef<string | null>(null);
   const sourceArtifactIdRef = useRef(sourceArtifactId);
   sourceArtifactIdRef.current = sourceArtifactId;
 
@@ -91,7 +91,7 @@ export function ImageChangePanel({
     return characterReferenceImage(character, characterSelection.outfitId);
   }, [characters, characterSelection]);
   // 参照セットの画像はArtifactの有無に関わらず、生成タブの`toReferenceInputs`と同じ形で送る。
-  // キャラクター一覧を読み直しても同じ画像なら同じオブジェクトを保ち、説明欄を空に戻さない。
+  // キャラクター一覧を読み直しても、パス・sha256・ファイル名が同じなら同じオブジェクトを保つ。説明欄を残すかは`key` (sha256) で判定する。
   const referenceRelativePath = characterReference?.image.relative_path ?? null;
   const referenceSha256 = characterReference?.image.sha256 ?? null;
   const referenceFileName = characterReference?.image.file_name ?? "";
@@ -164,8 +164,9 @@ export function ImageChangePanel({
     // 選択を外したときの初期化は handleSourceMediaChange で行う。
     if (!item) return;
     // モードを往復して同じ元画像 (同じ衣装の参照画像など) に戻っただけなら、入力済みの説明を初期化しない。
-    const unchanged = lastSourceItemRef.current === item;
-    lastSourceItemRef.current = item;
+    // 一覧の読み直しで`file_name`だけ変わると別オブジェクトになるため、参照ではなく`key`で比べる (Issue #514)。
+    const unchanged = lastSourceKeyRef.current === item.key;
+    lastSourceKeyRef.current = item.key;
     const artifactId = item && "artifact_id" in item.source ? item.source.artifact_id : null;
     if (!artifactId) {
       if (unchanged) return;
