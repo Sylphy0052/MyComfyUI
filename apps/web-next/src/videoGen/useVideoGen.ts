@@ -178,5 +178,5 @@ export function useRecentVoiceAudio(enabled: boolean) {
 /** `/video?from_artifact=`で開いたとき、生成物を作った動画Jobの設定を入力欄の内容にする。 */
 export async function restoreVideoFromJob(client: QueryClient, jobId: string, recipes: VideoRecipes): Promise<VideoRestored> {
   const { job, manifest } = await fetchJobSettings(client, jobId, "video", "動画");
-  return videoRestoredFromManifest(defaultDraft(recipes), job, manifest);
+  return videoRestoredFromManifest(defaultDraft(recipes), job, manifest, recipes);
 }

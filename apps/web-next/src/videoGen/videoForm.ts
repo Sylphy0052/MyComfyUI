@@ -8,7 +8,7 @@ import {
   type Recipe,
 } from "../api/client";
 import type { ImageRef, SourceImage } from "../imageGen/deriveForm";
-import { acceptsInput, buildInputs, defaultForm, isRecord, type ImageTarget } from "../imageGen/imageForm";
+import { acceptsInput, buildInputs, defaultForm, isRecord, restorableSeed, type ImageTarget } from "../imageGen/imageForm";
 import type { SupplementTags } from "../imageGen/promptTags";
 
 /**
@@ -176,6 +176,10 @@ function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
 }
 
+function positiveNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
@@ -317,6 +321,11 @@ export function videoBlockedReason(
   return null;
 }
 
+/** Recipeが台詞音声を受けるか。`guide_audio`は`audio_mode`とセットでないとbackendが422にするため、両方を見る。 */
+export function acceptsGuideAudio(recipe: Recipe | null): boolean {
+  return recipe !== null && acceptsInput(recipe, "guide_audio") && acceptsInput(recipe, "audio_mode");
+}
+
 /** `POST /generation-jobs`の`inputs`。空の文字列の変数は送らず、Recipeの既定値に任せる。 */
 export function buildVideoInputs(draft: VideoDraft, recipe: Recipe): Record<string, unknown> {
   const p = draft.params[draft.mode];
@@ -341,7 +350,7 @@ export function buildVideoInputs(draft: VideoDraft, recipe: Recipe): Record<stri
     values.references = draft.references.map((item) => item.ref);
   }
   // 台詞音声は、Recipeが受けるときだけ送る。`guide_audio`は`audio_mode=external_voice`とセットでないとbackendが422にする。
-  if (draft.guideAudio !== null && acceptsInput(recipe, "guide_audio") && acceptsInput(recipe, "audio_mode")) {
+  if (draft.guideAudio !== null && acceptsGuideAudio(recipe)) {
     values.audio_mode = "external_voice";
     values.guide_audio = draft.guideAudio.ref;
   }
@@ -423,12 +432,15 @@ function inputUploadsOf(parameters: Record<string, unknown>): InputUpload[] {
  * 動画Jobとそのマニフェストから入力欄の内容を作る。方式はWorkflowテンプレートから決め、
  * 先頭フレーム・参照画像・台詞音声は`input_uploads`から、プロンプトは`resolved_prompt`から、
  * サイズ・長さ・モデルなどは`parameters` / `model`から戻す。シードは固定にして同じ値を使う。
+ * 読めない値 (整数でないシード、0以下のfps) は既定値にして`warning`へ書く。
+ * 現在のRecipeが台詞音声を受けないときは、台詞音声を戻さない (欄が出ないまま後で送られるのを防ぐ)。
  * Project・Scene・衣装はJobの紐づけをそのまま対象にし、追加キャストは戻さない。
  */
 export function videoRestoredFromManifest(
   base: VideoDraft,
   job: Pick<GenerationJob, "assigned_project_id" | "story_scene_id" | "story_character_id" | "story_costume_id">,
   manifest: Pick<GenerationManifest, "parameters" | "model" | "resolved_prompt" | "seed">,
+  recipes: VideoRecipes,
 ): VideoRestored {
   const { parameters, model } = manifest;
   const template = parameters.workflow_template;
@@ -436,14 +448,22 @@ export function videoRestoredFromManifest(
     template === VIDEO_TEMPLATES.ref2v ? "ref2v" : template === VIDEO_TEMPLATES.i2v ? "i2v" : null;
   if (mode === null) throw new Error("動画の生成設定ではありません");
 
+  const warnings: string[] = [];
   const prev = base.params[mode];
-  const fps = numberOr(parameters.fps, prev.fps);
+  const fpsValue = positiveNumber(parameters.fps);
+  const length = positiveNumber(parameters.length);
+  const fps = fpsValue ?? prev.fps;
+  let seconds = prev.seconds;
+  if (fpsValue !== null && length !== null) seconds = round1(length / fpsValue);
+  else warnings.push("fpsまたは長さを読めなかったため、秒数は既定値にしました");
+  const seed = restorableSeed(manifest.seed, SEED_MAX);
+  if (seed === null) warnings.push("シードを読めなかったため、既定のシードにしました");
   const params: VideoParams = {
     width: numberOr(parameters.width, prev.width),
     height: numberOr(parameters.height, prev.height),
-    seconds: typeof parameters.length === "number" ? round1(parameters.length / fps) : prev.seconds,
-    seedMode: "fixed",
-    seed: manifest.seed,
+    seconds,
+    seedMode: seed === null ? prev.seedMode : "fixed",
+    seed: seed ?? prev.seed,
     steps: numberOr(parameters.steps, prev.steps),
     samplerName: stringOr(parameters.sampler_name, prev.samplerName),
     schedulerName: stringOr(parameters.scheduler, prev.schedulerName),
@@ -462,7 +482,9 @@ export function videoRestoredFromManifest(
     .map((item) => videoImage(item.ref, item.label, false));
   const guide = uploads.find((item) => item.variable === "guide_audio");
 
-  const warnings: string[] = [];
+  const guideWanted = guide !== undefined && parameters.audio_mode === "external_voice";
+  const guideAccepted = acceptsGuideAudio(recipes[mode]);
+  if (guideWanted && !guideAccepted) warnings.push("このRecipeは台詞音声を受けないため、台詞音声は戻していません");
   if (parameters.audio_mode === "silent") warnings.push("無音の指定は戻せません");
   if (parameters.audio_mode === "external_voice" && guide === undefined) warnings.push("台詞音声の素材が見つかりません");
   if (typeof parameters.guide_frame_idx === "number" && parameters.guide_frame_idx !== 0) {
@@ -476,7 +498,7 @@ export function videoRestoredFromManifest(
       prompt: manifest.resolved_prompt,
       firstFrame: mode === "i2v" && firstFrame !== undefined ? videoImage(firstFrame.ref, firstFrame.label, false) : null,
       references: mode === "ref2v" ? addReferences([], references) : [],
-      guideAudio: guide !== undefined && parameters.audio_mode === "external_voice" ? { ref: guide.ref, label: guide.label } : null,
+      guideAudio: guideWanted && guideAccepted ? { ref: guide.ref, label: guide.label } : null,
       params: { ...base.params, [mode]: params },
       // 戻した対象のScene・衣装で、自動の補完が入力を上書きしないよう「補完済み」にしておく。
       filled: { sceneId: job.story_scene_id ?? null, costumeId: job.story_costume_id ?? null, motion: null },

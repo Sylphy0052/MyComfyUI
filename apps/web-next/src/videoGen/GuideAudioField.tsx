@@ -1,13 +1,12 @@
 import { Button, FileButton, Group, ScrollArea, Stack, Text } from "@mantine/core";
 
 import { artifactContentUrl, type Recipe, type StoryCharacter, type StoryScene } from "../api/client";
-import { acceptsInput } from "../imageGen/imageForm";
 import { notifyError } from "../notifications";
 import { useSceneAdoptions } from "../projectDetail/useStory";
 import { speakerNameOf } from "../voice/SceneLineList";
 import { useImportVoiceReference } from "../voice/useVoice";
 import { useRecentVoiceAudio } from "./useVideoGen";
-import type { GuideAudio } from "./videoForm";
+import { acceptsGuideAudio, type GuideAudio } from "./videoForm";
 
 /** 台詞文を候補の見出しに使うときの長さ。 */
 const LABEL_TEXT_MAX = 40;
@@ -52,7 +51,7 @@ export function GuideAudioField({
   scene: StoryScene | null;
   characters: StoryCharacter[];
 }) {
-  const enabled = recipe !== null && acceptsInput(recipe, "guide_audio") && acceptsInput(recipe, "audio_mode");
+  const enabled = acceptsGuideAudio(recipe);
   const sceneCandidates = useSceneVoiceCandidates(projectId, scene, characters);
   const recent = useRecentVoiceAudio(enabled);
   const upload = useImportVoiceReference();
