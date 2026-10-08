@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import { REFERENCE_STRENGTH_MAX } from "../derivation/changeOperations";
+import {
+  CHANGE_OPERATIONS,
+  CHANGE_TEMPLATE_RECIPE_LABELS,
+  REFERENCE_STRENGTH_MAX,
+  planForOperations,
+} from "../derivation/changeOperations";
+import type { ChangeOperation } from "../derivation/changeOperations";
 import { describeApiError, templateName } from "../derivation/recipeTemplate";
 import type {
   AgentProvider,
@@ -96,6 +102,11 @@ export function ImageDerivationPanel({
   const { diff: reviewDiff, panel: tagThresholdPanel } = useTagThresholdDiff(promptDiff);
   const sourceArtifactIdRef = useRef(sourceArtifactId);
   sourceArtifactIdRef.current = sourceArtifactId;
+  // 「変えたい要素」(#523)。選択に合わせてRecipeと参照強度を入れ、値はあとから手で変えられる。
+  const [changeOperations, setChangeOperations] = useState<ReadonlySet<ChangeOperation>>(new Set());
+  // Recipeを切り替えると既定値の読込みで参照強度が上書きされるため、要素から決めた値は
+  // 切替先のRecipeの既定値を読み込んだあとに入れる。
+  const pendingReferenceStrengthRef = useRef<{ recipeId: string; value: number } | null>(null);
 
   const recipe = useMemo(
     () => recipes.find((item) => item.id === recipeId) ?? null,
@@ -176,8 +187,49 @@ export function ImageDerivationPanel({
     if (defaults.reference_strength !== undefined) {
       setReferenceStrength(String(defaults.reference_strength));
     }
-    setTouchedFields(new Set());
+    const pendingReferenceStrength = pendingReferenceStrengthRef.current;
+    if (!pendingReferenceStrength || pendingReferenceStrength.recipeId !== recipe?.id) {
+      setTouchedFields(new Set());
+      // 手で選び直したときや一覧の再取得で既定値に戻ったときは、要素の選択と値が対応しなくなるので外す。
+      setChangeOperations(new Set());
+      return;
+    }
+    pendingReferenceStrengthRef.current = null;
+    setReferenceStrength(String(pendingReferenceStrength.value));
+    setTouchedFields(new Set(["reference_strength"]));
   }, [recipe]);
+
+  const toggleChangeOperation = (operation: ChangeOperation) => {
+    const next = new Set(changeOperations);
+    if (next.has(operation)) next.delete(operation);
+    else next.add(operation);
+    const plan = planForOperations(next);
+    // 全部外したときは、入っているRecipeと参照強度をそのまま残す。
+    if (!plan) {
+      setChangeOperations(next);
+      return;
+    }
+    const target = recipes.find((item) => templateName(item) === plan.templateName);
+    if (!target) {
+      // 対応するRecipeが無い選択は受け付けず、チェックを元のままにする。
+      setError(`Recipe「${CHANGE_TEMPLATE_RECIPE_LABELS[plan.templateName]}」が見つかりません。Workflow管理で登録してください。`);
+      return;
+    }
+    setError(null);
+    setChangeOperations(next);
+    // 対応先が変わらない選択 (例: ポーズ → ポーズ+表情) では、手で直した参照強度を残す。
+    const previous = planForOperations(changeOperations);
+    if (target.id === recipeId && previous?.referenceStrength === plan.referenceStrength) return;
+    if (target.id !== recipeId) {
+      pendingReferenceStrengthRef.current = { recipeId: target.id, value: plan.referenceStrength };
+      setRecipeId(target.id);
+      // AIの案は切替前のRecipe向けに作られているので、開いている差分レビューを閉じる。
+      setPromptDiff(null);
+      return;
+    }
+    setReferenceStrength(String(plan.referenceStrength));
+    setTouchedFields((current) => new Set(current).add("reference_strength"));
+  };
 
   useEffect(() => {
     setPreview(null);
@@ -360,12 +412,28 @@ export function ImageDerivationPanel({
         <button type="button" className="primary" disabled={busy || !modelsValid || !sourceReady} onClick={() => void execute(false)}>{busy ? "処理中..." : "派生生成を投入"}</button>
       </div>
       <div className="stack">
+        <span>変えたい要素 (任意)</span>
+        <div className="row" role="group" aria-label="変えたい要素">
+          {CHANGE_OPERATIONS.map((item) => (
+            <label key={item.value} className="row">
+              <input
+                type="checkbox"
+                checked={changeOperations.has(item.value)}
+                disabled={busy}
+                onChange={() => toggleChangeOperation(item.value)}
+              />
+              {item.label}
+            </label>
+          ))}
+        </div>
         <label htmlFor="derivation-recipe">ベース (Recipe)</label>
         <select
           id="derivation-recipe"
           value={recipeId}
           onChange={(event) => {
             setRecipeId(event.target.value);
+            // 要素の選択は、切替後の既定値読込みで外れる。
+            pendingReferenceStrengthRef.current = null;
             // AIの案は切替前のRecipe向けに作られているので、開いている差分レビューを閉じる。
             setPromptDiff(null);
           }}

@@ -23,7 +23,7 @@ export const GENERATION_TAB_VALUES = [
   "voice",
   "compose",
 ] as const;
-export const IMAGE_SUBTAB_VALUES = ["generate", "change", "derive", "sweep"] as const;
+export const IMAGE_SUBTAB_VALUES = ["generate", "derive", "sweep"] as const;
 
 export type Mode = (typeof MODE_VALUES)[number];
 export type View = (typeof VIEW_VALUES)[number];
@@ -68,6 +68,11 @@ const PARAM_NAMES = {
   sceneId: "scene",
   shotId: "shot",
 } as const;
+
+/** 旧「変更」サブタブは「派生」へ統合した (#523)。保存済みの状態とURLに残る旧値を読み替える。 */
+function pickImageSubTab(raw: string | null | undefined): ImageSubTab | undefined {
+  return pickEnum(IMAGE_SUBTAB_VALUES, raw === "change" ? "derive" : raw);
+}
 
 function pickEnum<T extends string>(
   values: readonly T[],
@@ -115,10 +120,7 @@ export function readUrlUiState(search: string): Partial<UiState> {
     params.get(PARAM_NAMES.generationTab),
   );
   if (generationTab) partial.generationTab = generationTab;
-  const imageSubTab = pickEnum(
-    IMAGE_SUBTAB_VALUES,
-    params.get(PARAM_NAMES.imageSubTab),
-  );
+  const imageSubTab = pickImageSubTab(params.get(PARAM_NAMES.imageSubTab));
   if (imageSubTab) partial.imageSubTab = imageSubTab;
 
   const projectId = pickId(params.get(PARAM_NAMES.projectId));
@@ -180,8 +182,7 @@ export function readStoredUiState(): Partial<UiState> {
     typeof source.generationTab === "string" ? source.generationTab : null,
   );
   if (generationTab) partial.generationTab = generationTab;
-  const imageSubTab = pickEnum(
-    IMAGE_SUBTAB_VALUES,
+  const imageSubTab = pickImageSubTab(
     typeof source.imageSubTab === "string" ? source.imageSubTab : null,
   );
   if (imageSubTab) partial.imageSubTab = imageSubTab;

@@ -134,13 +134,15 @@ const GENERATION_TABS: { value: GenerationTab; label: string }[] = [
 
 const IMAGE_SUBTABS: { value: ImageSubTab; label: string }[] = [
   { value: "generate", label: "生成" },
-  { value: "change", label: "変更" },
   { value: "derive", label: "派生" },
   { value: "sweep", label: "スイープ" },
 ];
 
-/** 作品制作 (モードB) で出すサブタブ。技術寄りの派生・スイープは隠す。 */
-const PRODUCTION_IMAGE_SUBTABS = new Set<ImageSubTab>(["generate", "change"]);
+/**
+ * 作品制作 (モードB) で出すサブタブ。技術寄りのスイープは隠す。
+ * 派生はモードBでは技術語を出さない変更パネルを出す (#523)。
+ */
+const PRODUCTION_IMAGE_SUBTABS = new Set<ImageSubTab>(["generate", "derive"]);
 
 const JOB_KIND_LABELS: Record<string, string> = Object.fromEntries(
   GENERATION_TABS.map((tab) => [tab.value, tab.label]),
@@ -609,6 +611,9 @@ export function App() {
     : generationTab;
   const shownImageSubTab: ImageSubTab =
     isProduction && !PRODUCTION_IMAGE_SUBTABS.has(imageSubTab) ? "generate" : imageSubTab;
+  const shownImageSubTabs = isProduction
+    ? IMAGE_SUBTABS.filter((item) => PRODUCTION_IMAGE_SUBTABS.has(item.value))
+    : IMAGE_SUBTABS;
   // 右列(最新の生成画像+候補)を丸ごと畳み、左カラムを最大幅まで広げる。
   const [resultColumnCollapsed, toggleResultColumn] =
     usePanelCollapsed("resultColumn");
@@ -1656,16 +1661,6 @@ export function App() {
     setImageSubTab("derive");
     setView("generate");
   };
-  /**
-   * 候補の画像を変更元として変更タブへ送る。候補ギャラリーと最新画像の表示 (#320) で共有する。
-   * モードB (作品制作) 専用だったが、#320でラボ (モードA) でも使えるようにした。
-   */
-  const handleChangeSource = (artifactId: string) => {
-    setDerivationSourceArtifactId(artifactId);
-    setGenerationTab("image");
-    setImageSubTab("change");
-    setView("generate");
-  };
 
   const handleGenerationTabKeyDown = (
     event: KeyboardEvent<HTMLButtonElement>,
@@ -1687,7 +1682,7 @@ export function App() {
     event: KeyboardEvent<HTMLButtonElement>,
     currentTab: ImageSubTab,
   ) => {
-    const nextTab = nextTabForKey(event.key, IMAGE_SUBTABS, currentTab);
+    const nextTab = nextTabForKey(event.key, shownImageSubTabs, currentTab);
     if (!nextTab) return;
 
     event.preventDefault();
@@ -1910,10 +1905,7 @@ export function App() {
                 role="tablist"
                 aria-label="画像の入力種別"
               >
-                {(isProduction
-                  ? IMAGE_SUBTABS.filter((item) => PRODUCTION_IMAGE_SUBTABS.has(item.value))
-                  : IMAGE_SUBTABS
-                ).map((item) => (
+                {shownImageSubTabs.map((item) => (
                   <button
                     key={item.value}
                     id={`image-subtab-${item.value}`}
@@ -1987,11 +1979,14 @@ export function App() {
                   </div>
 
                   <div
-                    id="image-subpanel-change"
+                    id="image-subpanel-derive"
                     role="tabpanel"
-                    aria-labelledby="image-subtab-change"
-                    hidden={shownImageSubTab !== "change"}
+                    aria-labelledby="image-subtab-derive"
+                    hidden={shownImageSubTab !== "derive"}
                   >
+                    {/* モードBは技術語を出さない変更パネル、ラボは全パラメータを出す派生パネルを出す (#523)。
+                        モードを行き来しても入力が残るよう、両方を描画したまま片方を隠す。 */}
+                    <div hidden={!isProduction}>
                     <ImageChangePanel
                       projectId={projectId}
                       sceneId={sceneId}
@@ -2010,14 +2005,8 @@ export function App() {
                         setWorkflowDialogOpen(true);
                       }}
                     />
-                  </div>
-
-                  <div
-                    id="image-subpanel-derive"
-                    role="tabpanel"
-                    aria-labelledby="image-subtab-derive"
-                    hidden={shownImageSubTab !== "derive"}
-                  >
+                    </div>
+                    <div hidden={isProduction}>
                     <ImageDerivationPanel
                       projectId={projectId}
                       sceneId={sceneId}
@@ -2032,6 +2021,7 @@ export function App() {
                       onManageWorkflows={() => setWorkflowDialogOpen(true)}
                       lastSeed={lastSeed}
                     />
+                    </div>
                   </div>
 
                   <div
@@ -2087,8 +2077,7 @@ export function App() {
                     onApplySettings={applyGenerationSettings}
                     onApplyPromptOnly={applyPromptOnly}
                     onApplySeedOnly={applySeedOnly}
-                    onDerive={isProduction ? undefined : handleDerive}
-                    onChangeSource={handleChangeSource}
+                    onDerive={handleDerive}
                   />
                   {/* A/B比較は画像比較ページで出し、生成画面の右列は候補一覧だけにする (#402)。 */}
                   <CandidateGallery
@@ -2096,7 +2085,6 @@ export function App() {
                     busyArtifactId={busyArtifactId}
                     onDecide={decide}
                     onDerive={handleDerive}
-                    onChangeSource={handleChangeSource}
                     onPromoteToPreset={setPromotionArtifactId}
                     onApplySettings={applyGenerationSettings}
                     onApplyPromptOnly={applyPromptOnly}
@@ -2233,7 +2221,6 @@ export function App() {
             busyArtifactId={busyArtifactId}
             onDecide={decide}
             onDerive={handleDerive}
-            onChangeSource={handleChangeSource}
             onPromoteToPreset={setPromotionArtifactId}
             onApplySettings={applyGenerationSettings}
             onApplyPromptOnly={applyPromptOnly}
