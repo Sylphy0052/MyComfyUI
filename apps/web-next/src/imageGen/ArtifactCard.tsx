@@ -119,15 +119,18 @@ function CostumeReferenceButton({ artifact, projectId }: { artifact: ArtifactRec
   );
 }
 
-/** 完成した生成物のカード。拡大表示、メモ、採否、衣装の参照への追加、入力欄へ戻す、Viewerで開く。 */
+/** 完成した生成物のカード。拡大表示、メモ、採否、衣装の参照への追加、入力欄へ戻す、修正タブへ送る、Viewerで開く。 */
 export function ArtifactCard({
   artifact,
   onRestore,
   restoring,
+  onSendToEdit,
 }: {
   artifact: ArtifactRecord;
   onRestore: () => void;
   restoring: boolean;
+  /** この生成物を元画像にして修正タブを開く。 */
+  onSendToEdit: (artifact: ArtifactRecord) => void;
 }) {
   const [zoomed, setZoomed] = useState(false);
   const url = artifactContentUrl(artifact.id);
@@ -155,6 +158,9 @@ export function ArtifactCard({
           ) : null}
           <Button size="compact-xs" variant="light" loading={restoring} onClick={onRestore}>
             この設定を入力欄へ戻す
+          </Button>
+          <Button size="compact-xs" variant="light" onClick={() => onSendToEdit(artifact)}>
+            修正タブへ送る
           </Button>
           <Anchor component={Link} to={viewerPathOf(artifact)} size="xs">
             Viewerで開く

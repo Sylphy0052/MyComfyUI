@@ -25,6 +25,8 @@ export const queryKeys = {
   // 採否・紐づけ・ゴミ箱の変更では、両方の系統を条件ごとのページまでまとめて取り直す。
   mediaItems: ["media-items"] as const,
   viewerImages: (query: string) => ["media-items", "viewer-images", query] as const,
+  // 元画像の選択に出す最近の生成物。
+  sourceImages: (query: string) => ["media-items", "source-images", query] as const,
   rejectedArtifactIds: (query: string) => ["media-items", "rejected-ids", query] as const,
   artifactLists: ["artifact-lists"] as const,
   trashedArtifacts: ["artifact-lists", "trashed"] as const,

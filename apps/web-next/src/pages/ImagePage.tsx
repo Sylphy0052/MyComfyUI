@@ -1,15 +1,32 @@
-import { Alert, Button, Grid, Group, Loader, Stack, Tabs, Title } from "@mantine/core";
+import { Alert, Button, Grid, Group, Loader, Stack, Tabs, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import type { Recipe } from "../api/client";
+import type { ArtifactRecord, Recipe } from "../api/client";
+import { EditFields, RefFields, RefStrengthField } from "../imageGen/DeriveFields";
 import { ParamsFields } from "../imageGen/ParamsFields";
 import { PromptAssistPanel } from "../imageGen/PromptAssistPanel";
 import { PromptFields } from "../imageGen/PromptFields";
 import { ResultPanel } from "../imageGen/ResultPanel";
+import { SourceImagePicker } from "../imageGen/SourceImagePicker";
 import { TargetPicker } from "../imageGen/TargetPicker";
+import {
+  buildDeriveInputs,
+  deriveBlockedReason,
+  hasLinks,
+  IMG2IMG_TEMPLATE,
+  INITIAL_DERIVE,
+  REF_SIGLIP_TEMPLATE,
+  resultCountOf,
+  sourceFromArtifact,
+  templateOfDerive,
+  usesPrompt,
+  type DeriveState,
+  type GenerateMode,
+  type SourceImage,
+} from "../imageGen/deriveForm";
 import {
   buildInputs,
   composedPrompts,
@@ -24,6 +41,7 @@ import {
   restoreFromJob,
   useProjectStory,
   useResultEntries,
+  useDeriveRecipes,
   useStoredInput,
   useSubmitImageJob,
   useTxt2ImgRecipe,
@@ -86,6 +104,9 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const results = useResultEntries();
   const submit = useSubmitImageJob();
   const [restoringJobId, setRestoringJobId] = useState<string | null>(null);
+  const [mode, setMode] = useState<GenerateMode>("txt2img");
+  const [derive, setDerive] = useState<DeriveState>(INITIAL_DERIVE);
+  const deriveRecipes = useDeriveRecipes().data ?? {};
 
   const target = targetFromParams(searchParams);
   const targetKey = paramsFromTarget(target).toString();
@@ -142,6 +163,26 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
     (next: ImageTarget) => setSearchParams(paramsFromTarget(next), { replace: true }),
     [setSearchParams],
   );
+  const updateDerive = useCallback(
+    (update: Partial<DeriveState>) => setDerive((current) => ({ ...current, ...update })),
+    [],
+  );
+  // 元画像を選んだら、その紐づけを対象へ引き継ぐ。アップロードは紐づけを持たず、今の対象のまま使う。
+  // 元画像が変わると大きさが合わなくなるため、マスク画像は外す。
+  const pickSource = useCallback(
+    (source: SourceImage) => {
+      setDerive((current) => ({ ...current, source, mask: null }));
+      if (hasLinks(source.links)) changeTarget(source.links);
+    },
+    [changeTarget],
+  );
+  const sendToEdit = useCallback(
+    (artifact: ArtifactRecord) => {
+      pickSource(sourceFromArtifact(artifact));
+      setMode("edit");
+    },
+    [pickSource],
+  );
   const applyRestored = useCallback(
     (restored: RestoredInput) => {
       setStored({ form: restored.form, target: restored.target });
@@ -194,24 +235,74 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
     }
   };
 
-  const canSubmit = composed.positive !== "" && !storyLoading && storyError === null && missing.length === 0;
-  const onSubmit = () =>
+  const deriveMode = mode === "txt2img" ? null : mode;
+  const deriveTemplate = deriveMode === null ? null : templateOfDerive(deriveMode, derive);
+  const deriveRecipe = deriveTemplate === null ? null : (deriveRecipes[deriveTemplate] ?? null);
+  // 方式が決まる前の参照・修正タブは、入力欄の表示だけ代表のRecipeに合わせる。
+  const fallbackTemplate = mode === "ref" ? REF_SIGLIP_TEMPLATE : IMG2IMG_TEMPLATE;
+  const paramsRecipe = deriveMode === null ? recipe : (deriveRecipe ?? deriveRecipes[fallbackTemplate] ?? recipe);
+  const blockedReason = deriveMode === null ? null : deriveBlockedReason(deriveMode, derive, deriveRecipe);
+  const promptNeeded = usesPrompt(mode, derive);
+  const canSubmit =
+    (!promptNeeded || composed.positive !== "") &&
+    !storyLoading &&
+    storyError === null &&
+    missing.length === 0 &&
+    blockedReason === null;
+  const onSubmit = () => {
+    const submitRecipe = deriveMode === null ? recipe : deriveRecipe;
+    if (submitRecipe === null) return;
     submit.mutate(
       {
         kind: "image",
-        recipe_id: recipe.id,
+        recipe_id: submitRecipe.id,
         use_inherited_defaults: false,
         project_id: target.projectId,
         story_scene_id: target.sceneId,
         story_character_id: target.characterId,
         story_costume_id: target.costumeId,
-        inputs: buildInputs(form, supplement, recipe),
+        inputs:
+          deriveMode === null
+            ? buildInputs(form, supplement, recipe)
+            : buildDeriveInputs(deriveMode, derive, form, supplement, submitRecipe),
       },
       {
-        onSuccess: (job) => results.add({ jobId: job.id, count: form.batchSize }),
+        onSuccess: (job) => results.add({ jobId: job.id, count: resultCountOf(submitRecipe, form) }),
         onError: (error) => notifyError("投入できませんでした", error),
       },
     );
+  };
+
+  const promptFields = (
+    <PromptFields
+      supplementPositive={supplement.positive}
+      supplementNegative={supplement.negative}
+      excludedPositive={form.excludedPositive}
+      excludedNegative={form.excludedNegative}
+      positiveFree={form.positiveFree}
+      negativeFree={form.negativeFree}
+      composedPositive={composed.positive}
+      composedNegative={composed.negative}
+      assist={
+        <PromptAssistPanel
+          recipeId={recipe.id}
+          contextTags={supplement.positive.filter((tag) => !isExcluded(tag, form.excludedPositive))}
+          positiveFree={form.positiveFree}
+          onApply={(positiveFree) => updateForm({ positiveFree })}
+        />
+      }
+      onChange={updateForm}
+    />
+  );
+  const sourcePicker = (
+    <SourceImagePicker
+      source={derive.source}
+      onPick={pickSource}
+      onClear={() => updateDerive({ source: null, mask: null })}
+      target={target}
+      characters={characterList}
+    />
+  );
 
   return (
     <Grid gap="lg">
@@ -231,35 +322,49 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
             missing={missing}
           />
           {storyError ? <Alert color="red">{storyError.message}</Alert> : null}
-          <Tabs value="txt2img">
+          <Tabs keepMounted={false} value={mode} onChange={(value) => value !== null && setMode(value as GenerateMode)}>
             <Tabs.List>
               <Tabs.Tab value="txt2img">新規</Tabs.Tab>
+              <Tabs.Tab value="ref">参照</Tabs.Tab>
+              <Tabs.Tab value="edit">修正</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="txt2img" pt="sm">
               <Stack gap="md">
-                <PromptFields
-                  supplementPositive={supplement.positive}
-                  supplementNegative={supplement.negative}
-                  excludedPositive={form.excludedPositive}
-                  excludedNegative={form.excludedNegative}
-                  positiveFree={form.positiveFree}
-                  negativeFree={form.negativeFree}
-                  composedPositive={composed.positive}
-                  composedNegative={composed.negative}
-                  assist={
-                    <PromptAssistPanel
-                      recipeId={recipe.id}
-                      contextTags={supplement.positive.filter((tag) => !isExcluded(tag, form.excludedPositive))}
-                      positiveFree={form.positiveFree}
-                      onApply={(positiveFree) => updateForm({ positiveFree })}
-                    />
-                  }
-                  onChange={updateForm}
-                />
+                {promptFields}
                 <ParamsFields form={form} onChange={updateForm} recipe={recipe} />
               </Stack>
             </Tabs.Panel>
+            <Tabs.Panel value="ref" pt="sm">
+              <Stack gap="md">
+                {sourcePicker}
+                <RefFields state={derive} onChange={updateDerive} />
+                {promptFields}
+                <ParamsFields
+                  form={form}
+                  onChange={updateForm}
+                  recipe={paramsRecipe}
+                  detailExtra={<RefStrengthField state={derive} onChange={updateDerive} />}
+                />
+              </Stack>
+            </Tabs.Panel>
+            <Tabs.Panel value="edit" pt="sm">
+              <Stack gap="md">
+                {sourcePicker}
+                <EditFields state={derive} onChange={updateDerive} img2imgRecipe={deriveRecipes[IMG2IMG_TEMPLATE] ?? null} />
+                {promptNeeded ? (
+                  <>
+                    {promptFields}
+                    <ParamsFields form={form} onChange={updateForm} recipe={paramsRecipe} />
+                  </>
+                ) : null}
+              </Stack>
+            </Tabs.Panel>
           </Tabs>
+          {blockedReason !== null ? (
+            <Text size="xs" c="dimmed" data-testid="blocked-reason">
+              {blockedReason}
+            </Text>
+          ) : null}
           <Button onClick={onSubmit} disabled={!canSubmit} loading={submit.isPending}>
             生成
           </Button>
@@ -271,6 +376,7 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
           onRemove={results.remove}
           onRestore={(jobId) => void restoreJob(jobId)}
           restoringJobId={restoringJobId}
+          onSendToEdit={sendToEdit}
         />
       </Grid.Col>
     </Grid>
