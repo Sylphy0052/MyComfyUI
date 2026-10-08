@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { api } from "../api/client";
 import type { ProjectCharacterProfile } from "../api/client";
 import type { CharacterReferenceImage } from "../state/referenceSlots";
@@ -32,6 +33,15 @@ export function CharacterReferencePicker({
 }: Props) {
   const character = characters.find((item) => item.id === value.characterId);
   const outfits = character?.outfits ?? [];
+  const outfitMissing = Boolean(value.outfitId) && !outfits.some((item) => item.id === value.outfitId);
+  // 参照画像の実ファイルが読めなかった画像のURL。画像が変わったら自然に外れる。
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  const referenceSrc = reference
+    ? reference.artifactId
+      ? api.artifactContentUrl(reference.artifactId)
+      : api.imageReferenceContentUrl(reference.image.relative_path)
+    : null;
+  const referenceBroken = referenceSrc !== null && referenceSrc === brokenSrc;
 
   const selectCharacter = (characterId: string) => {
     const next = characters.find((item) => item.id === characterId);
@@ -46,8 +56,11 @@ export function CharacterReferencePicker({
   else if (characters.length === 0) notice = "このProjectにはキャラクターが登録されていません。";
   else if (value.characterId && !character) notice = "選んでいたキャラクターが見つかりません。選び直してください。";
   else if (character && outfits.length === 0) notice = "このキャラクターには衣装が登録されていません。";
+  else if (character && outfitMissing) notice = "選んでいた衣装が見つかりません。選び直してください。";
   else if (character && !value.outfitId) notice = "衣装を選んでください。";
-  else if (character && !reference) {
+  else if (character && referenceBroken) {
+    notice = "参照画像のファイルが見つかりません。キャラクター画面で登録し直してください。";
+  } else if (character && !reference) {
     notice = "この衣装には参照画像 (全身) が登録されていません。キャラクター画面で登録すると使えます。";
   }
 
@@ -73,14 +86,11 @@ export function CharacterReferencePicker({
           {outfits.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </div>
-      {reference && (
+      {reference && referenceSrc && !referenceBroken && (
         <div className="row">
           <img
-            src={
-              reference.artifactId
-                ? api.artifactContentUrl(reference.artifactId)
-                : api.imageReferenceContentUrl(reference.image.relative_path)
-            }
+            src={referenceSrc}
+            onError={() => setBrokenSrc(referenceSrc)}
             alt="元画像 (参照セットの全身)"
             style={{ width: 96, height: 96, objectFit: "cover" }}
           />
