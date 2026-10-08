@@ -34,14 +34,16 @@ export function CharacterReferencePicker({
   const character = characters.find((item) => item.id === value.characterId);
   const outfits = character?.outfits ?? [];
   const outfitMissing = Boolean(value.outfitId) && !outfits.some((item) => item.id === value.outfitId);
-  // 参照画像の実ファイルが読めなかった画像のURL。画像が変わったら自然に外れる。
-  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  // 参照画像の実ファイルが読めなかった画像のURLとsha256。画像が変わったら自然に外れる。
+  // 同じURLのまま登録し直した画像でも外れるよう、URLだけでなくsha256も含める。
+  const [brokenKey, setBrokenKey] = useState<string | null>(null);
   const referenceSrc = reference
     ? reference.artifactId
       ? api.artifactContentUrl(reference.artifactId)
       : api.imageReferenceContentUrl(reference.image.relative_path)
     : null;
-  const referenceBroken = referenceSrc !== null && referenceSrc === brokenSrc;
+  const referenceKey = reference && referenceSrc ? `${referenceSrc}#${reference.image.sha256}` : null;
+  const referenceBroken = referenceKey !== null && referenceKey === brokenKey;
 
   const selectCharacter = (characterId: string) => {
     const next = characters.find((item) => item.id === characterId);
@@ -90,7 +92,7 @@ export function CharacterReferencePicker({
         <div className="row">
           <img
             src={referenceSrc}
-            onError={() => setBrokenSrc(referenceSrc)}
+            onError={() => setBrokenKey(referenceKey)}
             alt="元画像 (参照セットの全身)"
             style={{ width: 96, height: 96, objectFit: "cover" }}
           />

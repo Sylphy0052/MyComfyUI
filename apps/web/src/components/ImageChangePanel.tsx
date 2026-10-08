@@ -73,6 +73,8 @@ export function ImageChangePanel({
   const [promptRestoreFailed, setPromptRestoreFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 説明欄を初期化した最後の元画像。モードを往復しても同じ元画像なら入力済みの説明を残すために覚えておく。
+  const lastSourceItemRef = useRef<PickedMedia | null>(null);
   const sourceArtifactIdRef = useRef(sourceArtifactId);
   sourceArtifactIdRef.current = sourceArtifactId;
 
@@ -118,6 +120,8 @@ export function ImageChangePanel({
     if (mode === "character") {
       setSourceMedia([]);
       onSourceArtifactChange(null);
+      // 取り込みに失敗した元画像はここで外れるため、失敗表示も残さない。
+      setPromptRestoreFailed(false);
     }
   };
 
@@ -159,8 +163,12 @@ export function ImageChangePanel({
     // 元画像が決まっていない間 (キャラクター・衣装の選択前、モード切替直後) は、入力済みの説明を残す。
     // 選択を外したときの初期化は handleSourceMediaChange で行う。
     if (!item) return;
+    // モードを往復して同じ元画像 (同じ衣装の参照画像など) に戻っただけなら、入力済みの説明を初期化しない。
+    const unchanged = lastSourceItemRef.current === item;
+    lastSourceItemRef.current = item;
     const artifactId = item && "artifact_id" in item.source ? item.source.artifact_id : null;
     if (!artifactId) {
+      if (unchanged) return;
       setPrompt("");
       setNegative("");
       setPromptRestoreFailed(false);
