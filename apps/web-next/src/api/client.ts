@@ -21,6 +21,7 @@ export type MediaItem = components["schemas"]["MediaItemRead"];
 export type GenerationManifest = components["schemas"]["GenerationManifestRead"];
 export type ImageReference = components["schemas"]["ImageReferenceRead"];
 export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
+export type VoiceVerification = components["schemas"]["VoiceVerificationRead"];
 export type GenerationJobBody = components["schemas"]["GenerationJobCreate"];
 export type GenerationExperiment = components["schemas"]["GenerationExperimentRead"];
 export type GenerationExperimentItem = components["schemas"]["GenerationExperimentItemRead"];

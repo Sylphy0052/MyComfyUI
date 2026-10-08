@@ -309,17 +309,27 @@ export type AdoptionSlot = StorySceneAdoption["slot"];
 /**
  * Sceneの`slot`枠への採用と、不採用の印。
  * 不採用の生成物は採用できないため、採用の前に採否を戻す。採用中のものを不採用にするときは先に枠から外す。
+ * `voice`枠は台詞ごとの枠なので、`dialogueId`で台詞の行を指す。
  */
-export function useSlotDecision(projectId: string, sceneId: string, slot: AdoptionSlot) {
+export function useSlotDecision(
+  projectId: string,
+  sceneId: string,
+  slot: AdoptionSlot,
+  dialogueId: string | null = null,
+) {
   const client = useQueryClient();
-  const slotPath = `/projects/${enc(projectId)}/story-scenes/${enc(sceneId)}/adoptions/${slot}`;
+  const adoptionPath = `/projects/${enc(projectId)}/story-scenes/${enc(sceneId)}/adoptions/${slot}`;
+  const slotPath = dialogueId === null ? adoptionPath : `${adoptionPath}?dialogue_id=${enc(dialogueId)}`;
   const setDecision = (artifactId: string, decision: ArtifactRecord["decision"]) =>
     apiRequest<ArtifactRecord>(`/artifacts/${enc(artifactId)}/decision`, {
       method: "PATCH",
       body: JSON.stringify({ decision }),
     });
   const adopt = (artifactId: string) =>
-    apiRequest(slotPath, { method: "PUT", body: JSON.stringify({ artifact_id: artifactId }) });
+    apiRequest(adoptionPath, {
+      method: "PUT",
+      body: JSON.stringify(dialogueId === null ? { artifact_id: artifactId } : { artifact_id: artifactId, dialogue_id: dialogueId }),
+    });
   return useMutation({
     mutationFn: async ({
       artifact,

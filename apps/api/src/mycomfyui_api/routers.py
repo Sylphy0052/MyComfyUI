@@ -6,7 +6,7 @@ import json
 import logging
 import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar, get_args
@@ -1460,7 +1460,7 @@ async def _prepare_execution(
         artifact_lookup=_ArtifactLookup(session),
     )
     try:
-        inputs, exempt = await story_voice.resolve_character_voice(
+        inputs = await story_voice.resolve_character_voice(
             session,
             payload,
             payload.inputs,
@@ -1468,7 +1468,6 @@ async def _prepare_execution(
             persist=persist,
             shot_data=resolved.shot_data,
         )
-        context = replace(context, canon_exempt_voice_ids=exempt)
         return await prepare_execution(recipe, inputs, context)
     except PreparationError as error:
         raise _validation_error(error.message, error.details) from error

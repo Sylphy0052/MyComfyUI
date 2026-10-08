@@ -42,9 +42,6 @@ class PreparationContext:
     #: 既存Artifactを引くための参照元。合成Jobと、生成済み画像を入力にする動画Jobが
     #: 使う。準備中の読取りだけに使い、更新はしない。
     artifact_lookup: Any = None
-    #: Voice Canonを要求しないvoice_id。キャラクターの声から解決した参照音声は、
-    #: Canonに属さないため、Project配下でもCanonを求めない (#573)。
-    canon_exempt_voice_ids: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)

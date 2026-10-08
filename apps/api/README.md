@@ -502,11 +502,12 @@ Voice Canon の YAML から読むことはできない。Voice Canon の YAML �
 この制約のもと、次のように分担する。
 
 - 参照音声そのものと書き起こしは、利用者が `POST /api/v1/voice-references` と `inputs.voices` で渡す。
-- どの Voice Canon で生成したかは `canon_id` で示す。指定は必須とする。Application API は参照 API
-  から descriptor を引き、その不変参照を `canon` の `input_ref` として `declared_by: "input"` で
-  記録する。指定した `canon_id` と不変参照から算出した ID が食い違う場合は Job を作らない。
-  `canon_id` を省略できるようにすると、参照音声だけを渡した Job が Canon 参照を残さずに履歴へ
-  入り、どの声で生成したかを後から説明できなくなる。
+- どの Voice Canon で生成したかは `canon_id` で示す。指定は任意とする。指定したときは、
+  Application API が参照 API から descriptor を引き、その不変参照を `canon` の `input_ref` として
+  `declared_by: "input"` で記録する。指定した `canon_id` と不変参照から算出した ID が食い違う場合は
+  Job を作らない。指定しないときは、Project 配下でも、取り込んだ参照音声の SHA-256 だけで
+  どの声で生成したかを示す。WebUI v2 には Canon を選ぶ手段が無いため、必須にすると Project 配下で
+  アップロードした参照音声を使えなくなる (#574)。
 - 実行時に、取り込んだ参照音声の実ファイル SHA-256 が Manifest の記録と一致することを確かめる。
   違えば `VOICE_REFERENCE_MISMATCH` として失敗させる。
 
