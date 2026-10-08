@@ -8,12 +8,18 @@ import { useTxt2ImgRecipe } from "../imageGen/useImageGen";
 import { MediaThumb } from "../projectDetail/MediaThumb";
 import { useCharacters } from "../projectDetail/useStory";
 
-/** シーン生成のキャラ画像の保存先。`/image`の保存値を上書きしないよう別のkeyにする。 */
-const STORAGE_KEYS: ImageStorageKeys = {
-  input: "web-next:scene-produce-character-input",
-  results: "web-next:scene-produce-character-results",
-  sweeps: "web-next:scene-produce-character-sweeps",
-};
+/**
+ * シーン生成のキャラ画像の保存先。`/image`の保存値を上書きしないよう別のkeyにする。
+ * 衣装ごとにも分け、別のキャラの入力値・結果・外したタグを持ち越さない。
+ */
+function storageKeysOf(characterId: string, costumeId: string): ImageStorageKeys {
+  const suffix = `${characterId}:${costumeId}`;
+  return {
+    input: `web-next:scene-produce-character-input:${suffix}`,
+    results: `web-next:scene-produce-character-results:${suffix}`,
+    sweeps: `web-next:scene-produce-character-sweeps:${suffix}`,
+  };
+}
 
 /** 行に並べるサムネイルの数。 */
 const THUMB_MAX = 4;
@@ -88,9 +94,19 @@ export function CharacterStep({ projectId, scene }: { projectId: string; scene: 
   const rows = rowsOf(scene, characters.data);
   const opened = rows.find((row) => row.key === openKey) ?? null;
   // 参照画像の生成はシーンに紐づけない。シーンの背景・時間帯・ポーズは補完タグに入れない。
-  const target: ImageTarget | null =
+  const workspace =
     opened?.character && opened.costume
-      ? { projectId, sceneId: null, characterId: opened.character.id, costumeId: opened.costume.id, extraCast: [] }
+      ? {
+          target: {
+            projectId,
+            sceneId: null,
+            characterId: opened.character.id,
+            costumeId: opened.costume.id,
+            extraCast: [],
+          } satisfies ImageTarget,
+          storageKeys: storageKeysOf(opened.character.id, opened.costume.id),
+          title: `${opened.character.name} / ${opened.costume.name}`,
+        }
       : null;
 
   return (
@@ -100,6 +116,8 @@ export function CharacterStep({ projectId, scene }: { projectId: string; scene: 
           const keys = referenceKeysOf(row);
           const state = row.noCostume ? "no-costume" : keys.length > 0 ? "has-reference" : "no-reference";
           const canGenerate = !row.noCostume && row.costume !== null && keys.length === 0;
+          // 参照に追加して参照ありに変わっても、開いている行は閉じられるようにする。
+          const isOpen = row.key === openKey;
           return (
             <Paper key={row.key} withBorder p="xs" data-testid="character-row" data-state={state}>
               <Group justify="space-between" wrap="nowrap">
@@ -123,14 +141,14 @@ export function CharacterStep({ projectId, scene }: { projectId: string; scene: 
                 </Group>
                 <Group wrap="nowrap">
                   <RowBadge row={row} count={keys.length} />
-                  {canGenerate ? (
+                  {canGenerate || isOpen ? (
                     <Button
                       size="compact-sm"
-                      variant={row.key === openKey ? "filled" : "light"}
-                      onClick={() => setOpenKey(row.key === openKey ? null : row.key)}
+                      variant={isOpen ? "filled" : "light"}
+                      onClick={() => setOpenKey(isOpen ? null : row.key)}
                       data-testid="character-generate"
                     >
-                      {row.key === openKey ? "閉じる" : "生成する"}
+                      {isOpen ? "閉じる" : "生成する"}
                     </Button>
                   ) : null}
                 </Group>
@@ -139,19 +157,24 @@ export function CharacterStep({ projectId, scene }: { projectId: string; scene: 
           );
         })}
       </Stack>
-      {target && recipe.data ? (
+      {workspace && recipe.isPending ? <Loader size="sm" /> : null}
+      {workspace && recipe.isError ? (
+        <Alert color="red">{recipe.error?.message ?? "Recipeを取得できません。"}</Alert>
+      ) : null}
+      {workspace && recipe.data === null ? <Alert color="yellow">新規生成のRecipeがありません。</Alert> : null}
+      {workspace && recipe.data ? (
         <div data-testid="character-workspace">
+          {/* 行を切り替えたら、その衣装の保存値で入力欄を作り直す。 */}
           <ImageWorkspace
             key={openKey}
             recipe={recipe.data}
-            target={target}
-            storageKeys={STORAGE_KEYS}
+            target={workspace.target}
+            storageKeys={workspace.storageKeys}
             includeScene={false}
-            title={`${opened?.character?.name ?? ""} / ${opened?.costume?.name ?? ""}`}
+            title={workspace.title}
           />
         </div>
       ) : null}
-      {target && recipe.data === null ? <Alert color="yellow">新規生成のRecipeがありません。</Alert> : null}
     </Stack>
   );
 }

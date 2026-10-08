@@ -4,8 +4,8 @@ import { Link, useParams, useSearchParams } from "react-router";
 import type { StoryScene } from "../api/client";
 import { useProject } from "../layout/projectContext";
 import { SceneAdoptions } from "../projectDetail/SceneAdoptions";
-import { CharacterStep } from "../sceneProduce/CharacterStep";
 import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/useStory";
+import { CharacterStep } from "../sceneProduce/CharacterStep";
 import {
   computeStepStatus,
   FAILED_STATUS,
@@ -147,7 +147,7 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
             {current ? <StatusBadge status={current} /> : <Loader size="xs" />}
           </Group>
           {step === "character" ? (
-            <CharacterStep projectId={projectId} scene={scene} />
+            <CharacterStep key={scene.id} projectId={projectId} scene={scene} />
           ) : step === "video" ? (
             <VideoStep key={scene.id} projectId={projectId} scene={scene} />
           ) : (

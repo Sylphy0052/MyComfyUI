@@ -46,7 +46,6 @@ import {
   useResultEntries,
   useStoredInput,
   useSubmitImageJob,
-  useTxt2ImgRecipe,
   type RestoredInput,
 } from "./useImageGen";
 import { useSubmitSweep, useSweepEntries } from "./useSweep";
