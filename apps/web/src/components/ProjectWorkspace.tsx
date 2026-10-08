@@ -193,6 +193,11 @@ export function ProjectWorkspace({
     [focusedId, projects],
   );
 
+  // 再取得したら読込み失敗の記録を捨てる。一時的な失敗の画像を出し直すため。
+  useEffect(() => {
+    setBrokenImageIds(new Set());
+  }, [refreshToken]);
+
   // Projectを切り替えたら「その他」メニューを閉じる。
   useEffect(() => {
     setMoreMenuOpen(false);
@@ -593,13 +598,15 @@ export function ProjectWorkspace({
           {!selected && <p className="muted">Projectを選択してください。</p>}
           {selected && (
             <>
-              {selected.thumbnail_artifact_id && (
-                <img
-                  className="project-thumbnail"
-                  src={api.artifactContentUrl(selected.thumbnail_artifact_id)}
-                  alt={`${selected.name}のサムネイル`}
-                />
-              )}
+              {selected.thumbnail_artifact_id &&
+                !brokenImageIds.has(selected.thumbnail_artifact_id) && (
+                  <img
+                    className="project-thumbnail"
+                    src={api.artifactContentUrl(selected.thumbnail_artifact_id)}
+                    alt={`${selected.name}のサムネイル`}
+                    onError={() => markImageBroken(selected.thumbnail_artifact_id!)}
+                  />
+                )}
               <div className="row spread">
                 <div>
                   <h2>{selected.name}</h2>
