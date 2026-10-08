@@ -10,7 +10,7 @@ import { useAddCostumeReference, useSaveArtifactMemo, useSceneDecision, type Sce
 /** `ARTIFACT_MEMO_MAX_LENGTH` (`schemas.py`) に合わせる。 */
 const MEMO_MAX = 2_000;
 
-/** 生成物の紐づけで絞ったViewerのURL。該当のJobも渡し、Viewerが1件を開けるようにする。 */
+/** 生成物の紐づけで絞ったViewerのURL。生成物のIDも渡し、Viewerがその1件を開けるようにする。 */
 export function viewerPathOf(artifact: ArtifactRecord): string {
   const params = new URLSearchParams();
   const entries: [string, string | null | undefined][] = [
@@ -18,7 +18,7 @@ export function viewerPathOf(artifact: ArtifactRecord): string {
     ["scene", artifact.story_scene_id],
     ["character", artifact.story_character_id],
     ["outfit", artifact.story_costume_id],
-    ["job", artifact.job_id],
+    ["artifact", artifact.id],
   ];
   for (const [name, value] of entries) if (value) params.set(name, value);
   return `/viewer?${params}`;

@@ -98,6 +98,40 @@ export function defaultForm(recipe: Recipe): ImageForm {
   };
 }
 
+/** JSONのオブジェクトか。 */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 保存値が既定値と同じ型か。配列は文字列の配列、数は有限の値に限る。 */
+function sameKind(value: unknown, fallback: unknown): boolean {
+  if (Array.isArray(fallback)) return Array.isArray(value) && value.every((item) => typeof item === "string");
+  if (typeof fallback === "number") return typeof value === "number" && Number.isFinite(value);
+  return typeof value === typeof fallback;
+}
+
+/** 保存してあった入力欄の値を`base`の上に重ねる。型の合うキーだけを使い、古い形や壊れた値で画面が落ちないようにする。 */
+export function normalizeForm(raw: Record<string, unknown>, base: ImageForm): ImageForm {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, fallback] of Object.entries(base)) {
+    if (sameKind(raw[key], fallback)) merged[key] = raw[key];
+  }
+  const form = merged as ImageForm;
+  return form.seedMode === "random" || form.seedMode === "fixed" ? form : { ...form, seedMode: base.seedMode };
+}
+
+/** 保存してあった対象。各値は空でない文字列だけを使う。 */
+export function normalizeTarget(raw: unknown): ImageTarget | null {
+  if (!isRecord(raw)) return null;
+  const idOf = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
+  return {
+    projectId: idOf(raw.projectId),
+    sceneId: idOf(raw.sceneId),
+    characterId: idOf(raw.characterId),
+    costumeId: idOf(raw.costumeId),
+  };
+}
+
 /** Recipeの`input_schema`にある変数だけを渡せる。それ以外を送るとbackendが投入を断る。 */
 export function acceptsInput(recipe: Recipe, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(recipe.input_schema, name);

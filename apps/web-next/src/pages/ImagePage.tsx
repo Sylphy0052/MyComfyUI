@@ -17,7 +17,7 @@ import {
   type ImageForm,
   type ImageTarget,
 } from "../imageGen/imageForm";
-import { buildSupplementTags } from "../imageGen/promptTags";
+import { buildSupplementTags, isExcluded } from "../imageGen/promptTags";
 import {
   jobIdOfArtifact,
   restoreFromJob,
@@ -29,6 +29,7 @@ import {
   type RestoredInput,
 } from "../imageGen/useImageGen";
 import { notifyError } from "../notifications";
+import { useProjectList } from "../projects/useProjects";
 
 /** URLのクエリ名。衣装は設計文書に合わせて`outfit`とする。 */
 const TARGET_PARAMS: [keyof ImageTarget, string][] = [
@@ -68,9 +69,18 @@ function initialTarget(fromUrl: ImageTarget, stored: ImageTarget | null): ImageT
   return onlyProject && fromUrl.projectId === stored.projectId ? stored : null;
 }
 
+/** 戻した結果の通知。一部を戻せなかったときは黄色で理由を添える。 */
+function notifyRestored(restored: RestoredInput, message: string) {
+  notifications.show(
+    restored.warning === null
+      ? { color: "green", message }
+      : { color: "yellow", title: message, message: restored.warning },
+  );
+}
+
 function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const client = useQueryClient();
-  const [stored, setStored] = useStoredInput();
+  const [stored, setStored] = useStoredInput(recipe);
   const [searchParams, setSearchParams] = useSearchParams();
   const results = useResultEntries();
   const submit = useSubmitImageJob();
@@ -81,6 +91,7 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const form = stored.form ?? defaultForm(recipe);
 
   const story = useProjectStory(target.projectId);
+  const projects = useProjectList("active");
   const characterList = story.characters;
   const sceneList = story.scenes;
   const character = characterList.find((item) => item.id === target.characterId) ?? null;
@@ -89,11 +100,15 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const supplement = buildSupplementTags(character, costume, scene);
   const composed = composedPrompts(form, supplement);
 
-  const storyLoading = story.isLoading;
+  const storyLoading = story.isLoading || (target.projectId !== null && projects.isPending);
   const storyError = story.error;
+  // ゴミ箱・削除済みのProjectは有効な一覧に無い。投入を止める。
+  const projectMissing =
+    target.projectId !== null && projects.data !== undefined && !projects.data.some((item) => item.id === target.projectId);
   const missing = storyLoading
     ? []
     : [
+        projectMissing ? "Project" : null,
         target.sceneId !== null && scene === null ? "Scene" : null,
         target.characterId !== null && character === null ? "キャラ" : null,
         target.costumeId !== null && costume === null ? "衣装" : null,
@@ -104,6 +119,24 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
       setStored((current) => ({ ...current, form: { ...(current.form ?? defaultForm(recipe)), ...update } })),
     [setStored, recipe],
   );
+  // 対象を変えたら、外したタグを今の補完タグにあるものだけに絞る。前の対象で外した同名のタグが見えないまま外れ続けないようにする。
+  const prunedTargetKey = useRef(targetKey);
+  useEffect(() => {
+    if (prunedTargetKey.current === targetKey || storyLoading || storyError !== null) return;
+    prunedTargetKey.current = targetKey;
+    setStored((current) =>
+      current.form === null
+        ? current
+        : {
+            ...current,
+            form: {
+              ...current.form,
+              excludedPositive: current.form.excludedPositive.filter((tag) => isExcluded(tag, supplement.positive)),
+              excludedNegative: current.form.excludedNegative.filter((tag) => isExcluded(tag, supplement.negative)),
+            },
+          },
+    );
+  }, [targetKey, storyLoading, storyError, supplement, setStored]);
   const changeTarget = useCallback(
     (next: ImageTarget) => setSearchParams(paramsFromTarget(next), { replace: true }),
     [setSearchParams],
@@ -136,8 +169,9 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
     void (async () => {
       try {
         const jobId = await jobIdOfArtifact(client, fromArtifact);
-        applyRestored(await restoreFromJob(client, jobId, recipe));
-        notifications.show({ color: "green", message: "生成物の設定を入力欄へ戻しました" });
+        const restored = await restoreFromJob(client, jobId, recipe);
+        applyRestored(restored);
+        notifyRestored(restored, "生成物の設定を入力欄へ戻しました");
       } catch (error) {
         notifyError("生成物の設定を戻せませんでした", error);
         changeTarget(target);
@@ -149,8 +183,9 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const restoreJob = async (jobId: string) => {
     setRestoringJobId(jobId);
     try {
-      applyRestored(await restoreFromJob(client, jobId, recipe));
-      notifications.show({ color: "green", message: "設定を入力欄へ戻しました" });
+      const restored = await restoreFromJob(client, jobId, recipe);
+      applyRestored(restored);
+      notifyRestored(restored, "設定を入力欄へ戻しました");
     } catch (error) {
       notifyError("設定を入力欄へ戻せませんでした", error);
     } finally {
