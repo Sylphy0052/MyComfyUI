@@ -13,4 +13,13 @@ export const queryKeys = {
   sceneAdoptions: (projectId: string, sceneId: string) =>
     ["projects", projectId, "story-scenes", sceneId, "adoptions"] as const,
   artifact: (artifactId: string) => ["artifacts", artifactId] as const,
+  // 生成物の一覧。採否・紐づけ・ゴミ箱の変更で、条件ごとのページをまとめて取り直す。
+  mediaItems: ["media-items"] as const,
+  viewerImages: (query: string) => ["media-items", "viewer-images", query] as const,
+  artifactLists: ["artifact-lists"] as const,
+  trashedArtifacts: ["artifact-lists", "trashed"] as const,
+  jobArtifacts: (jobId: string) => ["artifact-lists", "job", jobId] as const,
+  // `jobs`の無効化に巻き込まれないよう、Job一覧とは別の系統に置く。
+  generationJob: (jobId: string) => ["generation-job", jobId] as const,
+  generationManifest: (manifestId: string) => ["generation-manifests", manifestId] as const,
 };

@@ -14,6 +14,11 @@ export type StorySceneCast = components["schemas"]["StorySceneCastEntry"];
 export type StorySceneDialogue = components["schemas"]["StorySceneDialogueEntry"];
 export type StorySceneAdoption = components["schemas"]["StorySceneAdoptionRead"];
 export type ArtifactRecord = components["schemas"]["ArtifactRead"];
+export type ArtifactDecision = components["schemas"]["ArtifactDecisionUpdate"]["decision"];
+export type ArtifactPurgePreview = components["schemas"]["ArtifactPurgePreview"];
+export type ArtifactPurgeResult = components["schemas"]["ArtifactPurgeResult"];
+export type MediaItem = components["schemas"]["MediaItemRead"];
+export type GenerationManifest = components["schemas"]["GenerationManifestRead"];
 export type ImageReference = components["schemas"]["ImageReferenceRead"];
 export type VoiceReference = components["schemas"]["VoiceReferenceRead"];
 
