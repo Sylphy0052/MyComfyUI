@@ -116,7 +116,11 @@ export function ImageChangePanel({
   const selectSourceMode = (mode: SourceMode) => {
     setSourceMode(mode);
     // 親の選択を外しておき、ギャラリーから同じ画像を送り直されたときも生成物・登録素材の選び方へ戻れるようにする。
-    if (mode === "character") onSourceArtifactChange(null);
+    // パネル内の選択も空にし、戻したときに古い画像のプロンプトで説明を上書きしないようにする。
+    if (mode === "character") {
+      setSourceMedia([]);
+      onSourceArtifactChange(null);
+    }
   };
 
   // 親から共有されるsourceArtifactIdが変わったら、pickerの選択をそれに合わせる。
