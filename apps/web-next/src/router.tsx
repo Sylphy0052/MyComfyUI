@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router";
 
 import { AppLayout } from "./layout/AppLayout";
+import { BgmPage } from "./pages/BgmPage";
 import { ImagePage } from "./pages/ImagePage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
@@ -19,7 +20,7 @@ export const router = createBrowserRouter([
       { path: "image", Component: ImagePage },
       { path: "video", Component: VideoPage },
       { path: "voice", element: <PlaceholderPage title="音声" /> },
-      { path: "bgm", element: <PlaceholderPage title="BGM" /> },
+      { path: "bgm", Component: BgmPage },
       { path: "viewer", Component: ViewerPage },
       { path: "*", element: <Navigate to="/projects" replace /> },
     ],
