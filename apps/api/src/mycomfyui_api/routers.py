@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 import shutil
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -746,8 +746,13 @@ async def _submit_generation_job(
     session: AsyncSession,
     source: ReferenceSource,
     payload: schemas.GenerationJobCreate,
+    extra_records: Callable[[GenerationJob], Sequence[Base]] | None = None,
 ) -> GenerationJob:
-    """JobとManifestのIDを先行採番して作成する、Job投入の共通処理。"""
+    """JobとManifestのIDを先行採番して作成する、Job投入の共通処理。
+
+    `extra_records`は、採番済みのJobを受けて同じcommitへ相乗りさせるレコードを返す。
+    Jobの作成と一緒に確定させたい関連レコード (後続Jobの予約など) に使う。
+    """
     await _validate_project_context(session, payload.project_id)
     payload = await _validate_story_links_of(session, payload)
     resolved = await _resolve_references(
@@ -780,7 +785,13 @@ async def _submit_generation_job(
             preferences,
             look_profiles,
         )
-        await _persist_job_records(session, job, workflow_artifact, manifest)
+        await _persist_job_records(
+            session,
+            job,
+            workflow_artifact,
+            manifest,
+            extra_records(job) if extra_records is not None else (),
+        )
     except Exception:
         storage.discard_artifacts([stored.relative_path])
         raise
@@ -1673,8 +1684,11 @@ async def _persist_job_records(
     job: GenerationJob,
     workflow_artifact: Artifact,
     manifest: GenerationManifest,
+    extra_records: Sequence[Base] = (),
 ) -> None:
     """Job、Workflow Artifact、Manifestの順にflushしてコミットまで行う。
+
+    `extra_records`はManifestの後にflushし、同じcommitで確定させる。
 
     遅延検証はJobとManifestの相互参照だけに必要で、Artifactの参照はこの順序で即時に
     満たされる。スナップショットの後始末は呼び出し元が担う。
@@ -1689,6 +1703,10 @@ async def _persist_job_records(
         await session.flush()
         session.add(manifest)
         await session.flush()
+        for record in extra_records:
+            session.add(record)
+        if extra_records:
+            await session.flush()
         await session.commit()
     except IntegrityError as error:
         await session.rollback()

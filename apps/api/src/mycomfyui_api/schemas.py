@@ -2945,6 +2945,8 @@ class PromptOnlyVideoJobCreate(ApiModel):
             raise ValueError("videoのinputsにfirst_frameを指定できません。")
         if self.video.parent_job_id is not None:
             raise ValueError("videoにparent_job_idを指定できません。")
+        if self.image.project_id != self.video.project_id:
+            raise ValueError("imageとvideoのproject_idは同じにします。")
         return self
 
 

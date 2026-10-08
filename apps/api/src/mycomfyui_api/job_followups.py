@@ -17,12 +17,14 @@ from starlette import status
 
 from mycomfyui_api import schemas
 from mycomfyui_api.errors import ApiError
-from mycomfyui_api.models import Artifact, GenerationJob, GenerationJobFollowup
 from mycomfyui_api.adapters.aimedia.client import ReferenceSource
+from mycomfyui_api.models import Artifact, GenerationJob, GenerationJobFollowup
+
+# Job投入の検証・解決・永続化はroutersの手順をそのまま使う。同じ投入経路を2か所に
+# 持たないため、routersのprivate関数に依存している (名前を変えるときはここも直す)。
 from mycomfyui_api.routers import (
     ReferenceSourceDep,
     SessionDep,
-    _commit,
     _get_or_404,
     _resolve_generation_defaults,
     _resolve_references,
@@ -48,10 +50,19 @@ MAX_FAILURE_MESSAGE_CHARS = 500
 #: 後続のi2v Jobが開始フレームを受ける入力名。
 FIRST_FRAME_INPUT = "first_frame"
 
+#: 1段目の画像Jobに使うWorkflowテンプレート名 (Recipeの`workflow_template_ref.name`)。
+IMAGE_TEMPLATE_NAME = "anima_txt2img"
+
+
+#: ApiError以外の失敗で保存する文言。内部の例外文言はAPIの応答へ出さず、ログだけに残す。
+UNEXPECTED_FAILURE_MESSAGE = "後続Jobの投入中に予期しないエラーが発生しました。"
+
 
 def _failure_text(error: Exception) -> str:
-    message = error.message if isinstance(error, ApiError) else str(error)
-    return (message or error.__class__.__name__)[:MAX_FAILURE_MESSAGE_CHARS]
+    """予約へ保存する失敗理由。利用者向けに作られたApiErrorの文言だけを使う。"""
+    if isinstance(error, ApiError) and error.message:
+        return error.message[:MAX_FAILURE_MESSAGE_CHARS]
+    return UNEXPECTED_FAILURE_MESSAGE
 
 
 async def _finish_followup(
@@ -87,14 +98,18 @@ async def _record_submit_failure(
 ) -> None:
     """投入の失敗を予約へ残す。投入のcommit後に失敗した場合は、作成済みのJobを紐づける。
 
-    `state="submitted"`への更新はJob作成と同じcommitに乗る。そのため、読み直して
-    `submitted`なら失敗はJob作成より後で起きており、Jobは存在する。
+    前提: `state="submitted"`への更新はJob作成と同じcommitに乗る (`_dispatch_one`)。
+    そのため、読み直して`submitted`なら失敗はJob作成より後で起きており、Jobは存在する。
+    `child_job_id`も同じcommitで入るため通常は記録済みで、未記録のときだけ親から引く。
+    `pending`のままなら、Jobは作成されていない (rollback済み) ので`failed`にする。
     """
     async with session_factory() as session:
         followup = await session.get(GenerationJobFollowup, followup_id)
         if followup is None:
             return
         if followup.state == "submitted":
+            if followup.child_job_id is not None:
+                return
             child_id = await session.scalar(
                 select(GenerationJob.id)
                 .where(GenerationJob.parent_job_id == followup.parent_job_id)
@@ -114,6 +129,19 @@ async def _dispatch_one(
     source: ReferenceSource,
     followup_id: str,
 ) -> None:
+    """親Jobが終端になったpendingの予約を1件処理する。
+
+    状態遷移は`pending`から次のいずれかへ1回だけ進む。
+
+    - `skipped`: 親Jobが`succeeded`以外 (failed/cancelled) で終わった。
+    - `failed`: 親Jobに完了済みの画像Artifactが無い、または投入に失敗した。
+    - `submitted`: 子Jobを投入できた。`child_job_id`に子JobのIDを持つ。
+
+    `submitted`への更新は、子Jobの作成と同じcommitに乗せる。別commitにすると、Job作成後
+    〜予約更新前に落ちたときpendingのまま残り、次のsweepで同じ子Jobを二重に投入する。
+    投入が失敗したときは`_record_submit_failure`が、`submitted`で確定していたか
+    (=Jobは作成済みか) を読み直して結果を残す。
+    """
     async with session_factory() as session:
         followup = await session.get(GenerationJobFollowup, followup_id)
         if followup is None or followup.state != "pending":
@@ -144,11 +172,16 @@ async def _dispatch_one(
         }
         try:
             payload = schemas.GenerationJobCreate.model_validate(body)
-            # 二重投入を避けるため、submittedへの更新をJob作成のcommitへ相乗りさせる。
+            # 二重投入を避けるため、submittedへの更新と子JobのIDの記録を、Job作成の
+            # commitへ相乗りさせる。IDはJobの採番後・commit前に受け取って予約へ入れる。
             followup.state = "submitted"
             followup.updated_at = schemas.now_iso()
-            job = await _submit_generation_job(session, source, payload)
-            child_id = job.id
+
+            def link_child(child: GenerationJob) -> list[GenerationJobFollowup]:
+                followup.child_job_id = child.id
+                return []
+
+            await _submit_generation_job(session, source, payload, link_child)
         except Exception as error:
             await session.rollback()
             logger.warning(
@@ -156,9 +189,6 @@ async def _dispatch_one(
             )
             await _record_submit_failure(session_factory, followup_id, error)
             return
-        followup.child_job_id = child_id
-        followup.updated_at = schemas.now_iso()
-        await session.commit()
 
 
 async def dispatch_pending_followups(
@@ -234,21 +264,45 @@ async def create_prompt_only_video_job(
             {"recipe_id": recipe.id},
         )
 
-    image_job = await _submit_generation_job(session, source, payload.image)
-    now = schemas.now_iso()
-    followup = GenerationJobFollowup(
-        id=schemas.new_id(),
-        parent_job_id=image_job.id,
-        payload=video.model_copy(update={"queue_sequence": None}).model_dump(
-            mode="json"
-        ),
-        state="pending",
-        created_at=now,
-        updated_at=now,
+    image = await _validate_story_links_of(session, payload.image)
+    image_resolved = await _resolve_references(
+        session, source, image.project_id, image.scene_id, image.shot_id
     )
-    session.add(followup)
-    await _commit(session)
-    return {"image_job": image_job, "followup": followup}
+    _, image_recipe, *_ = await _resolve_generation_defaults(
+        session, image, image_resolved
+    )
+    template_ref = image_recipe.workflow_template_ref
+    if (
+        not isinstance(template_ref, dict)
+        or template_ref.get("name") != IMAGE_TEMPLATE_NAME
+    ):
+        raise _validation_error(
+            f"imageのRecipeは{IMAGE_TEMPLATE_NAME}にします。",
+            {"recipe_id": image_recipe.id},
+        )
+
+    followups: list[GenerationJobFollowup] = []
+
+    def reserve(image_job: GenerationJob) -> list[GenerationJobFollowup]:
+        # 画像Jobと同じcommitで確定させる。別commitだと、画像Job投入後の失敗で
+        # 予約の無い画像Jobだけが残る。
+        now = schemas.now_iso()
+        followups.append(
+            GenerationJobFollowup(
+                id=schemas.new_id(),
+                parent_job_id=image_job.id,
+                payload=video.model_copy(update={"queue_sequence": None}).model_dump(
+                    mode="json"
+                ),
+                state="pending",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return followups
+
+    image_job = await _submit_generation_job(session, source, image, reserve)
+    return {"image_job": image_job, "followup": followups[0]}
 
 
 @router.get(
