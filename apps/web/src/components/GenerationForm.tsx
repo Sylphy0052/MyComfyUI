@@ -420,6 +420,8 @@ export function GenerationForm({
     setOutfitCharacterId("");
     setSelectedOutfitId(null);
     setReferenceDismissed(false);
+    // 切替前のJobの参照画像を、切替先のキャラクターから探さない。
+    setPendingReferenceHashes(null);
   }, [projectId]);
 
   // Recipe変更の効果から参照する。描画中に代入して、effectの実行順に依存しないようにする。
