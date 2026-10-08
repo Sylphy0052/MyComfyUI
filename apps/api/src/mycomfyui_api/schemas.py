@@ -151,6 +151,19 @@ ArtifactTagValue = Annotated[
 #: 長く多く持てるようにする (Issue #478)。
 MAX_SCENE_TAG_LENGTH = 500
 MAX_SCENE_TAGS = 200
+#: Sceneの詳細の最大件数と、local_overrides全体をJSONにしたときの最大バイト数 (Issue #494)。
+#: 実データの最大 (63件・約190KB) から余裕を持たせた値にする。
+MAX_SCENE_DETAILS = 1_000
+MAX_LOCAL_OVERRIDES_BYTES = 4 * 1024 * 1024
+#: 改行・タブ・C0/C1制御文字 (Cc) と、U+2028/U+2029の行・段落区切り (Zl/Zp)。
+_LINE_BREAK_OR_CONTROL_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+
+
+def _has_line_break_or_control(value: str) -> bool:
+    return any(
+        unicodedata.category(character) in _LINE_BREAK_OR_CONTROL_CATEGORIES
+        for character in value
+    )
 
 
 def normalize_scene_tag(value: str) -> str:
@@ -165,8 +178,7 @@ def normalize_scene_tag(value: str) -> str:
         raise ValueError("タグを空にできません。")
     if len(candidate) > MAX_SCENE_TAG_LENGTH:
         raise ValueError(f"Sceneのタグは{MAX_SCENE_TAG_LENGTH}文字以内で指定してください。")
-    # Ccは改行・タブ・C0/C1制御文字、Zl/ZpはU+2028/U+2029の行・段落区切り。
-    if any(unicodedata.category(character) in {"Cc", "Zl", "Zp"} for character in candidate):
+    if _has_line_break_or_control(candidate):
         raise ValueError("タグに改行・タブ・制御文字を含められません。")
     return candidate
 
@@ -550,7 +562,7 @@ class SceneDetail(ApiModel):
     タグを使うのは外部ProjectのSceneだけで、localのSceneは`project_scene.tags`に持つ。
     """
 
-    characters: list[str] | None = Field(default=None, max_length=100)
+    characters: list[ResourceId] | None = Field(default=None, max_length=100)
     location: str | None = Field(default=None, max_length=200)
     time_of_day: str | None = Field(default=None, max_length=50)
     season: str | None = Field(default=None, max_length=50)
@@ -568,7 +580,11 @@ class SceneDetail(ApiModel):
     def _blank_as_unset(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return value.strip() or None
+        candidate = value.strip()
+        # プロンプトの組立てに使うため、タグと同じく改行と制御文字を通さない (Issue #494)。
+        if _has_line_break_or_control(candidate):
+            raise ValueError("場所・時間帯・季節に改行・タブ・制御文字を含められません。")
+        return candidate or None
 
     @field_validator("tags")
     @classmethod
@@ -618,8 +634,10 @@ class ProjectLocalOverrides(ApiModel):
 
     @model_validator(mode="after")
     def _scene_details_refer_characters(self) -> "ProjectLocalOverrides":
-        if len(self.scene_details) > 10_000:
-            raise ValueError("Sceneの詳細を10,000件より多く登録できません。")
+        if len(self.scene_details) > MAX_SCENE_DETAILS:
+            raise ValueError(
+                f"Sceneの詳細を{MAX_SCENE_DETAILS:,}件より多く登録できません。"
+            )
         character_ids = {character.id for character in self.characters}
         for scene_id, detail in self.scene_details.items():
             if not scene_id or len(scene_id) > 128:
@@ -634,6 +652,17 @@ class ProjectLocalOverrides(ApiModel):
                     f"場面{scene_id}の登場キャラクターが登録済みのキャラクターを指していません: "
                     + ", ".join(unknown)
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _within_size_limit(self) -> "ProjectLocalOverrides":
+        # 件数ごとの上限だけでは、1回のPUTで件数×タグ数×文字数まで入る (Issue #494)。
+        size = len(self.model_dump_json().encode())
+        if size > MAX_LOCAL_OVERRIDES_BYTES:
+            raise ValueError(
+                "Projectの人物・場面の設定が大きすぎます "
+                f"({MAX_LOCAL_OVERRIDES_BYTES // (1024 * 1024)} MiBまで)。"
+            )
         return self
 
     @field_validator("scene_prompts", "shot_prompts")

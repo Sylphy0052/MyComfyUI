@@ -358,6 +358,8 @@ export interface paths {
          * Get Artifact Content
          * @description Artifactの実ファイルを配信する。候補比較のプレビューに使う。
          *
+         *     既定は`inline`でブラウザ内に表示し、`download=true`のときだけ`attachment`で返す。
+         *
          *     画面へ渡すのは`artifact_id`だけとし、保存先の絶対パスを外へ出さない。パスの解決は
          *     `storage`へ閉じ、`data_root`の外は配信しない。
          */
@@ -923,6 +925,9 @@ export interface paths {
         /**
          * Extract Image Tags
          * @description 画像をComfyUIのWD14 Taggerへ渡し、正プロンプト用タグを返す。
+         *
+         *     画像は`content_base64`か、入力cacheを指す`relative_path`のどちらか一方で受け取る
+         *     (排他はスキーマで検証済み)。後者は登録済みの衣装・参照画像の読み直しに使う (#486)。
          */
         post: operations["extract_image_tags_api_v1_image_tags_post"];
         delete?: never;
@@ -5900,7 +5905,9 @@ export interface operations {
     };
     get_artifact_content_api_v1_artifacts__artifact_id__content_get: {
         parameters: {
-            query?: never;
+            query?: {
+                download?: boolean;
+            };
             header?: never;
             path: {
                 artifact_id: string;
