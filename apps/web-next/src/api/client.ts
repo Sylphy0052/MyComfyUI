@@ -3,6 +3,7 @@ import type { components } from "./schema";
 export type GenerationJob = components["schemas"]["GenerationJobRead"];
 export type ProjectRecord = components["schemas"]["ProjectRead"];
 export type ProjectList = components["schemas"]["ProjectList"];
+export type ProjectPurgeResult = components["schemas"]["ProjectPurgeResult"];
 
 /** Web UIとApplication APIは同一originで配信する。 */
 const API_BASE = "/api/v1";
@@ -16,20 +17,34 @@ export class ApiError extends Error {
   }
 }
 
-/** FastAPIのエラー本文 (`detail`) を読める文にする。読めなければHTTPの状態を返す。 */
+/** 入力検証の422は`{msg}`の配列を返す。読める文だけを取り出す。 */
+function validationMessages(items: unknown): string[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item: unknown) => (item && typeof item === "object" ? (item as { msg?: unknown }).msg : null))
+    .filter((msg): msg is string => typeof msg === "string");
+}
+
+/**
+ * エラー本文を読める文にする。読めなければHTTPの状態を返す。
+ * Application APIは`{code, message, details}`を返し、FastAPIの既定の応答 (存在しないパスなど) は`detail`を返す。
+ */
 async function describeFailure(response: Response): Promise<string> {
   try {
     const body: unknown = await response.json();
+    if (body && typeof body === "object" && "message" in body) {
+      const { message, details } = body as { message: unknown; details?: unknown };
+      if (typeof message === "string") {
+        const reasons = validationMessages(details);
+        return reasons.length > 0 ? `${message} (${reasons.join(" / ")})` : message;
+      }
+    }
     if (body && typeof body === "object" && "detail" in body) {
       const detail = (body as { detail: unknown }).detail;
       if (typeof detail === "string") return detail;
       // 入力検証の422は`detail`が`{msg}`の配列になる。
-      if (Array.isArray(detail)) {
-        const messages = detail
-          .map((item: unknown) => (item && typeof item === "object" ? (item as { msg?: unknown }).msg : null))
-          .filter((msg): msg is string => typeof msg === "string");
-        if (messages.length > 0) return messages.join(" / ");
-      }
+      const messages = validationMessages(detail);
+      if (messages.length > 0) return messages.join(" / ");
       return JSON.stringify(detail);
     }
   } catch {
