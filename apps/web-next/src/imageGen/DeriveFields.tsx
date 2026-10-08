@@ -1,19 +1,16 @@
-import { Button, Checkbox, FileButton, Group, Image, NumberInput, SegmentedControl, Slider, Stack, Text } from "@mantine/core";
-import { IconUpload } from "@tabler/icons-react";
+import { Checkbox, NumberInput, SegmentedControl, Slider, Stack, Text } from "@mantine/core";
 
 import type { Recipe } from "../api/client";
-import { notifyError } from "../notifications";
 import {
   defaultDenoiseOf,
   planForChanges,
   REFERENCE_STRENGTH_MAX,
   referenceStrengthOf,
-  uploadedImage,
   type DeriveState,
   type EditMethod,
   type UploadedImage,
 } from "./deriveForm";
-import { useUploadInputImage } from "./useImageGen";
+import { MaskPainter } from "./MaskPainter";
 
 type Update = (update: Partial<DeriveState>) => void;
 
@@ -76,7 +73,7 @@ const EDIT_METHODS: { value: EditMethod; label: string }[] = [
   { value: "upscale", label: "拡大" },
 ];
 
-/** 修正タブ。方式ごとに、denoise、マスク画像のアップロード、拡大の案内を出す。 */
+/** 修正タブ。方式ごとに、denoise、マスクを描く欄、拡大の案内を出す。 */
 export function EditFields({
   state,
   onChange,
@@ -85,11 +82,10 @@ export function EditFields({
 }: {
   state: DeriveState;
   onChange: Update;
-  /** マスク画像を取り込む前に呼び、返り値へ取り込んだマスクを渡す。 */
+  /** マスクを取り込む前に呼び、返り値へ取り込んだマスクを渡す。 */
   reserveMask: () => (mask: UploadedImage) => void;
   img2imgRecipe: Recipe | null;
 }) {
-  const upload = useUploadInputImage();
   const denoise = state.denoise ?? defaultDenoiseOf(img2imgRecipe);
   return (
     <Stack gap="xs" data-testid="edit-fields">
@@ -121,39 +117,24 @@ export function EditFields({
       {state.editMethod === "inpaint" ? (
         <Stack gap={4}>
           <Text size="sm" fw={500}>
-            マスク画像
+            マスク
           </Text>
           <Text size="xs" c="dimmed">
-            描き直す範囲を赤で塗った画像をアップロードします (赤いところが修正範囲)。ブラシでの作成は後から足します。
+            元画像の上で、描き直す範囲を塗ります。マスク画像 (赤いところが修正範囲) のアップロードもできます。
           </Text>
-          <Group gap="sm" wrap="nowrap">
-            <FileButton
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(file) => {
-                if (file === null) return;
-                // mutateの個別コールバックは入力欄を閉じると呼ばれないため、mutateAsyncで受ける。
-                const apply = reserveMask();
-                upload.mutateAsync(file).then(
-                  (reference) => apply(uploadedImage(reference, file.name)),
-                  (error: unknown) => notifyError(`${file.name}を取り込めません`, error),
-                );
-              }}
-            >
-              {(props) => (
-                <Button {...props} size="xs" variant="light" leftSection={<IconUpload size={14} />} loading={upload.isPending}>
-                  マスク画像をアップロード
-                </Button>
-              )}
-            </FileButton>
-            {state.mask !== null ? (
-              <>
-                <Image src={state.mask.previewUrl} alt="アップロードしたマスク画像" h={64} w="auto" fit="contain" data-testid="mask-preview" />
-                <Button size="compact-xs" variant="default" onClick={() => onChange({ mask: null })}>
-                  外す
-                </Button>
-              </>
-            ) : null}
-          </Group>
+          {state.source === null ? (
+            <Text size="xs" c="dimmed">
+              元画像を選ぶと、マスクを描けます。
+            </Text>
+          ) : (
+            <MaskPainter
+              key={state.source.previewUrl}
+              sourceUrl={state.source.previewUrl}
+              mask={state.mask}
+              onChange={onChange}
+              reserveMask={reserveMask}
+            />
+          )}
         </Stack>
       ) : null}
       {state.editMethod === "upscale" ? (
