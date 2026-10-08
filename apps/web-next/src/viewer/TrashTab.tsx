@@ -2,15 +2,38 @@ import { Alert, Button, Group, List, Loader, Modal, Paper, Stack, Text } from "@
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
-import { notifyError } from "../notifications";
 import { MediaGrid } from "./MediaGrid";
-import { BATCH_MAX, formatBytes, useBatchOperation, usePurge, usePurgePreview, useTrashedArtifacts } from "./useViewer";
+import { useSelection } from "./useSelection";
+import {
+  BATCH_MAX,
+  formatBytes,
+  notifyBatchError,
+  PartialFailureError,
+  useBatchOperation,
+  usePurge,
+  usePurgePreview,
+  useTrashedArtifacts,
+} from "./useViewer";
 
-/** 完全削除の確認。開いたときに影響 (件数と空く容量) を確かめてから実行する。 */
-function PurgeModal({ ids, onClose, onDone }: { ids: string[]; onClose: () => void; onDone: () => void }) {
+/**
+ * 完全削除の確認。開いたときに影響 (件数と空く容量) を確かめてから実行する。
+ * 途中で失敗したら`onPartial`へ消えたIDと残ったIDを渡す。
+ */
+function PurgeModal({
+  ids,
+  onClose,
+  onDone,
+  onPartial,
+}: {
+  ids: string[];
+  onClose: () => void;
+  onDone: () => void;
+  onPartial: (purgedIds: string[], remainingIds: string[]) => void;
+}) {
   const preview = usePurgePreview(ids, true);
   const purge = usePurge();
-  const summary = preview.data;
+  // 取り直しに失敗したら、前回の影響は今の状態と合わないので出さない。
+  const summary = preview.error ? undefined : preview.data;
   const submit = () =>
     purge.mutate(ids, {
       onSuccess: (result) => {
@@ -20,7 +43,10 @@ function PurgeModal({ ids, onClose, onDone }: { ids: string[]; onClose: () => vo
         });
         onDone();
       },
-      onError: (error) => notifyError("完全に削除できません。一部だけ消えていることがあります", error),
+      onError: (error) => {
+        notifyBatchError("完全に削除できません", error);
+        if (error instanceof PartialFailureError) onPartial(error.doneIds, error.failedIds);
+      },
     });
   return (
     <Modal opened onClose={onClose} title="完全に削除">
@@ -59,7 +85,8 @@ function PurgeModal({ ids, onClose, onDone }: { ids: string[]; onClose: () => vo
             color="red"
             onClick={submit}
             loading={purge.isPending}
-            disabled={!summary || summary.notTrashedIds.length > 0}
+            // 影響の取り直し中は、表示した影響と実行時の対象がずれるので押させない。
+            disabled={!summary || summary.notTrashedIds.length > 0 || preview.isFetching}
           >
             完全に削除
           </Button>
@@ -72,19 +99,11 @@ function PurgeModal({ ids, onClose, onDone }: { ids: string[]; onClose: () => vo
 /** ゴミ箱タブ。選んだ生成物を復元するか、完全に削除する。 */
 export function TrashTab({ onOpen }: { onOpen: (artifactId: string) => void }) {
   const list = useTrashedArtifacts();
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [purgeIds, setPurgeIds] = useState<string[] | null>(null);
   const restore = useBatchOperation();
   const items = list.data ?? [];
-
-  const toggle = (id: string) =>
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const clearSelection = () => setSelected(new Set());
+  const selection = useSelection(items.map((item) => item.id));
+  const { selected, clear: clearSelection } = selection;
   const restoreSelected = () =>
     restore.mutate(
       { ids: [...selected], operation: "restore" },
@@ -93,7 +112,7 @@ export function TrashTab({ onOpen }: { onOpen: (artifactId: string) => void }) {
           notifications.show({ message: `${selected.size}件を復元しました` });
           clearSelection();
         },
-        onError: (error) => notifyError("復元できません。一部だけ戻っていることがあります", error),
+        onError: (error) => notifyBatchError("復元できません", error),
       },
     );
 
@@ -107,7 +126,7 @@ export function TrashTab({ onOpen }: { onOpen: (artifactId: string) => void }) {
           <Button
             size="xs"
             variant="default"
-            onClick={() => setSelected(new Set(items.map((item) => item.id)))}
+            onClick={selection.selectAll}
             disabled={items.length === 0}
           >
             表示中をすべて選択 ({items.length}件)
@@ -140,7 +159,7 @@ export function TrashTab({ onOpen }: { onOpen: (artifactId: string) => void }) {
             createdAt: item.created_at,
           }))}
           selected={selected}
-          onToggle={toggle}
+          onToggle={selection.toggle}
           onOpen={onOpen}
           hasNextPage={list.hasNextPage}
           isFetchingNextPage={list.isFetchingNextPage}
@@ -155,6 +174,10 @@ export function TrashTab({ onOpen }: { onOpen: (artifactId: string) => void }) {
           onDone={() => {
             setPurgeIds(null);
             clearSelection();
+          }}
+          onPartial={(purgedIds, remainingIds) => {
+            selection.remove(purgedIds);
+            setPurgeIds(remainingIds);
           }}
         />
       ) : null}

@@ -26,8 +26,8 @@ export type JobProgress = {
  * RESTで得る状態を正本とする。後続の画面は、自分のqueryKeyをここへ足す。
  */
 const invalidations: Record<string, (event: ApiEvent) => QueryKey[]> = {
-  // Jobが終わると生成物が増えるので、Viewerの一覧も取り直す。
-  "generation_job.state_changed": () => [queryKeys.jobs, queryKeys.mediaItems],
+  // Jobが終わると生成物が増えるので、Viewerの一覧と`?job=`の対象も取り直す。
+  "generation_job.state_changed": () => [queryKeys.jobs, queryKeys.mediaItems, queryKeys.artifactLists],
 };
 
 /** 再接続の間隔。初回は0.5秒で、失敗するたびに倍にして10秒で頭打ちにする。 */

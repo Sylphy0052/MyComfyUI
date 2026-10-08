@@ -12,6 +12,7 @@ import {
   type StorySceneAdoption,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+import { notifyError } from "../notifications";
 import type { StoryLinks } from "./viewerFilters";
 
 const enc = encodeURIComponent;
@@ -34,22 +35,62 @@ function chunks<T>(items: T[], size = BATCH_MAX): T[][] {
   return result;
 }
 
-/** `worker`を同時に`limit`件までで順に呼ぶ。1件でも失敗したら残りは送らずに失敗を返す。 */
-async function runLimited<T>(items: T[], limit: number, worker: (item: T) => Promise<unknown>): Promise<void> {
+/** 同じIDの2件目以降を除く。offset方式のページ送りでは、読む途中で先頭に生成物が増えると同じものが2回入る。 */
+function uniqueBy<T>(items: T[], idOf: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const id = idOf(item);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+/** 何回かに分けて送る操作が途中で失敗した。`doneIds`は反映済み、`failedIds`は失敗したか送らなかったID。 */
+export class PartialFailureError extends Error {
+  readonly doneIds: string[];
+  readonly failedIds: string[];
+
+  constructor(error: unknown, doneIds: string[], failedIds: string[]) {
+    super(error instanceof Error ? error.message : String(error));
+    this.name = "PartialFailureError";
+    this.doneIds = doneIds;
+    this.failedIds = failedIds;
+  }
+}
+
+/** 一括操作の失敗を通知する。途中まで反映していれば、その件数も出す。 */
+export function notifyBatchError(title: string, error: unknown) {
+  const counts =
+    error instanceof PartialFailureError && error.doneIds.length > 0
+      ? ` (${error.doneIds.length}件は反映済み、${error.failedIds.length}件は未反映)`
+      : "";
+  notifyError(`${title}${counts}`, error);
+}
+
+/**
+ * `worker`を同時に`limit`件までで全件に呼び、すべての完了を待つ。
+ * 失敗があれば、最初の失敗の内容と成否ごとのIDを`PartialFailureError`で返す。
+ */
+async function runLimited(ids: string[], limit: number, worker: (id: string) => Promise<unknown>): Promise<void> {
   let next = 0;
-  let failed = false;
-  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (!failed && next < items.length) {
-      const item = items[next++] as T;
+  const doneIds: string[] = [];
+  const failedIds: string[] = [];
+  let firstError: unknown = null;
+  const lanes = Array.from({ length: Math.min(limit, ids.length) }, async () => {
+    while (next < ids.length) {
+      const id = ids[next++] as string;
       try {
-        await worker(item);
+        await worker(id);
+        doneIds.push(id);
       } catch (error) {
-        failed = true;
-        throw error;
+        if (failedIds.length === 0) firstError = error;
+        failedIds.push(id);
       }
     }
   });
   await Promise.all(lanes);
+  if (failedIds.length > 0) throw new PartialFailureError(firstError, doneIds, failedIds);
 }
 
 /** 生成物の変更は一覧・ゴミ箱・詳細のどれにも効くので、まとめて取り直す。 */
@@ -77,10 +118,15 @@ export function useViewerImages(query: URLSearchParams) {
     initialPageParam: 0,
     getNextPageParam: (lastPage, pages) => (lastPage.length < PAGE_SIZE ? undefined : pages.length * PAGE_SIZE),
     // 入力cacheと人物参照の画像も同じ一覧で返るので、生成物 (Artifact) だけを出す。
-    select: (data) => data.pages.flat().filter((item) => item.artifact_id),
+    select: (data) =>
+      uniqueBy(
+        data.pages.flat().filter((item) => item.artifact_id),
+        (item) => item.artifact_id as string,
+      ),
   });
 }
 
+/** ゴミ箱タブの一覧。 */
 export function useTrashedArtifacts() {
   return useInfiniteQuery({
     queryKey: queryKeys.trashedArtifacts,
@@ -90,7 +136,7 @@ export function useTrashedArtifacts() {
       ),
     initialPageParam: 0,
     getNextPageParam: (lastPage, pages) => (lastPage.length < PAGE_SIZE ? undefined : pages.length * PAGE_SIZE),
-    select: (data) => data.pages.flat(),
+    select: (data) => uniqueBy(data.pages.flat(), (item) => item.id),
   });
 }
 
@@ -109,7 +155,7 @@ async function fetchAllMediaItems(query: URLSearchParams): Promise<MediaItem[]> 
 /** `query`に合う不採用の生成物のID。`enabled`の間だけ取る。 */
 export function useRejectedArtifactIds(query: URLSearchParams, enabled: boolean) {
   return useQuery({
-    queryKey: [...queryKeys.mediaItems, "rejected-ids", query.toString()],
+    queryKey: queryKeys.rejectedArtifactIds(query.toString()),
     queryFn: () => fetchAllMediaItems(query),
     select: (items) =>
       items.filter((item) => item.decision === "rejected" && item.artifact_id).map((item) => item.artifact_id as string),
@@ -190,7 +236,7 @@ export function useAdoptSceneImage() {
       Promise.all([
         invalidate([artifactId]),
         // 外れた前の生成物の採否も戻るので、詳細は1件に絞らずまとめて取り直す。
-        client.invalidateQueries({ queryKey: ["artifacts"] }),
+        client.invalidateQueries({ queryKey: queryKeys.artifacts }),
         client.invalidateQueries({ queryKey: queryKeys.sceneAdoptions(projectId, sceneId) }),
       ]),
   });
@@ -198,16 +244,23 @@ export function useAdoptSceneImage() {
 
 // ---- 一括操作 ----
 
+/** 200件ずつ順に送る。途中で失敗したら、送り終えた分を`PartialFailureError`に含める。 */
 async function batchOperation(ids: string[], operation: BatchOperation, projectId: string | null = null) {
+  const doneIds: string[] = [];
   for (const part of chunks(ids)) {
-    await apiRequest<ArtifactRecord[]>("/artifacts/batch-operation", {
-      method: "POST",
-      body: JSON.stringify({
-        artifact_ids: part,
-        operation,
-        target: operation === "move" ? { project_id: projectId } : null,
-      }),
-    });
+    try {
+      await apiRequest<ArtifactRecord[]>("/artifacts/batch-operation", {
+        method: "POST",
+        body: JSON.stringify({
+          artifact_ids: part,
+          operation,
+          target: operation === "move" ? { project_id: projectId } : null,
+        }),
+      });
+    } catch (error) {
+      throw new PartialFailureError(error, doneIds, ids.slice(doneIds.length));
+    }
+    doneIds.push(...part);
   }
 }
 
@@ -223,20 +276,34 @@ export function useBatchOperation() {
 /**
  * 紐づけを付け替える。Projectが変わる生成物だけ先にProjectを移し (`move`/`unassign`)、
  * そのあとキャラ・衣装・シーンを1件ずつ更新する。APIは紐づけ先を生成物のProjectで検証するため、この順にする。
+ * 途中で失敗するとProjectだけ移った生成物が残るが、同じ紐づけで再実行すれば揃う。
  */
 export function useApplyLinks() {
   const invalidate = useInvalidateArtifacts();
   return useMutation({
     mutationFn: async ({ items, links }: { items: SelectedArtifact[]; links: StoryLinks }) => {
       const moving = items.filter((item) => item.projectId !== links.project).map((item) => item.id);
-      if (moving.length > 0) await batchOperation(moving, links.project ? "move" : "unassign", links.project);
+      if (moving.length > 0) {
+        try {
+          await batchOperation(moving, links.project ? "move" : "unassign", links.project);
+        } catch (error) {
+          // Projectの移動で止まったときは、キャラ・衣装・シーンはどれも変えていない。
+          throw new PartialFailureError(
+            error,
+            [],
+            items.map((item) => item.id),
+          );
+        }
+      }
       const body = JSON.stringify({
         story_scene_id: links.scene,
         story_character_id: links.character,
         story_costume_id: links.outfit,
       });
-      await runLimited(items, PATCH_CONCURRENCY, (item) =>
-        apiRequest<ArtifactRecord>(`/artifacts/${enc(item.id)}`, { method: "PATCH", body }),
+      await runLimited(
+        items.map((item) => item.id),
+        PATCH_CONCURRENCY,
+        (id) => apiRequest<ArtifactRecord>(`/artifacts/${enc(id)}`, { method: "PATCH", body }),
       );
     },
     onSettled: (_data, _error, { items }) => invalidate(items.map((item) => item.id)),
@@ -281,7 +348,7 @@ async function previewPurge(ids: string[]): Promise<PurgeSummary> {
 
 export function usePurgePreview(ids: string[], enabled: boolean) {
   return useQuery({
-    queryKey: [...queryKeys.artifactLists, "purge-preview", ids],
+    queryKey: queryKeys.artifactPurgePreview(ids),
     queryFn: () => previewPurge(ids),
     enabled: enabled && ids.length > 0,
     gcTime: 0,
@@ -293,16 +360,23 @@ export function usePurge() {
   return useMutation({
     mutationFn: async (ids: string[]) => {
       let removedByteSize = 0;
-      let purged = 0;
+      let sent = 0;
+      const purgedIds: string[] = [];
       for (const part of chunks(ids)) {
-        const result = await apiRequest<ArtifactPurgeResult>("/artifacts/purge", {
-          method: "POST",
-          body: JSON.stringify({ artifact_ids: part, confirm: true }),
-        });
+        let result: ArtifactPurgeResult;
+        try {
+          result = await apiRequest<ArtifactPurgeResult>("/artifacts/purge", {
+            method: "POST",
+            body: JSON.stringify({ artifact_ids: part, confirm: true }),
+          });
+        } catch (error) {
+          throw new PartialFailureError(error, purgedIds, ids.slice(sent));
+        }
+        sent += part.length;
         removedByteSize += result.removed_byte_size;
-        purged += result.purged_ids.length;
+        purgedIds.push(...result.purged_ids);
       }
-      return { removedByteSize, purged };
+      return { removedByteSize, purged: purgedIds.length };
     },
     onSettled: () => invalidate(),
   });

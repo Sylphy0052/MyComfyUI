@@ -3,10 +3,12 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
 import type { MediaItem } from "../api/client";
-import { notifyError } from "../notifications";
 import { LinkSelects } from "./LinkSelects";
 import { MediaGrid, type GridItem } from "./MediaGrid";
+import { useSelection } from "./useSelection";
 import {
+  notifyBatchError,
+  PartialFailureError,
   useApplyLinks,
   useBatchOperation,
   useRejectedArtifactIds,
@@ -29,11 +31,14 @@ function BulkLinkModal({
   items,
   onClose,
   onDone,
+  onFailed,
 }: {
   opened: boolean;
   items: SelectedArtifact[];
   onClose: () => void;
   onDone: () => void;
+  /** 一部だけ失敗したとき、失敗したIDを受け取る (選んだまま残して再実行できるようにする)。 */
+  onFailed: (ids: string[]) => void;
 }) {
   const [links, setLinks] = useState<StoryLinks>(NO_LINKS);
   const apply = useApplyLinks();
@@ -48,7 +53,13 @@ function BulkLinkModal({
           });
           onDone();
         },
-        onError: (error) => notifyError("紐づけを変更できません。一部だけ変わっていることがあります", error),
+        onError: (error) => {
+          notifyBatchError(
+            "紐づけを変更できません。Projectだけ移っていることがあるので、同じ紐づけでもう一度実行してください",
+            error,
+          );
+          if (error instanceof PartialFailureError) onFailed(error.failedIds);
+        },
       },
     );
   return (
@@ -96,7 +107,7 @@ function TrashRejectedModal({
           notifications.show({ message: `不採用${ids.length}件をゴミ箱へ移しました` });
           onClose();
         },
-        onError: (error) => notifyError("ゴミ箱へ移せません。一部だけ移っていることがあります", error),
+        onError: (error) => notifyBatchError("ゴミ箱へ移せません", error),
       },
     );
   return (
@@ -104,7 +115,7 @@ function TrashRejectedModal({
       <Stack>
         {rejected.isFetching ? <Loader size="sm" /> : null}
         {rejected.error ? <Alert color="red">対象を数えられません: {rejected.error.message}</Alert> : null}
-        {excluded || (rejected.data && !rejected.isFetching) ? (
+        {excluded || (rejected.data && !rejected.isFetching && !rejected.error) ? (
           <Text size="sm" data-testid="trash-rejected-count">
             今の絞り込みに合う不採用は{ids.length}件です。
             {ids.length > 0 ? "ゴミ箱へ移します (ゴミ箱タブで復元できます)。" : ""}
@@ -118,7 +129,7 @@ function TrashRejectedModal({
             color="red"
             onClick={submit}
             loading={trash.isPending}
-            disabled={(!excluded && (!rejected.data || rejected.isFetching)) || ids.length === 0}
+            disabled={(!excluded && (!rejected.data || rejected.isFetching || !!rejected.error)) || ids.length === 0}
           >
             ゴミ箱へ移す
           </Button>
@@ -131,25 +142,14 @@ function TrashRejectedModal({
 /** 画像タブ。フィルタが変わったら選択も含めて作り直す (呼び出し側で`key`を変える)。 */
 export function ImageTab({ filters, onOpen }: { filters: ViewerFilters; onOpen: (artifactId: string) => void }) {
   const list = useViewerImages(mediaItemsQuery(filters));
-  const [selected, setSelected] = useState<Map<string, SelectedArtifact>>(() => new Map());
   const [linkOpened, setLinkOpened] = useState(false);
   const [trashRejectedOpened, setTrashRejectedOpened] = useState(false);
   const trash = useBatchOperation();
   const items = list.data ?? [];
-
-  const toggle = (id: string) =>
-    setSelected((current) => {
-      const next = new Map(current);
-      if (next.has(id)) next.delete(id);
-      else {
-        const item = items.find((entry) => entry.artifact_id === id);
-        if (item) next.set(id, toSelected(item));
-      }
-      return next;
-    });
-  const selectAllLoaded = () => setSelected(new Map(items.map((item) => [item.artifact_id as string, toSelected(item)])));
-  const clearSelection = () => setSelected(new Map());
-  const selectedItems = [...selected.values()];
+  const selection = useSelection(items.map((item) => item.artifact_id as string));
+  const { selected, clear: clearSelection } = selection;
+  // 今のProjectは一覧の最新の値から取る (付け替えの判断に使う)。
+  const selectedItems = items.filter((item) => selected.has(item.artifact_id as string)).map(toSelected);
 
   const trashSelected = () =>
     trash.mutate(
@@ -159,7 +159,7 @@ export function ImageTab({ filters, onOpen }: { filters: ViewerFilters; onOpen: 
           notifications.show({ message: `${selectedItems.length}件をゴミ箱へ移しました` });
           clearSelection();
         },
-        onError: (error) => notifyError("ゴミ箱へ移せません。一部だけ移っていることがあります", error),
+        onError: (error) => notifyBatchError("ゴミ箱へ移せません", error),
       },
     );
 
@@ -171,7 +171,7 @@ export function ImageTab({ filters, onOpen }: { filters: ViewerFilters; onOpen: 
             <Text size="sm" data-testid="selected-count">
               {selected.size}件を選択中
             </Text>
-            <Button size="xs" variant="default" onClick={selectAllLoaded} disabled={items.length === 0}>
+            <Button size="xs" variant="default" onClick={selection.selectAll} disabled={items.length === 0}>
               表示中をすべて選択 ({items.length}件)
             </Button>
             <Button size="xs" variant="default" onClick={clearSelection} disabled={selected.size === 0}>
@@ -201,8 +201,8 @@ export function ImageTab({ filters, onOpen }: { filters: ViewerFilters; onOpen: 
       {list.data ? (
         <MediaGrid
           items={items.map(toGridItem)}
-          selected={new Set(selected.keys())}
-          onToggle={toggle}
+          selected={selected}
+          onToggle={selection.toggle}
           onOpen={onOpen}
           hasNextPage={list.hasNextPage}
           isFetchingNextPage={list.isFetchingNextPage}
@@ -220,6 +220,7 @@ export function ImageTab({ filters, onOpen }: { filters: ViewerFilters; onOpen: 
             setLinkOpened(false);
             clearSelection();
           }}
+          onFailed={selection.keepOnly}
         />
       ) : null}
       <TrashRejectedModal

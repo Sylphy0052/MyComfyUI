@@ -11,16 +11,18 @@ import { mediaItemsQuery, readFilters, readTab, writeFilters, type ViewerFilters
 
 /**
  * `/viewer`。タブとフィルタはURLに持たせ、開き直すと同じ条件で出す。
+ * `?artifact=`で来たときは (生成画面の「Viewerで開く」)、その生成物を詳細で開く。
  * `?job=`で来たときは (Jobのドロワーの「結果を開く」)、そのJobの生成物を詳細で開く。
  */
 export function ViewerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = readTab(searchParams);
   const filters = readFilters(searchParams);
-  const jobId = searchParams.get("job");
+  const linkedArtifactId = searchParams.get("artifact") || null;
+  const jobId = searchParams.get("job") || null;
   const jobArtifact = useJobArtifact(jobId);
   const [openedId, setOpenedId] = useState<string | null>(null);
-  const drawerId = openedId ?? (jobId !== null ? (jobArtifact.data?.id ?? null) : null);
+  const drawerId = openedId ?? linkedArtifactId ?? (jobId !== null ? (jobArtifact.data?.id ?? null) : null);
 
   // react-routerの`setSearchParams`は関数で渡しても描画時のURLを元にするので、URLへの反映前に続けて操作すると
   // 前の変更が消える。最後に書いたURLを持っておき、そこへ重ねる。
@@ -44,9 +46,10 @@ export function ViewerPage() {
     });
   const closeDrawer = () => {
     setOpenedId(null);
-    // 閉じたあとに同じJobの結果が開き直さないよう、`job`を外す。
-    if (jobId !== null)
+    // 閉じたあとに同じ生成物が開き直さないよう、`artifact`と`job`を外す。
+    if (linkedArtifactId !== null || jobId !== null)
       updateParams((params) => {
+        params.delete("artifact");
         params.delete("job");
         return params;
       });

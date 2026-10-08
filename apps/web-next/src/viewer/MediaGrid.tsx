@@ -1,8 +1,7 @@
-import { AspectRatio, Badge, Box, Card, Checkbox, Group, Loader, SimpleGrid, Text, UnstyledButton } from "@mantine/core";
-import { IconFile } from "@tabler/icons-react";
+import { AspectRatio, Badge, Box, Card, Checkbox, Loader, SimpleGrid, Text, UnstyledButton } from "@mantine/core";
 import { useEffect, useRef, type ReactNode } from "react";
 
-import { artifactContentUrl } from "../api/client";
+import { MediaThumb } from "../projectDetail/MediaThumb";
 
 export type GridItem = {
   id: string;
@@ -15,27 +14,6 @@ const DECISION_BADGES: Record<string, { label: string; color: string }> = {
   accepted: { label: "採用", color: "teal" },
   rejected: { label: "不採用", color: "red" },
 };
-
-function Thumbnail({ item }: { item: GridItem }) {
-  if (item.kind === "image") {
-    return (
-      <img
-        src={artifactContentUrl(item.id)}
-        alt=""
-        loading="lazy"
-        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-      />
-    );
-  }
-  return (
-    <Box bg="var(--mantine-color-default-hover)" style={{ display: "grid", placeItems: "center" }}>
-      <Group gap={4}>
-        <IconFile size={20} stroke={1.4} />
-        <Text size="xs">{item.kind}</Text>
-      </Group>
-    </Box>
-  );
-}
 
 /** 1件のサムネイル。左上のチェックで選び、画像の部分を押すと`onOpen`を呼ぶ。 */
 function Tile({
@@ -64,7 +42,11 @@ function Tile({
     >
       <UnstyledButton onClick={onOpen} aria-label="開く" style={{ display: "block" }}>
         <AspectRatio ratio={1}>
-          <Thumbnail item={item} />
+          <MediaThumb
+            mediaKey={item.kind === "image" ? `artifact:${item.id}` : null}
+            size="fill"
+            label={item.kind === "image" ? undefined : item.kind}
+          />
         </AspectRatio>
       </UnstyledButton>
       <Checkbox
