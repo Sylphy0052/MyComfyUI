@@ -14,7 +14,6 @@ import {
 import { queryKeys } from "../api/queryKeys";
 import { fetchJobSettings } from "../imageGen/artifactRestore";
 import { isRecord, normalizeTarget, type ImageTarget } from "../imageGen/imageForm";
-import { useSlotDecision } from "../imageGen/useImageGen";
 import {
   defaultDraft,
   normalizeDraft,
@@ -125,14 +124,6 @@ export function useJobVideos(jobId: string, enabled: boolean) {
     select: (items) => items.filter((item) => item.kind === "video" && item.deleted_at === null),
     enabled,
   });
-}
-
-/**
- * Sceneのvideo枠への採用と、不採用の印。枠は1件だけなので、採用すると前の動画は枠から外れる。
- * 統合Jobの動画は採用できない (backendが拒む)。手順は`useSlotDecision`と同じ。
- */
-export function useVideoDecision(projectId: string, sceneId: string) {
-  return useSlotDecision(projectId, sceneId, "video");
 }
 
 // ---- プロンプトだけ (画像 -> i2v の2段) ----
