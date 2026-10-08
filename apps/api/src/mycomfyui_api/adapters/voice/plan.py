@@ -338,23 +338,16 @@ async def _canon_refs(
 ) -> list[dict[str, Any]]:
     """Voice Canon descriptorを参照APIから引き、不変参照として記録する。
 
-    Canon本文は取得しない。Project配下の音声はCanonを不変参照として記録し、未所属
-    音声は取り込んだ参照音声のhashだけで再現性を担保する。参照音声を持たない
-    (captionだけの) voiceはCanonを要求しない。
+    Canon本文は取得しない。`canon_id`を指定したvoiceだけCanonを不変参照として記録する。
+    指定しないvoiceは、Project配下でも未所属でも、取り込んだ参照音声のhashだけで
+    再現性を担保する。WebUI v2にはCanonを選ぶ手段が無く、Project配下でアップロードした
+    参照音声を使えなくなるため、Canonは要求しない (#574)。
     """
     source = context.canon_lookup
     entries: list[dict[str, Any]] = []
     for voice_id, binding in bindings.items():
         canon_id = binding.get("canon_id")
         if canon_id is None:
-            if (
-                context.project_id is not None
-                and "reference" in binding
-                and voice_id not in context.canon_exempt_voice_ids
-            ):
-                raise PreparationError(
-                    f"{voice_id}のVoice Canonを指定してください。"
-                )
             continue
         if context.project_id is None:
             raise PreparationError(

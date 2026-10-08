@@ -131,8 +131,8 @@ async def resolve_character_voice(
     *,
     persist: bool,
     shot_data: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], frozenset[str]]:
-    """`inputs`の`voices`を、キャラクターの声で補った入力と、補ったvoice_idを返す。
+) -> dict[str, Any]:
+    """`inputs`の`voices`を、キャラクターの声で補った入力を返す。
 
     補うのは、音声Jobで`story_character_id`があり、参照もcaptionも無いvoiceだけ。
     `voices`自体が無いときは、台詞が参照するvoice_idごとに補う。台詞はShotを指定した
@@ -143,7 +143,7 @@ async def resolve_character_voice(
     (プレビュー) では、Artifactの音声を入力cacheへ書かない。
     """
     if payload.kind != "voice" or payload.story_character_id is None:
-        return inputs, frozenset()
+        return inputs
     defaults = recipe_defaults if isinstance(recipe_defaults, dict) else {}
     merged = {**defaults, **inputs}
     raw_voices = merged.get("voices")
@@ -157,10 +157,10 @@ async def resolve_character_voice(
         )
         voices = {voice_id: {} for voice_id in _dialogue_voice_ids(dialogue)}
     else:
-        return inputs, frozenset()
+        return inputs
     targets = [voice_id for voice_id, raw in voices.items() if _needs_voice(raw)]
     if not targets:
-        return inputs, frozenset()
+        return inputs
     if len(targets) > 1:
         raise PreparationError(
             "台詞の話者が複数あるため、キャラクターの声で補えません。"
@@ -179,4 +179,4 @@ async def resolve_character_voice(
         reference["reference_transcript"] = transcript
     for voice_id in targets:
         voices[voice_id] = {**(voices[voice_id] or {}), **reference}
-    return {**inputs, "voices": voices}, frozenset(str(v) for v in targets)
+    return {**inputs, "voices": voices}
