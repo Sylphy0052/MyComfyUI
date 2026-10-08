@@ -6,6 +6,7 @@ import { useProject } from "../layout/projectContext";
 import { SceneAdoptions } from "../projectDetail/SceneAdoptions";
 import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/useStory";
 import { CharacterStep } from "../sceneProduce/CharacterStep";
+import { ComposeStep } from "../sceneProduce/ComposeStep";
 import {
   computeStepStatus,
   FAILED_STATUS,
@@ -150,6 +151,8 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
             <CharacterStep key={scene.id} projectId={projectId} scene={scene} />
           ) : step === "video" ? (
             <VideoStep key={scene.id} projectId={projectId} scene={scene} />
+          ) : step === "compose" ? (
+            <ComposeStep key={scene.id} projectId={projectId} scene={scene} />
           ) : (
             <Text c="dimmed" size="sm" mt="sm">
               この工程の画面はまだありません。

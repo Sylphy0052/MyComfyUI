@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { apiRequest, type ArtifactRecord, type GenerationJob, type MediaItem } from "../api/client";
+import { apiRequest, type ArtifactRecord, type GenerationJob, type MediaItem, type Recipe } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { ACTIVE_STATES } from "../jobs/useJobs";
 
@@ -90,5 +90,14 @@ export function useCharacterCandidates(projectId: string, characterIds: string[]
       return { items: lists.flat(), truncated: lists.some(reachedLimit) };
     },
     enabled,
+  });
+}
+
+/** 統合のRecipe (`kind="compose"`)。台詞の音声・BGMの扱いはRecipeではなく`inputs`で決まるので、先頭を使う。 */
+export function useComposeRecipe() {
+  return useQuery({
+    queryKey: queryKeys.recipes("compose"),
+    queryFn: () => apiRequest<Recipe[]>("/recipes?kind=compose"),
+    select: (recipes) => recipes[0] ?? null,
   });
 }
