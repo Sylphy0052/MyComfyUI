@@ -43,6 +43,7 @@ from mycomfyui_api.portability import router as portability_router
 from mycomfyui_api.operations import router as operations_router
 from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
+from mycomfyui_api.schemas import MAX_LOCAL_OVERRIDES_BYTES
 from mycomfyui_api.settings import get_settings
 from mycomfyui_api.structure import router as structure_router
 from mycomfyui_api.workflows import ensure_workflows
@@ -149,10 +150,16 @@ def _max_request_bytes() -> int:
 
 
 def _request_limit(path: str) -> int:
-    """大容量Project packageを許す全体上限と、画像取込専用の上限を分ける。"""
+    """大容量Project packageを許す全体上限と、画像取込・local_overrides専用の上限を分ける。"""
     if path.startswith("/api/v1/external-images/import"):
         encoded = (MAX_EXTERNAL_IMAGE_BYTES + 2) // 3 * 4
         return encoded + REQUEST_BODY_MARGIN_BYTES
+    if path.startswith("/api/v1/projects/") and path.endswith("/local-overrides"):
+        # 保存後の大きさの上限を超える本文は、パースする前に断る (Issue #494)。
+        # 非ASCII文字を`\uXXXX`で送るclient (Pythonの`json.dumps`既定など) もあるため、
+        # エスケープで最も膨らむ倍率まで受ける。1バイトの制御文字が`\u0001`の6バイトになる
+        # のが最大で、絵文字 (4バイト→12バイト) は3倍、CJK (3バイト→6バイト) は2倍になる。
+        return MAX_LOCAL_OVERRIDES_BYTES * 6 + REQUEST_BODY_MARGIN_BYTES
     return _max_request_bytes()
 
 

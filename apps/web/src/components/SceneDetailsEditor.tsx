@@ -37,7 +37,8 @@ function describe(error: unknown): string {
 
 function translate(value: string | null | undefined, labels: Record<string, string>): string {
   if (!value || value === "unknown") return "";
-  return labels[value] ?? value;
+  // `__proto__`などでプロトタイプのプロパティを拾わないよう、自身のキーだけ読み替える。
+  return Object.hasOwn(labels, value) ? labels[value] : value;
 }
 
 function parseTags(text: string): string[] {
