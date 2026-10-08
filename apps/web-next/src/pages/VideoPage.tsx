@@ -1,5 +1,5 @@
 import { Alert, Button, Grid, Group, Loader, Stack, Tabs, Text, Textarea, Title } from "@mantine/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 
@@ -18,6 +18,8 @@ import { useCostumeFill } from "../videoGen/useCostumeFill";
 import { useSceneFill } from "../videoGen/useSceneFill";
 import {
   restoreVideoFromJob,
+  VIDEO_INPUT_KEY,
+  VIDEO_RESULTS_KEY,
   useStoredVideoInput,
   useSubmitPromptOnlyVideo,
   useVideoRecipes,
@@ -47,11 +49,39 @@ function videoTargetFromParams(params: URLSearchParams): ImageTarget {
   return { ...targetFromParams(params), extraCast: [] };
 }
 
-function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
-  const [stored, setStored] = useStoredVideoInput(recipes);
-  const [searchParams, setSearchParams] = useSearchParams();
+/** 入力欄と結果欄を残すlocalStorageのキー。 */
+export type VideoStorageKeys = { input: string; results: string };
+
+export type VideoWorkspaceProps = {
+  recipes: VideoRecipes;
+  /** 生成の対象。動画は1人のキャラの衣装だけを使うので`extraCast`は空にする。 */
+  target: ImageTarget;
+  /** 対象を選び直したとき。`/video`ではURLを替え、シーン生成では持ち主の状態を替える。 */
+  onTargetChange: (target: ImageTarget) => void;
+  /** 省略すると`/video`のキー。画面ごとに別のキーを渡すと、入力欄と結果欄が混ざらない。 */
+  storageKeys?: VideoStorageKeys;
+  /** `/video?from_artifact=`の生成物ID。あれば、その生成物を作ったJobの設定を入力欄へ戻す。 */
+  fromArtifact?: string | null;
+  /**
+   * シーン生成の工程に埋め込む。ProjectとSceneは固定で選び直せず、最後に使った対象は残さず戻さない。
+   * 見出しは出さない。開くたびにSceneの採用画像と動きを入れ直す (手で選んだ先頭フレームと書いた自由欄は残る)。
+   */
+  embedded?: boolean;
+};
+
+const VIDEO_STORAGE_KEYS: VideoStorageKeys = { input: VIDEO_INPUT_KEY, results: VIDEO_RESULTS_KEY };
+
+export function VideoWorkspace({
+  recipes,
+  target,
+  onTargetChange,
+  storageKeys = VIDEO_STORAGE_KEYS,
+  fromArtifact = null,
+  embedded = false,
+}: VideoWorkspaceProps) {
+  const [stored, setStored] = useStoredVideoInput(recipes, storageKeys.input);
   const client = useQueryClient();
-  const results = useVideoResultEntries();
+  const results = useVideoResultEntries(storageKeys.results);
   // Jobの投入は画像と同じ。投入後にJob一覧を取り直す。
   const submit = useSubmitImageJob();
   // 「プロンプトだけ」は画像Jobと、その後のi2v Jobの予約を1回で投入する。
@@ -61,7 +91,6 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   const draft = stored.draft;
   const params = draft.params[draft.mode];
   const recipe = recipes[draft.mode];
-  const target = videoTargetFromParams(searchParams);
   const targetKey = paramsFromTarget(target).toString();
 
   const story = useProjectStory(target.projectId);
@@ -101,13 +130,10 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
       })),
     [setDraft],
   );
-  const changeTarget = useCallback(
-    (next: ImageTarget) => setSearchParams(paramsFromTarget(next), { replace: true }),
-    [setSearchParams],
-  );
+  const changeTarget = onTargetChange;
 
   // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
-  const [restoring, setRestoring] = useState(() => searchParams.get(FROM_ARTIFACT_PARAM) !== null);
+  const [restoring, setRestoring] = useState(() => fromArtifact !== null);
 
   // URLの対象を、次に開いたときの復元用に残す。
   // 下の復元effectより前に置くこと。順序は次の2点で効く。
@@ -116,9 +142,9 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   //   次の描画でここが復元後の対象を保存する。入れ替えると、復元前の空の対象を保存してしまう。
   const initialized = useRef(false);
   useEffect(() => {
-    if (!initialized.current) return;
+    if (!initialized.current || embedded) return;
     setStored((current) => ({ ...current, target: videoTargetFromParams(new URLSearchParams(targetKey)) }));
-  }, [targetKey, setStored]);
+  }, [targetKey, setStored, embedded]);
 
   // 開いたときに一度だけ、`from_artifact`の生成設定か、最後に使った対象を戻す。
   // 依存配列を`[]`にするのは、開いた時点の`target`・`stored.target`だけを使い、その後の変更で戻し直さないため
@@ -127,7 +153,11 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    const fromArtifact = searchParams.get(FROM_ARTIFACT_PARAM);
+    if (embedded) {
+      // 対象はpropsで決まるので戻さない。開くたびに補完し直せるよう、補完済みのSceneの記録だけ消す。
+      setDraft((current) => ({ ...current, filled: { ...current.filled, sceneId: null } }));
+      return;
+    }
     if (fromArtifact === null) {
       const restored = initialTarget(target, stored.target);
       if (restored) changeTarget({ ...restored, extraCast: [] });
@@ -140,7 +170,7 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
       restore: (jobId) => restoreVideoFromJob(client, jobId, recipes),
       apply: (restored) => {
         setStored({ draft: restored.draft, target: restored.target });
-        setSearchParams(paramsFromTarget(restored.target), { replace: true });
+        changeTarget(restored.target);
       },
       // 失敗したら、`from_artifact`の無い通常の起動と同じ対象 (前回の対象) に戻す。
       onFail: () => changeTarget({ ...(initialTarget(target, stored.target) ?? target), extraCast: [] }),
@@ -249,8 +279,8 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
     <Grid gap="lg">
       <Grid.Col span={{ base: 12, lg: 5 }}>
         <Stack gap="md" inert={restoring}>
-          <Group justify="space-between">
-            <Title order={2}>動画</Title>
+          <Group justify={embedded ? "flex-end" : "space-between"}>
+            {embedded ? null : <Title order={2}>動画</Title>}
             <Button
               variant="default"
               size="xs"
@@ -271,6 +301,7 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
             scenes={sceneList}
             missing={missing}
             multi={false}
+            lockScene={embedded}
           />
           {storyError ? <Alert color="red">{storyError.message}</Alert> : null}
           {projectsError ? (
@@ -394,8 +425,8 @@ function VideoWorkspace({ recipes }: { recipes: VideoRecipes }) {
   );
 }
 
-/** `/video`。「画像から」「参照から」「プロンプトだけ」の入力欄と、この画面から投入した生成の結果欄。 */
-export function VideoPage() {
+/** 動画のRecipeを読んでから`children`を出す。読めないとき・登録が無いときは案内を出す。 */
+export function WithVideoRecipes({ children }: { children: (recipes: VideoRecipes) => ReactNode }) {
   const recipes = useVideoRecipes();
   if (recipes.isPending) return <Loader size="sm" />;
   if (recipes.error) {
@@ -412,5 +443,26 @@ export function VideoPage() {
       </Alert>
     );
   }
-  return <VideoWorkspace recipes={recipes.data} />;
+  return children(recipes.data);
+}
+
+/** `/video`。「画像から」「参照から」「プロンプトだけ」の入力欄と、この画面から投入した生成の結果欄。 */
+export function VideoPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const onTargetChange = useCallback(
+    (next: ImageTarget) => setSearchParams(paramsFromTarget(next), { replace: true }),
+    [setSearchParams],
+  );
+  return (
+    <WithVideoRecipes>
+      {(recipes) => (
+        <VideoWorkspace
+          recipes={recipes}
+          target={videoTargetFromParams(searchParams)}
+          onTargetChange={onTargetChange}
+          fromArtifact={searchParams.get(FROM_ARTIFACT_PARAM)}
+        />
+      )}
+    </WithVideoRecipes>
+  );
 }
