@@ -35,6 +35,11 @@ export function selectedOutfitPrompt(
 }
 
 /** キャラクター工程のプロンプトを組む。ローカル定義が無いキャラクターは名前だけ使う。 */
+/** プロンプトへ連結する前に改行を空白1つへ畳む (Issue #498)。 */
+export function foldLineBreaks(text: string): string {
+  return text.replace(/\s*[\r\n\u2028\u2029]+\s*/g, " ").trim();
+}
+
 export function characterPrompt(
   items: readonly NamedItem[],
   characters: readonly ProjectCharacterProfile[],
@@ -45,13 +50,15 @@ export function characterPrompt(
   return items
     .map((item) => {
       const character = findLocalCharacter(item, characters);
-      if (!character) return item.name;
+      if (!character) return foldLineBreaks(item.name);
       const parts = [
         character.name,
         character.appearance ?? "",
         character.prompt ?? "",
         selectedOutfitPrompt(character, outfitSelections[character.id]),
-      ].filter((part) => part.trim().length > 0);
+      ]
+        .map(foldLineBreaks)
+        .filter((part) => part.length > 0);
       return parts.join(", ");
     })
     .filter((part) => part.length > 0)
@@ -67,7 +74,7 @@ export function characterNegativePrompt(
   characters: readonly ProjectCharacterProfile[],
 ): string {
   return items
-    .map((item) => findLocalCharacter(item, characters)?.negative_prompt ?? "")
-    .filter((part) => part.trim().length > 0)
+    .map((item) => foldLineBreaks(findLocalCharacter(item, characters)?.negative_prompt ?? ""))
+    .filter((part) => part.length > 0)
     .join(", ");
 }
