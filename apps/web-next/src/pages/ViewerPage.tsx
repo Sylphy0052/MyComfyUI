@@ -17,7 +17,7 @@ import {
   type ViewerFilters,
 } from "../viewer/viewerFilters";
 
-const MEDIA_TAB_LABELS: Record<MediaTabId, string> = { image: "画像", video: "動画" };
+const MEDIA_TAB_LABELS: Record<MediaTabId, string> = { image: "画像", video: "動画", voice: "音声", bgm: "BGM" };
 const MEDIA_TAB_IDS = Object.keys(MEDIA_TABS) as MediaTabId[];
 
 /**
@@ -51,7 +51,9 @@ export function ViewerPage() {
     updateParams((params) => writeFilters(params, { ...readFilters(params), ...patch }));
   const setTab = (next: string | null) =>
     updateParams((params) => {
-      if (next === "trash" || next === "video") params.set("tab", next);
+      // 先頭の`image`は既定値なのでURLに残さない。それ以外のタブだけ`tab`に書く。
+      const urlTabs: string[] = [...MEDIA_TAB_IDS.filter((id) => id !== "image"), "trash"];
+      if (next !== null && urlTabs.includes(next)) params.set("tab", next);
       else params.delete("tab");
       return params;
     });
