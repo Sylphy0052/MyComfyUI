@@ -27,8 +27,11 @@ const enc = encodeURIComponent;
 
 // ---- 入力欄と結果欄の保存 ----
 
-/** 結果欄に出すJob。1本のJobから1つの音声ができる。`text`は結果欄に添える台詞文。 */
-export type VoiceResultEntry = { jobId: string; text: string };
+/**
+ * 結果欄に出すJob。1本のJobから1つの音声ができる。`text`は結果欄に添える台詞文。
+ * `line`はSceneの台詞の行を採用先にしたときの行の見出し (例: `3行目 ヒカリ`)。
+ */
+export type VoiceResultEntry = { jobId: string; text: string; line: string | null };
 
 /** 結果欄に残すJobの数。古いものから落とす。 */
 const RESULTS_MAX = 30;
@@ -75,7 +78,11 @@ export function useVoiceResultEntries() {
       if (!Array.isArray(raw)) return [];
       return raw
         .filter((item): item is Record<string, unknown> => isRecord(item) && typeof item.jobId === "string")
-        .map((item) => ({ jobId: String(item.jobId), text: typeof item.text === "string" ? item.text : "" }))
+        .map((item) => ({
+          jobId: String(item.jobId),
+          text: typeof item.text === "string" ? item.text : "",
+          line: typeof item.line === "string" ? item.line : null,
+        }))
         .slice(0, RESULTS_MAX);
     },
   });

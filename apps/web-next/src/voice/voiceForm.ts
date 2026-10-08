@@ -1,4 +1,4 @@
-import type { Recipe, StoryCharacter } from "../api/client";
+import type { Recipe, StoryCharacter, StorySceneDialogue } from "../api/client";
 import { acceptsInput, isRecord, SEED_MAX, type SeedMode } from "../imageGen/imageForm";
 
 /** 声質の文章 (caption) の上限。backendの`MAX_CAPTION_CHARS`と揃える。 */
@@ -117,6 +117,24 @@ export function captionProblem(caption: string): string | null {
 export function effectiveSource(form: VoiceForm, character: StoryCharacter | null): ReferenceSource | null {
   if (form.referenceSource === "character") return character?.voice_media_key ? "character" : null;
   return form.reference ? "file" : null;
+}
+
+/**
+ * Sceneの台詞の行を読み込んだ入力欄。台詞文・話者・演技指示・採用先の行を入れ、話者のキャラに声があればその声で
+ * Cloneする。声が無ければ、話者を選んだときと同じく、キャラの声を参照にしている状態だけを戻す。
+ * 読みは行に無いので空にし、シードと読みの検証は今の入力欄の値を引き継ぐ。
+ */
+export function formForLine(form: VoiceForm, line: StorySceneDialogue, hasVoice: boolean): VoiceForm {
+  const loaded = {
+    ...form,
+    text: line.text,
+    reading: "",
+    speakerId: line.speaker_character_id,
+    direction: line.direction,
+    dialogueId: line.id ?? null,
+  };
+  if (hasVoice) return { ...loaded, mode: "clone", referenceSource: "character" };
+  return form.referenceSource === "character" ? { ...loaded, referenceSource: "file" } : loaded;
 }
 
 /** 声の指定が足りない理由。足りていれば`null`。 */
