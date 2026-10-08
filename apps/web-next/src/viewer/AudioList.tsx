@@ -37,7 +37,7 @@ type NamedQuery = {
 
 /**
  * 一覧から名前を引く。取得中は`null` (表示しない)。取得に失敗したら「取得できません」、
- * 一覧に無ければ「削除済み」、名前が空なら「名前なし」。SceneとキャラでWordingをそろえる。
+ * 一覧に無ければ「削除済み」、名前が空なら「名前なし」。Sceneとキャラで文言をそろえる。
  */
 function linkName(query: NamedQuery, id: string): string | null {
   if (query.data) {
@@ -170,6 +170,7 @@ function Row({
 /**
  * 音声・BGMの行リスト。波形は出さない。再生ボタンでドロワーを開かずに再生する。
  * `<audio>`は1つだけ持ち、別の行を再生したら差し替えるので、前の行は止まる。
+ * 親が絞り込み (フィルタ・タブ) ごとに`key`で作り直すので、絞り込みを変えると再生は止まる。これは仕様。
  */
 export function AudioList({
   items,
@@ -193,7 +194,14 @@ export function AudioList({
   empty: ReactNode;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [playingId, setPlayingIdState] = useState<string | null>(null);
+  // 現在の再生対象。`<audio>`のイベントと`play()`のrejectは描画後に遅れて届き、閉包の`playingId`は古いことがあるので、
+  // 「いま再生中の行か」はこのrefで引く。`setPlayingId`だけが書く。
+  const playingIdRef = useRef<string | null>(null);
+  const setPlayingId = (id: string | null) => {
+    playingIdRef.current = id;
+    setPlayingIdState(id);
+  };
   const [failedId, setFailedId] = useState<string | null>(null);
   const [position, setPosition] = useState(0);
   const projects = useProjectList("active");
@@ -222,12 +230,14 @@ export function AudioList({
     setPosition(0);
     setFailedId(null);
     setPlayingId(id);
-    audio.play().catch(() => {
-      // 読み込み失敗は`onError`でも来る。ここは別の再生に差し替えられた中断を除いて失敗扱いにする。
-      if (audioRef.current?.src === audio.src && audio.error !== null) {
-        setFailedId(id);
-        setPlayingId(null);
-      }
+    audio.play().catch((err: unknown) => {
+      // `AbortError`は停止や別の行への差し替えによる中断で、失敗ではない。
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      // 自動再生の拒否・形式非対応は`audio.error`が空のまま`NotAllowedError`/`NotSupportedError`で拒否されるので、
+      // `audio.error`は見ない。ただし、すでに別の行へ移っていたら、その行の状態は触らない。
+      if (playingIdRef.current !== id) return;
+      setFailedId(id);
+      setPlayingId(null);
     });
   };
 
@@ -241,7 +251,10 @@ export function AudioList({
         onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
         onEnded={() => setPlayingId(null)}
         onError={() => {
-          setFailedId(playingId);
+          // 停止後や行の切替後に遅れて届くエラーは、現在の再生対象が無いか別の行なので、その行には付けない。
+          const current = playingIdRef.current;
+          if (current === null) return;
+          setFailedId(current);
           setPlayingId(null);
         }}
       />
