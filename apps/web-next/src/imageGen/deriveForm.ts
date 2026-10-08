@@ -119,6 +119,7 @@ export function sourceFromArtifact(artifact: {
       sceneId: artifact.story_scene_id ?? null,
       characterId: artifact.story_character_id ?? null,
       costumeId: artifact.story_costume_id ?? null,
+      extraCast: [],
     },
   };
 }
@@ -135,7 +136,7 @@ export function sourceFromCostume(
     ref,
     previewUrl,
     label: "衣装の参照画像",
-    links: { projectId, sceneId: null, characterId: costume.character_id, costumeId: costume.id },
+    links: { projectId, sceneId: null, characterId: costume.character_id, costumeId: costume.id, extraCast: [] },
   };
 }
 
@@ -146,7 +147,7 @@ export function sourceFromUpload(uploaded: UploadedImage): SourceImage {
     ref: uploaded.ref,
     previewUrl: uploaded.previewUrl,
     label: uploaded.label,
-    links: { projectId: null, sceneId: null, characterId: null, costumeId: null },
+    links: { projectId: null, sceneId: null, characterId: null, costumeId: null, extraCast: [] },
   };
 }
 

@@ -414,6 +414,7 @@ export async function restoreFromJob(client: QueryClient, jobId: string, recipe:
     sceneId: job.story_scene_id ?? null,
     characterId: job.story_character_id ?? null,
     costumeId: job.story_costume_id ?? null,
+    extraCast: [],
   };
   let character: StoryCharacter | null = null;
   let scene: StoryScene | null = null;

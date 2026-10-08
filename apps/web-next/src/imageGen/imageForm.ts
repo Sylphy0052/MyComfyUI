@@ -1,5 +1,5 @@
 import type { GenerationManifest, Recipe } from "../api/client";
-import { composePrompt, type SupplementTags } from "./promptTags";
+import { composePositive, composePrompt, type SupplementTags } from "./promptTags";
 
 /** 新規生成に使うWorkflowテンプレート。 */
 export const TXT2IMG_TEMPLATE = "anima_txt2img";
@@ -42,15 +42,31 @@ export type ImageForm = {
   sweepFragment: string;
 };
 
-/** 生成対象。すべて任意で、Project無しでも生成できる。 */
+/** 2人目以降のキャラと衣装の組。 */
+export type CastMember = { characterId: string; costumeId: string | null };
+
+/** 複数人の上限 (先頭キャラを含む)。 */
+export const CAST_MAX = 4;
+
+/**
+ * 生成対象。すべて任意で、Project無しでも生成できる。
+ * `characterId`/`costumeId`は先頭キャラ。`extraCast`は2人目以降で、新規タブだけが使う。
+ */
 export type ImageTarget = {
   projectId: string | null;
   sceneId: string | null;
   characterId: string | null;
   costumeId: string | null;
+  extraCast: CastMember[];
 };
 
-export const EMPTY_TARGET: ImageTarget = { projectId: null, sceneId: null, characterId: null, costumeId: null };
+export const EMPTY_TARGET: ImageTarget = {
+  projectId: null,
+  sceneId: null,
+  characterId: null,
+  costumeId: null,
+  extraCast: [],
+};
 
 /** 縦横比のプリセット。値は縦長の向きで持ち、横長は入れ替えて使う。幅と高さは8の倍数にする。 */
 export const SIZE_PRESETS = [
@@ -141,15 +157,41 @@ export function normalizeForm(raw: Record<string, unknown>, base: ImageForm): Im
   };
 }
 
+/**
+ * 2人目以降を整える。先頭キャラが無ければ空にする。先頭や他と重なるキャラは落とし、合計が上限に収まるまでにする。
+ */
+export function normalizeExtraCast(characterId: string | null, extra: readonly CastMember[]): CastMember[] {
+  if (characterId === null) return [];
+  const seen = new Set([characterId]);
+  const result: CastMember[] = [];
+  for (const member of extra) {
+    if (result.length >= CAST_MAX - 1) break;
+    if (seen.has(member.characterId)) continue;
+    seen.add(member.characterId);
+    result.push(member);
+  }
+  return result;
+}
+
 /** 保存してあった対象。各値は空でない文字列だけを使う。 */
 export function normalizeTarget(raw: unknown): ImageTarget | null {
   if (!isRecord(raw)) return null;
   const idOf = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
+  const characterId = idOf(raw.characterId);
+  const extra: CastMember[] = [];
+  if (Array.isArray(raw.extraCast)) {
+    for (const item of raw.extraCast) {
+      if (!isRecord(item)) continue;
+      const memberId = idOf(item.characterId);
+      if (memberId !== null) extra.push({ characterId: memberId, costumeId: idOf(item.costumeId) });
+    }
+  }
   return {
     projectId: idOf(raw.projectId),
     sceneId: idOf(raw.sceneId),
-    characterId: idOf(raw.characterId),
+    characterId,
     costumeId: idOf(raw.costumeId),
+    extraCast: normalizeExtraCast(characterId, extra),
   };
 }
 
@@ -161,7 +203,7 @@ export function acceptsInput(recipe: Recipe, name: string): boolean {
 /** 投入するプロンプトとネガティブ。 */
 export function composedPrompts(form: ImageForm, supplement: SupplementTags): { positive: string; negative: string } {
   return {
-    positive: composePrompt(supplement.positive, form.excludedPositive, form.positiveFree),
+    positive: composePositive(supplement, form.excludedPositive, form.positiveFree),
     negative: composePrompt(supplement.negative, form.excludedNegative, form.negativeFree),
   };
 }
