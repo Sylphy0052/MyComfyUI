@@ -6,12 +6,16 @@ import { queryKeys } from "../api/queryKeys";
 
 export const ACTIVE_STATES = ["queued", "running", "cancelling"] as const;
 const RECENT_LIMIT = 20;
+/** `GET /generation-jobs`の`limit`の上限。状態ごとにこれを超える分は取れない。 */
+const ACTIVE_LIMIT = 200;
 
 export type JobBoard = {
   /** 待機中・実行中と直近に終わったJobを、新しい順に重複なく並べたもの。 */
   jobs: GenerationJob[];
   running: number;
   queued: number;
+  /** どれかの状態で上限まで返った。件数は実数より少ない可能性がある。 */
+  truncated: boolean;
 };
 
 function listJobs(params: Record<string, string>): Promise<GenerationJob[]> {
@@ -23,7 +27,7 @@ function listJobs(params: Record<string, string>): Promise<GenerationJob[]> {
  */
 async function fetchJobBoard(): Promise<JobBoard> {
   const [active, recent] = await Promise.all([
-    Promise.all(ACTIVE_STATES.map((state) => listJobs({ state, order: "desc", limit: "200" }))),
+    Promise.all(ACTIVE_STATES.map((state) => listJobs({ state, order: "desc", limit: String(ACTIVE_LIMIT) }))),
     listJobs({ order: "desc", limit: String(RECENT_LIMIT) }),
   ]);
   const byId = new Map<string, GenerationJob>();
@@ -33,6 +37,7 @@ async function fetchJobBoard(): Promise<JobBoard> {
     jobs,
     running: jobs.filter((job) => job.state === "running" || job.state === "cancelling").length,
     queued: jobs.filter((job) => job.state === "queued").length,
+    truncated: active.some((list) => list.length >= ACTIVE_LIMIT),
   };
 }
 

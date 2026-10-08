@@ -29,6 +29,14 @@ const invalidations: Record<string, (event: ApiEvent) => QueryKey[]> = {
   "generation_job.state_changed": () => [queryKeys.jobs],
 };
 
+/** 再接続の間隔。初回は0.5秒で、失敗するたびに倍にして10秒で頭打ちにする。 */
+const INITIAL_RETRY_MS = 500;
+const MAX_RETRY_MS = 10_000;
+/** この時間つながり続けたら、再接続の間隔を初期値へ戻す。 */
+const STABLE_AFTER_MS = 5_000;
+/** 再接続が一斉に起きないよう、間隔を±25%ずらす。 */
+const RETRY_JITTER = 0.25;
+
 function parseEvent(data: unknown): ApiEvent | null {
   try {
     const message: unknown = JSON.parse(String(data));
@@ -70,13 +78,13 @@ export function useApiEvents(onEvent?: (event: ApiEvent) => void): void {
     let socket: WebSocket | null = null;
     let reconnectTimer: number | null = null;
     let stableTimer: number | null = null;
-    let retryDelay = 500;
+    let retryDelay = INITIAL_RETRY_MS;
     let connectedBefore = false;
 
     const retryLater = () => {
-      const jittered = retryDelay * (0.75 + Math.random() * 0.5);
+      const jittered = retryDelay * (1 - RETRY_JITTER + Math.random() * RETRY_JITTER * 2);
       reconnectTimer = window.setTimeout(connect, jittered);
-      retryDelay = Math.min(retryDelay * 2, 10000);
+      retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
     };
     const connect = () => {
       if (stopped) return;
@@ -89,10 +97,9 @@ export function useApiEvents(onEvent?: (event: ApiEvent) => void): void {
       socket.onopen = () => {
         if (connectedBefore) void client.invalidateQueries({ queryKey: queryKeys.jobs });
         connectedBefore = true;
-        // 5秒つながり続けたら再接続の間隔を初期値へ戻す。
         stableTimer = window.setTimeout(() => {
-          retryDelay = 500;
-        }, 5000);
+          retryDelay = INITIAL_RETRY_MS;
+        }, STABLE_AFTER_MS);
       };
       socket.onmessage = (message) => {
         const event = parseEvent(message.data);

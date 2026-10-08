@@ -25,8 +25,10 @@ const STATE_LABELS: Record<string, { label: string; color: string }> = {
 
 function formatElapsed(job: GenerationJob, now: number): string {
   if (!job.started_at) return "-";
+  const start = Date.parse(job.started_at);
   const end = job.finished_at ? Date.parse(job.finished_at) : now;
-  const seconds = Math.max(0, Math.round((end - Date.parse(job.started_at)) / 1000));
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return "-";
+  const seconds = Math.max(0, Math.round((end - start) / 1000));
   const minutes = Math.floor(seconds / 60);
   return minutes > 0 ? `${minutes}分${seconds % 60}秒` : `${seconds}秒`;
 }
@@ -34,16 +36,19 @@ function formatElapsed(job: GenerationJob, now: number): string {
 function JobPreview({ jobId }: { jobId: string }) {
   const { data: progress } = useJobProgress(jobId);
   const [failedSeq, setFailedSeq] = useState<number | null>(null);
-  if (!progress || progress.previewSeq === 0 || failedSeq === progress.previewSeq) return null;
+  // 進捗イベントをまだ受けていなくても (開いた時点で実行中など)、最新の1枚を取りにいく。
+  // 無ければ404で隠し、次のイベントで`preview_seq`が進んだら取り直す。
+  const seq = progress?.previewSeq ?? 0;
+  if (failedSeq === seq) return null;
   return (
     <Image
-      src={jobPreviewUrl(jobId, progress.previewSeq)}
+      src={jobPreviewUrl(jobId, seq)}
       alt="実行中のプレビュー"
       w={64}
       h={64}
       fit="cover"
       radius="sm"
-      onError={() => setFailedSeq(progress.previewSeq)}
+      onError={() => setFailedSeq(seq)}
     />
   );
 }
@@ -57,7 +62,11 @@ function JobRow({ job, now, projectName, onNavigate }: {
   const cancel = useCancelJob();
   const replay = useReplayJob();
   const state = STATE_LABELS[job.state] ?? { label: job.state, color: "gray" };
-  const error = cancel.error ?? replay.error;
+  const { reset: resetCancel } = cancel;
+  // 状態が変わったら、前の状態で失敗した操作のエラーは意味を失うので消す。
+  useEffect(() => {
+    resetCancel();
+  }, [job.state, resetCancel]);
   return (
     <Stack gap={4} p="xs" style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
       <Group justify="space-between" wrap="nowrap" align="flex-start">
@@ -77,7 +86,8 @@ function JobRow({ job, now, projectName, onNavigate }: {
       {job.state === "failed" && job.failure_message ? (
         <Text size="xs" c="red">{job.failure_message}</Text>
       ) : null}
-      {error ? <Text size="xs" c="red">{error.message}</Text> : null}
+      {cancel.error ? <Text size="xs" c="red">中止できません: {cancel.error.message}</Text> : null}
+      {replay.error ? <Text size="xs" c="red">再実行できません: {replay.error.message}</Text> : null}
       <Group gap="xs">
         {job.state === "queued" || job.state === "running" ? (
           <Button size="compact-xs" variant="default" loading={cancel.isPending} onClick={() => cancel.mutate(job.id)}>
@@ -85,8 +95,15 @@ function JobRow({ job, now, projectName, onNavigate }: {
           </Button>
         ) : null}
         {job.state === "failed" ? (
-          <Button size="compact-xs" variant="default" loading={replay.isPending} onClick={() => replay.mutate(job.id)}>
-            再実行
+          <Button
+            size="compact-xs"
+            variant="default"
+            loading={replay.isPending}
+            // 新しいJobとして投入されるので、成功後に押すと同じJobが重複して積まれる。
+            disabled={replay.isSuccess}
+            onClick={() => replay.mutate(job.id)}
+          >
+            {replay.isSuccess ? "再実行済み" : "再実行"}
           </Button>
         ) : null}
         {job.state === "succeeded" ? (

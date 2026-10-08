@@ -72,10 +72,19 @@ function CurrentProject() {
 }
 
 function JobCounter({ onOpen }: { onOpen: () => void }) {
-  const { data: board } = useJobBoard();
+  const { data: board, isError } = useJobBoard();
+  // 取得に失敗したまま0件と出すと、Jobが無いように見えてしまう。
+  if (isError || !board) {
+    return (
+      <Button variant="default" size="xs" color={isError ? "red" : undefined} onClick={onOpen}>
+        {isError ? "Jobを取得できません" : "Job"}
+      </Button>
+    );
+  }
+  const more = board.truncated ? "+" : "";
   return (
     <Button variant="default" size="xs" onClick={onOpen}>
-      実行中{board?.running ?? 0}・待機{board?.queued ?? 0}
+      実行中{board.running}{more}・待機{board.queued}{more}
     </Button>
   );
 }
