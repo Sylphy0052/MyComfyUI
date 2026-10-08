@@ -1171,6 +1171,108 @@ button[aria-pressed="true"] {
   font-size: var(--font-size-md);
 }
 
+/* 保管場所の切替。一覧の上に置く小さなsegmented control。 */
+.project-lifecycle-switch {
+  display: flex;
+  margin-bottom: var(--space-6);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.project-lifecycle-switch button {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-4);
+}
+
+.project-lifecycle-switch button + button {
+  border-left: var(--border-default);
+}
+
+.project-lifecycle-switch button[aria-pressed="true"] {
+  background: var(--color-accent-subtle);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ul.list li button の縦並びより強くするため、親を含めて詳細度を上げる */
+ul.list li button.project-card {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.project-card-thumb {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+}
+
+.project-card-thumb.placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-lg);
+}
+
+.project-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.project-card-body strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+.project-card-body .muted {
+  font-size: var(--font-size-xs);
+}
+
+.badge.project-status {
+  border-color: transparent;
+}
+
+.badge.status-planning {
+  color: var(--color-text-muted);
+  background: var(--color-surface-inset);
+}
+
+.badge.status-active {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.badge.status-on_hold {
+  color: var(--color-warning);
+  background: var(--color-warning-subtle);
+}
+
+.badge.status-completed {
+  color: var(--color-ok);
+  background: var(--color-ok-subtle);
+}
+
 .project-home h3 {
   color: var(--color-text-muted);
   font-size: var(--font-size-md);
@@ -1189,6 +1291,51 @@ button[aria-pressed="true"] {
 
 .project-actions {
   margin: var(--space-6) 0;
+  align-items: center;
+}
+
+/* アーカイブ・ゴミ箱・復元をまとめる「その他」メニュー */
+.project-more-menu {
+  position: relative;
+}
+
+.project-more-menu > summary {
+  list-style: none;
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  font-size: inherit;
+}
+
+.project-more-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.project-more-menu > summary::after {
+  content: " ▾";
+  color: var(--color-text-muted);
+}
+
+.project-more-menu-items {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 160px;
+  padding: var(--space-3);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-md);
+}
+
+.project-more-menu-items button {
+  width: 100%;
+  text-align: left;
 }
 
 .danger-button {
@@ -1203,10 +1350,34 @@ button[aria-pressed="true"] {
   margin-top: var(--space-8);
 }
 
-.progress-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(90px, 1fr));
-  gap: var(--space-4);
+/* 制作進捗。Scene行とShot行 × 段階5列で、各セルは件数だけ。 */
+.project-progress-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.project-progress-table th,
+.project-progress-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-default);
+  text-align: right;
+}
+
+.project-progress-table thead th {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: normal;
+}
+
+.project-progress-table tbody th {
+  text-align: left;
+  color: var(--color-text-muted);
+}
+
+.project-progress-table td {
+  font-size: var(--font-size-lg);
+  font-variant-numeric: tabular-nums;
 }
 
 .structure-list li {
@@ -1289,7 +1460,7 @@ button[aria-pressed="true"] {
 
 .recent-artifacts li {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   gap: var(--space-4);
   align-items: center;
   padding: 7px var(--space-4);
@@ -1300,6 +1471,33 @@ button[aria-pressed="true"] {
 
 .recent-artifacts a {
   color: var(--color-accent);
+}
+
+.recent-artifact-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-4);
+}
+
+.recent-artifact-grid a {
+  display: block;
+}
+
+.recent-artifact-grid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+}
+
+.recent-artifact-grid a:hover img {
+  border-color: var(--color-accent);
 }
 
 .project-metadata {
@@ -1380,9 +1578,19 @@ button[aria-pressed="true"] {
 
 .project-portability-panel {
   margin-top: var(--space-8);
-  padding: var(--space-8);
+  padding: var(--space-6) var(--space-8);
   border: var(--border-default);
   border-radius: var(--radius-xl);
+}
+
+.project-portability-panel > summary {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.project-portability-panel[open] > summary {
+  margin-bottom: var(--space-6);
 }
 
 .project-portability-panel h3,
