@@ -5863,6 +5863,71 @@
         "title": "ProjectProgress",
         "type": "object"
       },
+      "ProjectPurgeResult": {
+        "additionalProperties": false,
+        "description": "Projectの完全削除で消した定義と、紐づけを外した生成物の件数。",
+        "properties": {
+          "batch_count": {
+            "title": "Batch Count",
+            "type": "integer"
+          },
+          "character_count": {
+            "title": "Character Count",
+            "type": "integer"
+          },
+          "costume_count": {
+            "title": "Costume Count",
+            "type": "integer"
+          },
+          "detached_artifact_count": {
+            "title": "Detached Artifact Count",
+            "type": "integer"
+          },
+          "detached_job_count": {
+            "title": "Detached Job Count",
+            "type": "integer"
+          },
+          "detached_media_role_tag_count": {
+            "title": "Detached Media Role Tag Count",
+            "type": "integer"
+          },
+          "experiment_count": {
+            "title": "Experiment Count",
+            "type": "integer"
+          },
+          "legacy_scene_count": {
+            "title": "Legacy Scene Count",
+            "type": "integer"
+          },
+          "legacy_shot_count": {
+            "title": "Legacy Shot Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "story_scene_count": {
+            "title": "Story Scene Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "character_count",
+          "costume_count",
+          "story_scene_count",
+          "legacy_scene_count",
+          "legacy_shot_count",
+          "batch_count",
+          "experiment_count",
+          "detached_artifact_count",
+          "detached_job_count",
+          "detached_media_role_tag_count"
+        ],
+        "title": "ProjectPurgeResult",
+        "type": "object"
+      },
       "ProjectRead": {
         "additionalProperties": false,
         "properties": {
@@ -7596,6 +7661,906 @@
           "processing_seconds"
         ],
         "title": "StatisticsBreakdown",
+        "type": "object"
+      },
+      "StoryCharacterCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "fixed_tags": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Fixed Tags",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "negative_tags": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Negative Tags",
+            "type": "array"
+          },
+          "portrait_media_key": {
+            "anyOf": [
+              {
+                "maxLength": 1100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portrait Media Key"
+          },
+          "profile": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Profile",
+            "type": "string"
+          },
+          "voice_media_key": {
+            "anyOf": [
+              {
+                "maxLength": 1100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Media Key"
+          },
+          "voice_transcript": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Transcript"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StoryCharacterCreate",
+        "type": "object"
+      },
+      "StoryCharacterRead": {
+        "additionalProperties": false,
+        "properties": {
+          "costumes": {
+            "items": {
+              "$ref": "#/components/schemas/StoryCostumeRead"
+            },
+            "title": "Costumes",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "fixed_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fixed Tags",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "negative_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Negative Tags",
+            "type": "array"
+          },
+          "portrait_media_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portrait Media Key"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "voice_media_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Media Key"
+          },
+          "voice_transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Transcript"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "fixed_tags",
+          "negative_tags",
+          "profile",
+          "portrait_media_key",
+          "voice_media_key",
+          "voice_transcript",
+          "costumes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StoryCharacterRead",
+        "type": "object"
+      },
+      "StoryCharacterUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "fixed_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Tags"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "negative_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negative Tags"
+          },
+          "portrait_media_key": {
+            "anyOf": [
+              {
+                "maxLength": 1100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portrait Media Key"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "voice_media_key": {
+            "anyOf": [
+              {
+                "maxLength": 1100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Media Key"
+          },
+          "voice_transcript": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Transcript"
+          }
+        },
+        "title": "StoryCharacterUpdate",
+        "type": "object"
+      },
+      "StoryCostumeCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "negative_tags": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Negative Tags",
+            "type": "array"
+          },
+          "reference_images": {
+            "items": {
+              "maxLength": 1100,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Reference Images",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StoryCostumeCreate",
+        "type": "object"
+      },
+      "StoryCostumeRead": {
+        "additionalProperties": false,
+        "properties": {
+          "character_id": {
+            "title": "Character Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "negative_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Negative Tags",
+            "type": "array"
+          },
+          "reference_images": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reference Images",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "character_id",
+          "name",
+          "tags",
+          "negative_tags",
+          "description",
+          "reference_images",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StoryCostumeRead",
+        "type": "object"
+      },
+      "StoryCostumeUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "negative_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negative Tags"
+          },
+          "reference_images": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 1100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Images"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "title": "StoryCostumeUpdate",
+        "type": "object"
+      },
+      "StorySceneCastEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "character_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Character Id",
+            "type": "string"
+          },
+          "costume_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costume Id"
+          },
+          "expression_tags": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Expression Tags",
+            "type": "array"
+          },
+          "expression_text": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Expression Text",
+            "type": "string"
+          },
+          "pose_tags": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Pose Tags",
+            "type": "array"
+          },
+          "pose_text": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Pose Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "character_id"
+        ],
+        "title": "StorySceneCastEntry",
+        "type": "object"
+      },
+      "StorySceneCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "background_tags": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Background Tags",
+            "type": "array"
+          },
+          "background_text": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Background Text",
+            "type": "string"
+          },
+          "bgm_mood": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Bgm Mood",
+            "type": "string"
+          },
+          "cast": {
+            "items": {
+              "$ref": "#/components/schemas/StorySceneCastEntry"
+            },
+            "maxItems": 50,
+            "title": "Cast",
+            "type": "array"
+          },
+          "dialogues": {
+            "items": {
+              "$ref": "#/components/schemas/StorySceneDialogueEntry"
+            },
+            "maxItems": 500,
+            "title": "Dialogues",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Summary",
+            "type": "string"
+          },
+          "time_of_day": {
+            "anyOf": [
+              {
+                "enum": [
+                  "morning",
+                  "day",
+                  "sunset",
+                  "night"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Of Day"
+          },
+          "video_motion": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Video Motion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StorySceneCreate",
+        "type": "object"
+      },
+      "StorySceneDialogueEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Direction",
+            "type": "string"
+          },
+          "speaker_character_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Speaker Character Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "speaker_character_id",
+          "text"
+        ],
+        "title": "StorySceneDialogueEntry",
+        "type": "object"
+      },
+      "StorySceneRead": {
+        "additionalProperties": false,
+        "properties": {
+          "background_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Background Tags",
+            "type": "array"
+          },
+          "background_text": {
+            "title": "Background Text",
+            "type": "string"
+          },
+          "bgm_mood": {
+            "title": "Bgm Mood",
+            "type": "string"
+          },
+          "cast": {
+            "items": {
+              "$ref": "#/components/schemas/StorySceneCastEntry"
+            },
+            "title": "Cast",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dialogues": {
+            "items": {
+              "$ref": "#/components/schemas/StorySceneDialogueEntry"
+            },
+            "title": "Dialogues",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Scene Id"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "time_of_day": {
+            "anyOf": [
+              {
+                "enum": [
+                  "morning",
+                  "day",
+                  "sunset",
+                  "night"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Of Day"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "video_motion": {
+            "title": "Video Motion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "parent_scene_id",
+          "name",
+          "sequence",
+          "summary",
+          "background_text",
+          "background_tags",
+          "time_of_day",
+          "bgm_mood",
+          "video_motion",
+          "cast",
+          "dialogues",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StorySceneRead",
+        "type": "object"
+      },
+      "StorySceneUpdate": {
+        "additionalProperties": false,
+        "description": "指定した項目だけ更新する。`cast`と`dialogues`は渡した配列で置き換える。",
+        "properties": {
+          "background_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background Tags"
+          },
+          "background_text": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background Text"
+          },
+          "bgm_mood": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bgm Mood"
+          },
+          "cast": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StorySceneCastEntry"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cast"
+          },
+          "dialogues": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StorySceneDialogueEntry"
+                },
+                "maxItems": 500,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dialogues"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "time_of_day": {
+            "anyOf": [
+              {
+                "enum": [
+                  "morning",
+                  "day",
+                  "sunset",
+                  "night"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Of Day"
+          },
+          "video_motion": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Motion"
+          }
+        },
+        "title": "StorySceneUpdate",
         "type": "object"
       },
       "StructureDeletionImpact": {
@@ -13332,6 +14297,523 @@
         "summary": "Get Canon"
       }
     },
+    "/api/v1/projects/{project_id}/characters": {
+      "get": {
+        "operationId": "list_characters_api_v1_projects__project_id__characters_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StoryCharacterRead"
+                  },
+                  "title": "Response List Characters Api V1 Projects  Project Id  Characters Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Characters",
+        "tags": [
+          "story"
+        ]
+      },
+      "post": {
+        "operationId": "create_character_api_v1_projects__project_id__characters_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryCharacterCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryCharacterRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Character",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/characters/{character_id}": {
+      "delete": {
+        "operationId": "delete_character_api_v1_projects__project_id__characters__character_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Character Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Character",
+        "tags": [
+          "story"
+        ]
+      },
+      "get": {
+        "operationId": "get_character_api_v1_projects__project_id__characters__character_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Character Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryCharacterRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Character",
+        "tags": [
+          "story"
+        ]
+      },
+      "patch": {
+        "operationId": "update_character_api_v1_projects__project_id__characters__character_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Character Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryCharacterUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryCharacterRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Character",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/characters/{character_id}/costumes": {
+      "post": {
+        "operationId": "create_costume_api_v1_projects__project_id__characters__character_id__costumes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Character Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryCostumeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryCostumeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Costume",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/characters/{character_id}/costumes/{costume_id}": {
+      "delete": {
+        "operationId": "delete_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Character Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "costume_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Costume Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Costume",
+        "tags": [
+          "story"
+        ]
+      },
+      "get": {
+        "operationId": "get_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Character Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "costume_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Costume Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryCostumeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Costume",
+        "tags": [
+          "story"
+        ]
+      },
+      "patch": {
+        "operationId": "update_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "character_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Character Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "costume_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Costume Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryCostumeUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryCostumeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Costume",
+        "tags": [
+          "story"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/deletion-impact": {
       "get": {
         "operationId": "get_deletion_impact_api_v1_projects__project_id__deletion_impact_get",
@@ -13934,6 +15416,60 @@
           }
         },
         "summary": "Update Local Overrides",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/permanent": {
+      "delete": {
+        "description": "ゴミ箱にあるProjectの定義を完全に削除する。\n\n消すのはProject・キャラクター・衣装・シーン (旧Scene・Shotを含む) と一括生成・\n探索実験の計画だけである。生成物 (Artifact・Job・素材タグ) は消さず、Projectと\nSceneへの紐づけを外して「Project無し」の状態で残す。取り消せないため`confirm=true`\nを必須とする。",
+        "operationId": "purge_project_api_v1_projects__project_id__permanent_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPurgeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Purge Project",
         "tags": [
           "projects"
         ]
@@ -15075,6 +16611,324 @@
         "summary": "Project Statistics",
         "tags": [
           "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/story-scenes": {
+      "get": {
+        "operationId": "list_story_scenes_api_v1_projects__project_id__story_scenes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StorySceneRead"
+                  },
+                  "title": "Response List Story Scenes Api V1 Projects  Project Id  Story Scenes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Story Scenes",
+        "tags": [
+          "story"
+        ]
+      },
+      "post": {
+        "operationId": "create_story_scene_api_v1_projects__project_id__story_scenes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorySceneCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorySceneRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Story Scene",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/story-scenes/reorder": {
+      "post": {
+        "description": "シーンの並び順を置き換える。現在のシーンIDを過不足なく並べて渡す。",
+        "operationId": "reorder_story_scenes_api_v1_projects__project_id__story_scenes_reorder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StructureReorder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StorySceneRead"
+                  },
+                  "title": "Response Reorder Story Scenes Api V1 Projects  Project Id  Story Scenes Reorder Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reorder Story Scenes",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/story-scenes/{scene_id}": {
+      "delete": {
+        "description": "シーンの定義を消す。このシーンに紐づいた生成物は消さず、紐づけだけ外す。",
+        "operationId": "delete_story_scene_api_v1_projects__project_id__story_scenes__scene_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Story Scene",
+        "tags": [
+          "story"
+        ]
+      },
+      "get": {
+        "operationId": "get_story_scene_api_v1_projects__project_id__story_scenes__scene_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorySceneRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Story Scene",
+        "tags": [
+          "story"
+        ]
+      },
+      "patch": {
+        "operationId": "update_story_scene_api_v1_projects__project_id__story_scenes__scene_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Scene Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorySceneUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorySceneRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Story Scene",
+        "tags": [
+          "story"
         ]
       }
     },
