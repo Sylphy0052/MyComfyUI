@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar, get_args
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse
@@ -4336,6 +4337,7 @@ async def create_image_reference(payload: schemas.ImageReferenceCreate):
 
 @router.get("/image-references/content")
 async def get_image_reference_content(
+    request: Request,
     relative_path: Annotated[str, Query(min_length=1, max_length=1024)],
 ):
     """入力cacheの参照画像を配信する。Artifactを持たない参照画像のサムネイルに使う (#480)。
@@ -4347,12 +4349,22 @@ async def get_image_reference_content(
     settings = get_settings()
     media_type: str | None = None
     data = b""
+    etag = ""
     try:
         path = storage.resolve_input(relative_path, settings)
-        # 判定と配信で別々にファイルを開くと差し替えに追従するため、1回の読み取りで両方を行う。
-        if path.stat().st_size <= settings.max_image_bytes:
+        stat = path.stat()
+        if stat.st_size <= settings.max_image_bytes:
+            # mtimeとサイズ由来の弱いETag。一致すれば読み込まずに304を返す。
+            etag = f'W/"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+            if request.headers.get("if-none-match") == etag:
+                return Response(
+                    status_code=status.HTTP_304_NOT_MODIFIED,
+                    headers={"ETag": etag, "Cache-Control": "private, max-age=300"},
+                )
+            # 判定と配信で別々にファイルを開くと差し替えに追従するため、1回の読み取りで両方を行う。
             data = await run_in_threadpool(path.read_bytes)
-            media_type = storage.detect_image_media_type(data[:32])
+            if len(data) <= settings.max_image_bytes:
+                media_type = storage.detect_image_media_type(data[:32])
     except (storage.StorageError, OSError, ValueError):
         # ValueErrorはNULを含むパスで`Path.resolve()`が送出する。
         media_type = None
@@ -4365,7 +4377,12 @@ async def get_image_reference_content(
     return Response(
         content=data,
         media_type=media_type,
-        headers={"X-Content-Type-Options": "nosniff"},
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "ETag": etag,
+            "Cache-Control": "private, max-age=300",
+            "Content-Disposition": f"inline; filename*=utf-8''{quote(path.name, safe='')}",
+        },
     )
 
 
