@@ -4,10 +4,13 @@ import { useCallback } from "react";
 
 import {
   apiRequest,
+  imageReferenceUrl,
   type ArtifactRecord,
   type GenerationJob,
   type GenerationJobBody,
   type GenerationManifest,
+  type ImageReference,
+  type MediaItem,
   type Recipe,
   type StoryCharacter,
   type StoryCostume,
@@ -16,7 +19,8 @@ import {
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { ACTIVE_STATES } from "../jobs/useJobs";
-import { useCharacters, useScenes } from "../projectDetail/useStory";
+import { fileToBase64, useCharacters, useScenes } from "../projectDetail/useStory";
+import { DERIVE_TEMPLATES } from "./deriveForm";
 import {
   BATCH_MAX,
   defaultForm,
@@ -117,6 +121,21 @@ export function useTxt2ImgRecipe() {
   });
 }
 
+/** 参照と修正が使うRecipe。テンプレート名ごとに、最新の版の先頭を引く。 */
+export function useDeriveRecipes() {
+  return useQuery({
+    queryKey: queryKeys.recipes("image"),
+    queryFn: () => apiRequest<Recipe[]>("/recipes?kind=image"),
+    select: (recipes): Record<string, Recipe> =>
+      Object.fromEntries(
+        DERIVE_TEMPLATES.flatMap((name) => {
+          const found = recipes.find((recipe) => recipe.workflow_template_ref.name === name);
+          return found ? [[name, found]] : [];
+        }),
+      ),
+  });
+}
+
 /** ComfyUIにあるモデルの候補。ComfyUIに届かないときは候補が空で返る。 */
 export function useModelOptions(workflowVersionId: string | null, enabled: boolean) {
   return useQuery({
@@ -142,6 +161,54 @@ export function useProjectStory(projectId: string | null) {
     isLoading: projectId !== null && (characters.isPending || scenes.isPending),
     error: projectId === null ? null : (characters.error ?? scenes.error),
   };
+}
+
+// ---- 元画像 ----
+
+/** 元画像の選択に出す最近の生成物の数。 */
+const SOURCE_IMAGES_LIMIT = 24;
+
+/** 元画像に選べる最近の生成物。Projectを指定していれば、そのProjectのものに絞る。 */
+export function useRecentGeneratedImages(projectId: string | null, enabled: boolean) {
+  const query = new URLSearchParams({ kind: "image", limit: String(SOURCE_IMAGES_LIMIT) });
+  if (projectId !== null) query.set("project_id", projectId);
+  return useQuery({
+    queryKey: queryKeys.sourceImages(query.toString()),
+    queryFn: () => apiRequest<MediaItem[]>(`/media-items?${query}`),
+    // 入力cacheと人物参照の画像も同じ一覧で返るので、生成物 (Artifact) だけを出す。
+    select: (items) => items.filter((item) => item.source === "generated" && item.artifact_id),
+    enabled,
+  });
+}
+
+/** 手元の画像を入力cacheへ取り込む。取り込んだ画像のrelative_pathとsha256を返す。 */
+export function useUploadInputImage() {
+  return useMutation({
+    mutationFn: async (file: File) =>
+      apiRequest<ImageReference>("/image-references", {
+        method: "POST",
+        body: JSON.stringify({
+          file_name: file.name,
+          media_type: file.type,
+          content_base64: await fileToBase64(file),
+        }),
+      }),
+  });
+}
+
+/**
+ * 入力cacheの画像を、もう一度取り込んでsha256つきの参照にする。衣装の参照画像のうち、
+ * アップロードしたもの (`input:`) はsha256を持たないため、内容を読み直して取り込む。
+ */
+export async function reimportInputImage(
+  relativePath: string,
+  upload: (file: File) => Promise<ImageReference>,
+): Promise<ImageReference> {
+  const response = await fetch(imageReferenceUrl(relativePath));
+  if (!response.ok) throw new Error("参照画像を読み込めませんでした");
+  const blob = await response.blob();
+  const fileName = relativePath.slice(relativePath.lastIndexOf("/") + 1);
+  return upload(new File([blob], fileName, { type: blob.type }));
 }
 
 // ---- 投入と結果 ----

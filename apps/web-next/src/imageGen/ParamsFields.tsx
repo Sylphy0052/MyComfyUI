@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { IconArrowsExchange } from "@tabler/icons-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { Recipe } from "../api/client";
 import { acceptsInput, BATCH_MAX, presetOf, SEED_MAX, SIZE_PRESETS, type ImageForm, type SeedMode } from "./imageForm";
@@ -79,7 +79,17 @@ function ModelField({
   return <Autocomplete label={label} value={value} data={options} onChange={onChange} size="xs" />;
 }
 
-function DetailFields({ form, onChange, recipe }: { form: ImageForm; onChange: Update; recipe: Recipe }) {
+function DetailFields({
+  form,
+  onChange,
+  recipe,
+  extra,
+}: {
+  form: ImageForm;
+  onChange: Update;
+  recipe: Recipe;
+  extra?: ReactNode;
+}) {
   const [opened, setOpened] = useState<string | null>(null);
   // ComfyUIへ問い合わせるため、「詳細」を開いたときだけ取る。
   const models = useModelOptions(recipe.workflow_version_id, opened === "detail");
@@ -98,6 +108,7 @@ function DetailFields({ form, onChange, recipe }: { form: ImageForm; onChange: U
                 ComfyUIに接続できないため、モデルの候補を出せません。名前は手で入力できます。
               </Text>
             ) : null}
+            {extra}
             <ModelField
               label="生成モデル (unet)"
               value={form.unetName}
@@ -152,13 +163,14 @@ function DetailFields({ form, onChange, recipe }: { form: ImageForm; onChange: U
                 description={lockedNote("scheduler")}
               />
             </SimpleGrid>
-            <Switch
-              label="hires (拡大してかけ直す)"
-              checked={form.hiresEnabled}
-              onChange={(event) => onChange({ hiresEnabled: event.currentTarget.checked })}
-              disabled={!acceptsInput(recipe, "hires_enabled")}
-            />
-            {form.hiresEnabled ? (
+            {acceptsInput(recipe, "hires_enabled") ? (
+              <Switch
+                label="hires (拡大してかけ直す)"
+                checked={form.hiresEnabled}
+                onChange={(event) => onChange({ hiresEnabled: event.currentTarget.checked })}
+              />
+            ) : null}
+            {form.hiresEnabled && acceptsInput(recipe, "hires_enabled") ? (
               <SimpleGrid cols={3} spacing="xs">
                 <NumberInput
                   label="倍率"
@@ -197,20 +209,35 @@ function DetailFields({ form, onChange, recipe }: { form: ImageForm; onChange: U
   );
 }
 
-/** 常に出すパラメータ (サイズ・枚数・seed) と、「詳細」に折りたたむパラメータ。 */
-export function ParamsFields({ form, onChange, recipe }: { form: ImageForm; onChange: Update; recipe: Recipe }) {
+/**
+ * 常に出すパラメータ (サイズ・枚数・seed) と、「詳細」に折りたたむパラメータ。
+ * Recipeが受け付けない項目 (修正のサイズ・枚数など) は出さない。`detailExtra`は「詳細」の先頭に足す。
+ */
+export function ParamsFields({
+  form,
+  onChange,
+  recipe,
+  detailExtra,
+}: {
+  form: ImageForm;
+  onChange: Update;
+  recipe: Recipe;
+  detailExtra?: ReactNode;
+}) {
   return (
     <Stack gap="sm">
-      <SizeField form={form} onChange={onChange} />
+      {acceptsInput(recipe, "width") ? <SizeField form={form} onChange={onChange} /> : null}
       <Group align="flex-end" gap="sm">
-        <NumberInput
-          label="枚数"
-          w={100}
-          min={1}
-          max={BATCH_MAX}
-          value={form.batchSize}
-          onChange={(value) => onChange({ batchSize: asNumber(value, form.batchSize) })}
-        />
+        {acceptsInput(recipe, "batch_size") ? (
+          <NumberInput
+            label="枚数"
+            w={100}
+            min={1}
+            max={BATCH_MAX}
+            value={form.batchSize}
+            onChange={(value) => onChange({ batchSize: asNumber(value, form.batchSize) })}
+          />
+        ) : null}
         <Stack gap={4}>
           <Text size="sm" fw={500}>
             seed
@@ -237,7 +264,7 @@ export function ParamsFields({ form, onChange, recipe }: { form: ImageForm; onCh
           />
         ) : null}
       </Group>
-      <DetailFields form={form} onChange={onChange} recipe={recipe} />
+      <DetailFields form={form} onChange={onChange} recipe={recipe} extra={detailExtra} />
     </Stack>
   );
 }

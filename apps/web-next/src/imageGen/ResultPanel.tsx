@@ -1,10 +1,15 @@
 import { Alert, Badge, Button, Card, CloseButton, Group, Loader, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 
+import type { ArtifactRecord } from "../api/client";
 import { STATE_LABELS } from "../jobs/JobDrawer";
 import { ArtifactCard } from "./ArtifactCard";
 import { useJob, useJobImages, type ResultEntry } from "./useImageGen";
 
-type RestoreProps = { onRestore: (jobId: string) => void; restoringJobId: string | null };
+type RestoreProps = {
+  onRestore: (jobId: string) => void;
+  restoringJobId: string | null;
+  onSendToEdit: (artifact: ArtifactRecord) => void;
+};
 
 /** 待機中・実行中の生成のプレースホルダ。完成すると生成物のカードに差し替わる。 */
 function PlaceholderCard({ label, onRestore, restoring }: { label: string; onRestore: () => void; restoring: boolean }) {
@@ -27,7 +32,7 @@ function PlaceholderCard({ label, onRestore, restoring }: { label: string; onRes
   );
 }
 
-function JobResult({ entry, onRemove, onRestore, restoringJobId }: { entry: ResultEntry; onRemove: () => void } & RestoreProps) {
+function JobResult({ entry, onRemove, onRestore, restoringJobId, onSendToEdit }: { entry: ResultEntry; onRemove: () => void } & RestoreProps) {
   const job = useJob(entry.jobId);
   const succeeded = job.data?.state === "succeeded";
   const images = useJobImages(entry.jobId, succeeded);
@@ -71,7 +76,13 @@ function JobResult({ entry, onRemove, onRestore, restoringJobId }: { entry: Resu
       return (
         <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }} spacing="xs">
           {images.data.map((artifact) => (
-            <ArtifactCard key={artifact.id} artifact={artifact} onRestore={restore} restoring={restoring} />
+            <ArtifactCard
+              key={artifact.id}
+              artifact={artifact}
+              onRestore={restore}
+              restoring={restoring}
+              onSendToEdit={onSendToEdit}
+            />
           ))}
         </SimpleGrid>
       );
@@ -112,6 +123,7 @@ export function ResultPanel({
   onRemove,
   onRestore,
   restoringJobId,
+  onSendToEdit,
 }: { entries: ResultEntry[]; onRemove: (jobId: string) => void } & RestoreProps) {
   return (
     <Stack gap="md">
@@ -128,6 +140,7 @@ export function ResultPanel({
           onRemove={() => onRemove(entry.jobId)}
           onRestore={onRestore}
           restoringJobId={restoringJobId}
+          onSendToEdit={onSendToEdit}
         />
       ))}
     </Stack>
