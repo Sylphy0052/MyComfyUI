@@ -113,6 +113,10 @@ function ManifestDetail({
           >
             実行時のWorkflow JSON
           </a>
+          {" / "}
+          <a href={api.artifactDownloadUrl(manifest.workflow_artifact_id)} download>
+            ダウンロード
+          </a>
         </dd>
       </dl>
 

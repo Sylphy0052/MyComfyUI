@@ -947,6 +947,10 @@ export const api = {
   imageReferenceContentUrl: (relativePath: string) =>
     `${apiBaseUrl()}/image-references/content?${new URLSearchParams({ relative_path: relativePath }).toString()}`,
 
+  // ブラウザ内表示ではなくダウンロードさせるURL。
+  artifactDownloadUrl: (artifactId: string) =>
+    `${apiBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}/content?download=true`,
+
   // seq は進捗イベントの preview_seq。更新のたびに URL を変えて取り直させる。
   jobPreviewUrl: (jobId: string, seq: number) =>
     `${apiBaseUrl()}/generation-jobs/${encodeURIComponent(jobId)}/preview?seq=${seq}`,

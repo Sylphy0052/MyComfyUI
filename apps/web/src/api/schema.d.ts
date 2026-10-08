@@ -358,6 +358,8 @@ export interface paths {
          * Get Artifact Content
          * @description Artifactの実ファイルを配信する。候補比較のプレビューに使う。
          *
+         *     既定は`inline`でブラウザ内に表示し、`download=true`のときだけ`attachment`で返す。
+         *
          *     画面へ渡すのは`artifact_id`だけとし、保存先の絶対パスを外へ出さない。パスの解決は
          *     `storage`へ閉じ、`data_root`の外は配信しない。
          */
@@ -5927,7 +5929,9 @@ export interface operations {
     };
     get_artifact_content_api_v1_artifacts__artifact_id__content_get: {
         parameters: {
-            query?: never;
+            query?: {
+                download?: boolean;
+            };
             header?: never;
             path: {
                 artifact_id: string;

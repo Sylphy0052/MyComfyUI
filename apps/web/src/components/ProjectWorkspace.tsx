@@ -670,6 +670,9 @@ export function ProjectWorkspace({
                             <a href={api.artifactContentUrl(artifact.id)} target="_blank" rel="noreferrer">
                               開く
                             </a>
+                            <a href={api.artifactDownloadUrl(artifact.id)} download>
+                              ダウンロード
+                            </a>
                           </li>
                         ))}
                       </ul>

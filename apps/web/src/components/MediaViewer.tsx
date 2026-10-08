@@ -108,6 +108,8 @@ function ViewerMedia({ artifact }: { artifact: MediaViewerItem }) {
   return (
     <p className="media-viewer-empty">
       <a href={url} target="_blank" rel="noreferrer">{mediaLabel(mediaType)}を開く</a>
+      <span className="muted"> / </span>
+      <a href={api.artifactDownloadUrl(artifact.id)} download>ダウンロード</a>
       <span className="muted"> ({mediaType})</span>
     </p>
   );
