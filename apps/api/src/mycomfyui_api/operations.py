@@ -39,6 +39,10 @@ from mycomfyui_api.routers import (
 )
 
 router = APIRouter(prefix="/api/v1/projects", tags=["project-operations"])
+#: WebUI v2の/imageから使う、Project無しでも投入できるスイープのルート。
+experiment_router = APIRouter(
+    prefix="/api/v1/generation-experiments", tags=["generation-experiments"]
+)
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
 MAX_EXPERIMENTS_PER_PROJECT = 200
@@ -48,6 +52,8 @@ MAX_EXPERIMENT_ATTEMPTS = 3
 EXPERIMENT_MUTATION_LOCK = asyncio.Lock()
 EXPERIMENT_PREVIEW_SEMAPHORE = asyncio.Semaphore(2)
 _preview_times: dict[str, float] = {}
+#: Projectを持たない実験の上限とレート制限を数えるキー。Project IDには使えない文字を含む。
+_NO_PROJECT_KEY = "<no-project>"
 
 
 async def _experiment_mutation_guard() -> AsyncIterator[None]:
@@ -490,7 +496,7 @@ def _expand_experiment(
 
 
 def _experiment_job_payload(
-    project_id: str,
+    project_id: str | None,
     request: schemas.GenerationExperimentCreate,
     inputs: dict[str, Any],
 ) -> schemas.GenerationJobCreate:
@@ -503,21 +509,31 @@ def _experiment_job_payload(
         look_profile_ids=request.look_profile_ids,
         inputs=inputs,
         input_refs=request.input_refs,
+        story_character_id=request.story_character_id,
+        story_costume_id=request.story_costume_id,
+        story_scene_id=request.story_scene_id,
     )
 
 
+def _project_scope(column: Any, project_id: str | None) -> Any:
+    """Project無し (NULL) も同じ式で絞る。"""
+    return column.is_(None) if project_id is None else column == project_id
+
+
 async def _preview_experiment(
-    project_id: str,
+    project_id: str | None,
     payload: schemas.GenerationExperimentCreate,
     session: AsyncSession,
     source: Any,
 ) -> schemas.GenerationExperimentPreview:
-    project = await _active_project(session, project_id)
-    await _validate_targets(
-        session,
-        project,
-        [schemas.BatchTarget(scene_id=payload.scene_id, shot_id=payload.shot_id)],
-    )
+    if project_id is not None:
+        project = await _active_project(session, project_id)
+        if payload.scene_id is not None:
+            await _validate_targets(
+                session,
+                project,
+                [schemas.BatchTarget(scene_id=payload.scene_id, shot_id=payload.shot_id)],
+            )
     expanded, duplicates = _expand_experiment(payload)
     items: list[schemas.GenerationExperimentPreviewItem] = []
     for ordinal, (variables, inputs) in enumerate(expanded):
@@ -708,22 +724,39 @@ async def _require_experiment(
 
 
 async def _ensure_experiment_job_capacity(
-    session: AsyncSession, project_id: str, additional: int
+    session: AsyncSession, project_id: str | None, additional: int
 ) -> None:
     if additional <= 0:
         return
-    total = int(
-        await session.scalar(
-            select(func.count(GenerationJob.id)).where(
-                GenerationJob.assigned_project_id == project_id
+    if project_id is None:
+        # Project無しのJobには通常の生成も含まれる。総数の上限には実験が作ったJobだけを数える。
+        total = int(
+            await session.scalar(
+                select(func.count(GenerationExperimentItem.id))
+                .join(
+                    GenerationExperiment,
+                    GenerationExperiment.id == GenerationExperimentItem.experiment_id,
+                )
+                .where(
+                    GenerationExperiment.project_id.is_(None),
+                    GenerationExperimentItem.job_id.is_not(None),
+                )
             )
+            or 0
         )
-        or 0
-    )
+    else:
+        total = int(
+            await session.scalar(
+                select(func.count(GenerationJob.id)).where(
+                    GenerationJob.assigned_project_id == project_id
+                )
+            )
+            or 0
+        )
     active = int(
         await session.scalar(
             select(func.count(GenerationJob.id)).where(
-                GenerationJob.assigned_project_id == project_id,
+                _project_scope(GenerationJob.assigned_project_id, project_id),
                 GenerationJob.state.in_(("queued", "running", "cancelling")),
             )
         )
@@ -755,23 +788,34 @@ async def preview_experiment(
     session: SessionDep,
     source: ReferenceSourceDep,
 ):
-    await _active_project(session, project_id)
+    return await _rate_limited_preview(project_id, payload, session, source)
+
+
+async def _rate_limited_preview(
+    project_id: str | None,
+    payload: schemas.GenerationExperimentCreate,
+    session: AsyncSession,
+    source: Any,
+) -> schemas.GenerationExperimentPreview:
+    if project_id is not None:
+        await _active_project(session, project_id)
+    key = project_id if project_id is not None else _NO_PROJECT_KEY
     now = time.monotonic()
     if len(_preview_times) > 1000:
-        expired = [key for key, value in _preview_times.items() if now - value > 60]
-        for key in expired:
-            _preview_times.pop(key, None)
-    if len(_preview_times) >= 1000 and project_id not in _preview_times:
+        expired = [name for name, value in _preview_times.items() if now - value > 60]
+        for name in expired:
+            _preview_times.pop(name, None)
+    if len(_preview_times) >= 1000 and key not in _preview_times:
         oldest = min(_preview_times, key=_preview_times.get)
         _preview_times.pop(oldest, None)
-    previous = _preview_times.get(project_id, 0.0)
+    previous = _preview_times.get(key, 0.0)
     if now - previous < 1.0:
         raise _error(
             "EXPERIMENT_PREVIEW_RATE_LIMITED",
             "探索previewは1秒以上空けて実行してください。",
             http_status=429,
         )
-    _preview_times[project_id] = now
+    _preview_times[key] = now
     async with EXPERIMENT_PREVIEW_SEMAPHORE:
         return await _preview_experiment(project_id, payload, session, source)
 
@@ -788,11 +832,20 @@ async def create_experiment(
     source: ReferenceSourceDep,
     _guard: ExperimentMutationDep,
 ):
+    return await _create_experiment(project_id, payload, session, source)
+
+
+async def _create_experiment(
+    project_id: str | None,
+    payload: schemas.GenerationExperimentCreate,
+    session: AsyncSession,
+    source: Any,
+) -> schemas.GenerationExperimentRead:
     preview = await _preview_experiment(project_id, payload, session, source)
     await _ensure_experiment_job_capacity(session, project_id, preview.job_count)
     count = await session.scalar(
         select(func.count(GenerationExperiment.id)).where(
-            GenerationExperiment.project_id == project_id
+            _project_scope(GenerationExperiment.project_id, project_id)
         )
     )
     if (count or 0) >= MAX_EXPERIMENTS_PER_PROJECT:
@@ -806,7 +859,7 @@ async def create_experiment(
         id=schemas.new_id(),
         project_id=project_id,
         name=payload.name,
-        request=payload.model_dump(mode="json"),
+        request=payload.model_dump(mode="json", exclude={"project_id"}),
         created_at=now,
         updated_at=now,
     )
@@ -852,6 +905,41 @@ async def create_experiment(
         item.updated_at = schemas.now_iso()
         experiment.updated_at = item.updated_at
         await session.commit()
+    return await _experiment_read(session, experiment)
+
+
+@experiment_router.post(
+    "/preview", response_model=schemas.GenerationExperimentPreview
+)
+async def preview_standalone_experiment(
+    payload: schemas.GenerationExperimentRequest,
+    session: SessionDep,
+    source: ReferenceSourceDep,
+):
+    return await _rate_limited_preview(payload.project_id, payload, session, source)
+
+
+@experiment_router.post(
+    "",
+    response_model=schemas.GenerationExperimentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_standalone_experiment(
+    payload: schemas.GenerationExperimentRequest,
+    session: SessionDep,
+    source: ReferenceSourceDep,
+    _guard: ExperimentMutationDep,
+):
+    return await _create_experiment(payload.project_id, payload, session, source)
+
+
+@experiment_router.get(
+    "/{experiment_id}", response_model=schemas.GenerationExperimentRead
+)
+async def get_standalone_experiment(experiment_id: str, session: SessionDep):
+    experiment = await session.get(GenerationExperiment, experiment_id)
+    if experiment is None:
+        raise _error("EXPERIMENT_NOT_FOUND", "探索実験がありません。", http_status=404)
     return await _experiment_read(session, experiment)
 
 

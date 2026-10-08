@@ -1502,14 +1502,19 @@ class GenerationSweepAxes(ApiModel):
 
 class GenerationExperimentCreate(ApiModel):
     name: str = Field(min_length=1, max_length=120)
-    scene_id: AiMediaId
-    shot_id: AiMediaId
+    #: 旧UIはProjectのSceneとShotを指定する。WebUI v2の/imageは指定しない。
+    scene_id: AiMediaId | None = None
+    shot_id: AiMediaId | None = None
     recipe_id: ResourceId
     look_profile_ids: list[ResourceId] = Field(default_factory=list, max_length=10)
     base_inputs: dict[str, Any] = Field(default_factory=dict, max_length=64)
     input_refs: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
     axes: GenerationSweepAxes
     mode: SweepMode = "cartesian"
+    #: WebUI v2の紐づけ。`GenerationPreviewCreate`と同じ型で、各Jobへ引き継ぐ。
+    story_character_id: ResourceId | None = None
+    story_costume_id: ResourceId | None = None
+    story_scene_id: ResourceId | None = None
 
     @field_validator("name")
     @classmethod
@@ -1521,6 +1526,12 @@ class GenerationExperimentCreate(ApiModel):
 
     @model_validator(mode="after")
     def _validate_shape(self) -> "GenerationExperimentCreate":
+        if self.shot_id is not None and self.scene_id is None:
+            raise ValueError("shot_idを指定する場合はscene_idが必要です。")
+        if self.story_costume_id is not None and self.story_character_id is None:
+            raise ValueError(
+                "story_costume_idを指定する場合はstory_character_idが必要です。"
+            )
         if len(set(self.look_profile_ids)) != len(self.look_profile_ids):
             raise ValueError("look_profile_idsを重複させられません。")
         try:
@@ -1554,6 +1565,18 @@ class GenerationExperimentCreate(ApiModel):
         return self
 
 
+class GenerationExperimentRequest(GenerationExperimentCreate):
+    """Project無しのルート (`/generation-experiments`) の要求。Projectは任意。"""
+
+    project_id: AiMediaId | None = None
+
+    @model_validator(mode="after")
+    def _validate_project(self) -> "GenerationExperimentRequest":
+        if self.scene_id is not None and self.project_id is None:
+            raise ValueError("scene_idを指定する場合はproject_idが必要です。")
+        return self
+
+
 class GenerationExperimentPreviewItem(ApiModel):
     ordinal: int
     variables: dict[str, Any]
@@ -1582,7 +1605,7 @@ class GenerationExperimentItemRead(ApiModel):
 
 class GenerationExperimentRead(ApiModel):
     id: str
-    project_id: str
+    project_id: str | None
     name: str
     state: str
     counts: dict[str, int]

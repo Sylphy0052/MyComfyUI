@@ -40,6 +40,7 @@ from mycomfyui_api.queue import (
 )
 from mycomfyui_api.projects import router as project_router
 from mycomfyui_api.portability import router as portability_router
+from mycomfyui_api.operations import experiment_router
 from mycomfyui_api.operations import router as operations_router
 from mycomfyui_api.references import router as reference_router
 from mycomfyui_api.routers import router
@@ -191,6 +192,7 @@ def create_app() -> FastAPI:
     app.include_router(project_router)
     app.include_router(portability_router)
     app.include_router(operations_router)
+    app.include_router(experiment_router)
     app.include_router(structure_router)
     app.include_router(story_router)
     app.include_router(story_adoption_router)

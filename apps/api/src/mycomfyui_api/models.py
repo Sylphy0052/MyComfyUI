@@ -417,7 +417,7 @@ class GenerationBatchItem(Base):
 
 
 class GenerationExperiment(Base):
-    """同一Scene・Shotで入力軸を展開する探索実験。"""
+    """同一Scene・Shotで入力軸を展開する探索実験。WebUI v2ではProject無しも持つ。"""
 
     __tablename__ = "generation_experiment"
     __table_args__ = (
@@ -425,8 +425,8 @@ class GenerationExperiment(Base):
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
-    project_id: Mapped[str] = mapped_column(
-        String(PROJECT_ID_LENGTH), ForeignKey("project.id"), nullable=False
+    project_id: Mapped[str | None] = mapped_column(
+        String(PROJECT_ID_LENGTH), ForeignKey("project.id"), nullable=True
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     request: Mapped[dict] = mapped_column(JSON, nullable=False)
