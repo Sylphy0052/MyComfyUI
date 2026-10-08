@@ -1,4 +1,4 @@
-import { Alert, Button, Grid, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Alert, Button, Grid, Group, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -20,12 +20,12 @@ import {
   BGM_STORAGE_KEYS,
   restoreBgmFromJob,
   useAdoptedVideoSeconds,
-  useBgmRecipe,
   useBgmResultEntries,
   useStoredBgmInput,
   useSubmitBgmJobs,
   type BgmStorageKeys,
 } from "../bgm/useBgm";
+import { WithBgmRecipe } from "../bgm/WithBgmRecipe";
 import { notifyError } from "../notifications";
 import { useScenes } from "../projectDetail/useStory";
 import { useProjectList } from "../projects/useProjects";
@@ -143,7 +143,7 @@ export function BgmWorkspace({ recipe, target, onTargetChange, storageKeys, from
   // `from_artifact`の設定を取りに行っている間は、入力欄を操作させず投入も止める (戻した値で上書きされるため)。
   const [restoring, setRestoring] = useState(() => fromArtifact !== null);
 
-  // URLの対象を、次に開いたときの復元用に残す。初回の復元を決めるまでは、空の対象で上書きしない。
+  // 対象を変えられる画面 (`/bgm`) だけ、URLの対象を次に開いたときの復元用に残す。初回の復元を決めるまでは、空の対象で上書きしない。
   // 2つのeffectは宣言順に走る順序に依存する。初回は、ここが`initialized`がfalseのため何もせず、
   // 次のeffectが`true`にして復元する。復元でURLが変わると`targetKey`が変わり、ここが保存する。
   // 2つの順序を入れ替えると、初回に空の対象を保存して前回の対象を失う。
@@ -183,6 +183,8 @@ export function BgmWorkspace({ recipe, target, onTargetChange, storageKeys, from
   // Sceneを選んだら、その「BGMの雰囲気」を日本語欄へ入れ、長さを既定値 (採用済み動画の長さか30秒) に戻す。
   // 開いたときのSceneが前回と同じなら、前回の入力をそのまま使う。
   const appliedSceneId = useRef<string | null>(stored.target?.sceneId ?? null);
+  // 対象を固定した画面でリセットしたとき、補完を入れ直すために数える。
+  const [resetCount, setResetCount] = useState(0);
   const sceneId = scene?.id ?? null;
   const sceneMood = scene?.bgm_mood ?? "";
   useEffect(() => {
@@ -193,7 +195,16 @@ export function BgmWorkspace({ recipe, target, onTargetChange, storageKeys, from
     if (sceneId === null || appliedSceneId.current === sceneId) return;
     appliedSceneId.current = sceneId;
     updateForm(sceneMood.trim() === "" ? { seconds: null } : { moodJa: sceneMood, seconds: null });
-  }, [target.sceneId, sceneId, sceneMood, updateForm]);
+  }, [target.sceneId, sceneId, sceneMood, updateForm, resetCount]);
+  // リセットは入力欄を既定に戻す。対象を固定した画面は、Sceneが変わらず補完が走らないので、
+  // 保存した対象を外し「適用済み」も戻して、補完を入れ直す。
+  const onReset = () => {
+    setStored((current) => ({ ...current, form: defaultBgmForm(recipe), ...(fixed ? { target: null } : {}) }));
+    if (fixed) {
+      appliedSceneId.current = null;
+      setResetCount((count) => count + 1);
+    }
+  };
 
   const seconds = form.seconds ?? defaultSeconds(video.data ?? null);
   // 長さが既定のままで採用済みの動画を確認している間は、30秒で投入しないよう待つ。
@@ -220,12 +231,12 @@ export function BgmWorkspace({ recipe, target, onTargetChange, storageKeys, from
     <Grid gap="lg">
       <Grid.Col span={{ base: 12, lg: 5 }}>
         <Stack gap="md" inert={restoring}>
-          <Group justify="space-between">
-            {onTargetChange ? <Title order={2}>BGM</Title> : <span />}
+          <Group justify={onTargetChange ? "space-between" : "flex-end"}>
+            {onTargetChange ? <Title order={2}>BGM</Title> : null}
             <Button
               variant="default"
               size="xs"
-              onClick={() => setStored((current) => ({ ...current, form: defaultBgmForm(recipe) }))}
+              onClick={onReset}
             >
               リセット
             </Button>
@@ -299,30 +310,18 @@ export function BgmWorkspace({ recipe, target, onTargetChange, storageKeys, from
 
 /** `/bgm`。タグ・歌詞・長さの入力欄と、この画面から投入した生成の結果欄。 */
 export function BgmPage() {
-  const recipe = useBgmRecipe();
   const [searchParams, setSearchParams] = useSearchParams();
-  if (recipe.isPending) return <Loader size="sm" />;
-  if (recipe.error) {
-    return (
-      <Alert color="red" title="Recipeを読めません">
-        {recipe.error.message}
-      </Alert>
-    );
-  }
-  if (recipe.data === null) {
-    return (
-      <Alert color="yellow" title="BGM生成のRecipeがありません">
-        ace_step_bgmのRecipeを登録してから開いてください。
-      </Alert>
-    );
-  }
   return (
-    <BgmWorkspace
-      recipe={recipe.data}
-      target={targetFromParams(searchParams)}
-      onTargetChange={(next) => setSearchParams(paramsFromTarget(next), { replace: true })}
-      storageKeys={BGM_STORAGE_KEYS}
-      fromArtifact={searchParams.get(FROM_ARTIFACT_PARAM)}
-    />
+    <WithBgmRecipe>
+      {(recipe) => (
+        <BgmWorkspace
+          recipe={recipe}
+          target={targetFromParams(searchParams)}
+          onTargetChange={(next) => setSearchParams(paramsFromTarget(next), { replace: true })}
+          storageKeys={BGM_STORAGE_KEYS}
+          fromArtifact={searchParams.get(FROM_ARTIFACT_PARAM)}
+        />
+      )}
+    </WithBgmRecipe>
   );
 }
