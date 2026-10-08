@@ -28,28 +28,26 @@ function normalizeSweeps(value: string | undefined): SweepEntry[] {
   }
 }
 
-const SWEEPS_KEY = "web-next:image-sweeps";
-
 /**
  * 結果欄へスイープを足す。投入中に画面を離れると`useSweepEntries`の更新関数は呼べない
  * (unmount後のsetStateは更新関数を実行しない) ため、保存先を直接書いて同じkeyの
  * 購読者へ知らせる。
  */
-function addSweepEntry(entry: SweepEntry) {
+function addSweepEntry(key: string, entry: SweepEntry) {
   try {
-    const current = normalizeSweeps(window.localStorage.getItem(SWEEPS_KEY) ?? undefined);
+    const current = normalizeSweeps(window.localStorage.getItem(key) ?? undefined);
     const next = [entry, ...current.filter((item) => item.experimentId !== entry.experimentId)].slice(0, SWEEPS_MAX);
-    window.localStorage.setItem(SWEEPS_KEY, JSON.stringify(next));
+    window.localStorage.setItem(key, JSON.stringify(next));
     // @mantine/hooksのuseLocalStorageが同じタブの別インスタンスへ値を伝えるevent。
-    window.dispatchEvent(new CustomEvent("mantine-local-storage", { detail: { key: SWEEPS_KEY, value: next } }));
+    window.dispatchEvent(new CustomEvent("mantine-local-storage", { detail: { key, value: next } }));
   } catch {
     // localStorageが使えない環境では結果欄に残せない。投入自体は成功している。
   }
 }
 
-export function useSweepEntries() {
+export function useSweepEntries(key: string) {
   const [entries, setEntries] = useLocalStorage<SweepEntry[]>({
-    key: SWEEPS_KEY,
+    key,
     defaultValue: [],
     getInitialValueInEffect: false,
     deserialize: normalizeSweeps,
@@ -61,13 +59,13 @@ export function useSweepEntries() {
   return { entries, remove };
 }
 
-export function useSubmitSweep() {
+export function useSubmitSweep(key: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (body: GenerationExperimentBody) =>
       apiRequest<GenerationExperiment>("/generation-experiments", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: (experiment) => {
-      addSweepEntry({ experimentId: experiment.id });
+      addSweepEntry(key, { experimentId: experiment.id });
       client.setQueryData(queryKeys.experiment(experiment.id), experiment);
       return client.invalidateQueries({ queryKey: queryKeys.jobs });
     },

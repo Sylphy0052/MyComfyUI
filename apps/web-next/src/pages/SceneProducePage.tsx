@@ -5,6 +5,7 @@ import type { StoryScene } from "../api/client";
 import { useProject } from "../layout/projectContext";
 import { SceneAdoptions } from "../projectDetail/SceneAdoptions";
 import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/useStory";
+import { CharacterStep } from "../sceneProduce/CharacterStep";
 import {
   computeStepStatus,
   FAILED_STATUS,
@@ -145,7 +146,9 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
             <Title order={4}>{stepLabel(step)}</Title>
             {current ? <StatusBadge status={current} /> : <Loader size="xs" />}
           </Group>
-          {step === "video" ? (
+          {step === "character" ? (
+            <CharacterStep key={scene.id} projectId={projectId} scene={scene} />
+          ) : step === "video" ? (
             <VideoStep key={scene.id} projectId={projectId} scene={scene} />
           ) : (
             <Text c="dimmed" size="sm" mt="sm">
