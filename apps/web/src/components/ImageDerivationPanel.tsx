@@ -104,8 +104,9 @@ export function ImageDerivationPanel({
   sourceArtifactIdRef.current = sourceArtifactId;
   // 「変えたい要素」(#523)。選択に合わせてRecipeと参照強度を入れ、値はあとから手で変えられる。
   const [changeOperations, setChangeOperations] = useState<ReadonlySet<ChangeOperation>>(new Set());
-  // Recipeを切り替えると既定値の読込みで参照強度が上書きされるため、要素から決めた値は読込み後に入れる。
-  const pendingReferenceStrengthRef = useRef<number | null>(null);
+  // Recipeを切り替えると既定値の読込みで参照強度が上書きされるため、要素から決めた値は
+  // 切替先のRecipeの既定値を読み込んだあとに入れる。
+  const pendingReferenceStrengthRef = useRef<{ recipeId: string; value: number } | null>(null);
 
   const recipe = useMemo(
     () => recipes.find((item) => item.id === recipeId) ?? null,
@@ -187,12 +188,14 @@ export function ImageDerivationPanel({
       setReferenceStrength(String(defaults.reference_strength));
     }
     const pendingReferenceStrength = pendingReferenceStrengthRef.current;
-    pendingReferenceStrengthRef.current = null;
-    if (pendingReferenceStrength === null) {
+    if (!pendingReferenceStrength || pendingReferenceStrength.recipeId !== recipe?.id) {
       setTouchedFields(new Set());
+      // 手で選び直したときや一覧の再取得で既定値に戻ったときは、要素の選択と値が対応しなくなるので外す。
+      setChangeOperations(new Set());
       return;
     }
-    setReferenceStrength(String(pendingReferenceStrength));
+    pendingReferenceStrengthRef.current = null;
+    setReferenceStrength(String(pendingReferenceStrength.value));
     setTouchedFields(new Set(["reference_strength"]));
   }, [recipe]);
 
@@ -200,16 +203,25 @@ export function ImageDerivationPanel({
     const next = new Set(changeOperations);
     if (next.has(operation)) next.delete(operation);
     else next.add(operation);
-    setChangeOperations(next);
     const plan = planForOperations(next);
-    if (!plan) return;
+    // 全部外したときは、入っているRecipeと参照強度をそのまま残す。
+    if (!plan) {
+      setChangeOperations(next);
+      return;
+    }
     const target = recipes.find((item) => templateName(item) === plan.templateName);
     if (!target) {
+      // 対応するRecipeが無い選択は受け付けず、チェックを元のままにする。
       setError(`Recipe「${CHANGE_TEMPLATE_RECIPE_LABELS[plan.templateName]}」が見つかりません。Workflow管理で登録してください。`);
       return;
     }
+    setError(null);
+    setChangeOperations(next);
+    // 対応先が変わらない選択 (例: ポーズ → ポーズ+表情) では、手で直した参照強度を残す。
+    const previous = planForOperations(changeOperations);
+    if (target.id === recipeId && previous?.referenceStrength === plan.referenceStrength) return;
     if (target.id !== recipeId) {
-      pendingReferenceStrengthRef.current = plan.referenceStrength;
+      pendingReferenceStrengthRef.current = { recipeId: target.id, value: plan.referenceStrength };
       setRecipeId(target.id);
       // AIの案は切替前のRecipe向けに作られているので、開いている差分レビューを閉じる。
       setPromptDiff(null);
@@ -420,8 +432,8 @@ export function ImageDerivationPanel({
           value={recipeId}
           onChange={(event) => {
             setRecipeId(event.target.value);
-            // 手でRecipeを選び直したら、要素の選択とは対応しなくなるので外す。
-            setChangeOperations(new Set());
+            // 要素の選択は、切替後の既定値読込みで外れる。
+            pendingReferenceStrengthRef.current = null;
             // AIの案は切替前のRecipe向けに作られているので、開いている差分レビューを閉じる。
             setPromptDiff(null);
           }}
