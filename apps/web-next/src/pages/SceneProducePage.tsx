@@ -8,6 +8,7 @@ import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/us
 import { BgmStep } from "../sceneProduce/BgmStep";
 import { CharacterStep } from "../sceneProduce/CharacterStep";
 import { ComposeStep } from "../sceneProduce/ComposeStep";
+import { SceneImageStep } from "../sceneProduce/SceneImageStep";
 import {
   computeStepStatus,
   FAILED_STATUS,
@@ -64,6 +65,8 @@ function StepPanel({ step, projectId, scene }: { step: StepId; projectId: string
   switch (step) {
     case "character":
       return <CharacterStep key={scene.id} projectId={projectId} scene={scene} />;
+    case "scene_image":
+      return <SceneImageStep key={scene.id} projectId={projectId} scene={scene} />;
     case "voice":
       return <VoiceStep key={scene.id} projectId={projectId} sceneId={scene.id} />;
     case "bgm":
