@@ -1,6 +1,7 @@
 import { AspectRatio, Badge, Box, Card, Checkbox, Loader, SimpleGrid, Text, UnstyledButton } from "@mantine/core";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { artifactContentUrl } from "../api/client";
 import { MediaThumb } from "../projectDetail/MediaThumb";
 
 export type GridItem = {
@@ -14,6 +15,50 @@ const DECISION_BADGES: Record<string, { label: string; color: string }> = {
   accepted: { label: "採用", color: "teal" },
   rejected: { label: "不採用", color: "red" },
 };
+
+/** 画面外のタイルでも読み込みを始める距離。スクロールしたときに空白が見えにくくする。 */
+const VIDEO_THUMB_ROOT_MARGIN = "200px";
+
+/**
+ * 動画のサムネイル。サーバで画像を作らず、`preload="metadata"`で先頭フレームを出す。
+ * 1ページ分の動画を一度に読みに行かないよう、タイルが画面に近づいてから`src`を付ける。
+ * 読めない動画 (ファイルが無い、未対応の形式) は、画像以外の生成物と同じ代替表示にする。
+ */
+function VideoThumb({ artifactId }: { artifactId: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (element === null || visible) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setVisible(true);
+      },
+      { rootMargin: VIDEO_THUMB_ROOT_MARGIN },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  if (failed) return <MediaThumb mediaKey={null} size="fill" label="video" />;
+  return (
+    <video
+      ref={ref}
+      // 0秒の位置は描画されないことがあるので、少しだけ進めた位置を指す。
+      src={visible ? `${artifactContentUrl(artifactId)}#t=0.1` : undefined}
+      preload="metadata"
+      muted
+      playsInline
+      aria-hidden
+      data-testid="video-thumb"
+      onError={() => setFailed(true)}
+      // MediaThumbの`size="fill"`と同じく、AspectRatioの枠いっぱいに切り抜いて出す。
+      style={{ width: "100%", height: "100%", objectFit: "cover", background: "var(--mantine-color-default-hover)" }}
+    />
+  );
+}
 
 /** 1件のサムネイル。左上のチェックで選び、画像の部分を押すと`onOpen`を呼ぶ。 */
 function Tile({
@@ -42,11 +87,15 @@ function Tile({
     >
       <UnstyledButton onClick={onOpen} aria-label="開く" style={{ display: "block" }}>
         <AspectRatio ratio={1}>
-          <MediaThumb
-            mediaKey={item.kind === "image" ? `artifact:${item.id}` : null}
-            size="fill"
-            label={item.kind === "image" ? undefined : item.kind}
-          />
+          {item.kind === "video" ? (
+            <VideoThumb artifactId={item.id} />
+          ) : (
+            <MediaThumb
+              mediaKey={item.kind === "image" ? `artifact:${item.id}` : null}
+              size="fill"
+              label={item.kind === "image" ? undefined : item.kind}
+            />
+          )}
         </AspectRatio>
       </UnstyledButton>
       <Checkbox

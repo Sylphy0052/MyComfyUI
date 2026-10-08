@@ -12,10 +12,10 @@ import {
   useApplyLinks,
   useBatchOperation,
   useRejectedArtifactIds,
-  useViewerImages,
+  useViewerMediaItems,
   type SelectedArtifact,
 } from "./useViewer";
-import { mediaItemsQuery, NO_LINKS, type StoryLinks, type ViewerFilters } from "./viewerFilters";
+import { mediaItemsQuery, NO_LINKS, type MediaTabSpec, type StoryLinks, type ViewerFilters } from "./viewerFilters";
 
 function toSelected(item: MediaItem): SelectedArtifact {
   return { id: item.artifact_id as string, projectId: item.assigned_project_id ?? null };
@@ -87,16 +87,18 @@ function BulkLinkModal({
 /** 今のフィルタに合う不採用だけをゴミ箱へ移す。開いたときに対象を数え直し、件数を確かめてから移す。 */
 function TrashRejectedModal({
   opened,
+  spec,
   filters,
   onClose,
 }: {
   opened: boolean;
+  spec: MediaTabSpec;
   filters: ViewerFilters;
   onClose: () => void;
 }) {
   // 採否で「採用」「未判定」に絞っているときは、合う不採用は無い。
   const excluded = filters.decision !== null && filters.decision !== "rejected";
-  const rejected = useRejectedArtifactIds(mediaItemsQuery(filters, { decision: "rejected" }), opened && !excluded);
+  const rejected = useRejectedArtifactIds(mediaItemsQuery(spec, filters, { decision: "rejected" }), opened && !excluded);
   const trash = useBatchOperation();
   const ids = excluded ? [] : (rejected.data ?? []);
   const submit = () =>
@@ -139,9 +141,17 @@ function TrashRejectedModal({
   );
 }
 
-/** 画像タブ。フィルタが変わったら選択も含めて作り直す (呼び出し側で`key`を変える)。 */
-export function ImageTab({ filters, onOpen }: { filters: ViewerFilters; onOpen: (artifactId: string) => void }) {
-  const list = useViewerImages(mediaItemsQuery(filters));
+/** 一覧のタブ (画像・動画)。種別は`spec`で決まる。フィルタが変わったら選択も含めて作り直す (呼び出し側で`key`を変える)。 */
+export function MediaTab({
+  spec,
+  filters,
+  onOpen,
+}: {
+  spec: MediaTabSpec;
+  filters: ViewerFilters;
+  onOpen: (artifactId: string) => void;
+}) {
+  const list = useViewerMediaItems(mediaItemsQuery(spec, filters));
   const [linkOpened, setLinkOpened] = useState(false);
   const [trashRejectedOpened, setTrashRejectedOpened] = useState(false);
   const trash = useBatchOperation();
@@ -207,7 +217,7 @@ export function ImageTab({ filters, onOpen }: { filters: ViewerFilters; onOpen: 
           hasNextPage={list.hasNextPage}
           isFetchingNextPage={list.isFetchingNextPage}
           onLoadMore={() => void list.fetchNextPage()}
-          empty={<Text c="dimmed">条件に合う画像はありません</Text>}
+          empty={<Text c="dimmed">{spec.emptyText}</Text>}
         />
       ) : null}
       {/* 開くたびに選択欄を空から始めるため、閉じている間は中身を作らない。 */}
@@ -225,6 +235,7 @@ export function ImageTab({ filters, onOpen }: { filters: ViewerFilters; onOpen: 
       ) : null}
       <TrashRejectedModal
         opened={trashRejectedOpened}
+        spec={spec}
         filters={filters}
         onClose={() => setTrashRejectedOpened(false)}
       />

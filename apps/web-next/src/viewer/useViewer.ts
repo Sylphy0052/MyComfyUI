@@ -106,11 +106,11 @@ function useInvalidateArtifacts() {
 
 // ---- 一覧 ----
 
-/** 画像タブの一覧。`query`は`mediaItemsQuery`で作った絞り込み。 */
-export function useViewerImages(query: URLSearchParams) {
+/** 一覧のタブ (画像・動画) の一覧。`query`は`mediaItemsQuery`で作った絞り込み。 */
+export function useViewerMediaItems(query: URLSearchParams) {
   const key = query.toString();
   return useInfiniteQuery({
-    queryKey: queryKeys.viewerImages(key),
+    queryKey: queryKeys.viewerMediaItems(key),
     queryFn: ({ pageParam }) =>
       apiRequest<MediaItem[]>(
         `/media-items?${new URLSearchParams([...query, ["limit", String(PAGE_SIZE)], ["offset", String(pageParam)]])}`,
