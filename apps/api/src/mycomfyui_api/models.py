@@ -1063,3 +1063,34 @@ class StorySceneAdoption(Base):
     )
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class GenerationJobFollowup(Base):
+    """親Jobが終端になったあとに自動で投入する後続Jobの予約 (#581)。
+
+    `payload`は後続Jobの`GenerationJobCreate`相当で、`parent_job_id`と親の生成物を指す
+    入力は含めない。親が終端になった時点でworkerが組み立てて投入する。
+    """
+
+    __tablename__ = "generation_job_followup"
+    __table_args__ = (
+        CheckConstraint(
+            "state in ('pending','submitted','skipped','failed')",
+            name="ck_generation_job_followup_state",
+        ),
+        Index("ix_generation_job_followup_parent", "parent_job_id"),
+        Index("ix_generation_job_followup_state", "state"),
+    )
+
+    id: Mapped[str] = _uuid_column(primary_key=True)
+    parent_job_id: Mapped[str] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=False
+    )
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(Text, nullable=False)
+    child_job_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH), ForeignKey("generation_job.id"), nullable=True
+    )
+    failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False)

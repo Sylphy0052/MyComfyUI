@@ -32,6 +32,8 @@ from mycomfyui_api.errors import (
 )
 from mycomfyui_api.events import router as event_router
 from mycomfyui_api.image_imports import MAX_IMAGE_BYTES as MAX_EXTERNAL_IMAGE_BYTES
+from mycomfyui_api.job_followups import dispatch_pending_followups
+from mycomfyui_api.job_followups import router as job_followup_router
 from mycomfyui_api.migrator import upgrade_to_head
 from mycomfyui_api.queue import (
     JobQueueWorker,
@@ -91,7 +93,17 @@ async def lifespan(app: FastAPI):
         app.state.setting_overrides = await app_settings.load_overrides(session)
     # Executorはengineごとにレジストリから引く。キューは全Jobで1本のまま、
     # 画像Jobと音声Jobが同じGPU直列キューへ積まれる。
-    worker = JobQueueWorker(session_factory, ExecutorRegistry(session_factory))
+    # 親Jobが終端になった後続Jobの予約は、ループ1周ごとに拾って投入する (#581)。
+    async def dispatch_followups() -> None:
+        await dispatch_pending_followups(
+            session_factory, lambda: app.state.reference_source
+        )
+
+    worker = JobQueueWorker(
+        session_factory,
+        ExecutorRegistry(session_factory),
+        after_tick=dispatch_followups,
+    )
     worker.start()
     app.state.queue_worker = worker
     app.state.reference_source = None
@@ -188,6 +200,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(SQLAlchemyError, storage_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
     app.include_router(router)
+    app.include_router(job_followup_router)
     app.include_router(project_router)
     app.include_router(portability_router)
     app.include_router(operations_router)

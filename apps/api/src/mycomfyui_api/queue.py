@@ -6,6 +6,7 @@ Backend実行本体は`JobExecutor` Protocolで差し込む。既定の実装は
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -108,8 +109,11 @@ class JobQueueWorker:
         executor: JobExecutor,
         *,
         poll_interval: float = POLL_INTERVAL_SECONDS,
+        after_tick: Callable[[], Awaitable[object]] | None = None,
     ) -> None:
         self._session_factory = session_factory
+        # ループ1周ごとに呼ぶ後処理 (後続Jobの投入など)。例外はログに出すだけで止めない。
+        self._after_tick = after_tick
         self._executor = executor
         self._poll_interval = poll_interval
         self._cancel_events: dict[str, asyncio.Event] = {}
@@ -144,8 +148,17 @@ class JobQueueWorker:
                 logger.exception("キュー処理ループで予期しない例外が発生しました。")
                 processed = False
                 self._consecutive_errors += 1
+            await self._run_after_tick()
             if not processed:
                 await asyncio.sleep(self._next_delay())
+
+    async def _run_after_tick(self) -> None:
+        if self._after_tick is None:
+            return
+        try:
+            await self._after_tick()
+        except Exception:
+            logger.exception("キューの後処理で例外が発生しました。")
 
     def _next_delay(self) -> float:
         """連続失敗時は指数バックオフし、ログ洪水と過剰ポーリングを避ける。"""
