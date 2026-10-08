@@ -34,9 +34,15 @@ export function selectedOutfitPrompt(
   return outfits.find((outfit) => outfit.id === outfitId)?.prompt ?? "";
 }
 
-/** プロンプトへ連結する前に改行 (CR/LF/VT/FF/NEL/LS/PS) を空白1つへ畳む (Issue #498, #510)。 */
+/**
+ * プロンプトへ連結する前に改行 (CR/LF/VT/FF/NEL/LS/PS) を空白1つへ畳む (Issue #498, #510)。
+ * 改行・タブ以外の制御文字 (Cc) は保存側で拒否していないため、ここで取り除く (Issue #515)。
+ */
 export function foldLineBreaks(text: string): string {
-  return text.replace(/\s*[\r\n\v\f\u0085\u2028\u2029]+\s*/g, " ").trim();
+  return text
+    .replace(/[\u0000-\u0008\u000e-\u001f\u007f-\u0084\u0086-\u009f]/g, "")
+    .replace(/\s*[\r\n\v\f\u0085\u2028\u2029]+\s*/g, " ")
+    .trim();
 }
 
 /** キャラクター工程のプロンプトを組む。ローカル定義が無いキャラクターは名前だけ使う。 */
