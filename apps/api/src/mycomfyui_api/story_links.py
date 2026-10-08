@@ -22,6 +22,7 @@ from mycomfyui_api.models import (
     StoryCostume,
     StoryScene,
     StorySceneAdoption,
+    StorySceneDialogue,
 )
 
 #: BGMを作るWorkflowテンプレート名。音声とBGMの判定はこの定数と
@@ -104,8 +105,12 @@ async def validate_story_links(
     costume_id: str | None,
     scene_id: str | None,
     project_id: str | None = None,
+    dialogue_id: str | None = None,
 ) -> None:
     """紐づけ先が存在し、互いに矛盾しないことを確かめる。
+
+    台詞(`dialogue_id`)はシーンの台詞に限り、`scene_id`も渡すときはそのシーンの台詞に
+    限る。
 
     衣装はキャラクターのものに限る。キャラクターとシーンは同じProjectに属し、
     `project_id`を渡したときはそのProjectとも一致させる。ゴミ箱のProjectへは紐づけない。
@@ -151,6 +156,22 @@ async def validate_story_links(
                 "紐づけ先のシーンがありません。",
                 {"story_scene_id": scene_id},
             )
+    if dialogue_id is not None:
+        dialogue = await session.get(StorySceneDialogue, dialogue_id)
+        if dialogue is None:
+            raise _unprocessable(
+                "STORY_DIALOGUE_NOT_FOUND",
+                "紐づけ先の台詞がありません。",
+                {"story_dialogue_id": dialogue_id},
+            )
+        if scene_id is not None and dialogue.scene_id != scene_id:
+            raise _unprocessable(
+                "STORY_DIALOGUE_SCENE_MISMATCH",
+                "台詞は紐づけるシーンのものだけを指定できます。",
+                {"story_scene_id": scene_id, "story_dialogue_id": dialogue_id},
+            )
+        if scene is None:
+            scene = await session.get(StoryScene, dialogue.scene_id)
     project_ids = {
         owner
         for owner in (

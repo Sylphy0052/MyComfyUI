@@ -1343,9 +1343,13 @@ class GenerationPreviewCreate(ApiModel):
     story_character_id: ResourceId | None = None
     story_costume_id: ResourceId | None = None
     story_scene_id: ResourceId | None = None
+    #: 音声Jobだけが指定できる、シーンの台詞1行 (`StorySceneDialogue.id`)。
+    story_dialogue_id: ResourceId | None = None
 
     @model_validator(mode="after")
     def _validate_context(self) -> "GenerationPreviewCreate":
+        if self.story_dialogue_id is not None and self.kind != "voice":
+            raise ValueError("story_dialogue_idを指定できるのは音声Jobだけです。")
         if self.story_costume_id is not None and self.story_character_id is None:
             raise ValueError(
                 "story_costume_idを指定する場合はstory_character_idが必要です。"
@@ -1637,6 +1641,7 @@ class GenerationJobRead(ApiModel):
     story_character_id: str | None = None
     story_costume_id: str | None = None
     story_scene_id: str | None = None
+    story_dialogue_id: str | None = None
 
 
 class GenerationManifestRead(ApiModel):

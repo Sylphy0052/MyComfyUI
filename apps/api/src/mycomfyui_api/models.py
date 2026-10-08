@@ -359,6 +359,12 @@ class GenerationJob(Base):
         ForeignKey("story_scene.id", ondelete="SET NULL", name="fk_generation_job_story_scene"),
         nullable=True,
     )
+    # 台詞1行の音声Jobが、どの台詞の行かを記録する (#573)。参照先を消すとNULLへ戻る。
+    story_dialogue_id: Mapped[str | None] = mapped_column(
+        String(UUID_LENGTH),
+        ForeignKey("story_scene_dialogue.id", ondelete="SET NULL", name="fk_generation_job_story_dialogue"),
+        nullable=True,
+    )
     recipe_id: Mapped[str] = mapped_column(
         String(UUID_LENGTH), ForeignKey("recipe.id"), nullable=False
     )

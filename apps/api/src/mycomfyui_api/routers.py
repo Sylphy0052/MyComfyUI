@@ -6,7 +6,7 @@ import json
 import logging
 import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar, get_args
@@ -40,6 +40,7 @@ from mycomfyui_api import (
     schemas,
     storage,
     story_links,
+    story_voice,
 )
 from mycomfyui_api import workflows as workflow_registry
 from mycomfyui_api.adapters import tag_preflight
@@ -729,6 +730,7 @@ async def _validate_story_links_of(
         costume_id=payload.story_costume_id,
         scene_id=payload.story_scene_id,
         project_id=payload.project_id,
+        dialogue_id=payload.story_dialogue_id,
     )
 
 
@@ -1442,7 +1444,11 @@ async def _prepare_execution(
         artifact_lookup=_ArtifactLookup(session),
     )
     try:
-        return await prepare_execution(recipe, payload.inputs, context)
+        inputs, exempt = await story_voice.resolve_character_voice(
+            session, payload, payload.inputs, recipe.defaults
+        )
+        context = replace(context, canon_exempt_voice_ids=exempt)
+        return await prepare_execution(recipe, inputs, context)
     except PreparationError as error:
         raise _validation_error(error.message, error.details) from error
 
@@ -1527,6 +1533,7 @@ def _build_job_records(
         story_character_id=payload.story_character_id,
         story_costume_id=payload.story_costume_id,
         story_scene_id=payload.story_scene_id,
+        story_dialogue_id=payload.story_dialogue_id,
         recipe_id=payload.recipe_id,
         manifest_id=manifest_id,
         parent_job_id=_resolve_parent_job_id(payload, prepared),
