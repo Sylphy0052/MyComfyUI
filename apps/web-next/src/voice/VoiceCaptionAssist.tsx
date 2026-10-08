@@ -1,11 +1,15 @@
 import { Button, SimpleGrid, Stack, Text } from "@mantine/core";
 
-import type { VoiceCaptionAssist } from "../api/client";
+import type { VoiceCaptionAssist, VoiceCaptionAssistBody } from "../api/client";
 import { AssistResultFrame } from "../promptAssist/AssistResultFrame";
 import { INSTRUCTION_MAX, useInstructionAssist } from "../promptAssist/useInstructionAssist";
 
+/** `instruction`に添えて送る項目 (話者のキャラ)。 */
+type VoiceCaptionAssistExtra = Omit<VoiceCaptionAssistBody, "instruction">;
+
 /**
- * 話者のキャラの性格・設定と演技指示から、声質の文章 (caption) の案を作る。結果は今のcaptionと並べて出し、「適用」でcaption欄を置き換える。
+ * 話者のキャラの性格・設定と演技指示から、声質の文章 (caption) の案を作る。
+ * 結果は今のcaptionと並べて出し、「適用」でcaption欄を置き換える。
  * 依頼した後で演技指示か話者のキャラが変わった結果は適用させない。失敗してもcaption欄は変えない。
  */
 export function VoiceCaptionAssistField({
@@ -22,7 +26,7 @@ export function VoiceCaptionAssistField({
   caption: string;
   onApply: (caption: string) => void;
 }) {
-  const assist = useInstructionAssist<VoiceCaptionAssist>(
+  const assist = useInstructionAssist<VoiceCaptionAssist, VoiceCaptionAssistExtra>(
     "/voice-caption-assists",
     "声質の文章への変換に失敗しました",
     direction,

@@ -17,7 +17,7 @@ export function AssistResultFrame({
   testId: string;
   title: string;
   stale: boolean;
-  /** 古い結果に出す文。日本語欄以外の依頼項目も見る変換 (声質の文章) で差し替える。 */
+  /** 古い結果に出す文。既定は日本語欄だけを見る変換向けで、日本語欄以外の依頼項目も見る変換 (声質の文章) では差し替える。 */
   staleMessage?: string;
   /** 適用しても意味のない結果 (空) のとき。古さとは別に「適用」を止める。 */
   applyDisabled?: boolean;

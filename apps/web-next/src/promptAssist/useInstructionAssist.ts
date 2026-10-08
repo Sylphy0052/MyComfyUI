@@ -1,26 +1,26 @@
 import { useRef, useState } from "react";
 
+import type { MediaPromptAssistBody } from "../api/client";
 import { usePromptAssist } from "../imageGen/usePromptAssist";
 
 /** `MediaPromptAssistCreate.instruction`の上限。 */
 export const INSTRUCTION_MAX = 2000;
 
-/** `basis`は依頼した時点の日本語欄の値 (trim済み) と`extra`をまとめた文字列。 */
+/** `basis`は依頼した時点の`[trimmed, extra]`をJSON化した文字列。 */
 type Pending<Result> = { result: Result; basis: string };
 
 /**
  * 日本語欄の値だけを要求に送る変換 (`/video-prompt-assists`・`/music-prompt-assists`)。
  * 結果は`pending`に持ち、依頼した後で日本語欄が変わったら`stale`にして適用させない。
  * `extra`は`instruction`に添えて送る項目 (`/voice-caption-assists`の`story_character_id`など)。
- * 日本語欄と同じく、依頼した後で変わったら`stale`にする。動画とBGMは渡さない。
+ * 日本語欄と同じく、依頼した後で変わったら`stale`にする。`Extra`は要求本文から`instruction`を
+ * 除いた型で、既定は動画とBGMの要求 (`MediaPromptAssistBody`) の残りの項目。
  */
-export function useInstructionAssist<Result>(
-  path: string,
-  failureTitle: string,
-  instruction: string,
-  extra?: Record<string, unknown>,
-) {
-  const assist = usePromptAssist<Record<string, unknown>, Result>(path, failureTitle);
+export function useInstructionAssist<
+  Result,
+  Extra extends Record<string, unknown> = Omit<MediaPromptAssistBody, "instruction">,
+>(path: string, failureTitle: string, instruction: string, extra?: Extra) {
+  const assist = usePromptAssist<{ instruction: string } & Extra, Result>(path, failureTitle);
   const [pending, setPending] = useState<Pending<Result> | null>(null);
   const trimmed = instruction.trim();
   const tooLong = trimmed.length > INSTRUCTION_MAX;
@@ -32,7 +32,8 @@ export function useInstructionAssist<Result>(
     const basis = basisNow;
     const mine = ++generation.current;
     assist.mutate(
-      { instruction: trimmed, ...extra },
+      // `extra`が`instruction`を上書きしないよう、`instruction`を後ろに置く。
+      { ...extra, instruction: trimmed } as { instruction: string } & Extra,
       {
         onSuccess: (result) => {
           if (generation.current === mine) setPending({ result, basis });
