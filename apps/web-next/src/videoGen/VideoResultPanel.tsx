@@ -1,9 +1,58 @@
-import { Alert, Badge, Card, CloseButton, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Card, CloseButton, Group, Loader, Stack, Text, Title } from "@mantine/core";
 
-import { artifactContentUrl, type GenerationJobFollowup } from "../api/client";
-import { useJob, useJobImages } from "../imageGen/useImageGen";
+import { artifactContentUrl, type ArtifactRecord, type GenerationJobFollowup } from "../api/client";
+import { useJob, useJobImages, type SceneDecision } from "../imageGen/useImageGen";
 import { STATE_LABELS } from "../jobs/JobDrawer";
-import { useFollowup, useJobVideos, type VideoResultEntry } from "./useVideoGen";
+import { notifyError } from "../notifications";
+import { useSceneAdoptions } from "../projectDetail/useStory";
+import { useFollowup, useJobVideos, useVideoDecision, type VideoResultEntry } from "./useVideoGen";
+
+/** Sceneを指定して作った動画の、video枠への採用と不採用の印。 */
+function VideoDecisionButtons({
+  artifact,
+  projectId,
+  sceneId,
+}: {
+  artifact: ArtifactRecord;
+  projectId: string;
+  sceneId: string;
+}) {
+  const adoptions = useSceneAdoptions(projectId, sceneId);
+  const decide = useVideoDecision(projectId, sceneId);
+  const adopted = adoptions.data?.some((item) => item.slot === "video" && item.artifact_id === artifact.id) ?? false;
+  const rejected = artifact.decision === "rejected";
+  const run = (action: SceneDecision) =>
+    decide.mutate({ artifact, action, adopted }, { onError: (error) => notifyError("採否を変えられませんでした", error) });
+  // 採用一覧を読めないと採用中かどうかが分からず、採用中のものを「採用」と誤表示して操作させてしまう。
+  const busy = decide.isPending || adoptions.isPending || adoptions.isError;
+  return (
+    <Group gap={4} data-testid="video-decision">
+      <Button
+        size="compact-xs"
+        variant={adopted ? "filled" : "light"}
+        color="green"
+        disabled={busy}
+        onClick={() => run(adopted ? "release" : "adopt")}
+      >
+        {adopted ? "採用を外す" : "採用"}
+      </Button>
+      <Button
+        size="compact-xs"
+        variant={rejected ? "filled" : "light"}
+        color="red"
+        disabled={busy}
+        onClick={() => run(rejected ? "unreject" : "reject")}
+      >
+        {rejected ? "不採用を外す" : "不採用"}
+      </Button>
+      {adoptions.isError ? (
+        <Text size="xs" c="red" data-testid="adoptions-error">
+          採用の状況を取得できません: {adoptions.error.message}
+        </Text>
+      ) : null}
+    </Group>
+  );
+}
 
 /** 待機中・実行中の生成のプレースホルダ。完成すると動画のプレーヤーに差し替わる。 */
 function PlaceholderCard({ label }: { label: string }) {
@@ -54,15 +103,28 @@ function VideoResult({ entry, onRemove }: { entry: VideoResultEntry; onRemove?: 
       return (
         <Stack gap="xs">
           {videos.data.map((artifact) => (
-            <video
-              key={artifact.id}
-              controls
-              preload="metadata"
-              src={artifactContentUrl(artifact.id)}
-              style={{ width: "100%", maxHeight: 360 }}
-              data-testid="result-video"
-              data-artifact-id={artifact.id}
-            />
+            <Stack key={artifact.id} gap={4}>
+              <video
+                controls
+                preload="metadata"
+                src={artifactContentUrl(artifact.id)}
+                style={{ width: "100%", maxHeight: 360 }}
+                data-testid="result-video"
+                data-artifact-id={artifact.id}
+              />
+              {artifact.decision !== "undecided" ? (
+                <Badge size="xs" color={artifact.decision === "accepted" ? "green" : "red"} w="fit-content">
+                  {artifact.decision === "accepted" ? "採用" : "不採用"}
+                </Badge>
+              ) : null}
+              {artifact.assigned_project_id && artifact.story_scene_id ? (
+                <VideoDecisionButtons
+                  artifact={artifact}
+                  projectId={artifact.assigned_project_id}
+                  sceneId={artifact.story_scene_id}
+                />
+              ) : null}
+            </Stack>
           ))}
         </Stack>
       );
