@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router";
 
 import { AppLayout } from "./layout/AppLayout";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 
 export const router = createBrowserRouter([
@@ -11,7 +12,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/projects" replace /> },
       { path: "projects", Component: ProjectsPage },
-      { path: "projects/:projectId", element: <PlaceholderPage title="Project" /> },
+      { path: "projects/:projectId", Component: ProjectDetailPage },
       { path: "image", element: <PlaceholderPage title="画像" /> },
       { path: "video", element: <PlaceholderPage title="動画" /> },
       { path: "voice", element: <PlaceholderPage title="音声" /> },
