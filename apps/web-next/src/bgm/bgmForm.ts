@@ -7,6 +7,19 @@ export const BGM_TEMPLATE = "ace_step_bgm";
 /** Sceneに採用済みの動画が無いときの長さ (秒)。 */
 export const DEFAULT_SECONDS = 30;
 export const SECONDS_MAX = 600;
+/**
+ * `steps` / `cfg`の欄の範囲。backendは`steps`を1以上の整数、`cfg`を0より大きい数としか見ないため、
+ * 上限は画面側の誤入力除け。画像の欄 (`imageGen/ParamsFields.tsx`) と同じ値にしてある。
+ * `STEPS_MAX`はbackendの`sampling_steps`の範囲 (1〜1000、`workflow.py`) とも揃う。
+ */
+export const STEPS_MAX = 1_000;
+export const CFG_MIN = 0.1;
+export const CFG_MAX = 100;
+
+/** Recipeの既定値が読めないときの`steps` / `cfg`。`ace_step_bgm`の`MUSIC_DEFAULTS` (`bootstrap.py`) の値。 */
+const FALLBACK_STEPS = 50;
+const FALLBACK_CFG = 5;
+
 /** 1回の投入で分けるJobの数の上限。 */
 export const COUNT_MAX = 8;
 /** 固定seedで枚数を増やすと`seed + 0..枚数-1`をJobごとに使うため、その分を空けておく。 */
@@ -65,8 +78,8 @@ export function defaultBgmForm(recipe: Recipe): BgmForm {
     seedMode: seed < 0 ? "random" : "fixed",
     seed: seed < 0 ? 0 : seed,
     ckptName: stringOr(d.ckpt_name, ""),
-    steps: numberOr(d.steps, 50),
-    cfg: numberOr(d.cfg, 5),
+    steps: numberOr(d.steps, FALLBACK_STEPS),
+    cfg: numberOr(d.cfg, FALLBACK_CFG),
     samplerName: stringOr(d.sampler_name, ""),
     scheduler: stringOr(d.scheduler, ""),
   };
@@ -117,9 +130,9 @@ export function composeBgmTags(form: BgmForm): string {
   return tags.join(", ");
 }
 
-/** 長さの既定値。Sceneに採用済みの動画があればその長さ、無ければ30秒。 */
+/** 長さの既定値。Sceneに採用済みの動画があればその長さ、無ければ30秒。長さの欄の上限 (`SECONDS_MAX`) を超える動画は上限に丸める。 */
 export function defaultSeconds(videoSeconds: number | null): number {
-  return videoSeconds ?? DEFAULT_SECONDS;
+  return Math.min(videoSeconds ?? DEFAULT_SECONDS, SECONDS_MAX);
 }
 
 /** 動画のManifestから長さ (秒) を出す。`length / fps`を小数1桁に丸める。読めなければ`null`。 */
@@ -130,15 +143,21 @@ export function videoSecondsOf(manifest: GenerationManifest): number | null {
   return seconds > 0 ? seconds : null;
 }
 
+/** 空文字のまま送る変数。空にして既定値を打ち消せる。 */
+const EMPTY_ALLOWED: ReadonlySet<string> = new Set(["negative_prompt", "lyrics"]);
+
 /**
  * `POST /generation-jobs`の`inputs`。枚数ぶんのJobに分けるため、`index`番目のJobの本文を作る。
  * seedが固定のときは`seed + index`にして、Jobごとに別の曲になるようにする。
- * 空の文字列の変数は送らず、Recipeの既定値に任せる。
+ * 空の文字列は、`negative_prompt`と`lyrics`以外の変数では送らず、Recipeの既定値に任せる。
+ * `negative_prompt`と`lyrics`は空でも送る。backendは`inputs`をRecipeの既定値の上に重ねるため
+ * (`prepare.py`の`{**defaults, **inputs}`)、送らないと利用者が空にしても既定値が効いてしまう。
  */
 export function buildBgmInputs(form: BgmForm, seconds: number, index: number, recipe: Recipe): Record<string, unknown> {
   const values: Record<string, unknown> = {
     positive_prompt: composeBgmTags(form),
     negative_prompt: form.negative.trim(),
+    // 空白と改行だけの歌詞は空とみなす (`composeBgmTags`が`instrumental`を補う条件と同じ)。
     lyrics: form.lyrics.trim() === "" ? "" : form.lyrics,
     seconds,
     seed: form.seedMode === "random" ? AUTO_SEED : form.seed + index,
@@ -149,6 +168,8 @@ export function buildBgmInputs(form: BgmForm, seconds: number, index: number, re
     scheduler: form.scheduler,
   };
   return Object.fromEntries(
-    Object.entries(values).filter(([name, value]) => value !== "" && acceptsInput(recipe, name)),
+    Object.entries(values).filter(
+      ([name, value]) => (value !== "" || EMPTY_ALLOWED.has(name)) && acceptsInput(recipe, name),
+    ),
   );
 }
