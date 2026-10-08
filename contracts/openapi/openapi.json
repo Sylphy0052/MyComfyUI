@@ -2800,6 +2800,70 @@
         "title": "GenerationJobCreate",
         "type": "object"
       },
+      "GenerationJobFollowupRead": {
+        "additionalProperties": false,
+        "properties": {
+          "child_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Child Job Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_job_id": {
+            "title": "Parent Job Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "submitted",
+              "skipped",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "parent_job_id",
+          "child_job_id",
+          "state",
+          "failure_message",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GenerationJobFollowupRead",
+        "type": "object"
+      },
       "GenerationJobRead": {
         "additionalProperties": false,
         "properties": {
@@ -7226,6 +7290,41 @@
           }
         },
         "title": "ProjectUpdate",
+        "type": "object"
+      },
+      "PromptOnlyVideoJobCreate": {
+        "additionalProperties": false,
+        "description": "「プロンプトだけ」の動画生成。画像Jobと、その生成物を開始フレームにするi2v Jobを1回で受ける。\n\n2段目 (`video`) は1段目が成功した後にサーバ側で投入する。開始フレームと親Jobは\nサーバが決めるため、呼び出し元は指定できない。",
+        "properties": {
+          "image": {
+            "$ref": "#/components/schemas/GenerationJobCreate"
+          },
+          "video": {
+            "$ref": "#/components/schemas/GenerationJobCreate"
+          }
+        },
+        "required": [
+          "image",
+          "video"
+        ],
+        "title": "PromptOnlyVideoJobCreate",
+        "type": "object"
+      },
+      "PromptOnlyVideoJobRead": {
+        "additionalProperties": false,
+        "properties": {
+          "followup": {
+            "$ref": "#/components/schemas/GenerationJobFollowupRead"
+          },
+          "image_job": {
+            "$ref": "#/components/schemas/GenerationJobRead"
+          }
+        },
+        "required": [
+          "image_job",
+          "followup"
+        ],
+        "title": "PromptOnlyVideoJobRead",
         "type": "object"
       },
       "PromptTagCheckRead": {
@@ -12420,6 +12519,45 @@
         "tags": [
           "generation-experiments"
         ]
+      }
+    },
+    "/api/v1/generation-job-followups/{followup_id}": {
+      "get": {
+        "operationId": "get_generation_job_followup_api_v1_generation_job_followups__followup_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "followup_id",
+            "required": true,
+            "schema": {
+              "title": "Followup Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationJobFollowupRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Generation Job Followup"
       }
     },
     "/api/v1/generation-jobs": {
@@ -18366,6 +18504,45 @@
         "tags": [
           "projects"
         ]
+      }
+    },
+    "/api/v1/prompt-only-video-jobs": {
+      "post": {
+        "description": "画像Jobを投入し、成功後にそのまま開始フレームにするi2v Jobを予約する。\n\n2段目は画像Jobが成功した後、workerのsweepがサーバ側で投入する。1段目が失敗・中止\nされた場合は2段目を投入しない。2段目の紐づけ先とRecipeは、1段目を投入する前に\n確かめる。",
+        "operationId": "create_prompt_only_video_job_api_v1_prompt_only_video_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptOnlyVideoJobCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptOnlyVideoJobRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Prompt Only Video Job"
       }
     },
     "/api/v1/recipes": {
