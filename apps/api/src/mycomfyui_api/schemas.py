@@ -384,6 +384,7 @@ class ProjectReferenceImage(ApiModel):
 ReferenceSlotKey = Literal["full_body"]
 
 # #493で廃止した枠。保存済みのlocal_overridesに残っていても読み込みで落とさず、捨てる。
+# 枠キーとして再利用しない。
 RETIRED_REFERENCE_SLOT_KEYS = frozenset(
     {"face_closed", "face_open", "face_angle", "bust", "pose", "background"}
 )
@@ -407,6 +408,7 @@ class ProjectReferenceSet(ApiModel):
     @field_validator("slots", mode="before")
     @classmethod
     def _drop_retired_slots(cls, value: Any) -> Any:
+        # 廃止した枠は捨てる。次に保存すると保存済みデータからも消える。
         if not isinstance(value, dict):
             return value
         return {key: slot for key, slot in value.items() if key not in RETIRED_REFERENCE_SLOT_KEYS}
