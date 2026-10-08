@@ -34,12 +34,12 @@ export function selectedOutfitPrompt(
   return outfits.find((outfit) => outfit.id === outfitId)?.prompt ?? "";
 }
 
-/** キャラクター工程のプロンプトを組む。ローカル定義が無いキャラクターは名前だけ使う。 */
 /** プロンプトへ連結する前に改行を空白1つへ畳む (Issue #498)。 */
 export function foldLineBreaks(text: string): string {
   return text.replace(/\s*[\r\n\u2028\u2029]+\s*/g, " ").trim();
 }
 
+/** キャラクター工程のプロンプトを組む。ローカル定義が無いキャラクターは名前だけ使う。 */
 export function characterPrompt(
   items: readonly NamedItem[],
   characters: readonly ProjectCharacterProfile[],
