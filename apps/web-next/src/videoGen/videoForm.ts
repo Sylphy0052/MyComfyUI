@@ -25,6 +25,10 @@ export const MIN_FRAMES = 124;
 export const MAX_FRAMES = 362;
 
 const FALLBACK_FPS = 24;
+/** Recipeに既定値が無いときの出力サイズとsteps。 */
+const FALLBACK_WIDTH = 864;
+const FALLBACK_HEIGHT = 480;
+const FALLBACK_STEPS = 20;
 /** backendの`AUTO_SEED`。投入時に乱数へ置き換わる。 */
 const AUTO_SEED = -1;
 /** backendの`MAX_SEED` (2**53-1) に合わせる。 */
@@ -114,15 +118,24 @@ export function videoImageFromSource(source: SourceImage): VideoImage {
   return videoImage(source.ref, source.label, false);
 }
 
+/** 参照画像を足した結果と、入れなかった枚数。`duplicated`は同じ画像が既にあった分、`overflow`は上限を超えた分。 */
+export type MergedReferences = { references: VideoImage[]; duplicated: number; overflow: number };
+
 /** 参照画像を足す。同じ画像は重ねず、上限を超えた分は入れない。 */
-export function addReferences(current: readonly VideoImage[], added: readonly VideoImage[]): VideoImage[] {
-  const result = [...current];
+export function mergeReferences(current: readonly VideoImage[], added: readonly VideoImage[]): MergedReferences {
+  const references = [...current];
+  let duplicated = 0;
+  let overflow = 0;
   for (const item of added) {
-    if (result.length >= REFERENCES_MAX) break;
-    if (result.some((existing) => refKeyOf(existing.ref) === refKeyOf(item.ref))) continue;
-    result.push(item);
+    if (references.some((existing) => refKeyOf(existing.ref) === refKeyOf(item.ref))) duplicated += 1;
+    else if (references.length >= REFERENCES_MAX) overflow += 1;
+    else references.push(item);
   }
-  return result;
+  return { references, duplicated, overflow };
+}
+
+export function addReferences(current: readonly VideoImage[], added: readonly VideoImage[]): VideoImage[] {
+  return mergeReferences(current, added).references;
 }
 
 // ---- 既定値と保存 ----
@@ -145,12 +158,12 @@ export function defaultParams(recipe: Recipe | null): VideoParams {
   const fps = numberOr(d.fps, FALLBACK_FPS);
   const seed = numberOr(d.seed, AUTO_SEED);
   return {
-    width: numberOr(d.width, 864),
-    height: numberOr(d.height, 480),
+    width: numberOr(d.width, FALLBACK_WIDTH),
+    height: numberOr(d.height, FALLBACK_HEIGHT),
     seconds: round1(numberOr(d.length, MIN_FRAMES) / fps),
     seedMode: seed < 0 ? "random" : "fixed",
     seed: seed < 0 ? 0 : seed,
-    steps: numberOr(d.steps, 20),
+    steps: numberOr(d.steps, FALLBACK_STEPS),
     samplerName: stringOr(d.sampler_name, ""),
     schedulerName: stringOr(d.scheduler, ""),
     fps,
