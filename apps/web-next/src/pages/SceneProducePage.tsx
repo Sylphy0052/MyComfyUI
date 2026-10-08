@@ -6,6 +6,7 @@ import { useProject } from "../layout/projectContext";
 import { SceneAdoptions } from "../projectDetail/SceneAdoptions";
 import { useCharacters, useSceneAdoptions, useScenes } from "../projectDetail/useStory";
 import { CharacterStep } from "../sceneProduce/CharacterStep";
+import { SceneImageStep } from "../sceneProduce/SceneImageStep";
 import {
   computeStepStatus,
   FAILED_STATUS,
@@ -148,6 +149,8 @@ function ProduceBody({ projectId, scene }: { projectId: string; scene: StoryScen
           </Group>
           {step === "character" ? (
             <CharacterStep key={scene.id} projectId={projectId} scene={scene} />
+          ) : step === "scene_image" ? (
+            <SceneImageStep key={scene.id} projectId={projectId} scene={scene} />
           ) : step === "video" ? (
             <VideoStep key={scene.id} projectId={projectId} scene={scene} />
           ) : (
