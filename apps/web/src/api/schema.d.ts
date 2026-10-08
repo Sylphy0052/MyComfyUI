@@ -344,7 +344,15 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Artifact Links
+         * @description 生成物のv2紐づけ(キャラクター・衣装・シーン)とメモを更新する。
+         *
+         *     渡した項目だけ変え、`null`を渡すと外す。紐づけ先は更新後の組み合わせで検証する
+         *     (衣装はそのキャラクターのもの、キャラクターとシーンは同じProject)。
+         *     旧UIの`assigned_*`と採否は変えない。
+         */
+        patch: operations["update_artifact_links_api_v1_artifacts__artifact_id__patch"];
         trace?: never;
     };
     "/api/v1/artifacts/{artifact_id}/content": {
@@ -1007,6 +1015,11 @@ export interface paths {
         /**
          * List Media Items
          * @description 生成物・登録素材・外部取込・人物参照を1つの一覧で探す(Issue #148 受入基準3)。
+         *
+         *     v2向けに、紐づけ(`story_character_id`・`story_costume_id`・`story_scene_id`)、
+         *     採否(`decision`)、作成日時の期間(`from`・`to`、ISO 8601)、音声の種類
+         *     (`audio_class`=`voice`|`bgm`、JobのRecipeで決まる)でも絞れる。これらは
+         *     Artifactにだけある項目のため、どれかを指定すると入力cacheと人物参照は返さない。
          *
          *     Artifact由来の3系統(生成物・外部取込・登録素材)に加え、役割タグを付けた入力
          *     cacheファイル(`registered_input`)、Projectのキャラクター参照画像
@@ -1984,6 +1997,54 @@ export interface paths {
         patch: operations["update_story_scene_api_v1_projects__project_id__story_scenes__scene_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/story-scenes/{scene_id}/adoptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Story Scene Adoptions
+         * @description シーンの採用を一覧する。枠ごとに1件(`voice`は台詞ごとに1件)。
+         */
+        get: operations["list_story_scene_adoptions_api_v1_projects__project_id__story_scenes__scene_id__adoptions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-scenes/{scene_id}/adoptions/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Adopt Story Scene Artifact
+         * @description 枠へ生成物を採用する。その枠の前の採用は置き換わり、前の生成物は外れる。
+         *
+         *     同じ生成物を再度指定しても何も変わらない。採用した生成物の採否は`accepted`になる。
+         */
+        put: operations["adopt_story_scene_artifact_api_v1_projects__project_id__story_scenes__scene_id__adoptions__slot__put"];
+        post?: never;
+        /**
+         * Release Story Scene Adoption
+         * @description 枠の採用を外す。外れた生成物は他の枠で採用されていなければ`undecided`へ戻る。
+         *
+         *     採用が無い枠でも204を返す。
+         */
+        delete: operations["release_story_scene_adoption_api_v1_projects__project_id__story_scenes__scene_id__adoptions__slot__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/sync": {
         parameters: {
             query?: never;
@@ -2792,6 +2853,23 @@ export interface components {
             truncated: boolean;
         };
         /**
+         * ArtifactLinkUpdate
+         * @description 生成物のv2紐づけとメモの更新。渡した項目だけ変え、`null`で外す。
+         *
+         *     メモは空白だけなら外す扱いにする。衣装を紐づけるにはキャラクターが必要で、
+         *     衣装はそのキャラクターのものに限る。
+         */
+        ArtifactLinkUpdate: {
+            /** Memo */
+            memo?: string | null;
+            /** Story Character Id */
+            story_character_id?: string | null;
+            /** Story Costume Id */
+            story_costume_id?: string | null;
+            /** Story Scene Id */
+            story_scene_id?: string | null;
+        };
+        /**
          * ArtifactPurgePreview
          * @description 完全削除の影響。DBもファイルも変更せずに数える。
          *
@@ -2887,12 +2965,20 @@ export interface components {
             kind: string;
             /** Media Type */
             media_type: string;
+            /** Memo */
+            memo?: string | null;
             /** Parent Artifact Id */
             parent_artifact_id: string | null;
             /** Relative Path */
             relative_path: string;
             /** Sha256 */
             sha256: string;
+            /** Story Character Id */
+            story_character_id?: string | null;
+            /** Story Costume Id */
+            story_costume_id?: string | null;
+            /** Story Scene Id */
+            story_scene_id?: string | null;
             /** Tags */
             tags?: string[];
         };
@@ -3318,6 +3404,12 @@ export interface components {
             scene_id?: string | null;
             /** Shot Id */
             shot_id?: string | null;
+            /** Story Character Id */
+            story_character_id?: string | null;
+            /** Story Costume Id */
+            story_costume_id?: string | null;
+            /** Story Scene Id */
+            story_scene_id?: string | null;
             /**
              * Use Inherited Defaults
              * @default false
@@ -3368,6 +3460,12 @@ export interface components {
             started_at: string | null;
             /** State */
             state: string;
+            /** Story Character Id */
+            story_character_id?: string | null;
+            /** Story Costume Id */
+            story_costume_id?: string | null;
+            /** Story Scene Id */
+            story_scene_id?: string | null;
         };
         /** GenerationManifestRead */
         GenerationManifestRead: {
@@ -3435,6 +3533,12 @@ export interface components {
             scene_id?: string | null;
             /** Shot Id */
             shot_id?: string | null;
+            /** Story Character Id */
+            story_character_id?: string | null;
+            /** Story Costume Id */
+            story_costume_id?: string | null;
+            /** Story Scene Id */
+            story_scene_id?: string | null;
             /**
              * Use Inherited Defaults
              * @default false
@@ -3858,12 +3962,16 @@ export interface components {
             assigned_scene_id?: string | null;
             /** Assigned Shot Id */
             assigned_shot_id?: string | null;
+            /** Audio Class */
+            audio_class?: ("voice" | "bgm") | null;
             /** Byte Size */
             byte_size: number;
             /** Character Ids */
             character_ids?: string[];
             /** Created At */
             created_at: string;
+            /** Decision */
+            decision?: ("undecided" | "accepted" | "rejected") | null;
             /** Key */
             key: string;
             /** Kind */
@@ -3872,6 +3980,8 @@ export interface components {
             label?: string | null;
             /** Media Type */
             media_type: string;
+            /** Memo */
+            memo?: string | null;
             /** Reference Transcript */
             reference_transcript?: string | null;
             /** Relative Path */
@@ -3885,6 +3995,12 @@ export interface components {
              * @enum {string}
              */
             source: "generated" | "external_import" | "registered" | "registered_input" | "character_reference";
+            /** Story Character Id */
+            story_character_id?: string | null;
+            /** Story Costume Id */
+            story_costume_id?: string | null;
+            /** Story Scene Id */
+            story_scene_id?: string | null;
         };
         /**
          * MediaPromptAssistCreate
@@ -5123,6 +5239,36 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /**
+         * StorySceneAdoptionPut
+         * @description 枠へ生成物を採用する要求。`voice`枠は台詞(`dialogue_id`)の指定が必須。
+         */
+        StorySceneAdoptionPut: {
+            /** Artifact Id */
+            artifact_id: string;
+            /** Dialogue Id */
+            dialogue_id?: string | null;
+        };
+        /** StorySceneAdoptionRead */
+        StorySceneAdoptionRead: {
+            /** Artifact Id */
+            artifact_id: string;
+            /** Created At */
+            created_at: string;
+            /** Dialogue Id */
+            dialogue_id: string | null;
+            /** Id */
+            id: string;
+            /** Scene Id */
+            scene_id: string;
+            /**
+             * Slot
+             * @enum {string}
+             */
+            slot: "scene_image" | "voice" | "bgm" | "video" | "compose";
+            /** Updated At */
+            updated_at: string;
+        };
         /** StorySceneCastEntry */
         StorySceneCastEntry: {
             /** Character Id */
@@ -5184,6 +5330,8 @@ export interface components {
              * @default
              */
             direction: string;
+            /** Id */
+            id?: string | null;
             /** Speaker Character Id */
             speaker_character_id: string;
             /** Text */
@@ -6350,6 +6498,41 @@ export interface operations {
             };
         };
     };
+    update_artifact_links_api_v1_artifacts__artifact_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactLinkUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_artifact_content_api_v1_artifacts__artifact_id__content_get: {
         parameters: {
             query?: {
@@ -7401,6 +7584,13 @@ export interface operations {
                 role?: ("appearance_reference" | "pose" | "background" | "costume" | "voice_reference" | "guide_audio" | "other") | null;
                 character_id?: string | null;
                 exclude_kind?: ("image" | "video" | "audio" | "workflow" | "log")[] | null;
+                story_character_id?: string | null;
+                story_costume_id?: string | null;
+                story_scene_id?: string | null;
+                decision?: ("undecided" | "accepted" | "rejected") | null;
+                audio_class?: ("voice" | "bgm") | null;
+                from?: string | null;
+                to?: string | null;
                 limit?: number;
                 offset?: number;
             };
@@ -9900,6 +10090,108 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["StorySceneRead"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_story_scene_adoptions_api_v1_projects__project_id__story_scenes__scene_id__adoptions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySceneAdoptionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adopt_story_scene_artifact_api_v1_projects__project_id__story_scenes__scene_id__adoptions__slot__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+                slot: "scene_image" | "voice" | "bgm" | "video" | "compose";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorySceneAdoptionPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySceneAdoptionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_story_scene_adoption_api_v1_projects__project_id__story_scenes__scene_id__adoptions__slot__delete: {
+        parameters: {
+            query?: {
+                dialogue_id?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+                slot: "scene_image" | "voice" | "bgm" | "video" | "compose";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
