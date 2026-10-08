@@ -1,7 +1,7 @@
 import type { ArtifactDecision } from "../api/client";
 
-/** 一覧を出すタブ。音声・BGMは#577で足す。 */
-export type MediaTabId = "image" | "video";
+/** 一覧を出すタブ。 */
+export type MediaTabId = "image" | "video" | "voice" | "bgm";
 
 /** タブ。一覧のタブ (`MediaTabId`) とゴミ箱。 */
 export type ViewerTab = MediaTabId | "trash";
@@ -17,6 +17,8 @@ export type MediaTabSpec = {
 export const MEDIA_TABS: Record<MediaTabId, MediaTabSpec> = {
   image: { kind: "image", emptyText: "条件に合う画像はありません" },
   video: { kind: "video", emptyText: "条件に合う動画はありません" },
+  voice: { kind: "audio", audioClass: "voice", emptyText: "条件に合う音声はありません" },
+  bgm: { kind: "audio", audioClass: "bgm", emptyText: "条件に合うBGMはありません" },
 };
 
 /** 紐づけ先。Project → Scene → キャラ → 衣装の順に絞り込む。フィルタと付け替えで共用する。 */
@@ -49,7 +51,7 @@ function dateParam(params: URLSearchParams, name: string): string | null {
 /** `tab=`を読む。読めない値は画像タブにする。 */
 export function readTab(params: URLSearchParams): ViewerTab {
   const tab = params.get("tab");
-  return tab === "trash" || tab === "video" ? tab : "image";
+  return tab === "trash" || tab === "video" || tab === "voice" || tab === "bgm" ? tab : "image";
 }
 
 /** URLのフィルタを読む。読めない値は指定なしとして扱う。 */

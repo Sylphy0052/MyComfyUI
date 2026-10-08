@@ -117,7 +117,7 @@ function Tile({
 }
 
 /** 一覧の末尾。画面に入ったら次のページを読む。 */
-function LoadMoreSentinel({
+export function LoadMoreSentinel({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,

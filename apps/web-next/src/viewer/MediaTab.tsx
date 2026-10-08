@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { MediaItem } from "../api/client";
 import { LinkSelects } from "./LinkSelects";
+import { AudioList } from "./AudioList";
 import { MediaGrid, type GridItem } from "./MediaGrid";
 import { useSelection } from "./useSelection";
 import {
@@ -141,7 +142,7 @@ function TrashRejectedModal({
   );
 }
 
-/** 一覧のタブ (画像・動画)。種別は`spec`で決まる。フィルタが変わったら選択も含めて作り直す (呼び出し側で`key`を変える)。 */
+/** 一覧のタブ (画像・動画・音声・BGM)。種別は`spec`で決まる。フィルタが変わったら選択も含めて作り直す (呼び出し側で`key`を変える)。 */
 export function MediaTab({
   spec,
   filters,
@@ -208,7 +209,20 @@ export function MediaTab({
       </Paper>
       {list.isPending ? <Loader size="sm" /> : null}
       {list.error ? <Alert color="red" title="生成物を取得できません">{list.error.message}</Alert> : null}
-      {list.data ? (
+      {list.data && spec.kind === "audio" ? (
+        <AudioList
+          items={items}
+          showCharacters={spec.audioClass === "voice"}
+          selected={selected}
+          onToggle={selection.toggle}
+          onOpen={onOpen}
+          hasNextPage={list.hasNextPage}
+          isFetchingNextPage={list.isFetchingNextPage}
+          onLoadMore={() => void list.fetchNextPage()}
+          empty={<Text c="dimmed">{spec.emptyText}</Text>}
+        />
+      ) : null}
+      {list.data && spec.kind !== "audio" ? (
         <MediaGrid
           items={items.map(toGridItem)}
           selected={selected}
