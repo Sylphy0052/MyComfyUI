@@ -1450,6 +1450,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Characters */
+        get: operations["list_characters_api_v1_projects__project_id__characters_get"];
+        put?: never;
+        /** Create Character */
+        post: operations["create_character_api_v1_projects__project_id__characters_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/characters/{character_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Character */
+        get: operations["get_character_api_v1_projects__project_id__characters__character_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Character */
+        delete: operations["delete_character_api_v1_projects__project_id__characters__character_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Character */
+        patch: operations["update_character_api_v1_projects__project_id__characters__character_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/characters/{character_id}/costumes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Costume */
+        post: operations["create_costume_api_v1_projects__project_id__characters__character_id__costumes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/characters/{character_id}/costumes/{costume_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Costume */
+        get: operations["get_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Costume */
+        delete: operations["delete_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Costume */
+        patch: operations["update_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__patch"];
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/deletion-impact": {
         parameters: {
             query?: never;
@@ -1585,6 +1658,31 @@ export interface paths {
         put: operations["update_local_overrides_api_v1_projects__project_id__local_overrides_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/permanent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Purge Project
+         * @description ゴミ箱にあるProjectの定義を完全に削除する。
+         *
+         *     消すのはProject・キャラクター・衣装・シーン (旧Scene・Shotを含む) と一括生成・
+         *     探索実験の計画だけである。生成物 (Artifact・Job・素材タグ) は消さず、Projectと
+         *     Sceneへの紐づけを外して「Project無し」の状態で残す。取り消せないため`confirm=true`
+         *     を必須とする。
+         */
+        delete: operations["purge_project_api_v1_projects__project_id__permanent_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1824,6 +1922,66 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-scenes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Story Scenes */
+        get: operations["list_story_scenes_api_v1_projects__project_id__story_scenes_get"];
+        put?: never;
+        /** Create Story Scene */
+        post: operations["create_story_scene_api_v1_projects__project_id__story_scenes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-scenes/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reorder Story Scenes
+         * @description シーンの並び順を置き換える。現在のシーンIDを過不足なく並べて渡す。
+         */
+        post: operations["reorder_story_scenes_api_v1_projects__project_id__story_scenes_reorder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-scenes/{scene_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Story Scene */
+        get: operations["get_story_scene_api_v1_projects__project_id__story_scenes__scene_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Story Scene
+         * @description シーンの定義を消す。このシーンに紐づいた生成物は消さず、紐づけだけ外す。
+         */
+        delete: operations["delete_story_scene_api_v1_projects__project_id__story_scenes__scene_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Story Scene */
+        patch: operations["update_story_scene_api_v1_projects__project_id__story_scenes__scene_id__patch"];
         trace?: never;
     };
     "/api/v1/projects/{project_id}/sync": {
@@ -4306,6 +4464,34 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /**
+         * ProjectPurgeResult
+         * @description Projectの完全削除で消した定義と、紐づけを外した生成物の件数。
+         */
+        ProjectPurgeResult: {
+            /** Batch Count */
+            batch_count: number;
+            /** Character Count */
+            character_count: number;
+            /** Costume Count */
+            costume_count: number;
+            /** Detached Artifact Count */
+            detached_artifact_count: number;
+            /** Detached Job Count */
+            detached_job_count: number;
+            /** Detached Media Role Tag Count */
+            detached_media_role_tag_count: number;
+            /** Experiment Count */
+            experiment_count: number;
+            /** Legacy Scene Count */
+            legacy_scene_count: number;
+            /** Legacy Shot Count */
+            legacy_shot_count: number;
+            /** Project Id */
+            project_id: string;
+            /** Story Scene Count */
+            story_scene_count: number;
+        };
         /** ProjectRead */
         ProjectRead: {
             /** Archived At */
@@ -4822,6 +5008,243 @@ export interface components {
             processing_seconds: number;
             /** Succeeded */
             succeeded: number;
+        };
+        /** StoryCharacterCreate */
+        StoryCharacterCreate: {
+            /** Fixed Tags */
+            fixed_tags?: string[];
+            /** Name */
+            name: string;
+            /** Negative Tags */
+            negative_tags?: string[];
+            /** Portrait Media Key */
+            portrait_media_key?: string | null;
+            /**
+             * Profile
+             * @default
+             */
+            profile: string;
+            /** Voice Media Key */
+            voice_media_key?: string | null;
+            /** Voice Transcript */
+            voice_transcript?: string | null;
+        };
+        /** StoryCharacterRead */
+        StoryCharacterRead: {
+            /** Costumes */
+            costumes: components["schemas"]["StoryCostumeRead"][];
+            /** Created At */
+            created_at: string;
+            /** Fixed Tags */
+            fixed_tags: string[];
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Negative Tags */
+            negative_tags: string[];
+            /** Portrait Media Key */
+            portrait_media_key: string | null;
+            /** Profile */
+            profile: string;
+            /** Project Id */
+            project_id: string;
+            /** Updated At */
+            updated_at: string;
+            /** Voice Media Key */
+            voice_media_key: string | null;
+            /** Voice Transcript */
+            voice_transcript: string | null;
+        };
+        /** StoryCharacterUpdate */
+        StoryCharacterUpdate: {
+            /** Fixed Tags */
+            fixed_tags?: string[] | null;
+            /** Name */
+            name?: string | null;
+            /** Negative Tags */
+            negative_tags?: string[] | null;
+            /** Portrait Media Key */
+            portrait_media_key?: string | null;
+            /** Profile */
+            profile?: string | null;
+            /** Voice Media Key */
+            voice_media_key?: string | null;
+            /** Voice Transcript */
+            voice_transcript?: string | null;
+        };
+        /** StoryCostumeCreate */
+        StoryCostumeCreate: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+            /** Negative Tags */
+            negative_tags?: string[];
+            /** Reference Images */
+            reference_images?: string[];
+            /** Tags */
+            tags?: string[];
+        };
+        /** StoryCostumeRead */
+        StoryCostumeRead: {
+            /** Character Id */
+            character_id: string;
+            /** Created At */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Negative Tags */
+            negative_tags: string[];
+            /** Reference Images */
+            reference_images: string[];
+            /** Tags */
+            tags: string[];
+            /** Updated At */
+            updated_at: string;
+        };
+        /** StoryCostumeUpdate */
+        StoryCostumeUpdate: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Negative Tags */
+            negative_tags?: string[] | null;
+            /** Reference Images */
+            reference_images?: string[] | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
+        /** StorySceneCastEntry */
+        StorySceneCastEntry: {
+            /** Character Id */
+            character_id: string;
+            /** Costume Id */
+            costume_id?: string | null;
+            /** Expression Tags */
+            expression_tags?: string[];
+            /**
+             * Expression Text
+             * @default
+             */
+            expression_text: string;
+            /** Pose Tags */
+            pose_tags?: string[];
+            /**
+             * Pose Text
+             * @default
+             */
+            pose_text: string;
+        };
+        /** StorySceneCreate */
+        StorySceneCreate: {
+            /** Background Tags */
+            background_tags?: string[];
+            /**
+             * Background Text
+             * @default
+             */
+            background_text: string;
+            /**
+             * Bgm Mood
+             * @default
+             */
+            bgm_mood: string;
+            /** Cast */
+            cast?: components["schemas"]["StorySceneCastEntry"][];
+            /** Dialogues */
+            dialogues?: components["schemas"]["StorySceneDialogueEntry"][];
+            /** Name */
+            name: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Time Of Day */
+            time_of_day?: ("morning" | "day" | "sunset" | "night") | null;
+            /**
+             * Video Motion
+             * @default
+             */
+            video_motion: string;
+        };
+        /** StorySceneDialogueEntry */
+        StorySceneDialogueEntry: {
+            /**
+             * Direction
+             * @default
+             */
+            direction: string;
+            /** Speaker Character Id */
+            speaker_character_id: string;
+            /** Text */
+            text: string;
+        };
+        /** StorySceneRead */
+        StorySceneRead: {
+            /** Background Tags */
+            background_tags: string[];
+            /** Background Text */
+            background_text: string;
+            /** Bgm Mood */
+            bgm_mood: string;
+            /** Cast */
+            cast: components["schemas"]["StorySceneCastEntry"][];
+            /** Created At */
+            created_at: string;
+            /** Dialogues */
+            dialogues: components["schemas"]["StorySceneDialogueEntry"][];
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Parent Scene Id */
+            parent_scene_id: string | null;
+            /** Project Id */
+            project_id: string;
+            /** Sequence */
+            sequence: number;
+            /** Summary */
+            summary: string;
+            /** Time Of Day */
+            time_of_day: ("morning" | "day" | "sunset" | "night") | null;
+            /** Updated At */
+            updated_at: string;
+            /** Video Motion */
+            video_motion: string;
+        };
+        /**
+         * StorySceneUpdate
+         * @description 指定した項目だけ更新する。`cast`と`dialogues`は渡した配列で置き換える。
+         */
+        StorySceneUpdate: {
+            /** Background Tags */
+            background_tags?: string[] | null;
+            /** Background Text */
+            background_text?: string | null;
+            /** Bgm Mood */
+            bgm_mood?: string | null;
+            /** Cast */
+            cast?: components["schemas"]["StorySceneCastEntry"][] | null;
+            /** Dialogues */
+            dialogues?: components["schemas"]["StorySceneDialogueEntry"][] | null;
+            /** Name */
+            name?: string | null;
+            /** Summary */
+            summary?: string | null;
+            /** Time Of Day */
+            time_of_day?: ("morning" | "day" | "sunset" | "night") | null;
+            /** Video Motion */
+            video_motion?: string | null;
         };
         /** StructureDeletionImpact */
         StructureDeletionImpact: {
@@ -7912,6 +8335,307 @@ export interface operations {
             };
         };
     };
+    list_characters_api_v1_projects__project_id__characters_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryCharacterRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_character_api_v1_projects__project_id__characters_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoryCharacterCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryCharacterRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_character_api_v1_projects__project_id__characters__character_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryCharacterRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_character_api_v1_projects__project_id__characters__character_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_character_api_v1_projects__project_id__characters__character_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoryCharacterUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryCharacterRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_costume_api_v1_projects__project_id__characters__character_id__costumes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoryCostumeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryCostumeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                character_id: string;
+                costume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryCostumeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                character_id: string;
+                costume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_costume_api_v1_projects__project_id__characters__character_id__costumes__costume_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                character_id: string;
+                costume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoryCostumeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryCostumeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_deletion_impact_api_v1_projects__project_id__deletion_impact_get: {
         parameters: {
             query?: never;
@@ -8294,6 +9018,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectLocalOverrides"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_project_api_v1_projects__project_id__permanent_delete: {
+        parameters: {
+            query?: {
+                confirm?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectPurgeResult"];
                 };
             };
             /** @description Validation Error */
@@ -8943,6 +9700,205 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectStatistics"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_story_scenes_api_v1_projects__project_id__story_scenes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySceneRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_story_scene_api_v1_projects__project_id__story_scenes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorySceneCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySceneRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_story_scenes_api_v1_projects__project_id__story_scenes_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StructureReorder"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySceneRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_story_scene_api_v1_projects__project_id__story_scenes__scene_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySceneRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_story_scene_api_v1_projects__project_id__story_scenes__scene_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_story_scene_api_v1_projects__project_id__story_scenes__scene_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorySceneUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorySceneRead"];
                 };
             };
             /** @description Validation Error */
