@@ -137,7 +137,9 @@ async def resolve_character_voice(
     補うのは、音声Jobで`story_character_id`があり、参照もcaptionも無いvoiceだけ。
     `voices`自体が無いときは、台詞が参照するvoice_idごとに補う。台詞はShotを指定した
     ときそのShot本文 (`shot_data`)、指定しないときは`inputs`の`dialogue`から取る。補う対象が
-    あるのにキャラクターに声が無ければ`PreparationError`とする。`persist=False`
+    あるのにキャラクターに声が無ければ`PreparationError`とする。補う対象が2件以上あるときは、
+    1人の声を複数の話者へ当てることになるため`PreparationError` (`reason=ambiguous_voice`)
+    とし、`voices`で話者ごとに指定させる。`persist=False`
     (プレビュー) では、Artifactの音声を入力cacheへ書かない。
     """
     if payload.kind != "voice" or payload.story_character_id is None:
@@ -159,6 +161,12 @@ async def resolve_character_voice(
     targets = [voice_id for voice_id, raw in voices.items() if _needs_voice(raw)]
     if not targets:
         return inputs, frozenset()
+    if len(targets) > 1:
+        raise PreparationError(
+            "台詞の話者が複数あるため、キャラクターの声で補えません。"
+            "voicesで話者ごとに声を指定してください。",
+            {"voice_ids": [str(v) for v in targets], "reason": "ambiguous_voice"},
+        )
     character = await session.get(StoryCharacter, payload.story_character_id)
     if character is None:
         raise PreparationError(
