@@ -10,6 +10,7 @@ import {
   defaultBgmForm,
   defaultSeconds,
   DEFAULT_SECONDS,
+  SECONDS_MAX,
   type BgmForm,
   type BgmTarget,
 } from "../bgm/bgmForm";
@@ -53,10 +54,13 @@ function initialTarget(fromUrl: BgmTarget, stored: BgmTarget | null): BgmTarget 
   return fromUrl.sceneId === null && fromUrl.projectId === stored.projectId ? stored : null;
 }
 
-/** 一覧に無いID (ゴミ箱のProjectなど) も選択中の値として出せるよう、候補へ足す。 */
-function withCurrent(options: { value: string; label: string }[], current: string | null) {
+/**
+ * 一覧に無いID (ゴミ箱のProjectなど) も選択中の値として出せるよう、候補へ足す。
+ * 一覧の取得に失敗したときは「見つかりません」とは言えないため、IDだけを出す。
+ */
+function withCurrent(options: { value: string; label: string }[], current: string | null, loadFailed: boolean) {
   if (current === null || options.some((option) => option.value === current)) return options;
-  return [...options, { value: current, label: `(見つかりません) ${current}` }];
+  return [...options, { value: current, label: loadFailed ? current : `(見つかりません) ${current}` }];
 }
 
 /** 長さの既定値の出どころを、長さ欄の下に添える。 */
@@ -68,6 +72,7 @@ function secondsNote(
   if (video.isLoading) return "採用済みの動画を確認中";
   if (video.error) return `採用済みの動画の長さを読めないため、既定は${DEFAULT_SECONDS}秒`;
   if (video.data == null) return `採用済みの動画が無いため、既定は${DEFAULT_SECONDS}秒`;
+  if (video.data > SECONDS_MAX) return `採用済みの動画の長さ (${video.data}秒) が上限を超えるため、既定は${SECONDS_MAX}秒`;
   return `Sceneの採用済み動画の長さ (${video.data}秒) が既定`;
 }
 
@@ -93,7 +98,9 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
     target.projectId !== null &&
     projects.data !== undefined &&
     !projects.data.some((item) => item.id === target.projectId);
-  const missing = storyLoading
+  // 一覧を取得できなかったときは、あるかどうかが分からない。「見つかりません」と誤案内せず、取得失敗として投入を止める。
+  const loadError = target.projectId === null ? null : (projects.error ?? scenes.error ?? null);
+  const missing = storyLoading || loadError !== null
     ? []
     : [projectMissing ? "Project" : null, target.sceneId !== null && scene === null ? "Scene" : null].filter(
         (name): name is string => name !== null,
@@ -110,6 +117,9 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
   );
 
   // URLの対象を、次に開いたときの復元用に残す。初回の復元を決めるまでは、空の対象で上書きしない。
+  // 2つのeffectは宣言順に走る順序に依存する。初回は、ここが`initialized`がfalseのため何もせず、
+  // 次のeffectが`true`にして復元する。復元でURLが変わると`targetKey`が変わり、ここが保存する。
+  // 2つの順序を入れ替えると、初回に空の対象を保存して前回の対象を失う。
   const initialized = useRef(false);
   useEffect(() => {
     if (!initialized.current) return;
@@ -121,7 +131,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
     initialized.current = true;
     const restored = initialTarget(target, stored.target);
     if (restored) changeTarget(restored);
-    // 開いたときの値だけを使う。
+    // 依存配列は意図して空。開いたときの`target` / `stored.target`だけを使い、以後の変更では走らせない。
   }, []);
 
   // Sceneを選んだら、その「BGMの雰囲気」を日本語欄へ入れ、長さを既定値 (採用済み動画の長さか30秒) に戻す。
@@ -142,7 +152,8 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
   const seconds = form.seconds ?? defaultSeconds(video.data ?? null);
   // 長さが既定のままで採用済みの動画を確認している間は、30秒で投入しないよう待つ。
   const secondsPending = form.seconds === null && target.sceneId !== null && video.isLoading;
-  const canSubmit = form.tags.trim() !== "" && !storyLoading && missing.length === 0 && !secondsPending;
+  const canSubmit =
+    form.tags.trim() !== "" && !storyLoading && loadError === null && missing.length === 0 && !secondsPending;
   const onSubmit = () => {
     const bodies = Array.from({ length: form.count }, (_, index) => ({
       kind: "music" as const,
@@ -177,7 +188,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
             <Select
               label="Project"
               placeholder="指定しない"
-              data={withCurrent(projectOptions, target.projectId)}
+              data={withCurrent(projectOptions, target.projectId, projects.isError)}
               value={target.projectId}
               onChange={(projectId) => changeTarget({ projectId, sceneId: null })}
               searchable
@@ -190,6 +201,7 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
               data={withCurrent(
                 sceneList.map((item) => ({ value: item.id, label: item.name })),
                 target.sceneId,
+                scenes.isError,
               )}
               value={target.sceneId}
               onChange={(next) => changeTarget({ ...target, sceneId: next })}
@@ -198,6 +210,11 @@ function BgmWorkspace({ recipe }: { recipe: Recipe }) {
               error={scenes.error?.message}
             />
           </SimpleGrid>
+          {loadError !== null ? (
+            <Alert color="red" data-testid="target-load-error">
+              ProjectまたはSceneの一覧を取得できないため、生成できません: {loadError.message}
+            </Alert>
+          ) : null}
           {missing.length > 0 ? (
             <Alert color="yellow" data-testid="target-missing">
               {missing.join("・")}が見つかりません。選び直してください。
