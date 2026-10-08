@@ -36,12 +36,15 @@ export function selectedOutfitPrompt(
 
 /**
  * プロンプトへ連結する前に改行 (CR/LF/VT/FF/NEL/LS/PS) を空白1つへ畳む (Issue #498, #510)。
- * 改行・タブ以外の制御文字 (Cc) は保存側で拒否していないため、ここで取り除く (Issue #515)。
+ * タブ以外の制御文字 (Cc) と双方向制御文字は保存側で拒否していないため、改行と同じく空白1つへ畳む。
+ * 双方向制御文字の範囲はAPIの`_BIDI_CONTROL_CHARACTERS`に合わせる (Issue #515)。
  */
 export function foldLineBreaks(text: string): string {
   return text
-    .replace(/[\u0000-\u0008\u000e-\u001f\u007f-\u0084\u0086-\u009f]/g, "")
-    .replace(/\s*[\r\n\v\f\u0085\u2028\u2029]+\s*/g, " ")
+    .replace(
+      /\s*[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2028\u2029\u2066-\u2069]+\s*/g,
+      " ",
+    )
     .trim();
 }
 
