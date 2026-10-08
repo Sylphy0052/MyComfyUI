@@ -2396,6 +2396,8 @@ def _clear_reference_slots(overrides: Any, ids: set[str]) -> tuple[Any, int]:
 
     旧形式の値を検証で弾かないよう、スキーマを通さずに該当キーだけを書き換える。
     書き換える参照セットからは、廃止した枠のキーも落とす (数には含めない)。
+    書き戻すのは削除対象を参照する枠が数えられたprojectだけで、廃止キーしか残らない
+    projectは書き換えない (読み込み時に`_drop_retired_slots`が捨てる)。
     """
     if not isinstance(overrides, dict):
         return overrides, 0
