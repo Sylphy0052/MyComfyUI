@@ -2,36 +2,31 @@ import { ActionIcon, Badge, Button, Group, Stack, Text, Textarea } from "@mantin
 import { IconX } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 
-import { isExcluded } from "./promptTags";
+import { isExcluded, type SupplementGroup } from "./promptTags";
 
 /**
  * 補完タグ。読み取り専用で、外したいタグだけを×で外せる。外したタグは下に並べ、まとめて戻せる。
+ * `sections`があれば (複数人)、先頭行とキャラごとにラベル付きでチップを分ける。×で外すのは全行共通。
  */
 function SupplementTagList({
   label,
   tags,
   excluded,
   onChangeExcluded,
+  sections,
 }: {
   label: string;
   tags: string[];
   excluded: string[];
   onChangeExcluded: (excluded: string[]) => void;
+  sections?: SupplementGroup[];
 }) {
-  const kept = tags.filter((tag) => !isExcluded(tag, excluded));
   const removed = tags.filter((tag) => isExcluded(tag, excluded));
-  return (
-    <Stack gap={4} data-testid={`supplement-${label}`}>
-      <Text size="sm" fw={500}>
-        {label}
-      </Text>
-      {tags.length === 0 ? (
-        <Text size="xs" c="dimmed">
-          対象を選ぶと、Projectの設定からタグが入ります。
-        </Text>
-      ) : null}
-      <Group gap={4}>
-        {kept.map((tag) => (
+  const chips = (list: string[]) => (
+    <Group gap={4}>
+      {list
+        .filter((tag) => !isExcluded(tag, excluded))
+        .map((tag) => (
           <Badge
             key={tag}
             variant="light"
@@ -52,7 +47,28 @@ function SupplementTagList({
             {tag}
           </Badge>
         ))}
-      </Group>
+    </Group>
+  );
+  return (
+    <Stack gap={4} data-testid={`supplement-${label}`}>
+      <Text size="sm" fw={500}>
+        {label}
+      </Text>
+      {tags.length === 0 ? (
+        <Text size="xs" c="dimmed">
+          対象を選ぶと、Projectの設定からタグが入ります。
+        </Text>
+      ) : null}
+      {sections === undefined
+        ? chips(tags)
+        : sections.map((section, index) => (
+            <Stack key={index} gap={2} data-testid={`supplement-section-${section.label}`}>
+              <Text size="xs" c="dimmed">
+                {section.label}
+              </Text>
+              {chips(section.tags)}
+            </Stack>
+          ))}
       {removed.length > 0 ? (
         <Group gap={4}>
           <Text size="xs" c="dimmed">
@@ -69,6 +85,7 @@ function SupplementTagList({
 
 export function PromptFields({
   supplementPositive,
+  supplementSections,
   supplementNegative,
   excludedPositive,
   excludedNegative,
@@ -80,6 +97,8 @@ export function PromptFields({
   onChange,
 }: {
   supplementPositive: string[];
+  /** 複数人のときの、先頭行とキャラごとの行。 */
+  supplementSections?: SupplementGroup[];
   supplementNegative: string[];
   excludedPositive: string[];
   excludedNegative: string[];
@@ -103,6 +122,7 @@ export function PromptFields({
       <SupplementTagList
         label="補完タグ"
         tags={supplementPositive}
+        sections={supplementSections}
         excluded={excludedPositive}
         onChangeExcluded={(excluded) => onChange({ excludedPositive: excluded })}
       />
@@ -134,7 +154,8 @@ export function PromptFields({
         <Text size="xs" c="dimmed">
           投入するプロンプト
         </Text>
-        <Text size="xs" data-testid="composed-positive" style={{ wordBreak: "break-word" }}>
+        {/* 複数人はキャラごとに改行で区切るので、改行をそのまま見せる。 */}
+        <Text size="xs" data-testid="composed-positive" style={{ wordBreak: "break-word", whiteSpace: "pre-line" }}>
           {composedPositive || "(空)"}
         </Text>
         <Text size="xs" c="dimmed">

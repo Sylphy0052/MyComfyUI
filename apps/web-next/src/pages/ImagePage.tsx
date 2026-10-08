@@ -33,10 +33,12 @@ import {
   composedPrompts,
   defaultForm,
   EMPTY_TARGET,
+  normalizeExtraCast,
+  type CastMember,
   type ImageForm,
   type ImageTarget,
 } from "../imageGen/imageForm";
-import { buildSupplementTags, isExcluded } from "../imageGen/promptTags";
+import { buildCastSupplementTags, isExcluded, type CastEntry } from "../imageGen/promptTags";
 import { buildSweepBody, planSweep } from "../imageGen/sweep";
 import {
   jobIdOfArtifact,
@@ -53,17 +55,35 @@ import { useSubmitSweep, useSweepEntries } from "../imageGen/useSweep";
 import { notifyError } from "../notifications";
 import { useProjectList } from "../projects/useProjects";
 
-/** URLのクエリ名。衣装は設計文書に合わせて`outfit`とする。 */
-const TARGET_PARAMS: [keyof ImageTarget, string][] = [
+/** URLのクエリ名。衣装は設計文書に合わせて`outfit`とする。2人目以降は繰り返しクエリ`cast=<キャラID>:<衣装ID>`。 */
+const TARGET_PARAMS: ["projectId" | "sceneId" | "characterId" | "costumeId", string][] = [
   ["projectId", "project"],
   ["sceneId", "scene"],
   ["characterId", "character"],
   ["costumeId", "outfit"],
 ];
 
+/**
+ * 2人目以降のキャラ。1人ごとに`cast=<キャラID>:<衣装ID>`を繰り返す。衣装が無ければ`<キャラID>:`。
+ * IDはUUIDで`:`を含まないため、最初の`:`で分ける。
+ */
+const CAST_PARAM = "cast";
+
+function castToParam(member: CastMember): string {
+  return `${member.characterId}:${member.costumeId ?? ""}`;
+}
+
+function castFromParam(value: string): CastMember[] {
+  const at = value.indexOf(":");
+  const characterId = at < 0 ? value : value.slice(0, at);
+  const costumeId = at < 0 ? "" : value.slice(at + 1);
+  return characterId === "" ? [] : [{ characterId, costumeId: costumeId || null }];
+}
+
 function targetFromParams(params: URLSearchParams): ImageTarget {
   const target = { ...EMPTY_TARGET };
   for (const [field, name] of TARGET_PARAMS) target[field] = params.get(name) || null;
+  target.extraCast = normalizeExtraCast(target.characterId, params.getAll(CAST_PARAM).flatMap(castFromParam));
   return target;
 }
 
@@ -73,11 +93,12 @@ function paramsFromTarget(target: ImageTarget): URLSearchParams {
     const value = target[field];
     if (value) params.set(name, value);
   }
+  for (const member of target.extraCast) params.append(CAST_PARAM, castToParam(member));
   return params;
 }
 
 function hasAny(target: ImageTarget | null): boolean {
-  return target !== null && TARGET_PARAMS.some(([field]) => target[field] !== null);
+  return target !== null && (TARGET_PARAMS.some(([field]) => target[field] !== null) || target.extraCast.length > 0);
 }
 
 /**
@@ -87,7 +108,11 @@ function hasAny(target: ImageTarget | null): boolean {
 function initialTarget(fromUrl: ImageTarget, stored: ImageTarget | null): ImageTarget | null {
   if (stored === null || !hasAny(stored)) return null;
   if (!hasAny(fromUrl)) return stored;
-  const onlyProject = fromUrl.sceneId === null && fromUrl.characterId === null && fromUrl.costumeId === null;
+  const onlyProject =
+    fromUrl.sceneId === null &&
+    fromUrl.characterId === null &&
+    fromUrl.costumeId === null &&
+    fromUrl.extraCast.length === 0;
   return onlyProject && fromUrl.projectId === stored.projectId ? stored : null;
 }
 
@@ -124,7 +149,24 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const character = characterList.find((item) => item.id === target.characterId) ?? null;
   const costume = character?.costumes.find((item) => item.id === target.costumeId) ?? null;
   const scene = sceneList.find((item) => item.id === target.sceneId) ?? null;
-  const supplement = buildSupplementTags(character, costume, scene);
+  // 2人目以降は新規タブだけで使う。参照・修正は先頭キャラだけで補完タグを作る。
+  const multi = mode === "txt2img";
+  const extraEntries = multi
+    ? target.extraCast.map((member) => {
+        const extraCharacter = characterList.find((item) => item.id === member.characterId) ?? null;
+        const extraCostume = extraCharacter?.costumes.find((item) => item.id === member.costumeId) ?? null;
+        return { member, character: extraCharacter, costume: extraCostume };
+      })
+    : [];
+  const cast: CastEntry[] = character
+    ? [
+        { character, costume },
+        ...extraEntries.flatMap((entry) =>
+          entry.character ? [{ character: entry.character, costume: entry.costume }] : [],
+        ),
+      ]
+    : [];
+  const supplement = buildCastSupplementTags(cast, scene);
   const composed = composedPrompts(form, supplement);
 
   const storyLoading = story.isLoading || (target.projectId !== null && projects.isPending);
@@ -139,6 +181,12 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
         target.sceneId !== null && scene === null ? "Scene" : null,
         target.characterId !== null && character === null ? "キャラ" : null,
         target.costumeId !== null && costume === null ? "衣装" : null,
+        ...extraEntries.flatMap((entry, index) => [
+          entry.character === null ? `キャラ${index + 2}` : null,
+          entry.character !== null && entry.member.costumeId !== null && entry.costume === null
+            ? `衣装${index + 2}`
+            : null,
+        ]),
       ].filter((name): name is string => name !== null);
 
   const updateForm = useCallback(
@@ -168,6 +216,13 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
     (next: ImageTarget) => setSearchParams(paramsFromTarget(next), { replace: true }),
     [setSearchParams],
   );
+  // 参照・修正は1人ずつ。新規以外へ切り替えた時点で2人目以降が残っていれば、URLから外して知らせる。
+  const extraCastCount = target.extraCast.length;
+  useEffect(() => {
+    if (mode === "txt2img" || extraCastCount === 0) return;
+    changeTarget({ ...targetFromParams(new URLSearchParams(targetKey)), extraCast: [] });
+    notifications.show({ color: "yellow", message: "参照・修正は1人ずつです。2人目以降を外しました" });
+  }, [mode, extraCastCount, targetKey, changeTarget]);
   const updateDerive = useCallback(
     (update: Partial<DeriveState>) => setDerive((current) => ({ ...current, ...update })),
     [],
@@ -314,6 +369,11 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
   const promptFields = (
     <PromptFields
       supplementPositive={supplement.positive}
+      supplementSections={
+        supplement.groups === null
+          ? undefined
+          : [{ label: "共通", tags: supplement.head }, ...supplement.groups].filter((section) => section.tags.length > 0)
+      }
       supplementNegative={supplement.negative}
       excludedPositive={form.excludedPositive}
       excludedNegative={form.excludedNegative}
@@ -359,6 +419,7 @@ function ImageWorkspace({ recipe }: { recipe: Recipe }) {
             characters={characterList}
             scenes={sceneList}
             missing={missing}
+            multi={multi}
           />
           {storyError ? <Alert color="red">{storyError.message}</Alert> : null}
           <Tabs keepMounted={false} value={mode} onChange={(value) => value !== null && setMode(value as GenerateMode)}>

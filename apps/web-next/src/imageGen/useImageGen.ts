@@ -414,6 +414,7 @@ export async function restoreFromJob(client: QueryClient, jobId: string, recipe:
     sceneId: job.story_scene_id ?? null,
     characterId: job.story_character_id ?? null,
     costumeId: job.story_costume_id ?? null,
+    extraCast: [],
   };
   let character: StoryCharacter | null = null;
   let scene: StoryScene | null = null;
@@ -451,6 +452,12 @@ export async function restoreFromJob(client: QueryClient, jobId: string, recipe:
     negativeFree: negative.free,
     excludedNegative: negative.excluded,
   };
+  // Jobに残るのは先頭キャラだけなので、複数人のJobは2人目以降を戻せない。
+  // 1人以下のプロンプトはカンマだけで連結するため、改行を含むかどうかで複数人の合成と見分ける。
+  if (manifest.resolved_prompt.includes("\n")) {
+    const multiWarning = "複数人で生成した設定のため、先頭のキャラだけを戻しました。2人目以降のタグは自由欄へ入れています";
+    warning = warning === null ? multiWarning : `${warning}。${multiWarning}`;
+  }
   return { form, target, warning };
 }
 
