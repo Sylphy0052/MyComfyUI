@@ -160,6 +160,7 @@ async def _costume_reads(
     session: AsyncSession, costumes: list[StoryCostume]
 ) -> list[schemas.StoryCostumeRead]:
     images: dict[str, list[str]] = {costume.id: [] for costume in costumes}
+    memos: dict[str, dict[str, str]] = {costume.id: {} for costume in costumes}
     if costumes:
         rows = await session.scalars(
             select(StoryCostumeImage)
@@ -168,6 +169,8 @@ async def _costume_reads(
         )
         for row in rows:
             images[row.costume_id].append(row.media_key)
+            if row.memo and row.media_key.startswith(INPUT_KEY_PREFIX):
+                memos[row.costume_id][row.media_key] = row.memo
     return [
         schemas.StoryCostumeRead(
             id=costume.id,
@@ -177,6 +180,7 @@ async def _costume_reads(
             negative_tags=list(costume.negative_tags),
             description=costume.description,
             reference_images=images[costume.id],
+            reference_image_memos=memos[costume.id],
             created_at=costume.created_at,
             updated_at=costume.updated_at,
         )
@@ -399,13 +403,45 @@ async def create_costume(
     )
     session.add(costume)
     await session.flush()
-    _add_costume_images(session, costume.id, payload.reference_images, now)
+    _add_costume_images(
+        session,
+        costume.id,
+        payload.reference_images,
+        now,
+        _checked_image_memos(payload.reference_images, payload.reference_image_memos),
+    )
     await _commit(session)
     return (await _costume_reads(session, [costume]))[0]
 
 
+def _checked_image_memos(keys: list[str], memos: dict[str, str]) -> dict[str, str]:
+    """参照画像のメモを確かめ、空白だけのものを除く。メモは`input:`の参照にだけ付けられる。"""
+    result: dict[str, str] = {}
+    for key, memo in memos.items():
+        details = {"field": "reference_image_memos", "media_key": key}
+        if key not in keys:
+            raise _unprocessable(
+                "STORY_IMAGE_MEMO_KEY_UNKNOWN",
+                "メモの対象が参照画像にありません。",
+                details,
+            )
+        if not key.startswith(INPUT_KEY_PREFIX):
+            raise _unprocessable(
+                "STORY_IMAGE_MEMO_KEY_INVALID",
+                "生成物の参照のメモは生成物のメモとして保存してください。",
+                details,
+            )
+        if memo.strip():
+            result[key] = memo
+    return result
+
+
 def _add_costume_images(
-    session: AsyncSession, costume_id: str, keys: list[str], now: str
+    session: AsyncSession,
+    costume_id: str,
+    keys: list[str],
+    now: str,
+    memos: dict[str, str],
 ) -> None:
     for position, key in enumerate(keys):
         session.add(
@@ -414,6 +450,7 @@ def _add_costume_images(
                 costume_id=costume_id,
                 position=position,
                 media_key=key,
+                memo=memos.get(key),
                 created_at=now,
             )
         )
@@ -451,22 +488,48 @@ async def update_costume(
     costume = await _get_costume(session, character, costume_id)
     _reject_null(
         payload,
-        {"name", "tags", "negative_tags", "description", "reference_images"},
+        {
+            "name",
+            "tags",
+            "negative_tags",
+            "description",
+            "reference_images",
+            "reference_image_memos",
+        },
     )
     now = schemas.now_iso()
     fields = payload.model_fields_set
-    if "reference_images" in fields:
-        keys = list(payload.reference_images or [])
-        for key in keys:
-            await _validate_media_key(
-                session, key, kind="image", field="reference_images"
+    if "reference_images" in fields or "reference_image_memos" in fields:
+        saved_rows = list(
+            await session.scalars(
+                select(StoryCostumeImage)
+                .where(StoryCostumeImage.costume_id == costume.id)
+                .order_by(StoryCostumeImage.position)
             )
+        )
+        if "reference_images" in fields:
+            keys = list(payload.reference_images or [])
+            for key in keys:
+                await _validate_media_key(
+                    session, key, kind="image", field="reference_images"
+                )
+        else:
+            keys = [row.media_key for row in saved_rows]
+        # メモを渡さなければ、残る参照のメモを引き継ぐ。渡したら渡した内容で置き換える。
+        if "reference_image_memos" in fields:
+            memos = _checked_image_memos(keys, payload.reference_image_memos or {})
+        else:
+            memos = {
+                row.media_key: row.memo
+                for row in saved_rows
+                if row.memo and row.media_key in keys
+            }
         # 並び順の一意制約に当たらないよう、置き換え前の行を先に消す。
         await session.execute(
             delete(StoryCostumeImage).where(StoryCostumeImage.costume_id == costume.id)
         )
-        _add_costume_images(session, costume.id, keys, now)
-    for field in fields - {"reference_images"}:
+        _add_costume_images(session, costume.id, keys, now, memos)
+    for field in fields - {"reference_images", "reference_image_memos"}:
         value = getattr(payload, field)
         setattr(costume, field, list(value) if isinstance(value, list) else value)
     costume.updated_at = now
