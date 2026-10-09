@@ -2723,6 +2723,11 @@ StoryTimeOfDay = Literal["morning", "day", "sunset", "night"]
 
 #: 生成物・入力cacheの参照。`MediaItemRead.key`と同じ書式で、`artifact:<id>`か`input:<relative_path>`。
 StoryMediaKey = Annotated[str, Field(min_length=1, max_length=1_100)]
+#: 参照画像ごとのメモ (`input:`の参照だけ)。上限は生成物のメモ (`ARTIFACT_MEMO_MAX_LENGTH`) と同じ。
+StoryImageMemos = Annotated[
+    dict[StoryMediaKey, Annotated[str, Field(max_length=ARTIFACT_MEMO_MAX_LENGTH)]],
+    Field(max_length=50),
+]
 
 
 def _story_name(value: str) -> str:
@@ -2768,6 +2773,8 @@ class StoryCostumeCreate(ApiModel):
     reference_images: Annotated[
         list[StoryMediaKey], Field(max_length=50), AfterValidator(_unique_items)
     ] = Field(default_factory=list)
+    #: `input:`の参照画像のメモ。キーは`reference_images`に含まれる`input:`の参照。
+    reference_image_memos: StoryImageMemos = Field(default_factory=dict)
 
 
 class StoryCostumeUpdate(ApiModel):
@@ -2781,6 +2788,8 @@ class StoryCostumeUpdate(ApiModel):
         ]
         | None
     ) = None
+    #: 渡すと`input:`の参照画像のメモを置き換える。渡していない参照のメモは消える。
+    reference_image_memos: StoryImageMemos | None = None
 
 
 class StoryCostumeRead(ApiModel):
@@ -2791,6 +2800,8 @@ class StoryCostumeRead(ApiModel):
     negative_tags: list[str]
     description: str
     reference_images: list[str]
+    #: `input:`の参照画像のメモ (メモのあるものだけ)。`artifact:`の参照は生成物のメモを使う。
+    reference_image_memos: dict[str, str] = Field(default_factory=dict)
     created_at: str
     updated_at: str
 

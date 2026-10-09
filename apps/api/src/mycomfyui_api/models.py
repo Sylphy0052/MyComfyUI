@@ -926,6 +926,8 @@ class StoryCostumeImage(Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     media_key: Mapped[str] = mapped_column(Text, nullable=False)
+    #: `input:`の参照にだけ使うメモ。`artifact:`の参照は`Artifact.memo`を使う。
+    memo: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 

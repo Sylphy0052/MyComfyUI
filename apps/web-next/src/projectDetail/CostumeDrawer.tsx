@@ -17,9 +17,18 @@ type CostumeDraft = {
   negative_tags: string[];
   description: string;
   reference_images: string[];
+  /** アップロードした参照画像 (`input:`) のメモ。キーは参照のキー。 */
+  reference_image_memos: Record<string, string>;
 };
 
-const EMPTY_DRAFT: CostumeDraft = { name: "", tags: [], negative_tags: [], description: "", reference_images: [] };
+const EMPTY_DRAFT: CostumeDraft = {
+  name: "",
+  tags: [],
+  negative_tags: [],
+  description: "",
+  reference_images: [],
+  reference_image_memos: {},
+};
 
 function toDraft(costume: StoryCostume | null): CostumeDraft {
   if (!costume) return EMPTY_DRAFT;
@@ -29,6 +38,7 @@ function toDraft(costume: StoryCostume | null): CostumeDraft {
     negative_tags: costume.negative_tags,
     description: costume.description,
     reference_images: costume.reference_images,
+    reference_image_memos: costume.reference_image_memos ?? {},
   };
 }
 
@@ -60,8 +70,12 @@ function CostumeForm({
       draft.reference_images.some((key) => artifactIdOf(key) === artifactId),
     ),
   );
+  const liveInputMemos = Object.fromEntries(
+    Object.entries(draft.reference_image_memos).filter(([key]) => draft.reference_images.includes(key)),
+  );
   const dirty =
-    JSON.stringify(draft) !== JSON.stringify(toDraft(costume)) || Object.keys(liveMemoEdits).length > 0;
+    JSON.stringify({ ...draft, reference_image_memos: liveInputMemos }) !== JSON.stringify(toDraft(costume)) ||
+    Object.keys(liveMemoEdits).length > 0;
   useReportDirty("costume", dirty);
 
   const update = (patch: Partial<CostumeDraft>) => setDraft((previous) => ({ ...previous, ...patch }));
@@ -71,9 +85,15 @@ function CostumeForm({
       return value === null ? rest : { ...rest, [artifactId]: value };
     });
 
+  const changeInputMemo = (key: string, value: string) =>
+    setDraft((previous) => {
+      const { [key]: _removed, ...rest } = previous.reference_image_memos;
+      return { ...previous, reference_image_memos: value === "" ? rest : { ...rest, [key]: value } };
+    });
+
   const name = draft.name.trim();
   const submit = () => {
-    const body: StoryCostumeBody = { ...draft, name };
+    const body: StoryCostumeBody = { ...draft, name, reference_image_memos: liveInputMemos };
     save.mutate(
       { characterId: character.id, costumeId: costume?.id ?? null, body, memos: liveMemoEdits, onCreated },
       {
@@ -130,6 +150,8 @@ function CostumeForm({
           onChange={(reference_images) => update({ reference_images })}
           memoEdits={memoEdits}
           onMemoChange={changeMemo}
+          inputMemos={draft.reference_image_memos}
+          onInputMemoChange={changeInputMemo}
           disabled={locked}
         />
       </EditFieldset>
