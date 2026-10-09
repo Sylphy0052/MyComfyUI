@@ -37,6 +37,7 @@ export function ImagePage() {
       onTargetChange={changeTarget}
       storageKeys={IMAGE_PAGE_STORAGE_KEYS}
       fromArtifact={searchParams.get("from_artifact")}
+      paneScroll
     />
   );
 }

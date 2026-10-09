@@ -1,4 +1,5 @@
-import { Alert, Button, Grid, Group, Stack, Tabs, Text, Title } from "@mantine/core";
+import { Alert, Button, Grid, Group, Stack, Tabs, Text, Title, useMantineTheme } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -78,7 +79,15 @@ export type ImageWorkspaceProps = {
   /** 開いたときに設定を入力欄へ戻す生成物のid (`/image`の`from_artifact`)。 */
   fromArtifact?: string | null;
   title?: string;
+  /**
+   * `lg`以上で、左右のペインを表示領域の高さに収め、それぞれ個別にスクロールさせるか。
+   * ステッパーの下に埋め込む画面では、縦のスクロールが二重になるので渡さない。
+   */
+  paneScroll?: boolean;
 };
+
+/** AppShell.Mainの上下の余白とヘッダーを除いた、表示領域の高さ。 */
+const PANE_HEIGHT = "calc(100dvh - var(--app-shell-header-offset, 0rem) - 2 * var(--app-shell-padding))";
 
 export function ImageWorkspace({
   recipe,
@@ -88,7 +97,11 @@ export function ImageWorkspace({
   includeScene = true,
   fromArtifact = null,
   title = "画像",
+  paneScroll = false,
 }: ImageWorkspaceProps) {
+  const theme = useMantineTheme();
+  const wide = useMediaQuery(`(min-width: ${theme.breakpoints.lg})`);
+  const paneStyle = paneScroll && wide ? { height: PANE_HEIGHT, overflowY: "auto" as const } : undefined;
   const client = useQueryClient();
   const [stored, setStored] = useStoredInput(recipe, storageKeys.input);
   const results = useResultEntries(storageKeys.results);
@@ -353,7 +366,7 @@ export function ImageWorkspace({
 
   return (
     <Grid gap="lg">
-      <Grid.Col span={{ base: 12, lg: 5 }}>
+      <Grid.Col span={{ base: 12, lg: 5 }} style={paneStyle}>
         <Stack gap="md">
           <Group justify="space-between">
             <Title order={2}>{title}</Title>
@@ -439,7 +452,7 @@ export function ImageWorkspace({
           </Button>
         </Stack>
       </Grid.Col>
-      <Grid.Col span={{ base: 12, lg: 7 }}>
+      <Grid.Col span={{ base: 12, lg: 7 }} style={paneStyle}>
         <ResultPanel
           entries={results.entries}
           onRemove={results.remove}
