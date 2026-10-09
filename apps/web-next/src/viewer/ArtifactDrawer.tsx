@@ -24,8 +24,8 @@ import { FROM_ARTIFACT_PARAM } from "../imageGen/artifactRestore";
 import { notifyError } from "../notifications";
 import { useArtifact } from "../projectDetail/useStory";
 import { LinkSelects } from "./LinkSelects";
+import { SlotAdoption } from "./SlotAdoption";
 import {
-  useAdoptSceneImage,
   useApplyLinks,
   useBatchOperation,
   useGenerationSettings,
@@ -143,40 +143,46 @@ function LinkEditor({ artifact }: { artifact: ArtifactRecord }) {
 
 function DecisionEditor({ artifact }: { artifact: ArtifactRecord }) {
   const setDecision = useSetDecision();
-  const adopt = useAdoptSceneImage();
-  const projectId = artifact.assigned_project_id;
-  const sceneId = artifact.story_scene_id ?? null;
-  const adoptSceneImage = () => {
-    if (!projectId || !sceneId) return;
-    adopt.mutate(
-      { projectId, sceneId, artifactId: artifact.id },
-      {
-        onSuccess: () => notifications.show({ color: "green", message: "シーン画像に採用しました" }),
-        onError: (error) => notifyError("採用できません", error),
-      },
-    );
-  };
   return (
     <Stack gap="xs">
       <Title order={5}>採否</Title>
-      <SegmentedControl
-        data={DECISION_OPTIONS}
-        value={artifact.decision}
-        disabled={setDecision.isPending}
-        onChange={(value) =>
-          setDecision.mutate(
-            { artifactId: artifact.id, decision: value as ArtifactDecision },
-            { onError: (error) => notifyError("採否を変更できません", error) },
-          )
-        }
+      <SlotAdoption
+        key={artifact.id}
+        artifact={artifact}
+        renderDecision={(slotReject) => {
+          const blockedReason = slotReject?.blockedReason ?? null;
+          return (
+            <>
+              <SegmentedControl
+                data={
+                  // 枠に採用中のまま不採用にしないよう、押せなくして理由を出す。
+                  blockedReason === null
+                    ? DECISION_OPTIONS
+                    : DECISION_OPTIONS.map((option) => ({ ...option, disabled: option.value === "rejected" }))
+                }
+                value={artifact.decision}
+                disabled={setDecision.isPending || slotReject?.pending === true}
+                onChange={(value) => {
+                  // 枠に採用中のものは、先に枠から外してから不採用にする (`useSlotDecision`)。
+                  if (value === "rejected" && slotReject?.adopted) {
+                    slotReject.reject();
+                    return;
+                  }
+                  setDecision.mutate(
+                    { artifactId: artifact.id, decision: value as ArtifactDecision },
+                    { onError: (error) => notifyError("採否を変更できません", error) },
+                  );
+                }}
+              />
+              {blockedReason !== null ? (
+                <Text size="xs" c="dimmed" data-testid="reject-blocked">
+                  不採用にできません: {blockedReason}
+                </Text>
+              ) : null}
+            </>
+          );
+        }}
       />
-      {artifact.kind === "image" && projectId && sceneId ? (
-        <Group>
-          <Button size="xs" variant="light" onClick={adoptSceneImage} loading={adopt.isPending}>
-            紐づけたシーンのシーン画像に採用
-          </Button>
-        </Group>
-      ) : null}
     </Stack>
   );
 }
