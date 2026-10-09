@@ -146,18 +146,28 @@ function DecisionEditor({ artifact }: { artifact: ArtifactRecord }) {
   return (
     <Stack gap="xs">
       <Title order={5}>採否</Title>
-      <SegmentedControl
-        data={DECISION_OPTIONS}
-        value={artifact.decision}
-        disabled={setDecision.isPending}
-        onChange={(value) =>
-          setDecision.mutate(
-            { artifactId: artifact.id, decision: value as ArtifactDecision },
-            { onError: (error) => notifyError("採否を変更できません", error) },
-          )
-        }
+      <SlotAdoption
+        key={artifact.id}
+        artifact={artifact}
+        renderDecision={(slotReject) => (
+          <SegmentedControl
+            data={DECISION_OPTIONS}
+            value={artifact.decision}
+            disabled={setDecision.isPending || slotReject?.pending === true}
+            onChange={(value) => {
+              // 枠に採用中のものは、先に枠から外してから不採用にする (`useSlotDecision`)。
+              if (value === "rejected" && slotReject?.adopted) {
+                slotReject.reject();
+                return;
+              }
+              setDecision.mutate(
+                { artifactId: artifact.id, decision: value as ArtifactDecision },
+                { onError: (error) => notifyError("採否を変更できません", error) },
+              );
+            }}
+          />
+        )}
       />
-      <SlotAdoption artifact={artifact} />
     </Stack>
   );
 }

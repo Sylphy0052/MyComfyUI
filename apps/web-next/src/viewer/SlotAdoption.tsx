@@ -1,6 +1,7 @@
 import { Badge, Button, Group, Loader, SegmentedControl, Select, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useState } from "react";
+import type { UseQueryResult } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
 
 import type { ArtifactRecord, GenerationJob, StorySceneAdoption } from "../api/client";
 import { useSlotDecision, type AdoptionSlot } from "../imageGen/useImageGen";
@@ -23,23 +24,41 @@ const AUDIO_SLOT_OPTIONS = [
   { value: "bgm", label: SLOT_LABELS.bgm },
 ];
 
-type SlotChoice = { state: "ready"; slot: AdoptionSlot } | { state: "pending" } | { state: "choose-audio" } | { state: "none" };
+type SlotChoice =
+  | { state: "ready"; slot: AdoptionSlot }
+  | { state: "pending" }
+  | { state: "choose-audio" }
+  | { state: "none" }
+  /** 採用先を決められない。`error`なら取得の失敗、そうでなければ判別できないだけ。 */
+  | { state: "blocked"; message: string; error: boolean };
+
+/** 採用中の生成物を不採用にする操作。採用中なら先に枠から外してから不採用にする (`useSlotDecision`の`reject`)。 */
+export type SlotReject = { adopted: boolean; pending: boolean; reject: () => void };
+
+type JobQuery = Pick<UseQueryResult<GenerationJob>, "data" | "isPending" | "isError" | "error">;
 
 /**
- * 生成物を入れる枠。画像と動画は種別で、統合の動画は`sceneProduce`と同じくJobの`kind === "compose"`で決まる。
+ * 生成物を入れる枠。画像と動画は種別で、統合の動画は`useComposeArtifactIds`と同じくJobの`kind === "compose"`で決まる。
  * 音声はJobの種別 (`voice` / `music`) で声とBGMを見分ける (`ArtifactRead`に`audio_class`は無い)。
  */
-function slotChoiceOf(artifact: ArtifactRecord, job: { data?: GenerationJob; isPending: boolean; isError: boolean }): SlotChoice {
+function slotChoiceOf(artifact: ArtifactRecord, job: JobQuery): SlotChoice {
   if (artifact.kind === "image") return { state: "ready", slot: "scene_image" };
   if (artifact.kind !== "video" && artifact.kind !== "audio") return { state: "none" };
-  if (artifact.job_id !== null && job.isPending) return { state: "pending" };
-  // Jobを読めないと統合や声かBGMかが決まらない。誤った枠へ入れないよう採用させない。
-  if (artifact.job_id !== null && job.isError) return { state: "none" };
+  if (artifact.job_id !== null && job.data === undefined) {
+    // Jobを読めないと統合や声かBGMかが決まらない。誤った枠へ入れないよう採用させない。
+    // 再取得の失敗は取得済みのJobがあれば無視する (`isError`はデータがあっても立つ)。
+    if (job.isError) {
+      return { state: "blocked", message: `Jobを取得できないため採用先を決められません: ${job.error?.message ?? ""}`, error: true };
+    }
+    return { state: "pending" };
+  }
   const jobKind = job.data?.kind;
   if (artifact.kind === "video") return { state: "ready", slot: jobKind === "compose" ? "compose" : "video" };
   if (jobKind === "voice") return { state: "ready", slot: "voice" };
   if (jobKind === "music") return { state: "ready", slot: "bgm" };
-  return artifact.job_id === null ? { state: "choose-audio" } : { state: "none" };
+  return artifact.job_id === null
+    ? { state: "choose-audio" }
+    : { state: "blocked", message: "この音声は採用枠を判別できません", error: false };
 }
 
 function adoptionLabel(adoption: StorySceneAdoption, lineNumbers: Map<string, number>): string {
@@ -54,12 +73,16 @@ function AdoptionControls({
   sceneId,
   slot,
   jobDialogueId,
+  renderDecision,
+  slotPicker,
 }: {
   artifact: ArtifactRecord;
   projectId: string;
   sceneId: string;
   slot: AdoptionSlot;
   jobDialogueId: string | null;
+  renderDecision: (slotReject: SlotReject | null) => ReactNode;
+  slotPicker: ReactNode;
 }) {
   const scenes = useScenes(projectId);
   const adoptions = useSceneAdoptions(projectId, sceneId);
@@ -78,22 +101,30 @@ function AdoptionControls({
   const mine = (adoptions.data ?? []).filter((item) => item.artifact_id === artifact.id);
   const adopted = mine.some((item) => item.slot === slot && item.dialogue_id === dialogueId);
   const needsLine = slot === "voice" && dialogueId === null;
-  const busy = decide.isPending || adoptions.isPending || adoptions.isError;
-  const run = () =>
+  // 画像の採用は採用状況に依らず今までどおり押せる。ほかの枠は、採用中かが分からないまま入れ替えないよう止める。
+  const needsStatus = slot !== "scene_image";
+  const statusUnknown = needsStatus && (adoptions.isPending || adoptions.isError);
+  const busy = decide.isPending || statusUnknown;
+  const mutate = (action: "adopt" | "release" | "reject", message: string, failure: string) =>
     decide.mutate(
-      { artifact, action: adopted ? "release" : "adopt", adopted },
+      { artifact, action, adopted },
       {
-        onSuccess: () =>
-          notifications.show({
-            color: "green",
-            message: adopted ? `${SLOT_LABELS[slot]}の採用を外しました` : `${SLOT_LABELS[slot]}に採用しました`,
-          }),
-        onError: (error) => notifyError("採否を変えられませんでした", error),
+        onSuccess: () => notifications.show({ color: "green", message }),
+        onError: (error) => notifyError(failure, error),
         onSettled: () => refresh(artifact.id),
       },
     );
+  const run = () =>
+    adopted
+      ? mutate("release", `${SLOT_LABELS[slot]}の採用を外しました`, "採否を変えられませんでした")
+      : mutate("adopt", `${SLOT_LABELS[slot]}に採用しました`, "採否を変えられませんでした");
+  const reject = () => mutate("reject", `${SLOT_LABELS[slot]}の採用を外して不採用にしました`, "不採用にできませんでした");
+  const scenesFailed = scenes.isError && scenes.data === undefined;
+  const noLines = slot === "voice" && !jobLineKnown && scenes.isSuccess && lines.length === 0;
   return (
     <>
+      {renderDecision({ adopted, pending: decide.isPending, reject })}
+      {slotPicker}
       {mine.length > 0 ? (
         <Group gap={4} data-testid="adopted-slots">
           <Text size="xs" c="dimmed">
@@ -108,10 +139,22 @@ function AdoptionControls({
       ) : null}
       {adoptions.isError ? (
         <Text size="xs" c="red">
-          採用の状況を取得できません: {adoptions.error.message}
+          {needsStatus
+            ? `採用の状況を取得できないため、${SLOT_LABELS[slot]}の採用は操作できません: ${adoptions.error.message}`
+            : `採用の状況を取得できません: ${adoptions.error.message}`}
         </Text>
       ) : null}
-      {slot === "voice" && !jobLineKnown ? (
+      {slot === "voice" && !jobLineKnown && scenesFailed ? (
+        <Text size="xs" c="red">
+          採用先の台詞を取得できません: {scenes.error?.message}
+        </Text>
+      ) : null}
+      {noLines ? (
+        <Text size="xs" c="dimmed">
+          このシーンに台詞がありません
+        </Text>
+      ) : null}
+      {slot === "voice" && !jobLineKnown && !scenesFailed && !noLines ? (
         <Select
           size="xs"
           label="台詞の行"
@@ -137,22 +180,49 @@ function AdoptionControls({
  * Projectとシーンに紐づく生成物を、種別に合うシーンの採用枠へ入れる。紐づいていなければ何も出さない。
  * 今どの枠に採用されているかも出す。
  */
-export function SlotAdoption({ artifact }: { artifact: ArtifactRecord }) {
+export function SlotAdoption({
+  artifact,
+  renderDecision,
+}: {
+  artifact: ArtifactRecord;
+  /** 採否の切替を描く。採用先が決まっていれば、採用中の不採用を枠から外す操作を渡す。 */
+  renderDecision: (slotReject: SlotReject | null) => ReactNode;
+}) {
   const projectId = artifact.assigned_project_id;
   const sceneId = artifact.story_scene_id ?? null;
   const { job } = useGenerationSettings(artifact.job_id);
   const [audioSlot, setAudioSlot] = useState<AdoptionSlot>("voice");
-  if (!projectId || !sceneId) return null;
+  if (!projectId || !sceneId) return <>{renderDecision(null)}</>;
   const choice = slotChoiceOf(artifact, job);
-  if (choice.state === "none") return null;
-  if (choice.state === "pending") return <Loader size="xs" />;
+  if (choice.state === "none") return <>{renderDecision(null)}</>;
+  if (choice.state === "pending") {
+    return (
+      <>
+        {renderDecision(null)}
+        <Loader size="xs" />
+      </>
+    );
+  }
+  if (choice.state === "blocked") {
+    return (
+      <>
+        {renderDecision(null)}
+        <Text size="xs" c={choice.error ? "red" : "dimmed"}>
+          {choice.message}
+        </Text>
+      </>
+    );
+  }
   const slot = choice.state === "ready" ? choice.slot : audioSlot;
   return (
     <>
-      {choice.state === "choose-audio" ? (
-        <SegmentedControl size="xs" data={AUDIO_SLOT_OPTIONS} value={audioSlot} onChange={(value) => setAudioSlot(value as AdoptionSlot)} />
-      ) : null}
       <AdoptionControls
+        renderDecision={renderDecision}
+        slotPicker={
+          choice.state === "choose-audio" ? (
+            <SegmentedControl size="xs" data={AUDIO_SLOT_OPTIONS} value={audioSlot} onChange={(value) => setAudioSlot(value as AdoptionSlot)} />
+          ) : null
+        }
         key={`${slot}:${artifact.id}`}
         artifact={artifact}
         projectId={projectId}
