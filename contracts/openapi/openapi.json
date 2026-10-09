@@ -4144,6 +4144,79 @@
         "title": "JobLineageRead",
         "type": "object"
       },
+      "LegacyLinkResult": {
+        "additionalProperties": false,
+        "description": "`legacy-links`と`legacy-links/preview`の結果。previewでは付け替える予定の件数。\n\n`linked`は`story_scene_id`を埋める件数、`project_filled`はそのうち`assigned_project_id`も\n埋める件数。",
+        "properties": {
+          "linked": {
+            "title": "Linked",
+            "type": "integer"
+          },
+          "project_filled": {
+            "title": "Project Filled",
+            "type": "integer"
+          },
+          "skipped": {
+            "$ref": "#/components/schemas/LegacyLinkSkipped"
+          },
+          "unmatched": {
+            "$ref": "#/components/schemas/LegacyLinkUnmatched"
+          }
+        },
+        "required": [
+          "linked",
+          "project_filled",
+          "unmatched",
+          "skipped"
+        ],
+        "title": "LegacyLinkResult",
+        "type": "object"
+      },
+      "LegacyLinkSkipped": {
+        "additionalProperties": false,
+        "description": "対象にしない生成物の件数。`trashed`はゴミ箱の生成物で、復元後にやり直せば付く。",
+        "properties": {
+          "already_linked": {
+            "title": "Already Linked",
+            "type": "integer"
+          },
+          "trashed": {
+            "title": "Trashed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "already_linked",
+          "trashed"
+        ],
+        "title": "LegacyLinkSkipped",
+        "type": "object"
+      },
+      "LegacyLinkUnmatched": {
+        "additionalProperties": false,
+        "description": "対応するシーンが見つからず、変えない生成物の件数を理由ごとに分けたもの。",
+        "properties": {
+          "project_ambiguous": {
+            "title": "Project Ambiguous",
+            "type": "integer"
+          },
+          "scene_not_imported": {
+            "title": "Scene Not Imported",
+            "type": "integer"
+          },
+          "shot_unknown": {
+            "title": "Shot Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scene_not_imported",
+          "shot_unknown",
+          "project_ambiguous"
+        ],
+        "title": "LegacyLinkUnmatched",
+        "type": "object"
+      },
       "LookProfileCreate": {
         "additionalProperties": false,
         "properties": {
@@ -16597,6 +16670,94 @@
         "summary": "Update Generation Defaults",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/legacy-links": {
+      "post": {
+        "description": "旧生成物の`story_scene_id`を1トランザクションで埋める。既に付いた生成物は変えない。",
+        "operationId": "run_legacy_links_api_v1_projects__project_id__legacy_links_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyLinkResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Legacy Links",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/legacy-links/preview": {
+      "post": {
+        "description": "付け替える件数と、対応するシーンが無く変えない件数 (理由ごと) を返す。DBは変えない。\n\nDBを変えないので、ゴミ箱のProjectでも通す。",
+        "operationId": "preview_legacy_links_api_v1_projects__project_id__legacy_links_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyLinkResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Legacy Links",
+        "tags": [
+          "story"
         ]
       }
     },

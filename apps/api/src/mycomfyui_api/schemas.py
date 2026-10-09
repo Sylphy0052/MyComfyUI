@@ -2953,6 +2953,34 @@ class StoryImportResult(ApiModel):
     reference_images: StoryImportImageCounts
 
 
+class LegacyLinkUnmatched(ApiModel):
+    """対応するシーンが見つからず、変えない生成物の件数を理由ごとに分けたもの。"""
+
+    scene_not_imported: int
+    shot_unknown: int
+    project_ambiguous: int
+
+
+class LegacyLinkSkipped(ApiModel):
+    """対象にしない生成物の件数。`trashed`はゴミ箱の生成物で、復元後にやり直せば付く。"""
+
+    already_linked: int
+    trashed: int
+
+
+class LegacyLinkResult(ApiModel):
+    """`legacy-links`と`legacy-links/preview`の結果。previewでは付け替える予定の件数。
+
+    `linked`は`story_scene_id`を埋める件数、`project_filled`はそのうち`assigned_project_id`も
+    埋める件数。
+    """
+
+    linked: int
+    project_filled: int
+    unmatched: LegacyLinkUnmatched
+    skipped: LegacyLinkSkipped
+
+
 class ProjectPurgeResult(ApiModel):
     """Projectの完全削除で消した定義と、紐づけを外した生成物の件数。"""
 

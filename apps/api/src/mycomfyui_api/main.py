@@ -34,6 +34,7 @@ from mycomfyui_api.events import router as event_router
 from mycomfyui_api.image_imports import MAX_IMAGE_BYTES as MAX_EXTERNAL_IMAGE_BYTES
 from mycomfyui_api.job_followups import dispatch_pending_followups
 from mycomfyui_api.job_followups import router as job_followup_router
+from mycomfyui_api.legacy_links import router as legacy_links_router
 from mycomfyui_api.migrator import upgrade_to_head
 from mycomfyui_api.queue import (
     JobQueueWorker,
@@ -209,6 +210,7 @@ def create_app() -> FastAPI:
     app.include_router(structure_router)
     app.include_router(story_router)
     app.include_router(story_import_router)
+    app.include_router(legacy_links_router)
     app.include_router(story_adoption_router)
     app.include_router(reference_router)
     app.include_router(event_router)
