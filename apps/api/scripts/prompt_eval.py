@@ -1,6 +1,6 @@
 """prompt案の出力を、複数の入力Caseに対してProviderへ実際に問い合わせて採点する。
 
-`routers.py`のprompt案系Endpoint (`image_prompt`、`batch_generation_plan`) と同じ
+旧`/agent-proposals`のprompt案 (`image_prompt`、`batch_generation_plan`。#635で削除) と同じ
 組み立て・後処理 (`ProposalRequest`の構築 → `provider.propose` →
 `normalize_prompt_tags` → `apply_prompt_style` → `restrict_output`) を経た出力を
 `prompt_checks.check_output`へ渡し、規則ごとの違反率を集計する。DBもFastAPI appも
@@ -173,7 +173,7 @@ async def run_attempt(
     )
     canonical_tags = await routers._canonical_tag_names()
 
-    # `routers.py`の`create_agent_proposal`と同じ順の後処理。採点はこの結果に対して行う。
+    # 旧`POST /agent-proposals` (#635で削除) と同じ順の後処理。採点はこの結果に対して行う。
     async def postprocess(result: agent_base.ProposalResult) -> dict[str, Any]:
         output = proposals.normalize_prompt_tags(
             case["kind"], result.output, canonical_tags, context.get("prompt_style")

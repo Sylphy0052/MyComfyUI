@@ -31,7 +31,6 @@ from mycomfyui_api.errors import (
     validation_error_handler,
 )
 from mycomfyui_api.events import router as event_router
-from mycomfyui_api.image_imports import MAX_IMAGE_BYTES as MAX_EXTERNAL_IMAGE_BYTES
 from mycomfyui_api.job_followups import dispatch_pending_followups
 from mycomfyui_api.job_followups import router as job_followup_router
 from mycomfyui_api.legacy_links import router as legacy_links_router
@@ -166,10 +165,7 @@ def _max_request_bytes() -> int:
 
 
 def _request_limit(path: str) -> int:
-    """大容量Project packageを許す全体上限と、画像取込・local_overrides専用の上限を分ける。"""
-    if path.startswith("/api/v1/external-images/import"):
-        encoded = (MAX_EXTERNAL_IMAGE_BYTES + 2) // 3 * 4
-        return encoded + REQUEST_BODY_MARGIN_BYTES
+    """大容量Project packageを許す全体上限と、local_overrides専用の上限を分ける。"""
     if path.startswith("/api/v1/projects/") and path.endswith("/local-overrides"):
         # 保存後の大きさの上限を超える本文は、パースする前に断る (Issue #494)。
         # 非ASCII文字を`\uXXXX`で送るclient (Pythonの`json.dumps`既定など) もあるため、

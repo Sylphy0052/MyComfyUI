@@ -1,6 +1,6 @@
 """画像prompt案を採点し、違反があれば1回だけ作り直させる。
 
-`routers.py`の`image_prompt`提案と画像promptの補完、`apps/api/scripts/prompt_eval.py`の
+`routers.py`の画像promptの補完と、`apps/api/scripts/prompt_eval.py`の
 評価scriptから同じ関数を呼ぶ。Providerの呼出しと後処理をまとめて扱う。後処理は経路
 ごとに違うため、呼出し側からcallbackで受け取る。
 

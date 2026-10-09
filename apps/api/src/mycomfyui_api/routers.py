@@ -134,24 +134,15 @@ MAX_TAG_FILTERS = 10
 #: 1回の一覧で除外できる種別の数。ArtifactKindの値の数を超えて受け取る理由は無い。
 MAX_EXCLUDE_KINDS = len(get_args(schemas.ArtifactKind))
 
-#: 整合性一覧で絞り込める理由の数。ArtifactIntegrityReasonの値の数を上限にする。
-MAX_INTEGRITY_REASONS = len(get_args(schemas.ArtifactIntegrityReason))
-
-#: 整合性一覧でhashを取り直すときの読み込み単位。
-DIGEST_CHUNK_SIZE = 1024 * 1024
-
 #: 派生関係の探索を上限で打ち切ったことを伝える応答ヘッダ。一覧の応答本体は
 #: Artifactの配列のままにし、打ち切りの有無だけをヘッダで返す。
 LINEAGE_TRUNCATED_HEADER = "X-Lineage-Truncated"
-
-MIN_FREE_SPACE_AFTER_IMPORT = 512 * 1024 * 1024
 
 # 異常なBackend応答をそのままブラウザへ増幅しない。通常のモデル在庫を十分収めつつ、
 # 応答とselect要素が無制限に増えることを防ぐ。
 MAX_MODEL_OPTIONS_PER_SLOT = 2000
 MAX_MODEL_OPTION_LENGTH = 512
 MODEL_INVENTORY_UNAVAILABLE = "ComfyUIのモデル在庫を取得できません。"
-MAX_LOOK_PROFILES = 200
 
 
 def _not_found(resource: str, resource_id: str) -> ApiError:
@@ -4074,10 +4065,6 @@ def _context_shot_ids(context: dict[str, Any]) -> set[str]:
         for entry in entries
         if isinstance(entry, dict) and entry.get("id")
     }
-
-
-#: 操作を1件だけ持つ提案の種別。既存のApplication APIはこの種別だけを受け付ける。
-SINGLE_OPERATION_KINDS = ("image_prompt",)
 
 
 def _agent_error(error: agent_base.AgentError) -> ApiError:
