@@ -3,7 +3,7 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
 import type { ProjectRecord } from "../api/client";
-import { summarizeImport } from "./StoryImportModal";
+import { summarizeImport } from "./StoryImportPreview";
 import { StoryImportRunner } from "./StoryImportRunner";
 import { useLocalOverrides } from "./useStoryImport";
 
@@ -14,6 +14,7 @@ import { useLocalOverrides } from "./useStoryImport";
  */
 export function ReimportButton({ project }: { project: ProjectRecord }) {
   const [opened, setOpened] = useState(false);
+  const [pending, setPending] = useState(false);
   const hasSnapshot = project.source_snapshot_sha256 !== null;
   const overrides = useLocalOverrides(project.id, !hasSnapshot);
   const importable = hasSnapshot || (overrides.data?.characters?.length ?? 0) > 0;
@@ -25,13 +26,23 @@ export function ReimportButton({ project }: { project: ProjectRecord }) {
       <Button variant="default" onClick={() => setOpened(true)}>
         novel-writerから再取り込み
       </Button>
-      <Modal opened={opened} onClose={close} title="novel-writerから再取り込み" size="lg">
+      <Modal
+        opened={opened}
+        onClose={close}
+        title="novel-writerから再取り込み"
+        size="lg"
+        // 取り込み中に閉じると完了通知が失われるため、終わるまで閉じさせない。
+        closeOnEscape={!pending}
+        closeOnClickOutside={!pending}
+        closeButtonProps={{ disabled: pending }}
+      >
         {/* 開くたびにプレビューを取り直すため、閉じている間は描画しない。 */}
         {opened ? (
           <StoryImportRunner
             projectId={project.id}
             projectName={project.name}
             onClose={close}
+            onPendingChange={setPending}
             onImported={(result) => {
               notifications.show({ color: "green", message: summarizeImport(result) });
               close();

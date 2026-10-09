@@ -3,10 +3,11 @@ import { useEffect } from "react";
 
 import type { StoryImportResult } from "../api/client";
 import { StoryImportCounts } from "./StoryImportPreview";
-import { useRunStoryImport, useStoryImportPreview } from "./useStoryImport";
+import { useReportPending, useRunStoryImport, useStoryImportPreview } from "./useStoryImport";
 
 /**
  * 1つのProjectについて、作る件数のプレビューを出し、「取り込む」で実行する。
+ * 実行中は`onPendingChange`で親へ知らせ、親はモーダルを閉じられないようにする (閉じるとmutate単位の完了処理が失われるため)。
  * 失敗はAPIの文言をそのまま画面内に出す。開くたびにプレビューを取り直すため、モーダルを閉じている間は描画しない。
  */
 export function StoryImportRunner({
@@ -14,6 +15,7 @@ export function StoryImportRunner({
   projectName,
   onBack,
   onClose,
+  onPendingChange,
   onImported,
 }: {
   projectId: string;
@@ -21,11 +23,14 @@ export function StoryImportRunner({
   /** 候補一覧へ戻る。再取り込みでは渡さない。 */
   onBack?: () => void;
   onClose: () => void;
+  /** 取り込みの実行中かどうかを親へ知らせる。 */
+  onPendingChange: (pending: boolean) => void;
   onImported: (result: StoryImportResult) => void;
 }) {
   const preview = useStoryImportPreview();
   const run = useRunStoryImport();
   const { mutate: loadPreview } = preview;
+  useReportPending(run.isPending, onPendingChange);
 
   useEffect(() => {
     loadPreview(projectId);
@@ -44,7 +49,7 @@ export function StoryImportRunner({
           {preview.error.message}
         </Alert>
       ) : null}
-      {preview.data ? <StoryImportCounts result={preview.data} done={false} /> : null}
+      {preview.data ? <StoryImportCounts result={preview.data} /> : null}
       {run.error ? (
         <Alert color="red" title="取り込めません" data-testid="story-import-error">
           {run.error.message}

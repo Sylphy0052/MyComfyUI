@@ -3,20 +3,24 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
-import type { ExternalProjectCandidate, StoryImportResult } from "../api/client";
+import type { ExternalProjectCandidate } from "../api/client";
+import { summarizeImport } from "./StoryImportPreview";
 import { StoryImportRunner } from "./StoryImportRunner";
-import { useExternalCandidates, useImportExternalProject } from "./useStoryImport";
-
-/** 取り込みの通知に出す、作った件数の要約。 */
-export function summarizeImport(result: StoryImportResult): string {
-  return `キャラクター${result.characters.created}件・衣装${result.costumes.created}件・シーン${result.scenes.created}件を作りました`;
-}
+import { useExternalCandidates, useImportExternalProject, useReportPending } from "./useStoryImport";
 
 type Target = { projectId: string; projectName: string };
 
-function CandidateStep({ onPicked, onClose }: { onPicked: (target: Target) => void; onClose: () => void }) {
+type PendingProps = { onPendingChange: (pending: boolean) => void };
+
+function CandidateStep({
+  onPicked,
+  onClose,
+  onPendingChange,
+}: { onPicked: (target: Target) => void; onClose: () => void } & PendingProps) {
   const candidates = useExternalCandidates(true);
   const create = useImportExternalProject();
+  // Project作成中に閉じると、作っただけでRunnerへ進まないため、作成中は閉じさせない。
+  useReportPending(create.isPending, onPendingChange);
 
   const pick = (candidate: ExternalProjectCandidate) => {
     // 取り込み済みの候補は既存のProjectを使う。無ければここでProjectを作る。
@@ -71,7 +75,7 @@ function CandidateStep({ onPicked, onClose }: { onPicked: (target: Target) => vo
         </Alert>
       ) : null}
       <Group justify="flex-end">
-        <Button variant="default" onClick={onClose}>
+        <Button variant="default" onClick={onClose} disabled={create.isPending}>
           閉じる
         </Button>
       </Group>
@@ -79,17 +83,18 @@ function CandidateStep({ onPicked, onClose }: { onPicked: (target: Target) => vo
   );
 }
 
-function ModalBody({ onClose }: { onClose: () => void }) {
+function ModalBody({ onClose, onPendingChange }: { onClose: () => void } & PendingProps) {
   const navigate = useNavigate();
   const [target, setTarget] = useState<Target | null>(null);
 
-  if (target === null) return <CandidateStep onPicked={setTarget} onClose={onClose} />;
+  if (target === null) return <CandidateStep onPicked={setTarget} onClose={onClose} onPendingChange={onPendingChange} />;
   return (
     <StoryImportRunner
       projectId={target.projectId}
       projectName={target.projectName}
       onBack={() => setTarget(null)}
       onClose={onClose}
+      onPendingChange={onPendingChange}
       onImported={(result) => {
         notifications.show({ color: "green", message: `「${target.projectName}」: ${summarizeImport(result)}` });
         onClose();
@@ -101,10 +106,20 @@ function ModalBody({ onClose }: { onClose: () => void }) {
 
 /** `/projects`の「novel-writerから取り込む」。候補を選び、Projectの作成、件数のプレビュー、取り込みの順に進める。 */
 export function StoryImportModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+  const [pending, setPending] = useState(false);
   return (
-    <Modal opened={opened} onClose={onClose} title="novel-writerから取り込む" size="lg">
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="novel-writerから取り込む"
+      size="lg"
+      // Project作成中と取り込み中に閉じると、完了後の遷移・通知が失われるため、終わるまで閉じさせない。
+      closeOnEscape={!pending}
+      closeOnClickOutside={!pending}
+      closeButtonProps={{ disabled: pending }}
+    >
       {/* 開くたびに候補とプレビューを取り直すため、閉じている間は描画しない。 */}
-      {opened ? <ModalBody onClose={onClose} /> : null}
+      {opened ? <ModalBody onClose={onClose} onPendingChange={setPending} /> : null}
     </Modal>
   );
 }

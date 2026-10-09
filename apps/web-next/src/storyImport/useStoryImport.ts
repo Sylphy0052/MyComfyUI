@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import {
   apiRequest,
@@ -10,6 +11,14 @@ import {
 import { queryKeys } from "../api/queryKeys";
 
 const projectPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}`;
+
+/** mutationの実行中を親へ知らせる。アンマウント時は実行中でなくなったことを知らせる。 */
+export function useReportPending(pending: boolean, onPendingChange: (pending: boolean) => void) {
+  useEffect(() => {
+    onPendingChange(pending);
+    return () => onPendingChange(false);
+  }, [pending, onPendingChange]);
+}
 
 /** novel-writerの候補一覧。モーダルを開いている間だけ取り、開くたびに取り直す。 */
 export function useExternalCandidates(enabled: boolean) {
