@@ -15,6 +15,7 @@
 """
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -40,6 +41,7 @@ from mycomfyui_api.models import (
 )
 from mycomfyui_api.story import INPUT_KEY_PREFIX
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/projects", tags=["story"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -305,6 +307,8 @@ def _collect_character_sources(
     canonの並びを先に、canonに無い旧キャラを後ろに置く。同名 (大文字小文字を区別しない)
     が重なったときは先のものを採り、落とした分を`plan.duplicated_characters`に数える。
     返す辞書は、落とした旧キャラのidから採った旧キャラのidへの対応。
+    採る分の中に同じ`source_ref` (canon_idか旧キャラid) が2件以上あると、取り込みは一意制約に
+    当たるため、preview・importとも`STORY_IMPORT_CONFLICT` (409) にする。
     """
     legacy_by_key: dict[str, schemas.ProjectCharacterProfile] = {}
     aliases: dict[str, str] = {}
@@ -335,6 +339,17 @@ def _collect_character_sources(
             sources.append(
                 _CharacterSource(_clean_name(legacy.name, legacy.id), legacy.id, legacy)
             )
+    refs = [source.source_ref for source in sources]
+    clashing = sorted({ref for ref in refs if refs.count(ref) > 1})
+    if clashing:
+        raise ApiError(
+            "STORY_IMPORT_CONFLICT",
+            "取り込み元のidが重複しています。名前が違うキャラが同じcanon_idを持っています。"
+            "snapshotのcanonか旧キャラ設定で、重複したidのキャラを1つにするか"
+            "idを分けてから取り込んでください。",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"canon_ids": clashing},
+        )
     return sources, aliases
 
 
@@ -597,9 +612,13 @@ async def run_story_import(project_id: schemas.AiMediaId, session: SessionDep):
         await session.commit()
     except IntegrityError as error:
         await session.rollback()
+        logger.warning(
+            "story-importが一意制約に当たりました: %s", project_id, exc_info=error
+        )
         raise ApiError(
             "STORY_IMPORT_CONFLICT",
-            "取り込み中にキャラクターかシーンが変更されました。やり直してください。",
+            "取り込み中にキャラクターかシーンが同時に更新されたか、"
+            "取り込み元のidが重複しています。内容を確かめてやり直してください。",
             status_code=status.HTTP_409_CONFLICT,
         ) from error
     return plan.result()
