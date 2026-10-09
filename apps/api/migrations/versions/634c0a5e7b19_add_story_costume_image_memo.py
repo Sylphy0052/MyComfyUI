@@ -1,7 +1,7 @@
 """add story costume image memo
 
 Revision ID: 634c0a5e7b19
-Revises: a9d3c7f1b852
+Revises: c4e8a1b6d273
 Create Date: 2026-10-09 12:00:00.000000
 
 アップロードした衣装の参照画像 (`input:<path>`) にメモを付けられるようにする。
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "634c0a5e7b19"
-down_revision: str | Sequence[str] | None = "a9d3c7f1b852"
+down_revision: str | Sequence[str] | None = "c4e8a1b6d273"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
