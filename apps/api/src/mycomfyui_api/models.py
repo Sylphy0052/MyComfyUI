@@ -874,6 +874,10 @@ class StoryCharacter(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "name", name="uq_story_character_name"),
         Index("ix_story_character_project", "project_id", "created_at"),
+        # NULLは一意制約の対象外。取り込み元を持たない行は何件でも置ける。
+        Index(
+            "uq_story_character_source_ref", "project_id", "source_ref", unique=True
+        ),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
@@ -887,6 +891,8 @@ class StoryCharacter(Base):
     portrait_media_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     voice_media_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     voice_transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # novel-writerのsnapshotや旧キャラ設定から取り込んだ行の元id (#630)。再取り込みで重複させない。
+    source_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -941,6 +947,7 @@ class StoryScene(Base):
             name="ck_story_scene_time_of_day",
         ),
         Index("ix_story_scene_project", "project_id", "sequence"),
+        Index("uq_story_scene_source_ref", "project_id", "source_ref", unique=True),
     )
 
     id: Mapped[str] = _uuid_column(primary_key=True)
@@ -959,6 +966,8 @@ class StoryScene(Base):
     time_of_day: Mapped[str | None] = mapped_column(Text, nullable=True)
     bgm_mood: Mapped[str] = mapped_column(Text, nullable=False, default="")
     video_motion: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 取り込み元のsnapshotのScene id (#630)。再取り込みで重複させない。
+    source_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
