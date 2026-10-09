@@ -2037,6 +2037,8 @@ export interface paths {
         /**
          * Preview Story Import
          * @description 取り込みで作る件数と、既にあるためスキップする件数を返す。DBは変えない。
+         *
+         *     DBを変えないので、ゴミ箱のProjectでも通す。復元してから取り込むかを、件数を見て決められる。
          */
         post: operations["preview_story_import_api_v1_projects__project_id__story_import_preview_post"];
         delete?: never;
@@ -5489,10 +5491,14 @@ export interface components {
         /**
          * StoryImportCounts
          * @description 取り込みで作った件数と、既にあるためスキップした件数。previewでは作る予定の件数。
+         *
+         *     `duplicated`は取り込み元の中で同名・同idが重なり、先のものを採って落とした件数。
          */
         StoryImportCounts: {
             /** Created */
             created: number;
+            /** Duplicated */
+            duplicated: number;
             /** Skipped */
             skipped: number;
         };

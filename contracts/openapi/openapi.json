@@ -8775,10 +8775,14 @@
       },
       "StoryImportCounts": {
         "additionalProperties": false,
-        "description": "取り込みで作った件数と、既にあるためスキップした件数。previewでは作る予定の件数。",
+        "description": "取り込みで作った件数と、既にあるためスキップした件数。previewでは作る予定の件数。\n\n`duplicated`は取り込み元の中で同名・同idが重なり、先のものを採って落とした件数。",
         "properties": {
           "created": {
             "title": "Created",
+            "type": "integer"
+          },
+          "duplicated": {
+            "title": "Duplicated",
             "type": "integer"
           },
           "skipped": {
@@ -8788,7 +8792,8 @@
         },
         "required": [
           "created",
-          "skipped"
+          "skipped",
+          "duplicated"
         ],
         "title": "StoryImportCounts",
         "type": "object"
@@ -17888,7 +17893,7 @@
     },
     "/api/v1/projects/{project_id}/story-import/preview": {
       "post": {
-        "description": "取り込みで作る件数と、既にあるためスキップする件数を返す。DBは変えない。",
+        "description": "取り込みで作る件数と、既にあるためスキップする件数を返す。DBは変えない。\n\nDBを変えないので、ゴミ箱のProjectでも通す。復元してから取り込むかを、件数を見て決められる。",
         "operationId": "preview_story_import_api_v1_projects__project_id__story_import_preview_post",
         "parameters": [
           {
