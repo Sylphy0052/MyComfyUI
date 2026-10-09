@@ -8773,6 +8773,77 @@
         "title": "StoryCostumeUpdate",
         "type": "object"
       },
+      "StoryImportCounts": {
+        "additionalProperties": false,
+        "description": "取り込みで作った件数と、既にあるためスキップした件数。previewでは作る予定の件数。\n\n`duplicated`は取り込み元の中で同名・同idが重なり、先のものを採って落とした件数。",
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "duplicated": {
+            "title": "Duplicated",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "skipped",
+          "duplicated"
+        ],
+        "title": "StoryImportCounts",
+        "type": "object"
+      },
+      "StoryImportImageCounts": {
+        "additionalProperties": false,
+        "description": "旧参照画像の扱い。実ファイルが入力cacheに無く、衣装の参照画像へ入れなかった件数を分ける。",
+        "properties": {
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "not_imported": {
+            "title": "Not Imported",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "imported",
+          "not_imported"
+        ],
+        "title": "StoryImportImageCounts",
+        "type": "object"
+      },
+      "StoryImportResult": {
+        "additionalProperties": false,
+        "description": "`story-import`と`story-import/preview`の結果。衣装は新しく作るキャラの分だけが対象。",
+        "properties": {
+          "characters": {
+            "$ref": "#/components/schemas/StoryImportCounts"
+          },
+          "costumes": {
+            "$ref": "#/components/schemas/StoryImportCounts"
+          },
+          "reference_images": {
+            "$ref": "#/components/schemas/StoryImportImageCounts"
+          },
+          "scenes": {
+            "$ref": "#/components/schemas/StoryImportCounts"
+          }
+        },
+        "required": [
+          "characters",
+          "costumes",
+          "scenes",
+          "reference_images"
+        ],
+        "title": "StoryImportResult",
+        "type": "object"
+      },
       "StorySceneAdoptionPut": {
         "additionalProperties": false,
         "description": "枠へ生成物を採用する要求。`voice`枠は台詞(`dialogue_id`)の指定が必須。",
@@ -17773,6 +17844,94 @@
         "summary": "Project Statistics",
         "tags": [
           "project-operations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/story-import": {
+      "post": {
+        "description": "まだ無いキャラ・衣装・シーンを1トランザクションで作る。既にある行は変えない。",
+        "operationId": "run_story_import_api_v1_projects__project_id__story_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Story Import",
+        "tags": [
+          "story"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/story-import/preview": {
+      "post": {
+        "description": "取り込みで作る件数と、既にあるためスキップする件数を返す。DBは変えない。\n\nDBを変えないので、ゴミ箱のProjectでも通す。復元してから取り込むかを、件数を見て決められる。",
+        "operationId": "preview_story_import_api_v1_projects__project_id__story_import_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Story Import",
+        "tags": [
+          "story"
         ]
       }
     },
