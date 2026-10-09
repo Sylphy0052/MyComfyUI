@@ -58,6 +58,46 @@ HIRES_SCALE_MAX = 4.0
 #: ComfyUIの`LatentUpscaleBy`が受け付ける拡大方式。
 LATENT_UPSCALE_METHODS = ("nearest-exact", "bilinear", "area", "bicubic", "bislerp")
 
+#: `anima_txt2img`のKSamplerへ渡せるsampler。ComfyUI標準のKSamplerの値から実用的なものを
+#: 固定で挙げ、`/object_info`は引かない (#555)。既定値は`bootstrap.DEFAULT_VALUES`。
+#: g18のComfyUI (6a8dcf51, 2026-10-06) の`comfy/samplers.py`に全値があることを確認済み。
+KSAMPLER_SAMPLERS = (
+    "euler",
+    "euler_ancestral",
+    "heun",
+    "dpm_2",
+    "dpm_2_ancestral",
+    "lms",
+    "dpmpp_2s_ancestral",
+    "dpmpp_sde",
+    "dpmpp_2m",
+    "dpmpp_2m_sde",
+    "dpmpp_3m_sde",
+    "ddpm",
+    "lcm",
+    "ipndm",
+    "deis",
+    "res_multistep",
+    "gradient_estimation",
+    "ddim",
+    "uni_pc",
+    "uni_pc_bh2",
+)
+
+#: `anima_txt2img`のKSamplerへ渡せるscheduler。既定値は`bootstrap.DEFAULT_VALUES`。
+#: g18のComfyUI (6a8dcf51, 2026-10-06) の`comfy/samplers.py`に全値があることを確認済み。
+KSAMPLER_SCHEDULERS = (
+    "simple",
+    "normal",
+    "karras",
+    "exponential",
+    "sgm_uniform",
+    "ddim_uniform",
+    "beta",
+    "linear_quadratic",
+    "kl_optimal",
+)
+
 
 class WorkflowError(ValueError):
     """テンプレートの構造、または注入する値が期待と合わない。"""
@@ -199,10 +239,10 @@ ANIMA_TXT2IMG = WorkflowBinding(
             "ksampler", "cfg", "guidance_scale", also=("hires_ksampler",)
         ),
         "sampler_name": VariableRef(
-            "ksampler", "sampler_name", "str", also=("hires_ksampler",)
+            "ksampler", "sampler_name", "ksampler_sampler", also=("hires_ksampler",)
         ),
         "scheduler": VariableRef(
-            "ksampler", "scheduler", "str", also=("hires_ksampler",)
+            "ksampler", "scheduler", "ksampler_scheduler", also=("hires_ksampler",)
         ),
         "hires_scale": VariableRef("hires_upscale", "scale_by", "hires_scale"),
         "hires_upscale_method": VariableRef(
@@ -996,6 +1036,13 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
                 f"{name}は{HIRES_SCALE_MIN}以上{HIRES_SCALE_MAX}以下で指定します。"
             )
         return number
+    if value_type in ("ksampler_sampler", "ksampler_scheduler"):
+        choices = (
+            KSAMPLER_SAMPLERS if value_type == "ksampler_sampler" else KSAMPLER_SCHEDULERS
+        )
+        if value not in choices:
+            raise WorkflowError(f"{name}は{', '.join(choices)}のいずれかで指定します。")
+        return value
     if value_type == "latent_upscale_method":
         if value not in LATENT_UPSCALE_METHODS:
             raise WorkflowError(

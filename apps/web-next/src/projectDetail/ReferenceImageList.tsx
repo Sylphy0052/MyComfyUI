@@ -41,6 +41,28 @@ function MemoField({
   );
 }
 
+/** アップロードした参照画像 (`input:`) のメモ。生成物を持たないので、衣装の参照画像の行に保存する。 */
+function InputMemoField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Textarea
+      size="xs"
+      label="メモ (この衣装の参照画像だけのメモ)"
+      autosize
+      minRows={1}
+      maxRows={4}
+      maxLength={MEMO_MAX}
+      value={value}
+      onChange={(event) => onChange(event.currentTarget.value)}
+    />
+  );
+}
+
 /**
  * 衣装の参照画像。先頭が代表。アップロードで追加し、ドラッグか上下ボタンで並べ替え、外せる。
  * 並び順とメモの編集は呼び出し側 (保存ボタン) が確定する。
@@ -50,12 +72,17 @@ export function ReferenceImageList({
   onChange,
   memoEdits,
   onMemoChange,
+  inputMemos,
+  onInputMemoChange,
   disabled,
 }: {
   keys: string[];
   onChange: (keys: string[]) => void;
   memoEdits: MemoEdits;
   onMemoChange: (artifactId: string, value: string | null) => void;
+  /** アップロードした画像のメモ (キーは`input:`の参照)。 */
+  inputMemos: Record<string, string>;
+  onInputMemoChange: (key: string, value: string) => void;
   /** 並べ替えを止める。ボタンと入力は呼び出し側の`fieldset`で止める。 */
   disabled: boolean;
 }) {
@@ -122,10 +149,12 @@ export function ReferenceImageList({
                   {index === 0 ? "代表 / " : ""}
                   {key}
                 </Text>
-                {/* inputのキーはArtifactを持たないので、メモを付ける先が無い。メモ欄は出さない。 */}
+                {/* artifactは生成物のメモ、inputは参照画像の行のメモを編集する。 */}
                 {artifactId !== null ? (
                   <MemoField artifactId={artifactId} edit={memoEdits[artifactId]} onChange={onMemoChange} />
-                ) : null}
+                ) : (
+                  <InputMemoField value={inputMemos[key] ?? ""} onChange={(value) => onInputMemoChange(key, value)} />
+                )}
               </Stack>
               <Group gap={2} wrap="nowrap">
                 <Tooltip label="上へ">
