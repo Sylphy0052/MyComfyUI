@@ -221,6 +221,17 @@ export function acceptsInput(recipe: Recipe, name: string): boolean {
   return Object.prototype.hasOwnProperty.call(recipe.input_schema, name);
 }
 
+/**
+ * `input_schema[name].options`の選択肢。backendの固定の一覧をそのまま使う。
+ * 現在値が一覧に無いとき (Project既定など) は、選択が空にならないよう末尾へ足す。
+ */
+export function schemaChoices(recipe: Recipe, name: string, current: string): string[] {
+  const field = (recipe.input_schema as Record<string, unknown>)[name];
+  const raw = field && typeof field === "object" ? (field as { options?: unknown }).options : undefined;
+  const options = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+  return current !== "" && !options.includes(current) ? [...options, current] : options;
+}
+
 /** 投入するプロンプトとネガティブ。 */
 export function composedPrompts(form: ImageForm, supplement: SupplementTags): { positive: string; negative: string } {
   return {
