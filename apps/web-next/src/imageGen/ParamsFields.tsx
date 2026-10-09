@@ -5,18 +5,28 @@ import {
   Group,
   NumberInput,
   SegmentedControl,
+  Select,
   SimpleGrid,
   Stack,
   Switch,
   Text,
-  TextInput,
   Tooltip,
 } from "@mantine/core";
 import { IconArrowsExchange } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
 
 import type { Recipe } from "../api/client";
-import { acceptsInput, BATCH_MAX, presetOf, SEED_MAX, SIZE_PRESETS, type ImageForm, type SeedMode } from "./imageForm";
+import {
+  acceptsInput,
+  BATCH_MAX,
+  presetOf,
+  isOutOfChoices,
+  schemaChoices,
+  SEED_MAX,
+  SIZE_PRESETS,
+  type ImageForm,
+  type SeedMode,
+} from "./imageForm";
 import { useModelOptions } from "./useImageGen";
 
 type Update = (update: Partial<ImageForm>) => void;
@@ -98,6 +108,12 @@ function DetailFields({
   const optionsOf = (variable: string) =>
     models.data?.slots?.find((slot) => slot.variable === variable)?.options ?? [];
   const lockedNote = (name: string) => (acceptsInput(recipe, name) ? undefined : "このRecipeでは変えられません");
+  // 保存値が候補外のときは選択を空にし、既定値で投入することを知らせる (buildInputsが送らない)。
+  const choiceNote = (name: string, current: string) =>
+    lockedNote(name) ??
+    (isOutOfChoices(recipe, name, current)
+      ? `保存値 ${current} は候補に無いため既定値で投入する`
+      : undefined);
 
   return (
     <Accordion variant="contained" value={opened} onChange={setOpened}>
@@ -148,21 +164,29 @@ function DetailFields({
                 value={form.cfg}
                 onChange={(value) => onChange({ cfg: asNumber(value, form.cfg) })}
               />
-              <TextInput
+              <Select
                 label="sampler"
                 size="xs"
-                value={form.samplerName}
-                onChange={(event) => onChange({ samplerName: event.currentTarget.value })}
+                data={schemaChoices(recipe, "sampler_name")}
+                value={isOutOfChoices(recipe, "sampler_name", form.samplerName) ? null : form.samplerName || null}
+                onChange={(samplerName) => samplerName && onChange({ samplerName })}
+                allowDeselect={false}
+                searchable
                 disabled={!acceptsInput(recipe, "sampler_name")}
-                description={lockedNote("sampler_name")}
+                description={choiceNote("sampler_name", form.samplerName)}
+                data-testid="image-sampler"
               />
-              <TextInput
+              <Select
                 label="scheduler"
                 size="xs"
-                value={form.scheduler}
-                onChange={(event) => onChange({ scheduler: event.currentTarget.value })}
+                data={schemaChoices(recipe, "scheduler")}
+                value={isOutOfChoices(recipe, "scheduler", form.scheduler) ? null : form.scheduler || null}
+                onChange={(scheduler) => scheduler && onChange({ scheduler })}
+                allowDeselect={false}
+                searchable
                 disabled={!acceptsInput(recipe, "scheduler")}
-                description={lockedNote("scheduler")}
+                description={choiceNote("scheduler", form.scheduler)}
+                data-testid="image-scheduler"
               />
             </SimpleGrid>
             {acceptsInput(recipe, "hires_enabled") ? (
