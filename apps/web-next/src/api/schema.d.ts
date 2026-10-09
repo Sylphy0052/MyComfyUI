@@ -5449,6 +5449,10 @@ export interface components {
             name: string;
             /** Negative Tags */
             negative_tags?: string[];
+            /** Reference Image Memos */
+            reference_image_memos?: {
+                [key: string]: string;
+            };
             /** Reference Images */
             reference_images?: string[];
             /** Tags */
@@ -5468,6 +5472,10 @@ export interface components {
             name: string;
             /** Negative Tags */
             negative_tags: string[];
+            /** Reference Image Memos */
+            reference_image_memos?: {
+                [key: string]: string;
+            };
             /** Reference Images */
             reference_images: string[];
             /** Tags */
@@ -5483,6 +5491,10 @@ export interface components {
             name?: string | null;
             /** Negative Tags */
             negative_tags?: string[] | null;
+            /** Reference Image Memos */
+            reference_image_memos?: {
+                [key: string]: string;
+            } | null;
             /** Reference Images */
             reference_images?: string[] | null;
             /** Tags */
