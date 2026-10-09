@@ -2005,6 +2005,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/story-import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Story Import
+         * @description まだ無いキャラ・衣装・シーンを1トランザクションで作る。既にある行は変えない。
+         */
+        post: operations["run_story_import_api_v1_projects__project_id__story_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Story Import
+         * @description 取り込みで作る件数と、既にあるためスキップする件数を返す。DBは変えない。
+         */
+        post: operations["preview_story_import_api_v1_projects__project_id__story_import_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/story-scenes": {
         parameters: {
             query?: never;
@@ -5445,6 +5485,36 @@ export interface components {
             reference_images?: string[] | null;
             /** Tags */
             tags?: string[] | null;
+        };
+        /**
+         * StoryImportCounts
+         * @description 取り込みで作った件数と、既にあるためスキップした件数。previewでは作る予定の件数。
+         */
+        StoryImportCounts: {
+            /** Created */
+            created: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /**
+         * StoryImportImageCounts
+         * @description 旧参照画像の扱い。実ファイルが入力cacheに無く、衣装の参照画像へ入れなかった件数を分ける。
+         */
+        StoryImportImageCounts: {
+            /** Imported */
+            imported: number;
+            /** Not Imported */
+            not_imported: number;
+        };
+        /**
+         * StoryImportResult
+         * @description `story-import`と`story-import/preview`の結果。衣装は新しく作るキャラの分だけが対象。
+         */
+        StoryImportResult: {
+            characters: components["schemas"]["StoryImportCounts"];
+            costumes: components["schemas"]["StoryImportCounts"];
+            reference_images: components["schemas"]["StoryImportImageCounts"];
+            scenes: components["schemas"]["StoryImportCounts"];
         };
         /**
          * StorySceneAdoptionPut
@@ -10254,6 +10324,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectStatistics"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_story_import_api_v1_projects__project_id__story_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_story_import_api_v1_projects__project_id__story_import_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryImportResult"];
                 };
             };
             /** @description Validation Error */

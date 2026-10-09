@@ -2906,6 +2906,29 @@ class StorySceneRead(ApiModel):
     updated_at: str
 
 
+class StoryImportCounts(ApiModel):
+    """取り込みで作った件数と、既にあるためスキップした件数。previewでは作る予定の件数。"""
+
+    created: int
+    skipped: int
+
+
+class StoryImportImageCounts(ApiModel):
+    """旧参照画像の扱い。実ファイルが入力cacheに無く、衣装の参照画像へ入れなかった件数を分ける。"""
+
+    imported: int
+    not_imported: int
+
+
+class StoryImportResult(ApiModel):
+    """`story-import`と`story-import/preview`の結果。衣装は新しく作るキャラの分だけが対象。"""
+
+    characters: StoryImportCounts
+    costumes: StoryImportCounts
+    scenes: StoryImportCounts
+    reference_images: StoryImportImageCounts
+
+
 class ProjectPurgeResult(ApiModel):
     """Projectの完全削除で消した定義と、紐づけを外した生成物の件数。"""
 
