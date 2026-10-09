@@ -312,19 +312,22 @@ export function ImageWorkspace({
     }
     const submitRecipe = deriveMode === null ? recipe : deriveRecipe;
     if (submitRecipe === null) return;
-    submit.mutate(
-      imageJobBody(
-        submitRecipe,
-        target,
-        deriveMode === null
-          ? buildInputs(form, supplement, recipe)
-          : buildDeriveInputs(deriveMode, derive, form, supplement, submitRecipe),
-      ),
-      {
-        onSuccess: (job) => results.add({ jobId: job.id, count: resultCountOf(submitRecipe, form) }),
-        onError: (error) => notifyError("投入できませんでした", error),
-      },
-    );
+    // 投入のPOSTが返る前に別画面へ移っても結果欄へ記録できるよう、mutateのコールバックでなくPromiseで受ける。
+    // mutateのコールバックは、画面が外れると呼ばれない。
+    submit
+      .mutateAsync(
+        imageJobBody(
+          submitRecipe,
+          target,
+          deriveMode === null
+            ? buildInputs(form, supplement, recipe)
+            : buildDeriveInputs(deriveMode, derive, form, supplement, submitRecipe),
+        ),
+      )
+      .then(
+        (job) => results.add({ jobId: job.id, count: resultCountOf(submitRecipe, form) }),
+        (error: unknown) => notifyError("投入できませんでした", error),
+      );
   };
 
   const promptFields = (
