@@ -2747,16 +2747,23 @@ def _unique_items(value: list[str]) -> list[str]:
     return value
 
 
+#: v2のキャラ・衣装・シーンの入力上限。取り込み (`story_import`) も同じ値で切る。
+STORY_NAME_MAX_LENGTH = 120
+STORY_TAG_MAX_LENGTH = 128
+STORY_TAGS_MAX = 100
+STORY_TEXT_MAX_LENGTH = 4_000
+STORY_CAST_MAX = 50
+
 StoryName = Annotated[
-    str, Field(min_length=1, max_length=120), AfterValidator(_story_name)
+    str, Field(min_length=1, max_length=STORY_NAME_MAX_LENGTH), AfterValidator(_story_name)
 ]
 StoryTag = Annotated[
-    str, Field(min_length=1, max_length=128), AfterValidator(_story_tag)
+    str, Field(min_length=1, max_length=STORY_TAG_MAX_LENGTH), AfterValidator(_story_tag)
 ]
 StoryTags = Annotated[
-    list[StoryTag], Field(max_length=100), AfterValidator(_unique_items)
+    list[StoryTag], Field(max_length=STORY_TAGS_MAX), AfterValidator(_unique_items)
 ]
-StoryText = Annotated[str, Field(max_length=4_000)]
+StoryText = Annotated[str, Field(max_length=STORY_TEXT_MAX_LENGTH)]
 
 
 class StoryCostumeCreate(ApiModel):
@@ -2857,7 +2864,9 @@ def _unique_cast(value: list[StorySceneCastEntry]) -> list[StorySceneCastEntry]:
 
 
 StorySceneCast = Annotated[
-    list[StorySceneCastEntry], Field(max_length=50), AfterValidator(_unique_cast)
+    list[StorySceneCastEntry],
+    Field(max_length=STORY_CAST_MAX),
+    AfterValidator(_unique_cast),
 ]
 StorySceneDialogues = Annotated[list[StorySceneDialogueEntry], Field(max_length=500)]
 
@@ -2904,6 +2913,33 @@ class StorySceneRead(ApiModel):
     dialogues: list[StorySceneDialogueEntry]
     created_at: str
     updated_at: str
+
+
+class StoryImportCounts(ApiModel):
+    """取り込みで作った件数と、既にあるためスキップした件数。previewでは作る予定の件数。
+
+    `duplicated`は取り込み元の中で同名・同idが重なり、先のものを採って落とした件数。
+    """
+
+    created: int
+    skipped: int
+    duplicated: int
+
+
+class StoryImportImageCounts(ApiModel):
+    """旧参照画像の扱い。実ファイルが入力cacheに無く、衣装の参照画像へ入れなかった件数を分ける。"""
+
+    imported: int
+    not_imported: int
+
+
+class StoryImportResult(ApiModel):
+    """`story-import`と`story-import/preview`の結果。衣装は新しく作るキャラの分だけが対象。"""
+
+    characters: StoryImportCounts
+    costumes: StoryImportCounts
+    scenes: StoryImportCounts
+    reference_images: StoryImportImageCounts
 
 
 class ProjectPurgeResult(ApiModel):
