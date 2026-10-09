@@ -113,7 +113,6 @@ prefix は `/api/v1` とする。作成は `POST`、単体取得は `GET /{resou
 |Artifact の作成・取得|`POST /api/v1/artifacts` / `GET /api/v1/artifacts/{artifact_id}`|
 |Artifact の実ファイル配信|`GET /api/v1/artifacts/{artifact_id}/content`|
 |Artifact の採否記録|`PATCH /api/v1/artifacts/{artifact_id}/decision`|
-|ApprovalLog の作成・取得|`POST /api/v1/approval-logs` / `GET /api/v1/approval-logs/{approval_log_id}`|
 |ai-media 参照(読取専用)|`GET /api/v1/projects` 以下|
 
 `WebSocket /api/v1/events`は`queued`、`running`、`cancelling`、終端状態の変化を通知する。通知は画面がRESTを再取得するトリガーであり、状態の正本ではない。切断中もJobは継続し、再接続時は`GET /api/v1/generation-jobs`で復元する。イベント本文は`contracts/events/job-event.schema.json`に従う。

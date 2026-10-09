@@ -286,6 +286,8 @@ Artifact一覧と再実行画面は、Manifestの各Canon参照と現在の参�
 
 ## 整合性一覧
 
+v2の画面で使わないため、`GET /api/v1/artifacts/integrity`は#635で消した。この節は消す前の仕様の記録として残す。
+
 資産の横断確認のため、`GET /api/v1/artifacts/integrity`は整合性を欠いたArtifactを理由付きで返す。理由は次の4種とし、1件のArtifactへ複数付きうる。
 
 |理由|判定|
