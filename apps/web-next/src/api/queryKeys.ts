@@ -27,6 +27,9 @@ export const queryKeys = {
   modelOptions: (workflowVersionId: string) => ["workflow-versions", workflowVersionId, "models"] as const,
   project: (projectId: string) => ["projects", projectId] as const,
   projects: ["projects"] as const,
+  // novel-writerの取り込み候補。Projectの作成で「取り込み済み」の表示が変わるため`projects`の下に置く。
+  externalCandidates: ["projects", "external-candidates"] as const,
+  projectLocalOverrides: (projectId: string) => ["projects", projectId, "local-overrides"] as const,
   // `projects`の下に置き、Projectの変更で`projects`ごと無効化したときに一緒に取り直す。
   projectList: (lifecycle: "active" | "trashed") => ["projects", "list", lifecycle] as const,
   // キャラクター・衣装・シーンもProjectの下に置き、Projectの変更で一緒に取り直す。

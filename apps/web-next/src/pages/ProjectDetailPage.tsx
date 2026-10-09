@@ -9,6 +9,7 @@ import { RefetchErrorAlert } from "../projectDetail/RefetchErrorAlert";
 import { SceneTab } from "../projectDetail/SceneTab";
 import { UnsavedGuardProvider, useRunGuarded } from "../projectDetail/unsavedGuard";
 import { useRestoreProjectWithNotice } from "../projects/useProjects";
+import { ReimportButton } from "../storyImport/ReimportButton";
 
 type DetailTab = "characters" | "scenes";
 
@@ -70,6 +71,7 @@ export function ProjectDetailPage() {
               </Text>
             ) : null}
           </div>
+          <ReimportButton project={record} />
         </Group>
         <RefetchErrorAlert error={project.error} />
         {trashed ? (
