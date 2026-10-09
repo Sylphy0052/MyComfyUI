@@ -9,7 +9,6 @@ import {
   type GenerationJob,
   type GenerationManifest,
   type MediaItem,
-  type StorySceneAdoption,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { notifyError } from "../notifications";
@@ -222,24 +221,12 @@ export function useSetDecision() {
   });
 }
 
-/** 紐づけたシーンのシーン画像に採用する。採否は`accepted`になり、前の採用は外れる。 */
-export function useAdoptSceneImage() {
+/** 採用の後に、生成物の詳細と一覧を取り直す。採用を差し替えると前の生成物の採否も戻るので、詳細は`artifacts`ごと取り直す。 */
+export function useRefreshAfterAdoption() {
   const client = useQueryClient();
   const invalidate = useInvalidateArtifacts();
-  return useMutation({
-    mutationFn: ({ projectId, sceneId, artifactId }: { projectId: string; sceneId: string; artifactId: string }) =>
-      apiRequest<StorySceneAdoption>(
-        `/projects/${enc(projectId)}/story-scenes/${enc(sceneId)}/adoptions/scene_image`,
-        { method: "PUT", body: JSON.stringify({ artifact_id: artifactId }) },
-      ),
-    onSettled: (_data, _error, { projectId, sceneId, artifactId }) =>
-      Promise.all([
-        invalidate([artifactId]),
-        // 外れた前の生成物の採否も戻るので、詳細は1件に絞らずまとめて取り直す。
-        client.invalidateQueries({ queryKey: queryKeys.artifacts }),
-        client.invalidateQueries({ queryKey: queryKeys.sceneAdoptions(projectId, sceneId) }),
-      ]),
-  });
+  return (artifactId: string) =>
+    Promise.all([invalidate([artifactId]), client.invalidateQueries({ queryKey: queryKeys.artifacts })]);
 }
 
 // ---- 一括操作 ----
