@@ -1726,6 +1726,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/legacy-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Legacy Links
+         * @description 旧生成物の`story_scene_id`を1トランザクションで埋める。既に付いた生成物は変えない。
+         */
+        post: operations["run_legacy_links_api_v1_projects__project_id__legacy_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/legacy-links/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Legacy Links
+         * @description 付け替える件数と、対応するシーンが無く変えない件数 (理由ごと) を返す。DBは変えない。
+         *
+         *     DBを変えないので、ゴミ箱のProjectでも通す。
+         */
+        post: operations["preview_legacy_links_api_v1_projects__project_id__legacy_links_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/local-overrides": {
         parameters: {
             query?: never;
@@ -4107,6 +4149,43 @@ export interface components {
             job: components["schemas"]["GenerationJobRead"];
             /** Truncated */
             truncated: boolean;
+        };
+        /**
+         * LegacyLinkResult
+         * @description `legacy-links`と`legacy-links/preview`の結果。previewでは付け替える予定の件数。
+         *
+         *     `linked`は`story_scene_id`を埋める件数、`project_filled`はそのうち`assigned_project_id`も
+         *     埋める件数。
+         */
+        LegacyLinkResult: {
+            /** Linked */
+            linked: number;
+            /** Project Filled */
+            project_filled: number;
+            skipped: components["schemas"]["LegacyLinkSkipped"];
+            unmatched: components["schemas"]["LegacyLinkUnmatched"];
+        };
+        /**
+         * LegacyLinkSkipped
+         * @description 対象にしない生成物の件数。`trashed`はゴミ箱の生成物で、復元後にやり直せば付く。
+         */
+        LegacyLinkSkipped: {
+            /** Already Linked */
+            already_linked: number;
+            /** Trashed */
+            trashed: number;
+        };
+        /**
+         * LegacyLinkUnmatched
+         * @description 対応するシーンが見つからず、変えない生成物の件数を理由ごとに分けたもの。
+         */
+        LegacyLinkUnmatched: {
+            /** Project Ambiguous */
+            project_ambiguous: number;
+            /** Scene Not Imported */
+            scene_not_imported: number;
+            /** Shot Unknown */
+            shot_unknown: number;
         };
         /** LookProfileCreate */
         LookProfileCreate: {
@@ -9582,6 +9661,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectGenerationDefaultsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_legacy_links_api_v1_projects__project_id__legacy_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyLinkResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_legacy_links_api_v1_projects__project_id__legacy_links_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegacyLinkResult"];
                 };
             };
             /** @description Validation Error */
