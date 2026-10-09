@@ -32,8 +32,24 @@ type SlotChoice =
   /** 採用先を決められない。`error`なら取得の失敗、そうでなければ判別できないだけ。 */
   | { state: "blocked"; message: string; error: boolean };
 
-/** 採用中の生成物を不採用にする操作。採用中なら先に枠から外してから不採用にする (`useSlotDecision`の`reject`)。 */
-export type SlotReject = { adopted: boolean; pending: boolean; reject: () => void };
+/**
+ * 採用中の生成物を不採用にする操作。採用中なら先に枠から外してから不採用にする (`useSlotDecision`の`reject`)。
+ * `blockedReason`があるときは不採用にできない (枠に採用中のまま不採用にしてしまう、または採用中かが分からない)。
+ */
+export type SlotReject = { adopted: boolean; pending: boolean; reject: () => void; blockedReason: string | null };
+
+type AdoptionsQuery = Pick<UseQueryResult<StorySceneAdoption[]>, "data" | "isPending" | "isError">;
+
+/**
+ * 枠に採用中のまま不採用にさせないための理由。`remaining`は不採用にしても枠に残る採用 (この生成物のうち、不採用の操作で外れないもの)。
+ * 採用状況が分からない間も、採用中かを確かめられないので止める。
+ */
+function rejectBlockedReason(adoptions: AdoptionsQuery, remaining: StorySceneAdoption[]): string | null {
+  if (adoptions.isPending) return "採用の状況を確認しています";
+  if (adoptions.isError) return "採用の状況を取得できないため、不採用にできません";
+  if (remaining.length > 0) return "採用中の枠を外してから不採用にしてください";
+  return null;
+}
 
 type JobQuery = Pick<UseQueryResult<GenerationJob>, "data" | "isPending" | "isError" | "error">;
 
@@ -94,12 +110,16 @@ function AdoptionControls({
   // 行を取れるのは、Jobの行がこのシーンに今もあるとき。消えた行や行の無いJobは選ばせる。
   const jobLineKnown = jobDialogueId !== null && lines.some((line) => line.id === jobDialogueId);
   const [pickedLine, setPickedLine] = useState<string | null>(null);
-  const dialogueId = slot === "voice" ? (jobLineKnown ? jobDialogueId : pickedLine) : null;
+  const mine = (adoptions.data ?? []).filter((item) => item.artifact_id === artifact.id);
+  // 行を選んでいなければ、この生成物が採用中の行を既定にする (開き直すと選択は戻るので、採用先を見失わない)。
+  const adoptedLine = mine.find((item) => item.slot === "voice")?.dialogue_id ?? null;
+  const pickedOrAdoptedLine = pickedLine ?? adoptedLine;
+  const dialogueId = slot === "voice" ? (jobLineKnown ? jobDialogueId : pickedOrAdoptedLine) : null;
   const decide = useSlotDecision(projectId, sceneId, slot, dialogueId);
 
   const lineNumbers = new Map(lines.map((line) => [line.id, line.number] as const));
-  const mine = (adoptions.data ?? []).filter((item) => item.artifact_id === artifact.id);
-  const adopted = mine.some((item) => item.slot === slot && item.dialogue_id === dialogueId);
+  const isCurrent = (item: StorySceneAdoption) => item.slot === slot && item.dialogue_id === dialogueId;
+  const adopted = mine.some(isCurrent);
   const needsLine = slot === "voice" && dialogueId === null;
   // 画像の採用は採用状況に依らず今までどおり押せる。ほかの枠は、採用中かが分からないまま入れ替えないよう止める。
   const needsStatus = slot !== "scene_image";
@@ -119,11 +139,13 @@ function AdoptionControls({
       ? mutate("release", `${SLOT_LABELS[slot]}の採用を外しました`, "採否を変えられませんでした")
       : mutate("adopt", `${SLOT_LABELS[slot]}に採用しました`, "採否を変えられませんでした");
   const reject = () => mutate("reject", `${SLOT_LABELS[slot]}の採用を外して不採用にしました`, "不採用にできませんでした");
+  // 画像は今までどおり。ほかの枠は、今の枠・行以外にも採用中なら不採用にしても枠に残るので止める。
+  const blockedReason = needsStatus ? rejectBlockedReason(adoptions, mine.filter((item) => !isCurrent(item))) : null;
   const scenesFailed = scenes.isError && scenes.data === undefined;
   const noLines = slot === "voice" && !jobLineKnown && scenes.isSuccess && lines.length === 0;
   return (
     <>
-      {renderDecision({ adopted, pending: decide.isPending, reject })}
+      {renderDecision({ adopted, pending: decide.isPending, reject, blockedReason })}
       {slotPicker}
       {mine.length > 0 ? (
         <Group gap={4} data-testid="adopted-slots">
@@ -161,7 +183,7 @@ function AdoptionControls({
           description="この音声を入れる行を選びます"
           placeholder="行を選ぶ"
           data={lines.map((line) => ({ value: line.id, label: `${line.number}行目 ${line.text}` }))}
-          value={pickedLine}
+          value={pickedOrAdoptedLine}
           onChange={setPickedLine}
           disabled={scenes.isPending}
           allowDeselect={false}
@@ -172,6 +194,34 @@ function AdoptionControls({
           {adopted ? "採用を外す" : `紐づけたシーンの${SLOT_LABELS[slot]}に採用`}
         </Button>
       </Group>
+    </>
+  );
+}
+
+/**
+ * 採用先が決まらない (Job取得中・取得失敗・枠の判別不能・枠の無い種別) ときの採否。
+ * 枠を操作できないので、採用中の生成物は不採用にさせない (枠に採用中のまま不採用になるのを防ぐ)。
+ */
+function UnslottedDecision({
+  artifact,
+  projectId,
+  sceneId,
+  renderDecision,
+  children,
+}: {
+  artifact: ArtifactRecord;
+  projectId: string;
+  sceneId: string;
+  renderDecision: (slotReject: SlotReject | null) => ReactNode;
+  children: ReactNode;
+}) {
+  const adoptions = useSceneAdoptions(projectId, sceneId);
+  const mine = (adoptions.data ?? []).filter((item) => item.artifact_id === artifact.id);
+  const blockedReason = rejectBlockedReason(adoptions, mine);
+  return (
+    <>
+      {renderDecision({ adopted: false, pending: false, reject: () => undefined, blockedReason })}
+      {children}
     </>
   );
 }
@@ -194,23 +244,22 @@ export function SlotAdoption({
   const [audioSlot, setAudioSlot] = useState<AdoptionSlot>("voice");
   if (!projectId || !sceneId) return <>{renderDecision(null)}</>;
   const choice = slotChoiceOf(artifact, job);
-  if (choice.state === "none") return <>{renderDecision(null)}</>;
+  const unslotted = { artifact, projectId, sceneId, renderDecision };
+  if (choice.state === "none") return <UnslottedDecision {...unslotted}>{null}</UnslottedDecision>;
   if (choice.state === "pending") {
     return (
-      <>
-        {renderDecision(null)}
+      <UnslottedDecision {...unslotted}>
         <Loader size="xs" />
-      </>
+      </UnslottedDecision>
     );
   }
   if (choice.state === "blocked") {
     return (
-      <>
-        {renderDecision(null)}
+      <UnslottedDecision {...unslotted}>
         <Text size="xs" c={choice.error ? "red" : "dimmed"}>
           {choice.message}
         </Text>
-      </>
+      </UnslottedDecision>
     );
   }
   const slot = choice.state === "ready" ? choice.slot : audioSlot;

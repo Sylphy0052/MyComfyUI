@@ -149,24 +149,39 @@ function DecisionEditor({ artifact }: { artifact: ArtifactRecord }) {
       <SlotAdoption
         key={artifact.id}
         artifact={artifact}
-        renderDecision={(slotReject) => (
-          <SegmentedControl
-            data={DECISION_OPTIONS}
-            value={artifact.decision}
-            disabled={setDecision.isPending || slotReject?.pending === true}
-            onChange={(value) => {
-              // 枠に採用中のものは、先に枠から外してから不採用にする (`useSlotDecision`)。
-              if (value === "rejected" && slotReject?.adopted) {
-                slotReject.reject();
-                return;
-              }
-              setDecision.mutate(
-                { artifactId: artifact.id, decision: value as ArtifactDecision },
-                { onError: (error) => notifyError("採否を変更できません", error) },
-              );
-            }}
-          />
-        )}
+        renderDecision={(slotReject) => {
+          const blockedReason = slotReject?.blockedReason ?? null;
+          return (
+            <>
+              <SegmentedControl
+                data={
+                  // 枠に採用中のまま不採用にしないよう、押せなくして理由を出す。
+                  blockedReason === null
+                    ? DECISION_OPTIONS
+                    : DECISION_OPTIONS.map((option) => ({ ...option, disabled: option.value === "rejected" }))
+                }
+                value={artifact.decision}
+                disabled={setDecision.isPending || slotReject?.pending === true}
+                onChange={(value) => {
+                  // 枠に採用中のものは、先に枠から外してから不採用にする (`useSlotDecision`)。
+                  if (value === "rejected" && slotReject?.adopted) {
+                    slotReject.reject();
+                    return;
+                  }
+                  setDecision.mutate(
+                    { artifactId: artifact.id, decision: value as ArtifactDecision },
+                    { onError: (error) => notifyError("採否を変更できません", error) },
+                  );
+                }}
+              />
+              {blockedReason !== null ? (
+                <Text size="xs" c="dimmed" data-testid="reject-blocked">
+                  不採用にできません: {blockedReason}
+                </Text>
+              ) : null}
+            </>
+          );
+        }}
       />
     </Stack>
   );
