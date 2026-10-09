@@ -8673,6 +8673,19 @@
             "title": "Negative Tags",
             "type": "array"
           },
+          "reference_image_memos": {
+            "additionalProperties": {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            "maxProperties": 50,
+            "propertyNames": {
+              "maxLength": 1100,
+              "minLength": 1
+            },
+            "title": "Reference Image Memos",
+            "type": "object"
+          },
           "reference_images": {
             "items": {
               "maxLength": 1100,
@@ -8729,6 +8742,13 @@
             },
             "title": "Negative Tags",
             "type": "array"
+          },
+          "reference_image_memos": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Reference Image Memos",
+            "type": "object"
           },
           "reference_images": {
             "items": {
@@ -8807,6 +8827,26 @@
               }
             ],
             "title": "Negative Tags"
+          },
+          "reference_image_memos": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "maxLength": 2000,
+                  "type": "string"
+                },
+                "maxProperties": 50,
+                "propertyNames": {
+                  "maxLength": 1100,
+                  "minLength": 1
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Image Memos"
           },
           "reference_images": {
             "anyOf": [

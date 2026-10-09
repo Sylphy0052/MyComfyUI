@@ -75,6 +75,20 @@ DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
     },
     "steps": {"type": "integer", "label": "ステップ数", "control": "number"},
     "cfg": {"type": "number", "label": "CFG", "control": "number"},
+    "sampler_name": {
+        "type": "string",
+        "label": "sampler",
+        "control": "select",
+        "options": list(workflow_module.KSAMPLER_SAMPLERS),
+        "help": "hires fixの2段目も同じ値を使う。",
+    },
+    "scheduler": {
+        "type": "string",
+        "label": "scheduler",
+        "control": "select",
+        "options": list(workflow_module.KSAMPLER_SCHEDULERS),
+        "help": "hires fixの2段目も同じ値を使う。",
+    },
     "seed": {
         "type": "integer",
         "label": "seed",
@@ -117,6 +131,9 @@ DEFAULT_VALUES: dict[str, Any] = {
     "batch_size": 1,
     "steps": 30,
     "cfg": 4.0,
+    #: テンプレートに固定されていた値。指定しないときは従来と同じワークフローを送る。
+    "sampler_name": "euler",
+    "scheduler": "simple",
     "seed": workflow_module.AUTO_SEED,
     "hires_enabled": False,
     "hires_scale": 2.0,
