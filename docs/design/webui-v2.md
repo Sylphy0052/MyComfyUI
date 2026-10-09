@@ -320,7 +320,20 @@ Jobの状態は `queued` / `running` / `cancelling` / `succeeded` / `failed` / `
 - 整合性チェック
 - `sd15_controlnet`
 
-対応するbackendのAPI (`/agent-proposals`、`/look-profiles`、`/workflows`、`/workflow-versions`、`/approval-logs`、`/external-images` など) は、置き換えの作業では消さない。旧 `apps/web` を消した後 (P3) に、生成の内部から使われていないかを調べてから消す。Recipeが `/workflows` の登録に依存している可能性があるためである。
+対応するbackendのAPIは、旧 `apps/web` を消した後に#635で次のエンドポイントを消した。テーブル、モデル、内部のモジュールは残している。Recipeの登録 (`ensure_workflows`) は起動時にDBへ直接書くので、`/workflows` を消しても影響しない。
+
+- `/agent-proposals` (7本) と `/agent-providers`
+- `/approval-logs` (3本)
+- `/workflows` と `/workflows/{workflow_id}/versions` (4本)、`/workflow-versions/{workflow_version_id}` と `/diff`。v2が使う `/workflow-versions/{workflow_version_id}/models` は残す
+- `/look-profiles` (5本)。Job作成などの入力にある `look_profile_ids` は、Job本文の互換のために残す
+- `/external-images/import` と `/preview`、`/artifacts/{artifact_id}/import`
+- `/artifacts/integrity`
+
+次は残した。
+
+- `/project-portability` (export/import、backup/restore、テンプレート): モジュール全体がこのエンドポイント専用で、消すと機能ごと消える。backup/restoreはデータを守る手段なので、扱いは別に決める
+- `/user-scripts`: `script_approval_cli.py` がHTTPで呼んでいる
+- Scene・Shotの構造API (`structure.py`) と、Shotの参照API: Shotの参照は `contracts/ai-media/v1` の契約にある。旧Scene・Shotは#632の付け替え元でもある
 
 ## backendで必要な追加・変更
 
