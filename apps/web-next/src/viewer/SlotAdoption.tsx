@@ -121,7 +121,7 @@ function AdoptionControls({
   const isCurrent = (item: StorySceneAdoption) => item.slot === slot && item.dialogue_id === dialogueId;
   const adopted = mine.some(isCurrent);
   const needsLine = slot === "voice" && dialogueId === null;
-  // 画像の採用は採用状況に依らず今までどおり押せる。ほかの枠は、採用中かが分からないまま入れ替えないよう止める。
+  // 画像の採用・解除は採用状況に依らず今までどおり押せる。ほかの枠は、採用中かが分からないまま入れ替えないよう止める。
   const needsStatus = slot !== "scene_image";
   const statusUnknown = needsStatus && (adoptions.isPending || adoptions.isError);
   const busy = decide.isPending || statusUnknown;
@@ -139,8 +139,8 @@ function AdoptionControls({
       ? mutate("release", `${SLOT_LABELS[slot]}の採用を外しました`, "採否を変えられませんでした")
       : mutate("adopt", `${SLOT_LABELS[slot]}に採用しました`, "採否を変えられませんでした");
   const reject = () => mutate("reject", `${SLOT_LABELS[slot]}の採用を外して不採用にしました`, "不採用にできませんでした");
-  // 画像は今までどおり。ほかの枠は、今の枠・行以外にも採用中なら不採用にしても枠に残るので止める。
-  const blockedReason = needsStatus ? rejectBlockedReason(adoptions, mine.filter((item) => !isCurrent(item))) : null;
+  // 不採用は画像も含めて、採用中かが分からないときと、今の枠・行以外にも採用中 (不採用にしても枠に残る) のときに止める。
+  const blockedReason = rejectBlockedReason(adoptions, mine.filter((item) => !isCurrent(item)));
   const scenesFailed = scenes.isError && scenes.data === undefined;
   const noLines = slot === "voice" && !jobLineKnown && scenes.isSuccess && lines.length === 0;
   return (
@@ -241,7 +241,13 @@ export function SlotAdoption({
   const projectId = artifact.assigned_project_id;
   const sceneId = artifact.story_scene_id ?? null;
   const { job } = useGenerationSettings(artifact.job_id);
-  const [audioSlot, setAudioSlot] = useState<AdoptionSlot>("voice");
+  const adoptions = useSceneAdoptions(projectId ?? "", projectId ? sceneId : null);
+  const [pickedAudioSlot, setPickedAudioSlot] = useState<AdoptionSlot | null>(null);
+  // 枠を選んでいなければ、この生成物が採用中の音声の枠を既定にする (採用中の枠の「採用を外す」を最初から出す)。
+  const adoptedAudioSlot =
+    (adoptions.data ?? []).find((item) => item.artifact_id === artifact.id && (item.slot === "voice" || item.slot === "bgm"))
+      ?.slot ?? null;
+  const audioSlot = pickedAudioSlot ?? adoptedAudioSlot ?? "voice";
   if (!projectId || !sceneId) return <>{renderDecision(null)}</>;
   const choice = slotChoiceOf(artifact, job);
   const unslotted = { artifact, projectId, sceneId, renderDecision };
@@ -269,7 +275,7 @@ export function SlotAdoption({
         renderDecision={renderDecision}
         slotPicker={
           choice.state === "choose-audio" ? (
-            <SegmentedControl size="xs" data={AUDIO_SLOT_OPTIONS} value={audioSlot} onChange={(value) => setAudioSlot(value as AdoptionSlot)} />
+            <SegmentedControl size="xs" data={AUDIO_SLOT_OPTIONS} value={audioSlot} onChange={(value) => setPickedAudioSlot(value as AdoptionSlot)} />
           ) : null
         }
         key={`${slot}:${artifact.id}`}
