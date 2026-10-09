@@ -18,7 +18,8 @@ export type ImageForm = {
   excludedNegative: string[];
   width: number;
   height: number;
-  batchSize: number;
+  /** 投入するJobの数。Jobごとにseedを変える。 */
+  count: number;
   seedMode: SeedMode;
   seed: number;
   unetName: string;
@@ -86,9 +87,14 @@ export const SIZE_PRESETS = [
   { label: "9:16", short: 768, long: 1344 },
 ] as const;
 
+/** 結果欄の1件が持つ枚数の上限。今の投入は1件1枚だが、前の版でbatchを使った記録が残っている。 */
 export const BATCH_MAX = 8;
+/** 1回の投入で作るJobの上限。 */
+export const COUNT_MAX = 8;
 /** backendの`MAX_SEED` (2**53-1) に合わせる。 */
 export const SEED_MAX = Number.MAX_SAFE_INTEGER;
+/** 固定seedで枚数を増やすと`seed + 0..枚数-1`をJobごとに使うため、その分を空けておく。 */
+export const SEED_INPUT_MAX = SEED_MAX - COUNT_MAX;
 
 /** 生成物のManifestから戻すseed。0以上`max`以下の整数ならそのまま返し、それ以外 (NaN・小数・負数・`max`超・非数) は読めない値として`null`。 */
 export function restorableSeed(value: unknown, max: number): number | null {
@@ -129,7 +135,7 @@ export function defaultForm(recipe: Recipe): ImageForm {
     excludedNegative: [],
     width: numberOr(d.width, 832),
     height: numberOr(d.height, 1216),
-    batchSize: numberOr(d.batch_size, 1),
+    count: 1,
     seedMode: seed < 0 ? "random" : "fixed",
     seed: seed < 0 ? 0 : seed,
     unetName: stringOr(d.unet_name, ""),
@@ -173,6 +179,7 @@ export function normalizeForm(raw: Record<string, unknown>, base: ImageForm): Im
   const form = merged as ImageForm;
   return {
     ...form,
+    count: Math.min(COUNT_MAX, Math.max(1, Math.trunc(form.count))),
     seedMode: form.seedMode === "random" || form.seedMode === "fixed" ? form.seedMode : base.seedMode,
     sweepMode: form.sweepMode === "cartesian" || form.sweepMode === "zip" ? form.sweepMode : base.sweepMode,
   };
@@ -252,7 +259,8 @@ export function buildInputs(form: ImageForm, supplement: SupplementTags, recipe:
     negative_prompt: negative,
     width: form.width,
     height: form.height,
-    batch_size: form.batchSize,
+    // 1枚ずつseedを残すため、枚数はbatchでなくJobの本数で作る。
+    batch_size: 1,
     seed: form.seedMode === "random" ? AUTO_SEED : form.seed,
     unet_name: form.unetName,
     clip_name: form.clipName,
@@ -286,6 +294,18 @@ export function imageJobBody(recipe: Recipe, target: ImageTarget, inputs: Record
 }
 
 /**
+ * 枚数ぶんのJobの`inputs`。seedがランダムならJobごとに乱数、固定なら`seed + index`にして、1枚ずつ別の画像にする。
+ * seedを受け付けないRecipe (`inputs`に`seed`が無い) は1本だけにする。
+ */
+export function inputsPerJob(inputs: Record<string, unknown>, form: ImageForm): Record<string, unknown>[] {
+  if (!("seed" in inputs)) return [inputs];
+  return Array.from({ length: form.count }, (_, index) => ({
+    ...inputs,
+    seed: form.seedMode === "random" ? AUTO_SEED : form.seed + index,
+  }));
+}
+
+/**
  * 投入済みのJobのManifestから入力欄の値を作る。プロンプトの分け直しは呼び出し側が行う。
  * seedは実際に使った値を固定で戻し、同じ画像を作り直せるようにする。
  */
@@ -296,7 +316,6 @@ export function formFromManifest(base: ImageForm, manifest: GenerationManifest):
     ...base,
     width: numberOr(p.width, base.width),
     height: numberOr(p.height, base.height),
-    batchSize: numberOr(p.batch_size, base.batchSize),
     seedMode: "fixed",
     seed: manifest.seed,
     unetName: stringOr(m.unet_name, base.unetName),

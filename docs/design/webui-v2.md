@@ -157,6 +157,7 @@ Jobの状態は `queued` / `running` / `cancelling` / `succeeded` / `failed` / `
   - 修正: 「全体を変える」(`anima_img2img`、denoiseのスライダー) / 「一部を描き直す」(`anima_inpaint`) / 「拡大」(`image_upscale`)
   - 参照と修正では、元画像を1枚選ぶ。出どころは、生成物、衣装の参照画像、アップロードのいずれかとする
 - 常に出すパラメータ: サイズ (縦横比のプリセットと縦横の入れ替え)、枚数、seed (ランダム/固定)
+  - 枚数は、seedを受け付ける方式ならタブにかかわらず出す (上限8)。枚数ぶんのJobを投入し、seedがランダムならJobごとに乱数、固定なら`seed + 0..枚数-1`を使う。`batch_size`は1で送る (#655)
 - 「詳細」に折りたたむもの: モデル (unet/clip/vae)、steps、cfg、sampler/scheduler、hires、denoise/参照強度、スイープ
 - 作らないもの: `sd15_controlnet`、Preset/LookProfile、派生、投入前の確認 (preview)
 

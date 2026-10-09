@@ -414,7 +414,7 @@ export function buildPromptOnlyBody(
     negativeFree: draft.imageNegative.trim() === "" ? base.negativeFree : draft.imageNegative.trim(),
     width: p.width,
     height: p.height,
-    batchSize: 1,
+    count: 1,
   };
   return {
     image: {

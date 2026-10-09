@@ -2,7 +2,6 @@ import { apiRequest, artifactContentUrl, type MusicPromptAssist } from "../api/c
 import { fetchAdoptedVideoSeconds, RESULTS_MAX as BGM_RESULTS_MAX } from "../bgm/useBgm";
 import { suggestedBgmTags } from "../bgm/BgmTagAssist";
 import { BGM_TEMPLATE, bgmJobBody, buildBgmInputs, defaultBgmForm, defaultSeconds } from "../bgm/bgmForm";
-import { resultCountOf } from "../imageGen/deriveForm";
 import { buildInputs, composedPrompts, defaultForm, imageJobBody, TXT2IMG_TEMPLATE } from "../imageGen/imageForm";
 import { buildCastSupplementTags, castEntriesOf } from "../imageGen/promptTags";
 import { addCostumeReference, putAdoption, RESULTS_MAX as IMAGE_RESULTS_MAX } from "../imageGen/useImageGen";
@@ -103,7 +102,7 @@ async function runCharacter(ctx: RunContext): Promise<StepOutcome> {
     if (!character || !costume) throw new RunBlocked("キャラまたは衣装が途中で見つからなくなりました");
     const target = characterTargetOf(projectId, characterId, costumeId);
     const supplement = buildCastSupplementTags(castEntriesOf(target, latest, false), null);
-    const form = { ...defaultForm(recipe), batchSize: 1 };
+    const form = defaultForm(recipe);
     if (composedPrompts(form, supplement).positive === "") {
       throw new RunBlocked(`${character.name}のキャラ画像のプロンプトが空です`);
     }
@@ -114,7 +113,7 @@ async function runCharacter(ctx: RunContext): Promise<StepOutcome> {
       (job) =>
         appendResultEntry(
           characterKeysOf(characterId, costumeId).results,
-          { jobId: job.id, count: resultCountOf(recipe, form) },
+          { jobId: job.id, count: 1 },
           IMAGE_RESULTS_MAX,
         ),
     );
@@ -130,7 +129,7 @@ async function runSceneImage(ctx: RunContext): Promise<StepOutcome> {
   const recipe = await txt2imgRecipe(ctx);
   const target = sceneImageTargetOf(projectId, scene);
   const supplement = buildCastSupplementTags(castEntriesOf(target, characters, true), scene);
-  const form = { ...defaultForm(recipe), batchSize: 1 };
+  const form = defaultForm(recipe);
   if (composedPrompts(form, supplement).positive === "") {
     throw new RunBlocked("シーン画像のプロンプトが空です。シーンの背景・ポーズなどか、キャラのタグを入力してください");
   }
@@ -141,7 +140,7 @@ async function runSceneImage(ctx: RunContext): Promise<StepOutcome> {
     (job) =>
       appendResultEntry(
         sceneImageKeysOf(scene.id).results,
-        { jobId: job.id, count: resultCountOf(recipe, form) },
+        { jobId: job.id, count: 1 },
         IMAGE_RESULTS_MAX,
       ),
   );

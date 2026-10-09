@@ -19,7 +19,6 @@ import {
   IMG2IMG_TEMPLATE,
   INITIAL_DERIVE,
   REF_SIGLIP_TEMPLATE,
-  resultCountOf,
   sourceFromArtifact,
   templateOfDerive,
   usesPrompt,
@@ -33,6 +32,7 @@ import {
   composedPrompts,
   defaultForm,
   imageJobBody,
+  inputsPerJob,
   type ImageForm,
   type ImageStorageKeys,
   type ImageTarget,
@@ -47,7 +47,7 @@ import {
   useProjectStory,
   useResultEntries,
   useStoredInput,
-  useSubmitImageJob,
+  useSubmitImageJobs,
   type RestoredInput,
 } from "./useImageGen";
 import { useSubmitSweep, useSweepEntries } from "./useSweep";
@@ -105,7 +105,7 @@ export function ImageWorkspace({
   const client = useQueryClient();
   const [stored, setStored] = useStoredInput(recipe, storageKeys.input);
   const results = useResultEntries(storageKeys.results);
-  const submit = useSubmitImageJob();
+  const submit = useSubmitImageJobs();
   const submitSweep = useSubmitSweep(storageKeys.sweeps);
   const sweeps = useSweepEntries(storageKeys.sweeps);
   const [restoringJobId, setRestoringJobId] = useState<string | null>(null);
@@ -314,20 +314,17 @@ export function ImageWorkspace({
     if (submitRecipe === null) return;
     // 投入のPOSTが返る前に別画面へ移っても結果欄へ記録できるよう、mutateのコールバックでなくPromiseで受ける。
     // mutateのコールバックは、画面が外れると呼ばれない。
+    // 枚数ぶんのJobを、seedを変えて投入する。1本ずつ結果欄へ足す。
+    const inputs =
+      deriveMode === null
+        ? buildInputs(form, supplement, recipe)
+        : buildDeriveInputs(deriveMode, derive, form, supplement, submitRecipe);
     submit
-      .mutateAsync(
-        imageJobBody(
-          submitRecipe,
-          target,
-          deriveMode === null
-            ? buildInputs(form, supplement, recipe)
-            : buildDeriveInputs(deriveMode, derive, form, supplement, submitRecipe),
-        ),
-      )
-      .then(
-        (job) => results.add({ jobId: job.id, count: resultCountOf(submitRecipe, form) }),
-        (error: unknown) => notifyError("投入できませんでした", error),
-      );
+      .mutateAsync({
+        bodies: inputsPerJob(inputs, form).map((each) => imageJobBody(submitRecipe, target, each)),
+        onSubmitted: (job) => results.add({ jobId: job.id, count: 1 }),
+      })
+      .catch((error: unknown) => notifyError("投入できませんでした", error));
   };
 
   const promptFields = (
@@ -406,6 +403,7 @@ export function ImageWorkspace({
                   onChange={updateForm}
                   recipe={recipe}
                   detailSweep={<SweepFields form={form} onChange={updateForm} plan={sweepPlan} />}
+                  hideCount={sweepOn}
                 />
               </Stack>
             </Tabs.Panel>

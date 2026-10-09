@@ -18,11 +18,11 @@ import { useState, type ReactNode } from "react";
 import type { Recipe } from "../api/client";
 import {
   acceptsInput,
-  BATCH_MAX,
+  COUNT_MAX,
   presetOf,
   isOutOfChoices,
   schemaChoices,
-  SEED_MAX,
+  SEED_INPUT_MAX,
   SIZE_PRESETS,
   type ImageForm,
   type SeedMode,
@@ -238,7 +238,8 @@ function DetailFields({
 
 /**
  * 常に出すパラメータ (サイズ・枚数・seed) と、「詳細」に折りたたむパラメータ。
- * Recipeが受け付けない項目 (修正のサイズ・枚数など) は出さない。`detailExtra`は「詳細」の先頭に足す。
+ * Recipeが受け付けない項目 (修正のサイズなど) は出さない。枚数はseedを受け付けるRecipeだけに出す。
+ * `detailExtra`は「詳細」の先頭に足す。`hideCount`はスイープのように枚数を使わない投入で枚数欄を隠す。
  */
 export function ParamsFields({
   form,
@@ -246,6 +247,7 @@ export function ParamsFields({
   recipe,
   detailExtra,
   detailSweep,
+  hideCount = false,
 }: {
   form: ImageForm;
   onChange: Update;
@@ -253,19 +255,22 @@ export function ParamsFields({
   detailExtra?: ReactNode;
   /** 「詳細」の末尾に足すスイープの入力欄。 */
   detailSweep?: ReactNode;
+  hideCount?: boolean;
 }) {
   return (
     <Stack gap="sm">
       {acceptsInput(recipe, "width") ? <SizeField form={form} onChange={onChange} /> : null}
       <Group align="flex-end" gap="sm">
-        {acceptsInput(recipe, "batch_size") ? (
+        {acceptsInput(recipe, "seed") && !hideCount ? (
           <NumberInput
             label="枚数"
             w={100}
             min={1}
-            max={BATCH_MAX}
-            value={form.batchSize}
-            onChange={(value) => onChange({ batchSize: asNumber(value, form.batchSize) })}
+            max={COUNT_MAX}
+            allowDecimal={false}
+            value={form.count}
+            onChange={(value) => onChange({ count: asNumber(value, form.count) })}
+            data-testid="image-count"
           />
         ) : null}
         <Stack gap={4}>
@@ -287,7 +292,7 @@ export function ParamsFields({
             aria-label="seedの値"
             w={200}
             min={0}
-            max={SEED_MAX}
+            max={SEED_INPUT_MAX}
             allowDecimal={false}
             value={form.seed}
             onChange={(value) => onChange({ seed: asNumber(value, form.seed) })}
