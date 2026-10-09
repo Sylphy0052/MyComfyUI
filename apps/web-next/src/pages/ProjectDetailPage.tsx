@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router";
 
 import { useProject } from "../layout/projectContext";
 import { CharacterTab } from "../projectDetail/CharacterTab";
+import { LegacyLinksPanel } from "../projectDetail/LegacyLinksPanel";
 import { ReadOnlyContext } from "../projectDetail/readOnly";
 import { RefetchErrorAlert } from "../projectDetail/RefetchErrorAlert";
 import { SceneTab } from "../projectDetail/SceneTab";
@@ -84,6 +85,7 @@ export function ProjectDetailPage() {
         ) : null}
         {/* 警告を出している間は、両タブの編集を止める。復元すると取り直しで外れる。 */}
         <ReadOnlyContext.Provider value={trashed}>
+          <LegacyLinksPanel projectId={record.id} />
           <DetailTabs projectId={record.id} />
         </ReadOnlyContext.Provider>
       </Stack>
