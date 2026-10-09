@@ -56,7 +56,7 @@ function InputMemoField({
       autosize
       minRows={1}
       maxRows={4}
-      // 上限を超えた入力はAPIが422で拒み、保存時にドロワーへエラーが出る (入力は削らない)。
+      maxLength={MEMO_MAX}
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}
     />

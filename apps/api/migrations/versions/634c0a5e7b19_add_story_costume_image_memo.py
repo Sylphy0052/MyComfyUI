@@ -29,4 +29,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """衣装の参照画像のメモ列を削除する。"""
-    op.drop_column("story_costume_image", "memo")
+    with op.batch_alter_table("story_costume_image") as batch_op:
+        batch_op.drop_column("memo")

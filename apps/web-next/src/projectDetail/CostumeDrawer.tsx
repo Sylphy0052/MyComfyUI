@@ -42,6 +42,11 @@ function toDraft(costume: StoryCostume | null): CostumeDraft {
   };
 }
 
+/** 未保存の比較用。メモのキーの並びは編集の順で変わるので、並びに依らない形にしてから文字列にする。 */
+function draftSignature(draft: CostumeDraft): string {
+  return JSON.stringify({ ...draft, reference_image_memos: Object.entries(draft.reference_image_memos).sort() });
+}
+
 function CostumeForm({
   projectId,
   character,
@@ -74,7 +79,7 @@ function CostumeForm({
     Object.entries(draft.reference_image_memos).filter(([key]) => draft.reference_images.includes(key)),
   );
   const dirty =
-    JSON.stringify({ ...draft, reference_image_memos: liveInputMemos }) !== JSON.stringify(toDraft(costume)) ||
+    draftSignature({ ...draft, reference_image_memos: liveInputMemos }) !== draftSignature(toDraft(costume)) ||
     Object.keys(liveMemoEdits).length > 0;
   useReportDirty("costume", dirty);
 
@@ -93,7 +98,9 @@ function CostumeForm({
 
   const name = draft.name.trim();
   const submit = () => {
-    const body: StoryCostumeBody = { ...draft, name, reference_image_memos: liveInputMemos };
+    // 空白だけのメモは送らない (サーバーも捨てる)。
+    const sendInputMemos = Object.fromEntries(Object.entries(liveInputMemos).filter(([, memo]) => memo.trim() !== ""));
+    const body: StoryCostumeBody = { ...draft, name, reference_image_memos: sendInputMemos };
     save.mutate(
       { characterId: character.id, costumeId: costume?.id ?? null, body, memos: liveMemoEdits, onCreated },
       {
