@@ -8,9 +8,9 @@ import { useLegacyLinkPreview, useRunLegacyLinks, type LegacyLinkResult } from "
 function unmatchedText(result: LegacyLinkResult): string {
   const { scene_not_imported: notImported, shot_unknown: shotUnknown, project_ambiguous: ambiguous } = result.unmatched;
   const parts = [
-    notImported > 0 ? `シーンが未取り込み ${notImported}件` : null,
-    shotUnknown > 0 ? `Shotの親のシーンが不明 ${shotUnknown}件` : null,
-    ambiguous > 0 ? `Projectを決められない ${ambiguous}件` : null,
+    notImported > 0 ? `シーンが未取り込み${notImported}件` : null,
+    shotUnknown > 0 ? `Shotの親のシーンが不明${shotUnknown}件` : null,
+    ambiguous > 0 ? `Projectを決められない${ambiguous}件` : null,
   ].filter((part) => part !== null);
   return parts.join("、");
 }
@@ -38,10 +38,14 @@ export function LegacyLinksPanel({ projectId }: { projectId: string }) {
   const execute = () =>
     run.mutate(undefined, {
       onSuccess: (done) =>
-        notifications.show({
-          color: "green",
-          message: `旧生成物${done.linked}件をシーンへ付けました${done.project_filled > 0 ? ` (うちProjectも設定 ${done.project_filled}件)` : ""}`,
-        }),
+        notifications.show(
+          done.linked === 0
+            ? { color: "yellow", message: "付ける対象がありませんでした。すでに別の操作で付いています" }
+            : {
+                color: "green",
+                message: `旧生成物${done.linked}件をシーンへ付けました${done.project_filled > 0 ? ` (うちProjectも設定${done.project_filled}件)` : ""}`,
+              },
+        ),
       onError: (error) => notifyError("旧生成物をシーンへ付けられませんでした", error),
     });
   return (

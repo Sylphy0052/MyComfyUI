@@ -217,8 +217,11 @@ async def _apply_plan(
     linked = 0
     filled = 0
     for scene_id, entries in plan.links.items():
+        # Projectを補う行と補わない行はUPDATEの条件が違うので、分けて更新する
         for fill in (False, True):
-            ids = [artifact_id for artifact_id, f in entries if f is fill]
+            ids = [
+                artifact_id for artifact_id, entry_fill in entries if entry_fill is fill
+            ]
             for chunk in _chunks(ids):
                 values: dict[str, Any] = {"story_scene_id": scene_id}
                 conditions = [
