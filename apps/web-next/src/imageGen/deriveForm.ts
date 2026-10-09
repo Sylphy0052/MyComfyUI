@@ -220,8 +220,3 @@ export function buildDeriveInputs(
   }
   return Object.fromEntries(Object.entries(inputs).filter(([name]) => acceptsInput(recipe, name)));
 }
-
-/** 結果欄に出す枚数。枚数を受け付けない方式は1枚。 */
-export function resultCountOf(recipe: Recipe, form: ImageForm): number {
-  return acceptsInput(recipe, "batch_size") ? form.batchSize : 1;
-}

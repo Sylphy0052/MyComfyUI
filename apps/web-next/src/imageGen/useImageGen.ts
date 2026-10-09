@@ -214,6 +214,42 @@ export async function reimportInputImage(
 
 // ---- 投入と結果 ----
 
+/**
+ * 枚数ぶんのJobを順に投入する。途中で失敗したら、そこで止めて何本入ったかをエラーに添える。
+ * 投入できたJobは1本ごとに`onSubmitted`へ渡す。手順は`useSubmitBgmJobs`と同じ。
+ */
+export function useSubmitImageJobs() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      bodies,
+      onSubmitted,
+    }: {
+      bodies: GenerationJobBody[];
+      onSubmitted: (job: GenerationJob) => void;
+    }) => {
+      let submitted = 0;
+      try {
+        for (const body of bodies) {
+          const job = await apiRequest<GenerationJob>("/generation-jobs", {
+            method: "POST",
+            body: JSON.stringify(body),
+          });
+          client.setQueryData(queryKeys.job(job.id), job);
+          onSubmitted(job);
+          submitted += 1;
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          bodies.length > 1 ? `${bodies.length}本中${submitted}本を投入して止まりました: ${reason}` : reason,
+        );
+      }
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: queryKeys.jobs }),
+  });
+}
+
 export function useSubmitImageJob() {
   const client = useQueryClient();
   return useMutation({
