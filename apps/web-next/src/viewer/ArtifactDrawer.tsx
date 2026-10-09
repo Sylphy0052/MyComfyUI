@@ -24,8 +24,8 @@ import { FROM_ARTIFACT_PARAM } from "../imageGen/artifactRestore";
 import { notifyError } from "../notifications";
 import { useArtifact } from "../projectDetail/useStory";
 import { LinkSelects } from "./LinkSelects";
+import { SlotAdoption } from "./SlotAdoption";
 import {
-  useAdoptSceneImage,
   useApplyLinks,
   useBatchOperation,
   useGenerationSettings,
@@ -143,19 +143,6 @@ function LinkEditor({ artifact }: { artifact: ArtifactRecord }) {
 
 function DecisionEditor({ artifact }: { artifact: ArtifactRecord }) {
   const setDecision = useSetDecision();
-  const adopt = useAdoptSceneImage();
-  const projectId = artifact.assigned_project_id;
-  const sceneId = artifact.story_scene_id ?? null;
-  const adoptSceneImage = () => {
-    if (!projectId || !sceneId) return;
-    adopt.mutate(
-      { projectId, sceneId, artifactId: artifact.id },
-      {
-        onSuccess: () => notifications.show({ color: "green", message: "シーン画像に採用しました" }),
-        onError: (error) => notifyError("採用できません", error),
-      },
-    );
-  };
   return (
     <Stack gap="xs">
       <Title order={5}>採否</Title>
@@ -170,13 +157,7 @@ function DecisionEditor({ artifact }: { artifact: ArtifactRecord }) {
           )
         }
       />
-      {artifact.kind === "image" && projectId && sceneId ? (
-        <Group>
-          <Button size="xs" variant="light" onClick={adoptSceneImage} loading={adopt.isPending}>
-            紐づけたシーンのシーン画像に採用
-          </Button>
-        </Group>
-      ) : null}
+      <SlotAdoption artifact={artifact} />
     </Stack>
   );
 }
