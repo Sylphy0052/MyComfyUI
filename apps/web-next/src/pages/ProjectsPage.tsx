@@ -16,12 +16,13 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDots, IconPlus } from "@tabler/icons-react";
+import { IconDots, IconDownload, IconPlus } from "@tabler/icons-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { ProjectRecord } from "../api/client";
 import { notifyError } from "../notifications";
+import { StoryImportModal } from "../storyImport/StoryImportModal";
 import {
   useCreateProject,
   usePurgeProject,
@@ -280,15 +281,22 @@ export function ProjectsPage() {
     project: null,
   });
 
+  const [importOpened, setImportOpened] = useState(false);
+
   const openEdit = (project: ProjectRecord) => setForm({ opened: true, project });
 
   return (
     <Stack>
       <Group justify="space-between">
         <Title order={2}>Project</Title>
-        <Button leftSection={<IconPlus size={16} />} onClick={() => setForm({ opened: true, project: null })}>
-          新規作成
-        </Button>
+        <Group gap="xs">
+          <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => setImportOpened(true)}>
+            novel-writerから取り込む
+          </Button>
+          <Button leftSection={<IconPlus size={16} />} onClick={() => setForm({ opened: true, project: null })}>
+            新規作成
+          </Button>
+        </Group>
       </Group>
       <Tabs value={tab} onChange={(value) => setTab(value === "trashed" ? "trashed" : "active")}>
         <Tabs.List>
@@ -302,6 +310,7 @@ export function ProjectsPage() {
         project={form.project}
         onClose={() => setForm((current) => ({ ...current, opened: false }))}
       />
+      <StoryImportModal opened={importOpened} onClose={() => setImportOpened(false)} />
       <PurgeModal
         opened={purge.opened}
         project={purge.project}
