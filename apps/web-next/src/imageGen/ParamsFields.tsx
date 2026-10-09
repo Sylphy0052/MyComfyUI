@@ -20,6 +20,7 @@ import {
   acceptsInput,
   BATCH_MAX,
   presetOf,
+  isOutOfChoices,
   schemaChoices,
   SEED_MAX,
   SIZE_PRESETS,
@@ -107,6 +108,12 @@ function DetailFields({
   const optionsOf = (variable: string) =>
     models.data?.slots?.find((slot) => slot.variable === variable)?.options ?? [];
   const lockedNote = (name: string) => (acceptsInput(recipe, name) ? undefined : "このRecipeでは変えられません");
+  // 保存値が候補外のときは選択を空にし、既定値で投入することを知らせる (buildInputsが送らない)。
+  const choiceNote = (name: string, current: string) =>
+    lockedNote(name) ??
+    (isOutOfChoices(recipe, name, current)
+      ? `保存値 ${current} は候補に無いため既定値で投入する`
+      : undefined);
 
   return (
     <Accordion variant="contained" value={opened} onChange={setOpened}>
@@ -160,25 +167,25 @@ function DetailFields({
               <Select
                 label="sampler"
                 size="xs"
-                data={schemaChoices(recipe, "sampler_name", form.samplerName)}
-                value={form.samplerName || null}
+                data={schemaChoices(recipe, "sampler_name")}
+                value={isOutOfChoices(recipe, "sampler_name", form.samplerName) ? null : form.samplerName || null}
                 onChange={(samplerName) => samplerName && onChange({ samplerName })}
                 allowDeselect={false}
                 searchable
                 disabled={!acceptsInput(recipe, "sampler_name")}
-                description={lockedNote("sampler_name")}
+                description={choiceNote("sampler_name", form.samplerName)}
                 data-testid="image-sampler"
               />
               <Select
                 label="scheduler"
                 size="xs"
-                data={schemaChoices(recipe, "scheduler", form.scheduler)}
-                value={form.scheduler || null}
+                data={schemaChoices(recipe, "scheduler")}
+                value={isOutOfChoices(recipe, "scheduler", form.scheduler) ? null : form.scheduler || null}
                 onChange={(scheduler) => scheduler && onChange({ scheduler })}
                 allowDeselect={false}
                 searchable
                 disabled={!acceptsInput(recipe, "scheduler")}
-                description={lockedNote("scheduler")}
+                description={choiceNote("scheduler", form.scheduler)}
                 data-testid="image-scheduler"
               />
             </SimpleGrid>

@@ -59,7 +59,8 @@ HIRES_SCALE_MAX = 4.0
 LATENT_UPSCALE_METHODS = ("nearest-exact", "bilinear", "area", "bicubic", "bislerp")
 
 #: `anima_txt2img`のKSamplerへ渡せるsampler。ComfyUI標準のKSamplerの値から実用的なものを
-#: 固定で挙げ、`/object_info`は引かない (#555)。既定は`euler`。
+#: 固定で挙げ、`/object_info`は引かない (#555)。既定値は`bootstrap.DEFAULT_VALUES`。
+#: g18のComfyUI (6a8dcf51, 2026-10-06) の`comfy/samplers.py`に全値があることを確認済み。
 KSAMPLER_SAMPLERS = (
     "euler",
     "euler_ancestral",
@@ -83,7 +84,8 @@ KSAMPLER_SAMPLERS = (
     "uni_pc_bh2",
 )
 
-#: `anima_txt2img`のKSamplerへ渡せるscheduler。既定は`simple`。
+#: `anima_txt2img`のKSamplerへ渡せるscheduler。既定値は`bootstrap.DEFAULT_VALUES`。
+#: g18のComfyUI (6a8dcf51, 2026-10-06) の`comfy/samplers.py`に全値があることを確認済み。
 KSAMPLER_SCHEDULERS = (
     "simple",
     "normal",

@@ -222,14 +222,18 @@ export function acceptsInput(recipe: Recipe, name: string): boolean {
 }
 
 /**
- * `input_schema[name].options`の選択肢。backendの固定の一覧をそのまま使う。
- * 現在値が一覧に無いとき (Project既定など) は、選択が空にならないよう末尾へ足す。
+ * `input_schema[name].options`の選択肢。backendの固定の一覧をそのまま返す。
+ * 現在値が一覧に無くても足さない (backendは一覧外を422で断るため、選べる状態にすると投入で失敗する)。
  */
-export function schemaChoices(recipe: Recipe, name: string, current: string): string[] {
+export function schemaChoices(recipe: Recipe, name: string): string[] {
   const field = (recipe.input_schema as Record<string, unknown>)[name];
   const raw = field && typeof field === "object" ? (field as { options?: unknown }).options : undefined;
-  const options = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
-  return current !== "" && !options.includes(current) ? [...options, current] : options;
+  return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+}
+
+/** 現在値が`input_schema`の選択肢に無い (Recipe既定や過去Jobの保存値が一覧外)。空文字は「未指定」なので含めない。 */
+export function isOutOfChoices(recipe: Recipe, name: string, current: string): boolean {
+  return current !== "" && !schemaChoices(recipe, name).includes(current);
 }
 
 /** 投入するプロンプトとネガティブ。 */
@@ -240,7 +244,7 @@ export function composedPrompts(form: ImageForm, supplement: SupplementTags): { 
   };
 }
 
-/** `POST /generation-jobs`の`inputs`。空の文字列の変数は送らず、Recipeの既定値に任せる。 */
+/** `POST /generation-jobs`の`inputs`。空の文字列と、選択肢にない`sampler_name`/`scheduler`は送らず、Recipeの既定値に任せる。 */
 export function buildInputs(form: ImageForm, supplement: SupplementTags, recipe: Recipe): Record<string, unknown> {
   const { positive, negative } = composedPrompts(form, supplement);
   const values: Record<string, unknown> = {
@@ -255,8 +259,8 @@ export function buildInputs(form: ImageForm, supplement: SupplementTags, recipe:
     vae_name: form.vaeName,
     steps: form.steps,
     cfg: form.cfg,
-    sampler_name: form.samplerName,
-    scheduler: form.scheduler,
+    sampler_name: isOutOfChoices(recipe, "sampler_name", form.samplerName) ? "" : form.samplerName,
+    scheduler: isOutOfChoices(recipe, "scheduler", form.scheduler) ? "" : form.scheduler,
     hires_enabled: form.hiresEnabled,
     hires_scale: form.hiresScale,
     hires_steps: form.hiresSteps,
