@@ -15,6 +15,11 @@
 # aimedia_repository_root = "/absolute/path/to/ai-media"
 # aimedia_repository_ref = "origin/main"
 
+# canon_refsの実体がaimedia_repository_rootに無いとき(作品正本が別リポジトリのとき)に、
+# 続けて探す2つ目のgitリポジトリ。見つかった側のsource_locatorとrevisionを参照に記録する。
+# aimedia_canon_repository_root = "/absolute/path/to/novel-writer"
+# aimedia_canon_repository_ref = "origin/main"
+
 # prompt提案で作法と既存作品のpromptを読取り専用で参照するnovel-writerのルート。
 # novel_writer_root = "/absolute/path/to/novel-writer"
 

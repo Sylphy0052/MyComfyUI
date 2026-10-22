@@ -51,11 +51,90 @@ class _NoAliasLoader(yaml.SafeLoader):
         return super().compose_node(parent, index)
 
 
+class _Repository:
+    """読取り専用で扱うgitリポジトリの1つのref。"""
+
+    def __init__(self, root: Path, ref: str, locator: str | None, setting: str) -> None:
+        # `setting`は設定名の接頭辞。失敗したとき、どちらのリポジトリの設定かを示す。
+        # `-`始まりはgitにoptionとして解釈される。refは設定値だが、ここで弾いておく。
+        if not ref or ref.startswith("-"):
+            raise AiMediaUnavailable(f"参照するrefが不正です({setting}_ref): {ref!r}")
+        self.root = root
+        self.ref = ref
+        self.locator = locator or _origin_locator(root, setting)
+
+    def revision(self) -> str:
+        return (
+            self.git(
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                f"{self.ref}^{{commit}}",
+            )
+            .decode()
+            .strip()
+        )
+
+    def git(self, *args: str, stdin: bytes | None = None) -> bytes:
+        # GIT_OPTIONAL_LOCKS=0で、読取り系コマンドでもindexを書き換えないようにする。
+        environment = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(self.root), *args],
+                input=stdin,
+                capture_output=True,
+                check=True,
+                env=environment,
+                timeout=GIT_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            detail = ""
+            if isinstance(error, subprocess.CalledProcessError):
+                detail = error.stderr.decode(errors="replace").strip()
+            raise AiMediaUnavailable(
+                f"gitリポジトリを読めません: {self.root} git {args[0]} {detail}"
+            ) from error
+        return completed.stdout
+
+    def blobs(self, revision: str, paths: list[str]) -> dict[str, bytes | None]:
+        """pathごとのblobの内容。commitに無いpathは`None`にする。"""
+        for path in paths:
+            _require_repository_path(path)
+        wanted = [path for path in dict.fromkeys(paths) if "\n" not in path]
+        if not wanted:
+            return {}
+        request = "".join(f"{revision}:{path}\n" for path in wanted).encode()
+        # 内容を取る前に大きさだけを見て、上限を超えるblobがあれば読まない。
+        checks = self.git("cat-file", "--batch-check", stdin=request).splitlines()
+        for path, line in zip(wanted, checks, strict=True):
+            header = line.decode().split()
+            if len(header) == 3 and int(header[2]) > MAX_BLOB_BYTES:
+                raise AiMediaUnavailable(
+                    f"参照データが大きすぎます: {path} ({header[2]} bytes)"
+                )
+        output = self.git("cat-file", "--batch", stdin=request)
+        blobs: dict[str, bytes | None] = {}
+        offset = 0
+        for path in wanted:
+            end = output.index(b"\n", offset)
+            header = output[offset:end].decode().split()
+            offset = end + 1
+            if len(header) != 3 or header[1] != "blob":
+                blobs[path] = None
+                continue
+            size = int(header[2])
+            blobs[path] = output[offset : offset + size]
+            # 内容の後ろに改行が1つ付く。
+            offset += size + 1
+        return blobs
+
+
 class GitRepositoryReferenceSource:
     """gitリポジトリの1つのrefから参照fixtureと同じ形の文書を組み立てて返す。
 
     refが別のcommitを指したら組み立て直す。応答はcommitごとに作った
-    `FixtureReferenceSource`へ任せる。
+    `FixtureReferenceSource`へ任せる。`canon_refs`の実体がこのリポジトリに無いときは、
+    2つ目の読み元(`canon_root`)から探し、見つかった側のlocatorとrevisionを参照に記録する。
     """
 
     def __init__(
@@ -65,16 +144,24 @@ class GitRepositoryReferenceSource:
         ref: str = "origin/main",
         source_locator: str | None = None,
         projects_dir: str = "tools/ai-media/projects",
+        canon_root: Path | None = None,
+        canon_ref: str = "origin/main",
+        canon_locator: str | None = None,
     ) -> None:
-        # `-`始まりはgitにoptionとして解釈される。refは設定値だが、ここで弾いておく。
-        if not ref or ref.startswith("-"):
-            raise AiMediaUnavailable(f"参照するrefが不正です: {ref!r}")
-        self._root = root
-        self._ref = ref
+        self._repo = _Repository(root, ref, source_locator, "aimedia_repository")
+        # 作品正本など、`canon_refs`の実体が別リポジトリにあるときの2つ目の読み元。
+        self._canon = (
+            _Repository(
+                canon_root, canon_ref, canon_locator, "aimedia_canon_repository"
+            )
+            if canon_root is not None
+            else None
+        )
         self._projects_dir = projects_dir.strip("/")
         self._lock = threading.Lock()
-        self._cached: tuple[str, FixtureReferenceSource] | None = None
-        self._locator = source_locator or _origin_locator(root)
+        self._cached: tuple[tuple[str, str | None], FixtureReferenceSource] | None = (
+            None
+        )
         # 読めない設定は起動時に失敗させる。同梱fixtureの差し替えと同じ扱い。
         self._current()
 
@@ -118,41 +205,41 @@ class GitRepositoryReferenceSource:
         組み立てをロックで直列にし、待っていた要求は組み立て済みの文書を受け取る。
         """
         cached = self._cached
-        if cached is not None and cached[0] == self._revision():
+        if cached is not None and cached[0] == self._key():
             return cached[1]
         with self._lock:
             # 待つ間に別の要求が組み立てているか、refがさらに進んでいることがある。
             # ロックを取ってから引き直し、古いcommitで最新の文書を上書きしない。
-            revision = self._revision()
+            key = self._key()
             cached = self._cached
-            if cached is not None and cached[0] == revision:
+            if cached is not None and cached[0] == key:
                 return cached[1]
-            document = _validated(self._build(revision), self._root)
+            revision, canon_revision = key
+            document = _validated(
+                self._build(revision, canon_revision), self._repo.root
+            )
             source = FixtureReferenceSource(document=document)
-            self._cached = (revision, source)
+            self._cached = (key, source)
             logger.info(
-                "gitリポジトリから参照データを組み立てました。root=%s ref=%s revision=%s",
-                self._root,
-                self._ref,
+                "gitリポジトリから参照データを組み立てました。"
+                "root=%s ref=%s revision=%s canon_revision=%s",
+                self._repo.root,
+                self._repo.ref,
                 revision,
+                canon_revision,
             )
             return source
 
-    def _revision(self) -> str:
+    def _key(self) -> tuple[str, str | None]:
+        """キャッシュの鍵。どちらかのrefが進めば変わる。"""
         return (
-            self._git(
-                "rev-parse",
-                "--verify",
-                "--end-of-options",
-                f"{self._ref}^{{commit}}",
-            )
-            .decode()
-            .strip()
+            self._repo.revision(),
+            self._canon.revision() if self._canon is not None else None,
         )
 
-    def _build(self, revision: str) -> dict[str, Any]:
+    def _build(self, revision: str, canon_revision: str | None) -> dict[str, Any]:
         try:
-            return _DocumentBuilder(self, revision).build()
+            return _DocumentBuilder(self, revision, canon_revision).build()
         # ValueErrorはUTF-8でないblobと、cat-fileの出力が想定の形でないときに出る。
         except (
             KeyError,
@@ -162,76 +249,31 @@ class GitRepositoryReferenceSource:
             yaml.YAMLError,
         ) as error:
             raise AiMediaUnavailable(
-                f"参照データの形式が想定外です: {self._root} ({revision[:8]}): {error!r}"
+                f"参照データの形式が想定外です: {self._repo.root} ({revision[:8]})"
+                f" canon={self._canon.root if self._canon else None}: {error!r}"
             ) from error
-
-    def _git(self, *args: str, stdin: bytes | None = None) -> bytes:
-        # GIT_OPTIONAL_LOCKS=0で、読取り系コマンドでもindexを書き換えないようにする。
-        environment = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
-        try:
-            completed = subprocess.run(
-                ["git", "-C", str(self._root), *args],
-                input=stdin,
-                capture_output=True,
-                check=True,
-                env=environment,
-                timeout=GIT_TIMEOUT_SECONDS,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            detail = ""
-            if isinstance(error, subprocess.CalledProcessError):
-                detail = error.stderr.decode(errors="replace").strip()
-            raise AiMediaUnavailable(
-                f"gitリポジトリを読めません: {self._root} git {args[0]} {detail}"
-            ) from error
-        return completed.stdout
-
-    def _blobs(self, revision: str, paths: list[str]) -> dict[str, bytes | None]:
-        """pathごとのblobの内容。commitに無いpathは`None`にする。"""
-        for path in paths:
-            _require_repository_path(path)
-        wanted = [path for path in dict.fromkeys(paths) if "\n" not in path]
-        if not wanted:
-            return {}
-        request = "".join(f"{revision}:{path}\n" for path in wanted).encode()
-        # 内容を取る前に大きさだけを見て、上限を超えるblobがあれば読まない。
-        checks = self._git("cat-file", "--batch-check", stdin=request).splitlines()
-        for path, line in zip(wanted, checks, strict=True):
-            header = line.decode().split()
-            if len(header) == 3 and int(header[2]) > MAX_BLOB_BYTES:
-                raise AiMediaUnavailable(
-                    f"参照データが大きすぎます: {path} ({header[2]} bytes)"
-                )
-        output = self._git("cat-file", "--batch", stdin=request)
-        blobs: dict[str, bytes | None] = {}
-        offset = 0
-        for path in wanted:
-            end = output.index(b"\n", offset)
-            header = output[offset:end].decode().split()
-            offset = end + 1
-            if len(header) != 3 or header[1] != "blob":
-                blobs[path] = None
-                continue
-            size = int(header[2])
-            blobs[path] = output[offset : offset + size]
-            # 内容の後ろに改行が1つ付く。
-            offset += size + 1
-        return blobs
 
 
 class _DocumentBuilder:
     """1つのcommitから、同梱fixtureと同じ6キーの文書を組み立てる。"""
 
-    def __init__(self, source: GitRepositoryReferenceSource, revision: str) -> None:
+    def __init__(
+        self,
+        source: GitRepositoryReferenceSource,
+        revision: str,
+        canon_revision: str | None,
+    ) -> None:
         self._source = source
         self._revision = revision
+        self._canon_revision = canon_revision
         self._blobs: dict[str, bytes | None] = {}
+        self._canon_blobs: dict[str, bytes | None] = {}
         self._excluded: set[str] = set()
         self._parsed: dict[str, dict[str, Any]] = {}
 
     def build(self) -> dict[str, Any]:
         projects_dir = self._source._projects_dir
-        names = self._source._git(
+        names = self._source._repo.git(
             "ls-tree", "-r", "--name-only", "-z", self._revision, "--", projects_dir
         ).decode()
         files = [name for name in names.split("\0") if name]
@@ -249,7 +291,9 @@ class _DocumentBuilder:
         yaml_files = [name for name in files if name.endswith(".yaml")]
         self._load([*yaml_files, *schema_paths.values()])
         # 参照先の実体はScene/Shotを読むまで分からない。本文を読んだ後にまとめて取る。
-        self._load(self._declared_paths(project_ids, files))
+        declared = self._declared_paths(project_ids, files)
+        self._load(declared)
+        self._load_canon(declared)
         self._schemas = {
             name: self._required(path) for name, path in schema_paths.items()
         }
@@ -266,8 +310,9 @@ class _DocumentBuilder:
             self._add_project(document, project_id, files)
         if self._excluded:
             logger.warning(
-                "参照先がリポジトリ(%s)に無いため、Canonと参照から除外しました: %s",
+                "参照先がリポジトリ(%s, canon=%s)に無いため、Canonと参照から除外しました: %s",
                 self._revision[:8],
+                (self._canon_revision or "-")[:8],
                 ", ".join(sorted(self._excluded)),
             )
         return document
@@ -351,7 +396,7 @@ class _DocumentBuilder:
                 "id": project_id,
                 "title": project_id,
                 "source": {
-                    "source_locator": self._source._locator,
+                    "source_locator": self._source._repo.locator,
                     "revision": self._revision,
                 },
                 "scene_count": len(scenes),
@@ -380,7 +425,19 @@ class _DocumentBuilder:
 
     def _load(self, paths: list[str]) -> None:
         missing = [path for path in dict.fromkeys(paths) if path not in self._blobs]
-        self._blobs.update(self._source._blobs(self._revision, missing))
+        self._blobs.update(self._source._repo.blobs(self._revision, missing))
+
+    def _load_canon(self, paths: list[str]) -> None:
+        """1つ目に実体が無いpathを、2つ目の読み元から取る。"""
+        canon = self._source._canon
+        if canon is None or self._canon_revision is None:
+            return
+        missing = [
+            path
+            for path in dict.fromkeys(paths)
+            if self._blobs.get(path) is None and path not in self._canon_blobs
+        ]
+        self._canon_blobs.update(canon.blobs(self._canon_revision, missing))
 
     def _yaml(self, path: str) -> dict[str, Any]:
         """yamlを読む。参照先の収集と文書の組み立てで2回読むため、解釈結果を持つ。"""
@@ -402,12 +459,19 @@ class _DocumentBuilder:
         self, path: str, anchor: Any = None, note: Any = None
     ) -> dict[str, Any] | None:
         """不変参照を作る。リポジトリに実体が無いpathは`None`を返す。"""
+        locator = self._source._repo.locator
+        revision = self._revision
         blob = self._blobs.get(path)
+        if blob is None and self._source._canon is not None:
+            blob = self._canon_blobs.get(path)
+            locator = self._source._canon.locator
+            assert self._canon_revision is not None
+            revision = self._canon_revision
         if blob is None:
             return None
         raw = {
-            "source_locator": self._source._locator,
-            "revision": self._revision,
+            "source_locator": locator,
+            "revision": revision,
             "path": path,
             "sha256": _sha256(blob),
             "anchor": anchor,
@@ -522,7 +586,7 @@ def _sha256(blob: bytes) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
-def _origin_locator(root: Path) -> str:
+def _origin_locator(root: Path, setting: str = "aimedia_repository") -> str:
     """remote.origin.urlを参照契約のsource_locatorへ正規化する。
 
     GitHubのURLはSSH形式でもHTTPS形式でも`https://github.com/<owner>/<repo>`へそろえる。
@@ -539,7 +603,7 @@ def _origin_locator(root: Path) -> str:
     except (OSError, subprocess.SubprocessError) as error:
         raise AiMediaUnavailable(
             f"source_locatorを決められません。remote.origin.urlが無いため、"
-            f"aimedia_repository_locatorを設定してください: {root}"
+            f"{setting}_locatorを設定してください: {root}"
         ) from error
     matched = _GITHUB_REMOTE.match(url)
     if matched:

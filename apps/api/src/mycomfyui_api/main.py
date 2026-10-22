@@ -121,6 +121,9 @@ async def lifespan(app: FastAPI):
             repository_ref=settings.aimedia_repository_ref,
             repository_locator=settings.aimedia_repository_locator,
             projects_dir=settings.aimedia_projects_dir,
+            canon_repository_root=settings.aimedia_canon_repository_root,
+            canon_repository_ref=settings.aimedia_canon_repository_ref,
+            canon_repository_locator=settings.aimedia_canon_repository_locator,
         )
         # 提案Providerは接続を張らない。CLIが無い環境でも起動を止めず、提案を
         # 要求したときに初めて失敗する。

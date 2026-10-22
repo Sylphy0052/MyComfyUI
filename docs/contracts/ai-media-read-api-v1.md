@@ -43,7 +43,7 @@ Phase 0の代表Sceneには`hirohito-arc02-ep005-sc01`を採用する。2026-09-
 
 選定時点の作業ツリーでは`tools/ai-media`に未コミット変更がなく、Scene、3件のShot、Voice Canon、参照元本文は上記`novel-writer` revisionから取得できる。APIは作業ツリーではなくGit objectを読むため、選定後のローカル変更を同じrevisionの内容として返さない。
 
-選定後に`tools/ai-media/`と検証ディレクトリは、非公開リポジトリ`Sylphy0052/ai-media`へ同じ相対パスで移した(取り込み元のnovel-writer revisionは`429145c9`。内容は上記と同一)。以後の読み元は`ai-media`であり、`aimedia_repository_root`に`ai-media`のリポジトリを指定する。上の`caa010bd`は選定時点の記録として残す。
+選定後に`tools/ai-media/`と検証ディレクトリは、非公開リポジトリ`Sylphy0052/ai-media`へ同じ相対パスで移した(取り込み元のnovel-writer revisionは`429145c9`。内容は上記と同一)。以後の読み元は`ai-media`であり、`aimedia_repository_root`に`ai-media`のリポジトリを指定する。上の`caa010bd`は選定時点の記録として残す。参照の実体が別のgitリポジトリ(作品正本)にある場合、その参照の`source_locator`と`revision`は、実体を持つリポジトリのものになる。Projectの`source`は`ai-media`のままとする(`aimedia_canon_repository_root`、#661)。
 
 ## Endpoint
 

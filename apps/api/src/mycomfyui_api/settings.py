@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     aimedia_repository_locator: str | None = None
     #: リポジトリ内でProjectを置くディレクトリ。
     aimedia_projects_dir: str = "tools/ai-media/projects"
+    #: `canon_refs`の実体が別リポジトリ(作品正本など)にあるときの、2つ目の読み元。
+    #: `aimedia_repository_root`に実体が無い参照だけをここから探す。未設定なら探さない。
+    aimedia_canon_repository_root: Path | None = None
+    #: 2つ目の読み元のref。fetchはしない。
+    aimedia_canon_repository_ref: str = "origin/main"
+    #: 2つ目の読み元から取った参照に記録するsource_locator。未設定ならremote.origin.urlから求める。
+    aimedia_canon_repository_locator: str | None = None
     #: novel-writerのリポジトリの場所。prompt提案が作法・実測知見・既存作品のpromptを
     #: 読み取り専用で参照する。未設定なら参照しない。
     novel_writer_root: Path | None = None
