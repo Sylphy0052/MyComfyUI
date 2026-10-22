@@ -558,7 +558,7 @@ _IMAGE_REF_DEFAULTS: dict[str, Any] = {
 }
 
 #: SigLIP2 Character Reference(`AnimaIPAdapterLoader`)。ポーズ・表情を変えるときの既定
-#: 強度は検証値(`novel-writer/検証_reference/029_final_synthesis/README.md:20-25`)に
+#: 強度は検証値(`ai-media/検証_reference/029_final_synthesis/README.md:20-25`)に
 #: 合わせて0.5とする。
 IMAGE_REF_SIGLIP_SCHEMA: dict[str, Any] = {
     **_IMAGE_REF_SCHEMA,

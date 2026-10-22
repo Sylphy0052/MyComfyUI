@@ -43,6 +43,8 @@ Phase 0の代表Sceneには`hirohito-arc02-ep005-sc01`を採用する。2026-09-
 
 選定時点の作業ツリーでは`tools/ai-media`に未コミット変更がなく、Scene、3件のShot、Voice Canon、参照元本文は上記`novel-writer` revisionから取得できる。APIは作業ツリーではなくGit objectを読むため、選定後のローカル変更を同じrevisionの内容として返さない。
 
+選定後に`tools/ai-media/`と検証ディレクトリは、非公開リポジトリ`Sylphy0052/ai-media`へ同じ相対パスで移した(取り込み元のnovel-writer revisionは`429145c9`。内容は上記と同一)。以後の読み元は`ai-media`であり、`aimedia_repository_root`に`ai-media`のリポジトリを指定する。上の`caa010bd`は選定時点の記録として残す。
+
 ## Endpoint
 
 Base pathは`/v1`とする。すべてのProject配下Endpointは任意の`revision` queryを受け付ける。省略時はサーバーが設定した`ai-media` sourceの`HEAD`をリクエスト開始時に解決し、応答には40桁のcommit hashを返す。
@@ -171,7 +173,7 @@ API contractはURLのmajor versionで管理する。v1内では次を守る。
 
 ## 現行実装との差分
 
-`novel-writer`側には次の追加が必要である。
+`ai-media`側には次の追加が必要である。
 
 - HTTP参照APIとProject projection
 - Git objectからScene、Shot、Schemaを読む処理
@@ -180,6 +182,6 @@ API contractはURLのmajor versionで管理する。v1内では次を守る。
 - Voice Canonの絶対pathを公開しない正規化
 - 本契約のエラー分類
 
-現行`Repositories.resolve()`は`novel-writer`、`agentic-imagegen`、project directoryの順に同じ相対pathを探索する。この挙動は参照元を一意に証明できないため、参照APIでは使用しない。
+現行`Repositories.resolve()`は`ai-media`、`novel-writer`、`agentic-imagegen`、project directoryの順に同じ相対pathを探索する。この挙動は参照元を一意に証明できないため、参照APIでは使用しない。
 
-上流実装は[novel-writer#17](https://github.com/Sylphy0052/novel-writer/issues/17)で管理する。
+上流実装は[ai-media#2](https://github.com/Sylphy0052/ai-media/issues/2)で管理する(旧novel-writer#17から移した)。

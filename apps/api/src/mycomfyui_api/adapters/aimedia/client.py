@@ -3,7 +3,7 @@
 契約は`contracts/ai-media/v1/openapi.yaml`とする。応答本文はそのまま中継し、本文の
 解釈はUIへ委ねる。読取りだけを提供し、更新系のメソッドは持たない。
 
-上流(novel-writer#17)は未実装のため、接続先が未設定のときは同梱fixtureを返す。
+上流(ai-media#2)は未実装のため、接続先が未設定のときは同梱fixtureを返す。
 fixtureは代表Scene`hirohito-arc02-ep005-sc01`だけを含む。
 """
 

@@ -6,7 +6,7 @@
 
 初期版は「Scene/Shotから画像を生成し、Artifactと生成履歴を管理する」ことに絞る。音声、動画、音楽は計画から外さず、画像生成の実行境界と履歴管理が安定してから順に追加する。
 
-新しい生成基盤を一から作らない。`~/workspace/github/novel-writer/tools/ai-media`にあるScene/Shot/Artifact/Voice Canon、ComfyUI、既存の画像・動画・音声・BGM環境をMyComfyUIから操作・可視化する。`novel-writer`の作品正本は参照専用とし、MyComfyUIが無断で書き換えない。`ai-media`を共有ライブラリとして直接取り込まず、JSON Schema、ID、参照、provenanceの契約だけを共有し、実装はローカルAPI境界で分離する。
+新しい生成基盤を一から作らない。`~/workspace/github/ai-media/tools/ai-media`(非公開の別リポジトリ)にあるScene/Shot/Artifact/Voice Canon、ComfyUI、既存の画像・動画・音声・BGM環境をMyComfyUIから操作・可視化する。`novel-writer`の作品正本は参照専用とし、MyComfyUIが無断で書き換えない。`ai-media`を共有ライブラリとして直接取り込まず、JSON Schema、ID、参照、provenanceの契約だけを共有し、実装はローカルAPI境界で分離する。
 
 ## 既存資産と統合方針
 
@@ -117,7 +117,7 @@ Phase 0の代表Sceneは`hirohito-arc02-ep005-sc01`とする。3件のShotに画
 
 MyComfyUIは`ai-media`の[参照API契約v1](contracts/ai-media-read-api-v1.md)を利用する。Scene/Shot本文は既存JSON Schemaのまま受け取り、本文、Schema、Canon参照を`source_locator`、40桁のGit revision、repository相対path、SHA-256で固定する。Canon Endpointは本文を返さずdescriptorだけを返し、MyComfyUIはCanon本文をSQLiteやArtifact領域へ複製しない。
 
-参照APIの`novel-writer`側実装は[novel-writer#17](https://github.com/Sylphy0052/novel-writer/issues/17)で追跡する。
+参照APIの`ai-media`側実装は[ai-media#2](https://github.com/Sylphy0052/ai-media/issues/2)で追跡する(旧novel-writer#17から移した)。
 
 ## 画面構成
 

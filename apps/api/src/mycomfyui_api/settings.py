@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     #: 参照fixtureの差し替え先。上流が未実装の間、Canonが更新された状態を再現して
     #: 更新警告と再実行の判定を確かめるために使う。未設定なら同梱fixtureを読む。
     aimedia_fixture_path: Path | None = None
-    #: novel-writerのgitリポジトリの場所。指定すると`aimedia_repository_ref`が指すcommitの
+    #: ai-mediaのgitリポジトリの場所。指定すると`aimedia_repository_ref`が指すcommitの
     #: ai-media実データを読取り専用で参照する。`aimedia_fixture_path`より優先する。
     aimedia_repository_root: Path | None = None
     #: 参照するref。fetchはしないため、最新にするには利用者がリポジトリ側でfetchする。
