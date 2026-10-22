@@ -37,7 +37,8 @@ WindowsとmacOSではplatformdirsが各OS標準の設定ディレクトリを選
 - gitは`rev-parse`、`ls-tree`、`cat-file`だけを`GIT_OPTIONAL_LOCKS=0`で実行し、fetch、checkout、indexの更新を行わない。`origin/main`を最新にするには、利用者がai-media側で`git fetch`する。
 - refが別のcommitを指すと、次の参照から読み直す。revisionが変わるとcanon_idも変わるため、同期のプレビューではCanonが入れ替わって見える。
 - 参照に記録する`source_locator`は、`aimedia_repository_locator`が未設定ならremote.origin.urlから求める。GitHubのURLはSSH形式でも`https://github.com/<owner>/<repo>`へそろえる。
-- Scene、Shotが宣言する参照のうち、そのcommitに実体が無いpathは警告ログを出して参照とCanonから除外する。
+- Scene、Shotが宣言する参照のうち、`aimedia_repository_root`のcommitに実体が無いpathは、`aimedia_canon_repository_root`が設定されていればそちらのcommitから探す。どちらにも無いpathは警告ログを出して参照とCanonから除外する。
+- `aimedia_canon_repository_root` (環境変数`MYCOMFYUI_AIMEDIA_CANON_REPOSITORY_ROOT`)は、作品正本など、参照の実体が別のgitリポジトリにあるときの2つ目の読み元である。`aimedia_canon_repository_ref` (既定は`origin/main`) が指すcommitを、`aimedia_repository_root`と同じ方法(読取り専用、fetchなし)で読む。2つ目から取った参照の`source_locator`とrevisionは2つ目のものになり、`aimedia_canon_repository_locator`が未設定ならremote.origin.urlから求める。どちらかのrefが進むと、次の参照から読み直す。未設定なら探さない。
 
 参照元の優先順は、`aimedia_base_url`、`aimedia_repository_root`、`aimedia_fixture_path`、同梱fixtureの順とする。
 

@@ -63,6 +63,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="ai-media実データを読むai-mediaのgitリポジトリ。fixtureより優先する。",
     )
     parser.add_argument(
+        "--aimedia-canon-repository-root",
+        help="canon_refsの実体を探す2つ目のgitリポジトリ(作品正本など)。",
+    )
+    parser.add_argument(
         "--allow-origin",
         action="append",
         metavar="ORIGIN",
@@ -91,6 +95,10 @@ def _apply_overrides(args: argparse.Namespace) -> None:
         os.environ["MYCOMFYUI_AIMEDIA_FIXTURE_PATH"] = args.aimedia_fixture_path
     if args.aimedia_repository_root is not None:
         os.environ["MYCOMFYUI_AIMEDIA_REPOSITORY_ROOT"] = args.aimedia_repository_root
+    if args.aimedia_canon_repository_root is not None:
+        os.environ["MYCOMFYUI_AIMEDIA_CANON_REPOSITORY_ROOT"] = (
+            args.aimedia_canon_repository_root
+        )
     if args.host is not None:
         os.environ["MYCOMFYUI_API_HOST"] = args.host
     if args.port is not None:

@@ -361,6 +361,9 @@ def create_reference_source(
     repository_ref: str = "origin/main",
     repository_locator: str | None = None,
     projects_dir: str = "tools/ai-media/projects",
+    canon_repository_root: Path | None = None,
+    canon_repository_ref: str = "origin/main",
+    canon_repository_locator: str | None = None,
 ) -> ReferenceSource:
     """設定の有無で、HTTP実装、gitリポジトリ実装、fixture実装を切り替える。
 
@@ -383,6 +386,9 @@ def create_reference_source(
             ref=repository_ref,
             source_locator=repository_locator,
             projects_dir=projects_dir,
+            canon_root=canon_repository_root,
+            canon_ref=canon_repository_ref,
+            canon_locator=canon_repository_locator,
         )
     if fixture_path is not None:
         logger.info("差し替えた参照fixtureを読みます。path=%s", fixture_path)
