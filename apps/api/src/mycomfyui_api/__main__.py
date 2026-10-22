@@ -60,7 +60,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--aimedia-repository-root",
-        help="ai-media実データを読むnovel-writerのgitリポジトリ。fixtureより優先する。",
+        help="ai-media実データを読むai-mediaのgitリポジトリ。fixtureより優先する。",
     )
     parser.add_argument(
         "--allow-origin",

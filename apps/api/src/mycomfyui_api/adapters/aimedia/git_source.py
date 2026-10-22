@@ -1,11 +1,11 @@
-"""novel-writerのgitリポジトリを参照APIの形で返す参照元。
+"""ai-mediaのgitリポジトリを参照APIの形で返す参照元。
 
-上流の参照API (novel-writer#17) が無い間、`tools/ai-media/projects/<project>/`の実データを
+上流の参照API (ai-media#2) が無い間、`tools/ai-media/projects/<project>/`の実データを
 直接読む。読むのは設定したrefが指すcommitの内容だけで、working treeは見ない。revisionは
 そのcommit、sha256はblobの内容から求めるため、画面に出る参照は常にgitの値と一致する。
 
 作品正本を書き換えないよう、gitは読取り専用のコマンドだけを使う。fetchもしないため、
-`origin/main`を最新にするのは利用者がnovel-writer側で行う。
+`origin/main`を最新にするのは利用者がai-media側で行う。
 """
 
 import asyncio

@@ -200,7 +200,7 @@ Remote PC上で`curl http://127.0.0.1:8188/system_stats`が200を返すことも
 
 手順2と対になる作業である。ComfyUI以外のサービスをRemote PCで動かすなら必ず行う。動かさないなら飛ばしてよい。
 
-Remote PCへ置くサービスは8188だけではない。`voice-runner`(既定8770)と、`novel-writer`側の`ai-media`参照API(既定8765)も同じマシンで動く。いずれも認証機構を持たない。
+Remote PCへ置くサービスは8188だけではない。`voice-runner`(既定8770)と、`ai-media`リポジトリ側の参照API(既定8765)も同じマシンで動く。いずれも認証機構を持たない。
 
 この2つは手元PCのApplication APIから接続する([ADR 0002](../adr/0002-remote-gpu-host.md)の配置表)。つまり8188と同じく待受を広げる必要があり、同じく到達元を限定する必要がある。「手元PCから接続しないから`127.0.0.1`のままでよい」が当てはまるのは、Remote PC内だけで完結する別のサービスである。
 
@@ -421,18 +421,18 @@ WebSocketが通らない場合、Adapterは`/history/{prompt_id}`のポーリン
 
 Qwen3-TTS、VoxCPM2、CosyVoice3、WhisperのvenvをRemote PCへ用意する。起動はしない。`voice-runner`(#11)が要求時に起動し、終了後にプロセスを落としてVRAMを返す。
 
-ComfyUIと同時に常駐させない。VRAMの実測値は`<novel-writer>/tools/ai-media/docs/tts-backends.md`に記録がある。以降、この配下を`ai-media`と呼ぶ。独立したリポジトリではなく、`novel-writer`の作業ディレクトリの中にある。
+ComfyUIと同時に常駐させない。VRAMの実測値は`<ai-media>/tools/ai-media/docs/tts-backends.md`に記録がある。以降、この配下を`ai-media`と呼ぶ。非公開の別リポジトリ`ai-media`の中にある。
 
-**新しくvenvを作る前に、既にあるものを探す。**`novel-writer/tools/ai-media/`配下と利用者のhomeに、これらのvenvが既に置かれていることがある。重複して作ると数十GBを無駄にし、`engines.yaml`がどちらを指しているか分からなくなる。
+**新しくvenvを作る前に、既にあるものを探す。**`<ai-media>/tools/ai-media/`配下と利用者のhomeに、これらのvenvが既に置かれていることがある。重複して作ると数十GBを無駄にし、`engines.yaml`がどちらを指しているか分からなくなる。
 
 ```bash
 ls -d ~/qwen-tts/.venv ~/voxcpm/.venv 2>/dev/null
-ls -d <novel-writer>/tools/ai-media/tools/*/.venv 2>/dev/null
+ls -d <ai-media>/tools/ai-media/tools/*/.venv 2>/dev/null
 ```
 
-用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。**`engines.yaml`を実機へ合わせるのではなく、まず実機が`engines.yaml`の指すpathを満たしているかを確かめる。**値の出典は`<novel-writer>/tools/ai-media/config/local-tools.yaml`であり、勝手に別の場所へ作ると出典から外れる。
+用意したvenvのpathは`tools/voice-runner/engines.yaml`の`python`と一致している必要がある。一致しない場合、`voice-runner`はBackendを起動できない。**`engines.yaml`を実機へ合わせるのではなく、まず実機が`engines.yaml`の指すpathを満たしているかを確かめる。**値の出典は`<ai-media>/tools/ai-media/config/local-tools.yaml`であり、勝手に別の場所へ作ると出典から外れる。
 
-ASRは専用のvenvを作らない。`engines.yaml`の`asr.python`はQwen3-TTSのvenvを指す。`<novel-writer>/tools/ai-media/tools/asr/transcribe.py`が、HFキャッシュ済みの`openai/whisper-large-v3-turbo`をtransformersの`pipeline`で読む設計であり、既存環境へ書き込まない。faster-whisperは使わない。
+ASRは専用のvenvを作らない。`engines.yaml`の`asr.python`はQwen3-TTSのvenvを指す。`<ai-media>/tools/ai-media/tools/asr/transcribe.py`が、HFキャッシュ済みの`openai/whisper-large-v3-turbo`をtransformersの`pipeline`で読む設計であり、既存環境へ書き込まない。faster-whisperは使わない。
 
 venvには推論に使わない依存を入れない。既に入っているものも、推論経路で使わないなら除く。常駐ホストでは使わない依存がそのまま攻撃面になる。ただし`engines.yaml`が指す正本のvenvは既に要件を満たしているため、動いているvenvから依存を外して回る必要はない。自分で新しく作るvenvに対して適用する。
 

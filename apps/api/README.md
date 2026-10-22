@@ -147,7 +147,7 @@ Canon Endpoint は Canon 本文を返さず、`canon_id`、種別、表示名、
 `canon_id` は `[source_locator, revision, path, anchor]` を RFC 8785 の JSON Canonicalization
 Scheme で serialize した SHA-256 とする。
 
-上流実装(novel-writer#17)が未完のため、`MYCOMFYUI_AIMEDIA_BASE_URL` が未設定のときは
+上流実装(ai-media#2)が未完のため、`MYCOMFYUI_AIMEDIA_BASE_URL` が未設定のときは
 同梱 fixture を返す。fixture は代表 Scene `hirohito-arc02-ep005-sc01`、3 件の Shot、
 3 件の Canon descriptor を含む。上流が動いたら接続先を設定するだけで実データへ切り替わる。
 UI と API の契約は変えない。
