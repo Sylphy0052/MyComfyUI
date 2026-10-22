@@ -54,13 +54,14 @@ class _NoAliasLoader(yaml.SafeLoader):
 class _Repository:
     """読取り専用で扱うgitリポジトリの1つのref。"""
 
-    def __init__(self, root: Path, ref: str, locator: str | None) -> None:
+    def __init__(self, root: Path, ref: str, locator: str | None, setting: str) -> None:
+        # `setting`は設定名の接頭辞。失敗したとき、どちらのリポジトリの設定かを示す。
         # `-`始まりはgitにoptionとして解釈される。refは設定値だが、ここで弾いておく。
         if not ref or ref.startswith("-"):
-            raise AiMediaUnavailable(f"参照するrefが不正です: {ref!r}")
+            raise AiMediaUnavailable(f"参照するrefが不正です({setting}_ref): {ref!r}")
         self.root = root
         self.ref = ref
-        self.locator = locator or _origin_locator(root)
+        self.locator = locator or _origin_locator(root, setting)
 
     def revision(self) -> str:
         return (
@@ -147,10 +148,12 @@ class GitRepositoryReferenceSource:
         canon_ref: str = "origin/main",
         canon_locator: str | None = None,
     ) -> None:
-        self._repo = _Repository(root, ref, source_locator)
+        self._repo = _Repository(root, ref, source_locator, "aimedia_repository")
         # 作品正本など、`canon_refs`の実体が別リポジトリにあるときの2つ目の読み元。
         self._canon = (
-            _Repository(canon_root, canon_ref, canon_locator)
+            _Repository(
+                canon_root, canon_ref, canon_locator, "aimedia_canon_repository"
+            )
             if canon_root is not None
             else None
         )
@@ -246,7 +249,8 @@ class GitRepositoryReferenceSource:
             yaml.YAMLError,
         ) as error:
             raise AiMediaUnavailable(
-                f"参照データの形式が想定外です: {self._repo.root} ({revision[:8]}): {error!r}"
+                f"参照データの形式が想定外です: {self._repo.root} ({revision[:8]})"
+                f" canon={self._canon.root if self._canon else None}: {error!r}"
             ) from error
 
 
@@ -306,8 +310,9 @@ class _DocumentBuilder:
             self._add_project(document, project_id, files)
         if self._excluded:
             logger.warning(
-                "参照先がリポジトリ(%s)に無いため、Canonと参照から除外しました: %s",
+                "参照先がリポジトリ(%s, canon=%s)に無いため、Canonと参照から除外しました: %s",
                 self._revision[:8],
+                (self._canon_revision or "-")[:8],
                 ", ".join(sorted(self._excluded)),
             )
         return document
@@ -460,7 +465,8 @@ class _DocumentBuilder:
         if blob is None and self._source._canon is not None:
             blob = self._canon_blobs.get(path)
             locator = self._source._canon.locator
-            revision = self._canon_revision or ""
+            assert self._canon_revision is not None
+            revision = self._canon_revision
         if blob is None:
             return None
         raw = {
@@ -580,7 +586,7 @@ def _sha256(blob: bytes) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
-def _origin_locator(root: Path) -> str:
+def _origin_locator(root: Path, setting: str = "aimedia_repository") -> str:
     """remote.origin.urlを参照契約のsource_locatorへ正規化する。
 
     GitHubのURLはSSH形式でもHTTPS形式でも`https://github.com/<owner>/<repo>`へそろえる。
@@ -597,7 +603,7 @@ def _origin_locator(root: Path) -> str:
     except (OSError, subprocess.SubprocessError) as error:
         raise AiMediaUnavailable(
             f"source_locatorを決められません。remote.origin.urlが無いため、"
-            f"aimedia_repository_locatorを設定してください: {root}"
+            f"{setting}_locatorを設定してください: {root}"
         ) from error
     matched = _GITHUB_REMOTE.match(url)
     if matched:
