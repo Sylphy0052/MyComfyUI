@@ -492,62 +492,12 @@ _IMAGE_REF_SCHEMA: dict[str, Any] = {
     "cfg": dict(DEFAULT_INPUT_SCHEMA["cfg"]),
     "seed": dict(DEFAULT_INPUT_SCHEMA["seed"]),
 }
-#: 参照付き生成のnegativeの先頭に置く語。参照は同一性だけを運び、衣装タグが欠けると
-#: 裸体で出力されることがあるため既定で避ける (#484, #486)。
-IMAGE_REF_SAFETY_NEGATIVE = "nsfw, nude, nipples"
-_IMAGE_REF_TEMPLATES = frozenset(
-    {comfyui_prepare.REF_SIGLIP_TEMPLATE, comfyui_prepare.REF_INCONTEXT_TEMPLATE}
-)
-
-
-def _effective_negative_term(term: str) -> str | None:
-    """negativeの1語を小文字の語名にする。重みが1未満の語は効かないため``None``を返す。"""
-    body = term.strip().strip("()")
-    name, _, weight = body.partition(":")
-    if weight.strip():
-        try:
-            # nanや数値でない重みは効かない側に倒す。
-            if not float(weight.strip().rstrip(")")) >= 1:
-                return None
-        except ValueError:
-            return None
-    return name.strip().lower()
-
-
-def with_reference_safety_negative(recipe: Recipe, negative: str) -> str:
-    """参照Recipeのnegativeへ、欠けている安全語を先頭に足す。参照Recipe以外はそのまま返す。
-
-    Recipe既定はこの語を持つが、Project・LookProfile・実行時の入力でnegativeを上書きすると
-    落ちるため、既定値を全て解決した後に補う (#486)。
-    """
-    reference = recipe.workflow_template_ref
-    name = reference.get("name") if isinstance(reference, dict) else None
-    if not isinstance(name, str) or name not in _IMAGE_REF_TEMPLATES:
-        return negative
-    # 大文字小文字と重み (`(nsfw:1.2)`) を無視して既存の語を判定する。
-    present = {
-        term_name
-        for term in negative.split(",")
-        if (term_name := _effective_negative_term(term))
-    }
-    missing = [
-        term for term in IMAGE_REF_SAFETY_NEGATIVE.split(", ") if term not in present
-    ]
-    if not missing:
-        return negative
-    # negativeが空なら、安全語だけにせずテンプレート既定の品質系の語を基底にする。
-    base = negative.strip() or DEFAULT_VALUES["negative_prompt"]
-    return ", ".join([*missing, base])
-
-
 _IMAGE_REF_DEFAULTS: dict[str, Any] = {
     "unet_name": DEFAULT_VALUES["unet_name"],
     "clip_name": DEFAULT_VALUES["clip_name"],
     "vae_name": DEFAULT_VALUES["vae_name"],
     "filename_prefix": DEFAULT_VALUES["filename_prefix"],
-    "negative_prompt": (
-        f"{IMAGE_REF_SAFETY_NEGATIVE}, {DEFAULT_VALUES['negative_prompt']}"
-    ),
+    "negative_prompt": DEFAULT_VALUES["negative_prompt"],
     "width": 896,
     "height": 1344,
     "steps": 30,
@@ -860,9 +810,9 @@ TEMPLATE_RECIPES: tuple[tuple[str, str, str, dict[str, Any], dict[str, Any]], ..
 )
 
 
-#: `defaults`の変更も後継Recipeで既存DBへ反映するRecipe。参照付きRecipeはnegativeの既定に
-#: nsfw除けを持ち、既存DBに古い既定が残ると安全語が入らない (#486)。他のRecipeは既存DBの
-#: 既定が意図して変わっていることがあるため、テンプレートとinput_schemaだけで判定する。
+#: `defaults`の変更も後継Recipeで既存DBへ反映するRecipe。参照付きRecipeは既定のnegativeから
+#: nsfw除けを外した (#663) ため、既存DBに古い既定が残ると安全語が入り続ける。他のRecipeは
+#: 既存DBの既定が意図して変わっていることがあるため、テンプレートとinput_schemaだけで判定する。
 _DEFAULTS_TRACKED_RECIPES = frozenset(
     {IMAGE_REF_SIGLIP_RECIPE_NAME, IMAGE_REF_INCONTEXT_RECIPE_NAME}
 )
