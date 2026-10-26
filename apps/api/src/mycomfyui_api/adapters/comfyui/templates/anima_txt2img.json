@@ -8,7 +8,7 @@
       "sampler_name": "euler",
       "scheduler": "simple",
       "denoise": 1,
-      "model": ["60", 0],
+      "model": ["63", 0],
       "positive": ["6", 0],
       "negative": ["7", 0],
       "latent_image": ["5", 0]
@@ -67,7 +67,7 @@
       "sampler_name": "euler",
       "scheduler": "simple",
       "denoise": 0.5,
-      "model": ["60", 0],
+      "model": ["63", 0],
       "positive": ["6", 0],
       "negative": ["7", 0],
       "latent_image": ["20", 0]
@@ -91,6 +91,14 @@
     "class_type": "VAELoader",
     "inputs": {
       "vae_name": "qwen_image_vae.safetensors"
+    }
+  },
+  "63": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "lora_name": "",
+      "strength_model": 1.0,
+      "model": ["60", 0]
     }
   }
 }

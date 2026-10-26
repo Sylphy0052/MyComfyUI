@@ -37,6 +37,27 @@ logger = logging.getLogger(__name__)
 DEFAULT_RECIPE_NAME = "Anima 標準(txt2img)"
 DEFAULT_TEMPLATE_NAME = "anima_txt2img"
 
+#: 省略できるLoRA (Issue #665)。`lora_name`を指定しないJobは、LoRAなしの従来と同じ
+#: workflowを投入する。`lora_name`には既定値を置かない (置くと常にLoRAが入る)。
+LORA_INPUT_SCHEMA: dict[str, Any] = {
+    "lora_name": {
+        "type": "string",
+        "label": "LoRA",
+        "control": "model",
+        "help": "省略するとLoRAを使わない。",
+    },
+    "lora_strength": {
+        "type": "number",
+        "label": "LoRAの重み",
+        "control": "number",
+        "help": (
+            f"{workflow_module.LORA_STRENGTH_MIN}〜{workflow_module.LORA_STRENGTH_MAX}"
+            "の範囲。LoRAを指定したときだけ使う。"
+        ),
+    },
+}
+LORA_DEFAULT_STRENGTH = 1.0
+
 #: 画面へ出す入力欄の定義。`label`と`control`はUIの表示用で、検証には使わない。
 DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
     "unet_name": {
@@ -116,6 +137,7 @@ DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
         "help": "0で1段目のステップ数と同じにする。",
     },
     "hires_denoise": {"type": "number", "label": "denoise", "control": "number"},
+    **LORA_INPUT_SCHEMA,
 }
 
 #: モデルファイル名は既定値として保持し、画面ではComfyUI在庫から選択する。
@@ -140,6 +162,7 @@ DEFAULT_VALUES: dict[str, Any] = {
     "hires_upscale_method": "nearest-exact",
     "hires_steps": 0,
     "hires_denoise": 0.5,
+    "lora_strength": LORA_DEFAULT_STRENGTH,
 }
 
 
@@ -335,7 +358,7 @@ _IMAGE_DERIVATION_SCHEMA: dict[str, Any] = {
     "seed": dict(DEFAULT_INPUT_SCHEMA["seed"]),
 }
 
-IMAGE_IMG2IMG_SCHEMA = dict(_IMAGE_DERIVATION_SCHEMA)
+IMAGE_IMG2IMG_SCHEMA = {**_IMAGE_DERIVATION_SCHEMA, **LORA_INPUT_SCHEMA}
 _IMAGE_DERIVATION_DEFAULTS: dict[str, Any] = {
     name: DEFAULT_VALUES[name]
     for name in (
@@ -352,6 +375,7 @@ _IMAGE_DERIVATION_DEFAULTS: dict[str, Any] = {
 IMAGE_IMG2IMG_DEFAULTS: dict[str, Any] = {
     **_IMAGE_DERIVATION_DEFAULTS,
     "denoise": 0.65,
+    "lora_strength": LORA_DEFAULT_STRENGTH,
 }
 
 IMAGE_INPAINT_SCHEMA: dict[str, Any] = {
@@ -517,11 +541,13 @@ IMAGE_REF_SIGLIP_SCHEMA: dict[str, Any] = {
         "label": "IPAdapterモデル",
         "control": "model",
     },
+    **LORA_INPUT_SCHEMA,
 }
 IMAGE_REF_SIGLIP_DEFAULTS: dict[str, Any] = {
     **_IMAGE_REF_DEFAULTS,
     "ip_adapter_name": "ip_adapter-Character_Reference-10.safetensors",
     "reference_strength": 0.5,
+    "lora_strength": LORA_DEFAULT_STRENGTH,
 }
 
 #: Anima In-Context Character(`LoraLoaderModelOnly`+`AnimaRefEncode`+

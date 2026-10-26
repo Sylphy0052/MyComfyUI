@@ -55,6 +55,10 @@ LATENT_DOWNSCALE = 8
 HIRES_SCALE_MIN = 1.0
 HIRES_SCALE_MAX = 4.0
 
+#: LoRAの重み (`LoraLoaderModelOnly`の`strength_model`) の範囲。
+LORA_STRENGTH_MIN = -2.0
+LORA_STRENGTH_MAX = 2.0
+
 #: ComfyUIの`LatentUpscaleBy`が受け付ける拡大方式。
 LATENT_UPSCALE_METHODS = ("nearest-exact", "bilinear", "area", "bicubic", "bislerp")
 
@@ -182,12 +186,28 @@ class WorkflowBinding:
     prompt_style: PromptStyle | None = None
 
 
+# 省略できるLoRA (Issue #665)。UNETLoaderの直後に置き、modelを受ける全ノードを通す。
+# `lora_name`が無いときは`lora_loader`ごと外し、結線をUNETLoaderへ戻す。
+_LORA_LOADER_NODE = NodeRef(
+    "63", "LoraLoaderModelOnly", ("lora_name", "strength_model")
+)
+_LORA_VARIABLES = {
+    "lora_name": VariableRef("lora_loader", "lora_name", "str"),
+    "lora_strength": VariableRef("lora_loader", "strength_model", "lora_strength"),
+}
+_LORA_OPTIONAL_NODES = {
+    "lora_loader": OptionalNode("lora_loader", fallback_role="unet_loader"),
+}
+_LORA_MODEL_SLOT = ModelSlot("lora_name", "LoraLoaderModelOnly", "lora_name")
+
+
 ANIMA_TXT2IMG = WorkflowBinding(
     name="anima_txt2img",
     nodes={
         "unet_loader": NodeRef("60", "UNETLoader", ("unet_name", "weight_dtype")),
         "clip_loader": NodeRef("61", "CLIPLoader", ("clip_name", "type")),
         "vae_loader": NodeRef("62", "VAELoader", ("vae_name",)),
+        "lora_loader": _LORA_LOADER_NODE,
         "positive_prompt": NodeRef("6", "CLIPTextEncode", ("text",)),
         "negative_prompt": NodeRef("7", "CLIPTextEncode", ("text",)),
         "latent": NodeRef("5", "EmptyLatentImage", ("width", "height", "batch_size")),
@@ -209,7 +229,8 @@ ANIMA_TXT2IMG = WorkflowBinding(
         "save_image": NodeRef("9", "SaveImage", ("filename_prefix",)),
     },
     links=(
-        LinkRef("ksampler", "model", "unet_loader"),
+        LinkRef("lora_loader", "model", "unet_loader"),
+        LinkRef("ksampler", "model", "lora_loader"),
         LinkRef("ksampler", "positive", "positive_prompt"),
         LinkRef("ksampler", "negative", "negative_prompt"),
         LinkRef("ksampler", "latent_image", "latent"),
@@ -218,7 +239,7 @@ ANIMA_TXT2IMG = WorkflowBinding(
         LinkRef("positive_prompt", "clip", "clip_loader"),
         LinkRef("negative_prompt", "clip", "clip_loader"),
         LinkRef("hires_upscale", "samples", "ksampler"),
-        LinkRef("hires_ksampler", "model", "unet_loader"),
+        LinkRef("hires_ksampler", "model", "lora_loader"),
         LinkRef("hires_ksampler", "positive", "positive_prompt"),
         LinkRef("hires_ksampler", "negative", "negative_prompt"),
         LinkRef("hires_ksampler", "latent_image", "hires_upscale"),
@@ -254,17 +275,20 @@ ANIMA_TXT2IMG = WorkflowBinding(
         "clip_name": VariableRef("clip_loader", "clip_name", "str", required=True),
         "vae_name": VariableRef("vae_loader", "vae_name", "str", required=True),
         "filename_prefix": VariableRef("save_image", "filename_prefix", "file_prefix"),
+        **_LORA_VARIABLES,
     },
     model_slots=(
         ModelSlot("unet_name", "UNETLoader", "unet_name"),
         ModelSlot("clip_name", "CLIPLoader", "clip_name"),
         ModelSlot("vae_name", "VAELoader", "vae_name"),
+        _LORA_MODEL_SLOT,
     ),
     prompt_variable="positive_prompt",
     # hires fixを使わないときは2段目を外し、VAEDecodeを1段目のKSamplerへ付け替える。
     optional_nodes={
         "hires_upscale": OptionalNode("hires_upscale"),
         "hires_ksampler": OptionalNode("hires_ksampler", fallback_role="ksampler"),
+        **_LORA_OPTIONAL_NODES,
     },
     prompt_style="anima",
 )
@@ -317,6 +341,7 @@ ANIMA_IMG2IMG = WorkflowBinding(
     name="anima_img2img",
     nodes={
         **_anima_derivation_loaders(),
+        "lora_loader": _LORA_LOADER_NODE,
         "vae_encode": NodeRef("11", "VAEEncode", ()),
     },
     links=(
@@ -324,7 +349,8 @@ ANIMA_IMG2IMG = WorkflowBinding(
         LinkRef("negative_prompt", "clip", "clip_loader"),
         LinkRef("vae_encode", "pixels", "source_image"),
         LinkRef("vae_encode", "vae", "vae_loader"),
-        LinkRef("ksampler", "model", "unet_loader"),
+        LinkRef("lora_loader", "model", "unet_loader"),
+        LinkRef("ksampler", "model", "lora_loader"),
         LinkRef("ksampler", "positive", "positive_prompt"),
         LinkRef("ksampler", "negative", "negative_prompt"),
         LinkRef("ksampler", "latent_image", "vae_encode"),
@@ -332,9 +358,10 @@ ANIMA_IMG2IMG = WorkflowBinding(
         LinkRef("vae_decode", "vae", "vae_loader"),
         LinkRef("save_image", "images", "vae_decode"),
     ),
-    variables=_anima_derivation_variables(),
-    model_slots=_ANIMA_MODEL_SLOTS,
+    variables={**_anima_derivation_variables(), **_LORA_VARIABLES},
+    model_slots=(*_ANIMA_MODEL_SLOTS, _LORA_MODEL_SLOT),
     prompt_variable="positive_prompt",
+    optional_nodes=dict(_LORA_OPTIONAL_NODES),
     prompt_style="anima",
 )
 
@@ -749,6 +776,7 @@ ANIMA_REF_SIGLIP = WorkflowBinding(
     name="anima_ref_siglip",
     nodes={
         **_anima_ref_common_nodes(),
+        "lora_loader": _LORA_LOADER_NODE,
         "ip_adapter_loader": NodeRef(
             "13", "AnimaIPAdapterLoader", ("ip_adapter_name", "auto_download")
         ),
@@ -769,7 +797,8 @@ ANIMA_REF_SIGLIP = WorkflowBinding(
     links=(
         LinkRef("positive_prompt", "clip", "clip_loader"),
         LinkRef("negative_prompt", "clip", "clip_loader"),
-        LinkRef("ip_adapter_apply", "model", "unet_loader"),
+        LinkRef("lora_loader", "model", "unet_loader"),
+        LinkRef("ip_adapter_apply", "model", "lora_loader"),
         LinkRef("ip_adapter_apply", "ip_adapter", "ip_adapter_loader"),
         LinkRef("ip_adapter_apply", "ref_image", "source_image"),
         LinkRef("ksampler", "model", "ip_adapter_apply"),
@@ -788,12 +817,15 @@ ANIMA_REF_SIGLIP = WorkflowBinding(
         "ip_adapter_name": VariableRef(
             "ip_adapter_loader", "ip_adapter_name", "str", required=True
         ),
+        **_LORA_VARIABLES,
     },
     model_slots=(
         *_ANIMA_MODEL_SLOTS,
         ModelSlot("ip_adapter_name", "AnimaIPAdapterLoader", "ip_adapter_name"),
+        _LORA_MODEL_SLOT,
     ),
     prompt_variable="positive_prompt",
+    optional_nodes=dict(_LORA_OPTIONAL_NODES),
     prompt_style="anima",
 )
 
@@ -1034,6 +1066,13 @@ def _coerce(name: str, value: Any, value_type: str) -> Any:
         if not HIRES_SCALE_MIN <= number <= HIRES_SCALE_MAX:
             raise WorkflowError(
                 f"{name}は{HIRES_SCALE_MIN}以上{HIRES_SCALE_MAX}以下で指定します。"
+            )
+        return number
+    if value_type == "lora_strength":
+        number = _finite_number(name, value)
+        if not LORA_STRENGTH_MIN <= number <= LORA_STRENGTH_MAX:
+            raise WorkflowError(
+                f"{name}は{LORA_STRENGTH_MIN}以上{LORA_STRENGTH_MAX}以下で指定します。"
             )
         return number
     if value_type in ("ksampler_sampler", "ksampler_scheduler"):

@@ -2,6 +2,7 @@
   "60": {"class_type": "UNETLoader", "inputs": {"unet_name": "chosenMixAnima_v10.safetensors", "weight_dtype": "default"}},
   "61": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen_3_06b_base.safetensors", "type": "stable_diffusion"}},
   "62": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_vae.safetensors"}},
+  "63": {"class_type": "LoraLoaderModelOnly", "inputs": {"lora_name": "", "strength_model": 1.0, "model": ["60", 0]}},
   "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["61", 0]}},
   "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["61", 0]}},
   "5": {"class_type": "EmptyLatentImage", "inputs": {"width": 896, "height": 1344, "batch_size": 1}},
@@ -10,7 +11,7 @@
   "14": {
     "class_type": "AnimaIPAdapterApply",
     "inputs": {
-      "model": ["60", 0],
+      "model": ["63", 0],
       "ip_adapter": ["13", 0],
       "ref_image": ["10", 0],
       "strength": 0.5,

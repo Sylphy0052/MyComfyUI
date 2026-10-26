@@ -18,7 +18,10 @@ import { useState, type ReactNode } from "react";
 import type { Recipe } from "../api/client";
 import {
   acceptsInput,
+  acceptsLora,
   COUNT_MAX,
+  LORA_STRENGTH_MAX,
+  LORA_STRENGTH_MIN,
   presetOf,
   isOutOfChoices,
   schemaChoices,
@@ -30,6 +33,10 @@ import {
 import { useModelOptions } from "./useImageGen";
 
 type Update = (update: Partial<ImageForm>) => void;
+
+/** LoRA選択の「なし」の値。Selectは空文字の値を選択肢にできないため、別の印で表す。 */
+// ファイル名には現れないNULを含め、在庫のLoRA名と衝突させない (Selectは重複値で例外になる)。
+const LORA_NONE = "\u0000none";
 
 /** NumberInputの空欄は直前の値のままにする。 */
 function asNumber(value: string | number, fallback: number): number {
@@ -107,6 +114,7 @@ function DetailFields({
   const models = useModelOptions(recipe.workflow_version_id, opened === "detail");
   const optionsOf = (variable: string) =>
     models.data?.slots?.find((slot) => slot.variable === variable)?.options ?? [];
+  const loraOptions = optionsOf("lora_name");
   const lockedNote = (name: string) => (acceptsInput(recipe, name) ? undefined : "このRecipeでは変えられません");
   // 保存値が候補外のときは選択を空にし、既定値で投入することを知らせる (buildInputsが送らない)。
   const choiceNote = (name: string, current: string) =>
@@ -123,7 +131,7 @@ function DetailFields({
           <Stack gap="xs">
             {models.data && !models.data.backend_reachable ? (
               <Text size="xs" c="dimmed">
-                ComfyUIに接続できないため、モデルの候補を出せません。名前は手で入力できます。
+                ComfyUIに接続できないため、モデルの候補を出せません。名前は手で入力できます (LoRAは候補が出ているときだけ選べます)。
               </Text>
             ) : null}
             {extra}
@@ -145,6 +153,37 @@ function DetailFields({
               options={optionsOf("vae_name")}
               onChange={(vaeName) => onChange({ vaeName })}
             />
+            {acceptsLora(recipe) ? (
+              <SimpleGrid cols={2} spacing="xs">
+                <Select
+                  label="LoRA"
+                  size="xs"
+                  data={[
+                    { value: LORA_NONE, label: "なし" },
+                    // 復元した値がComfyUIの在庫に無くても、選択中として見えるように足す。
+                    ...(form.loraName !== "" && !loraOptions.includes(form.loraName) ? [form.loraName] : []),
+                    ...loraOptions,
+                  ]}
+                  value={form.loraName === "" ? LORA_NONE : form.loraName}
+                  onChange={(value) => onChange({ loraName: value === null || value === LORA_NONE ? "" : value })}
+                  allowDeselect={false}
+                  searchable
+                  data-testid="image-lora"
+                />
+                <NumberInput
+                  label="LoRAの重み"
+                  size="xs"
+                  min={LORA_STRENGTH_MIN}
+                  max={LORA_STRENGTH_MAX}
+                  step={0.05}
+                  decimalScale={2}
+                  value={form.loraStrength}
+                  onChange={(value) => onChange({ loraStrength: asNumber(value, form.loraStrength) })}
+                  disabled={form.loraName === ""}
+                  data-testid="image-lora-strength"
+                />
+              </SimpleGrid>
+            ) : null}
             <SimpleGrid cols={2} spacing="xs">
               <NumberInput
                 label="steps"
