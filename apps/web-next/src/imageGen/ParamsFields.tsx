@@ -35,7 +35,8 @@ import { useModelOptions } from "./useImageGen";
 type Update = (update: Partial<ImageForm>) => void;
 
 /** LoRA選択の「なし」の値。Selectは空文字の値を選択肢にできないため、別の印で表す。 */
-const LORA_NONE = "__none__";
+// ファイル名には現れないNULを含め、在庫のLoRA名と衝突させない (Selectは重複値で例外になる)。
+const LORA_NONE = "\u0000none";
 
 /** NumberInputの空欄は直前の値のままにする。 */
 function asNumber(value: string | number, fallback: number): number {
@@ -130,7 +131,7 @@ function DetailFields({
           <Stack gap="xs">
             {models.data && !models.data.backend_reachable ? (
               <Text size="xs" c="dimmed">
-                ComfyUIに接続できないため、モデルの候補を出せません。名前は手で入力できます。
+                ComfyUIに接続できないため、モデルの候補を出せません。名前は手で入力できます (LoRAは候補が出ているときだけ選べます)。
               </Text>
             ) : null}
             {extra}
