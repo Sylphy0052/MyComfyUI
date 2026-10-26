@@ -307,8 +307,9 @@ def _lora_plan(template_name: str, plan: _MediaPlan) -> _MediaPlan:
     """`lora_name`が未指定か空のとき、`lora_loader`を外して`lora_*`を落とす。
 
     Recipeの既定値に`lora_strength`が入っていても、外したノードへの指定として拒否
-    されないよう、`lora_name`と一緒に落とす。指定があるときは何もせず、使ったLoRAは
-    `build_workflow`がManifestの`model`と`parameters`へ残す。
+    されないよう、`lora_name`と一緒に落とす。指定があるときは、重みが無ければテンプレート
+    の既定値で埋める。使ったLoRAと重みは`build_workflow`がManifestの`model`と
+    `parameters`へ残す。
     """
     if template_name not in LORA_TEMPLATES:
         return plan
@@ -316,7 +317,11 @@ def _lora_plan(template_name: str, plan: _MediaPlan) -> _MediaPlan:
     if isinstance(lora_name, str):
         lora_name = lora_name.strip()
     if lora_name is not None and lora_name != "":
-        return plan
+        if "lora_strength" in plan.values:
+            return plan
+        # Recipeの既定値に重みが無くても、実際に使った値をManifestへ残す。
+        strength = workflow_module.template_defaults(template_name)["lora_strength"]
+        return replace(plan, values={**plan.values, "lora_strength": strength})
     values = {k: v for k, v in plan.values.items() if k not in LORA_VARIABLES}
     return replace(plan, values=values, drop_roles=plan.drop_roles | LORA_ROLES)
 

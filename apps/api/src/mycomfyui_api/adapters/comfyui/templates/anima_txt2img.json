@@ -96,7 +96,7 @@
   "63": {
     "class_type": "LoraLoaderModelOnly",
     "inputs": {
-      "lora_name": "anima-style.safetensors",
+      "lora_name": "",
       "strength_model": 1.0,
       "model": ["60", 0]
     }
