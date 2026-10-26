@@ -29,6 +29,9 @@ export type ImageForm = {
   cfg: number;
   samplerName: string;
   scheduler: string;
+  /** 空文字はLoRAなし。LoRAを受け付けるRecipe (`lora_name`と`lora_strength`の両方を持つ) だけが使う。 */
+  loraName: string;
+  loraStrength: number;
   hiresEnabled: boolean;
   hiresScale: number;
   hiresSteps: number;
@@ -145,6 +148,8 @@ export function defaultForm(recipe: Recipe): ImageForm {
     cfg: numberOr(d.cfg, 4),
     samplerName: stringOr(d.sampler_name, ""),
     scheduler: stringOr(d.scheduler, ""),
+    loraName: "",
+    loraStrength: numberOr(d.lora_strength, LORA_STRENGTH_DEFAULT),
     hiresEnabled: d.hires_enabled === true,
     hiresScale: numberOr(d.hires_scale, 2),
     hiresSteps: numberOr(d.hires_steps, 0),
@@ -243,6 +248,19 @@ export function isOutOfChoices(recipe: Recipe, name: string, current: string): b
   return current !== "" && !schemaChoices(recipe, name).includes(current);
 }
 
+/** LoRAの重みの範囲と既定値。backendの`LORA_STRENGTH_MIN`/`MAX`に合わせる。 */
+export const LORA_STRENGTH_MIN = -2;
+export const LORA_STRENGTH_MAX = 2;
+const LORA_STRENGTH_DEFAULT = 1;
+
+/**
+ * 画面からLoRAを選べるRecipeか。`lora_name`と`lora_strength`の両方を受けるものに限る。
+ * ref_incontextの`lora_name`は別用途 (必須の固定モデル) で`lora_strength`が無いため、ここには入らない。
+ */
+export function acceptsLora(recipe: Recipe): boolean {
+  return acceptsInput(recipe, "lora_name") && acceptsInput(recipe, "lora_strength");
+}
+
 /** 投入するプロンプトとネガティブ。 */
 export function composedPrompts(form: ImageForm, supplement: SupplementTags): { positive: string; negative: string } {
   return {
@@ -273,6 +291,10 @@ export function buildInputs(form: ImageForm, supplement: SupplementTags, recipe:
     hires_scale: form.hiresScale,
     hires_steps: form.hiresSteps,
     hires_denoise: form.hiresDenoise,
+    // LoRAは「なし」なら二つとも送らない (Recipeに既定値が無く、省略するとLoRAなしで投入される)。
+    ...(acceptsLora(recipe) && form.loraName !== ""
+      ? { lora_name: form.loraName, lora_strength: form.loraStrength }
+      : {}),
   };
   return Object.fromEntries(
     Object.entries(values).filter(([name, value]) => value !== "" && acceptsInput(recipe, name)),
@@ -325,6 +347,9 @@ export function formFromManifest(base: ImageForm, manifest: GenerationManifest):
     cfg: numberOr(p.cfg, base.cfg),
     samplerName: stringOr(p.sampler_name, base.samplerName),
     scheduler: stringOr(p.scheduler, base.scheduler),
+    // LoRAを使ったJobだけが`parameters.lora_strength`を持つ。ref_incontextの`model.lora_name`は別用途なので、重みの有無で見分ける。
+    loraName: typeof p.lora_strength === "number" ? stringOr(m.lora_name, "") : "",
+    loraStrength: numberOr(p.lora_strength, base.loraStrength),
     hiresEnabled: typeof p.hires_enabled === "boolean" ? p.hires_enabled : base.hiresEnabled,
     hiresScale: numberOr(p.hires_scale, base.hiresScale),
     hiresSteps: numberOr(p.hires_steps, base.hiresSteps),
