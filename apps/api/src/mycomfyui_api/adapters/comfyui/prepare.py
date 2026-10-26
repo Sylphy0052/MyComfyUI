@@ -8,7 +8,7 @@ Recipeの`kind`とテンプレート名で区別する。動画と音楽に固�
 違反はJobを作らずに`PreparationError`とする。
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from mycomfyui_api import sources
@@ -73,6 +73,11 @@ UPSCALE_TEMPLATE = "image_upscale"
 #: img2imgではなくtxt2imgに元画像を参照として注入する派生(Issue #159)。
 REF_SIGLIP_TEMPLATE = "anima_ref_siglip"
 REF_INCONTEXT_TEMPLATE = "anima_ref_incontext"
+#: 省略できるLoRA (Issue #665) を持つテンプレート。
+LORA_TEMPLATES = frozenset({TXT2IMG_TEMPLATE, IMG2IMG_TEMPLATE, REF_SIGLIP_TEMPLATE})
+#: LoRAを使わないときは`lora_loader`ごと外すため、テンプレートへ渡さない変数。
+LORA_VARIABLES = ("lora_name", "lora_strength")
+LORA_ROLES = frozenset({"lora_loader"})
 DERIVATION_TEMPLATES = frozenset(
     {
         IMG2IMG_TEMPLATE,
@@ -105,7 +110,7 @@ async def _image_plan(
 ) -> _MediaPlan:
     """画像派生の主入力とmaskを解決し、Artifact lineageを固定する。"""
     if template_name == TXT2IMG_TEMPLATE:
-        return _hires_plan(template_name, values)
+        return _lora_plan(template_name, _hires_plan(template_name, values))
     if template_name not in DERIVATION_TEMPLATES:
         return _MediaPlan(values=dict(values))
     remaining = dict(values)
@@ -169,12 +174,15 @@ async def _image_plan(
         ) and width * height * batch_size > 100_000_000:
             raise PreparationError("幅×高さ×batch_sizeは1億pixel以下にしてください。")
 
-    return _MediaPlan(
-        values=remaining,
-        uploads=uploads,
-        input_refs=input_refs,
-        parent_job_id=primary.job_id,
-        parent_artifact_id=primary.artifact_id,
+    return _lora_plan(
+        template_name,
+        _MediaPlan(
+            values=remaining,
+            uploads=uploads,
+            input_refs=input_refs,
+            parent_job_id=primary.job_id,
+            parent_artifact_id=primary.artifact_id,
+        ),
     )
 
 
@@ -293,6 +301,24 @@ def validate_frame_count(value: Any) -> int:
             {"length": value, "min": MIN_FRAMES, "max": MAX_FRAMES},
         )
     return value
+
+
+def _lora_plan(template_name: str, plan: _MediaPlan) -> _MediaPlan:
+    """`lora_name`が未指定か空のとき、`lora_loader`を外して`lora_*`を落とす。
+
+    Recipeの既定値に`lora_strength`が入っていても、外したノードへの指定として拒否
+    されないよう、`lora_name`と一緒に落とす。指定があるときは何もせず、使ったLoRAは
+    `build_workflow`がManifestの`model`と`parameters`へ残す。
+    """
+    if template_name not in LORA_TEMPLATES:
+        return plan
+    lora_name = plan.values.get("lora_name")
+    if isinstance(lora_name, str):
+        lora_name = lora_name.strip()
+    if lora_name is not None and lora_name != "":
+        return plan
+    values = {k: v for k, v in plan.values.items() if k not in LORA_VARIABLES}
+    return replace(plan, values=values, drop_roles=plan.drop_roles | LORA_ROLES)
 
 
 def _hires_plan(template_name: str, values: dict[str, Any]) -> _MediaPlan:

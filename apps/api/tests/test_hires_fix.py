@@ -79,7 +79,7 @@ class BuildWorkflowHiresTest(unittest.TestCase):
         prepared = workflow_module.build_workflow(
             TEMPLATE,
             BASE_VALUES,
-            drop_roles=comfyui_prepare.HIRES_ROLES,
+            drop_roles=comfyui_prepare.HIRES_ROLES | comfyui_prepare.LORA_ROLES,
         )
         self.assertEqual(_links(prepared.workflow), LEGACY_GRAPH)
 
