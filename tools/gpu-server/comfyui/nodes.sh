@@ -12,6 +12,8 @@ cd /ComfyUI/custom_nodes
 git -C ComfyUI-Anima_IP-Adapter checkout -q 6b77cd0c367d76402174ace2be50d3cb6aa77855
 [ -d ComfyUI-WD14-Tagger ] || git clone -q https://github.com/pythongosssss/ComfyUI-WD14-Tagger
 git -C ComfyUI-WD14-Tagger checkout -q 9e0a6e700299182fc05c58b62e7ad9f72182a78b
+[ -d Comfyui-Anima-Regional-Conditioning ] || git clone -q https://github.com/Sen-sou/Comfyui-Anima-Regional-Conditioning
+git -C Comfyui-Anima-Regional-Conditioning checkout -q 099cf1fa052721394963418455d49f7087efaf6c
 if [ ! -d comfyui-anima-incontext ]; then
   python -c "import huggingface_hub as h; h.snapshot_download(\"darask0/Anima-InContext-Character\", revision=\"$INCONTEXT_REV\", allow_patterns=[\"comfyui-anima-incontext/*\"], local_dir=\"/tmp/ic\")"
   cp -r /tmp/ic/comfyui-anima-incontext .
