@@ -25,9 +25,10 @@ g18上の配置は次のとおり。`/ssdnas2`はNFSで、ほかの計算機サ�
    - 当て済みかどうかは目印の`# patched: AttentionTensorContainer`で判定する。何度実行してもよい
 4. `Comfyui-Anima-Regional-Conditioning`にパッチを当てる: `docker run --rm --user "$(id -u):$(id -g)" -v /ssdnas2/data/kfuruhashi/ComfyUI:/ComfyUI -v "$PWD:/w" kfuruhashi-comfyui:cu130 python /w/regional-patch.py`
    - 3.と同じ理由で、パッチを当てないとattentionの差し替え関数が追加の引数と`AttentionTensorContainer`を受け取れずに失敗する
-   - 任意入力`self_end_percent`を足す。self-attentionのmaskだけを早く切り、cross-attentionのmaskは`end_percent`まで当てる。self-attentionのmaskを後半まで当てると、領域の境目に縦の継ぎ目が出る。省略時は`end_percent`と同じで、元の動作のまま
+   - 任意入力`self_end_percent`を足す。self-attentionのmaskだけを早く切り、cross-attentionのmaskは`end_percent`まで当てる。self-attentionのmaskを後半まで当てると、領域の境目に縦の継ぎ目が出る。省略時は`end_percent`と同じで、元の動作のまま。`end_percent`より大きい値は`end_percent`として扱う
    - 当て済みかどうかは目印の`# patched: AttentionTensorContainer, self_end_percent`で判定する。何度実行してもよい
    - 適用後は、ノードを読み込ませるためにComfyUIを再起動する
+   - パッチは`nodes.py`を書き換えるので、`nodes.sh`の固定revを変えると`git checkout`が未commitの変更で止まる。revを上げるときは先に`git -C custom_nodes/Comfyui-Anima-Regional-Conditioning checkout -- nodes.py`でパッチを外し、新しいrevへ移ってから当て直す
 5. 足りないモデルをHFから取得する: `bash models.sh`。InContext LoRA、ACE-Step、4x-UltraSharp、SD1.5、ControlNet canny、SigLIP2を取得する。HFのrevisionは`models.sh`で固定している (InContextだけ`revisions.sh`)
 6. 起動する: `./run.sh <GPU番号>`。空いているGPUを先に`nvidia-smi`で確かめる
    - `127.0.0.1:18188`にだけ公開する

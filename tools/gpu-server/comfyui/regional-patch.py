@@ -7,6 +7,7 @@ self-attentionのmaskだけを早く切る入力を足す。
 2. self-attentionのmaskを後半まで当てると、領域の境目に縦の継ぎ目が出る。cross-attentionのmaskは
    後半まで当てないと髪飾りのような細部が人物に結び付かない。任意入力self_end_percentを足し、
    self-attentionのmaskだけをそこで切る。省略時（-1）はend_percentと同じで、元の動作のまま。
+   end_percentより大きい値はend_percentとして扱う（cross-attentionのmaskを切った後にselfだけ残すことはしない）。
 """
 
 from pathlib import Path
@@ -30,7 +31,8 @@ REPLACEMENTS = [
     (
         """    B, Sq, H, D = q.shape
 """,
-        """    if hasattr(q, "take"):
+        """    # torch.Tensorにもtake(index)があるので、hasattrでなく型で判定する
+    if not torch.is_tensor(q):
         q, k, v = q.take(), k.take(), v.take()
     B, Sq, H, D = q.shape
 """,
@@ -82,7 +84,7 @@ REPLACEMENTS = [
         patch.self_end_sigma = (
             end_sigma
             if self_end_percent < 0
-            else float(model_sampling.percent_to_sigma(self_end_percent))
+            else float(model_sampling.percent_to_sigma(min(self_end_percent, end_percent)))
         )
 
         patched_model = model.clone()""",
