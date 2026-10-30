@@ -28,7 +28,7 @@ g18上の配置は次のとおり。`/ssdnas2`はNFSで、ほかの計算機サ�
    - 任意入力`self_end_percent`を足す。self-attentionのmaskだけを早く切り、cross-attentionのmaskは`end_percent`まで当てる。self-attentionのmaskを後半まで当てると、領域の境目に縦の継ぎ目が出る。省略時は`end_percent`と同じで、元の動作のまま。`end_percent`より大きい値は`end_percent`として扱う
    - 当て済みかどうかは目印の`# patched: AttentionTensorContainer, self_end_percent`で判定する。何度実行してもよい
    - 適用後は、ノードを読み込ませるためにComfyUIを再起動する
-   - パッチは`nodes.py`を書き換えるので、`nodes.sh`の固定revを変えると`git checkout`が未commitの変更で止まる。revを上げるときは先に`git -C custom_nodes/Comfyui-Anima-Regional-Conditioning checkout -- nodes.py`でパッチを外し、新しいrevへ移ってから当て直す
+   - パッチは`nodes.py`を書き換える。`nodes.sh`の固定revを上げたとき、移動先のrevで`nodes.py`が変わっていると、`git checkout`が未commitの変更で止まる。そのときはg18上で`git -C /ssdnas2/data/kfuruhashi/ComfyUI/custom_nodes/Comfyui-Anima-Regional-Conditioning checkout -- nodes.py`を実行してパッチを外し、`nodes.sh`を流してから当て直す
 5. 足りないモデルをHFから取得する: `bash models.sh`。InContext LoRA、ACE-Step、4x-UltraSharp、SD1.5、ControlNet canny、SigLIP2を取得する。HFのrevisionは`models.sh`で固定している (InContextだけ`revisions.sh`)
 6. 起動する: `./run.sh <GPU番号>`。空いているGPUを先に`nvidia-smi`で確かめる
    - `127.0.0.1:18188`にだけ公開する

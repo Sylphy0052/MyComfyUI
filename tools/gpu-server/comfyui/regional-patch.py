@@ -32,8 +32,7 @@ REPLACEMENTS = [
         """    B, Sq, H, D = q.shape
 """,
         """    # torch.Tensorにもtake(index)があるので、hasattrでなく型で判定する
-    if not torch.is_tensor(q):
-        q, k, v = q.take(), k.take(), v.take()
+    q, k, v = (t if torch.is_tensor(t) else t.take() for t in (q, k, v))
     B, Sq, H, D = q.shape
 """,
     ),
